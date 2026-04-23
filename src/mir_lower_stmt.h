@@ -1,55 +1,55 @@
 #pragma once
 #include "mir.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-typedef int (*HOPMirLowerConstExprFn)(
-    void* _Nullable ctx, int32_t exprNode, HOPMirConst* _Nonnull outValue, HOPDiag* _Nullable diag);
+typedef int (*H2MirLowerConstExprFn)(
+    void* _Nullable ctx, int32_t exprNode, H2MirConst* _Nonnull outValue, H2Diag* _Nullable diag);
 
 typedef struct {
-    HOPMirLowerConstExprFn _Nullable lowerConstExpr;
+    H2MirLowerConstExprFn _Nullable lowerConstExpr;
     void* _Nullable lowerConstExprCtx;
-} HOPMirLowerOptions;
+} H2MirLowerOptions;
 
-int HOPMirLowerSimpleFunction(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    HOPMirProgram* _Nonnull outProgram,
+int H2MirLowerSimpleFunction(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    H2MirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
-int HOPMirLowerSimpleFunctionWithOptions(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    const HOPMirLowerOptions* _Nullable options,
-    HOPMirProgram* _Nonnull outProgram,
+    H2Diag* _Nullable diag);
+int H2MirLowerSimpleFunctionWithOptions(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    const H2MirLowerOptions* _Nullable options,
+    H2MirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
-int HOPMirLowerAppendSimpleFunction(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
+    H2Diag* _Nullable diag);
+int H2MirLowerAppendSimpleFunction(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
-int HOPMirLowerAppendSimpleFunctionWithOptions(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    const HOPMirLowerOptions* _Nullable options,
+    H2Diag* _Nullable diag);
+int H2MirLowerAppendSimpleFunctionWithOptions(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    const H2MirLowerOptions* _Nullable options,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-HOP_API_END
+H2_API_END

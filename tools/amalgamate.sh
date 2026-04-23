@@ -10,7 +10,7 @@ fi
 
 outfile=$1; shift
 source_hash=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-version=$(grep -F '#define HOP_VERSION ' src/libhop.h | awk '{print $3}')
+version=$(grep -F '#define H2_VERSION ' src/libhop.h | awk '{print $3}')
 
 index_file=$(mktemp)
 trap "rm -f $index_file $outfile.tmp" EXIT
@@ -20,7 +20,7 @@ cat <<__END__ > $index_file
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 $(cat LICENSE.txt)
 //////////////////////////////////////////////////////////////////////////////////////////////////*/
-#define HOP_SOURCE_HASH "${source_hash}"
+#define H2_SOURCE_HASH "${source_hash}"
 #include "src/libhop.h"
 __END__
 for f in "$@"; do
@@ -33,9 +33,9 @@ done
 
 cat <<__END__ >> $index_file
 /*//////////////////////////////////////////////////////////////////////////////////////////////////
-// HOP_IMPLEMENTATION
+// H2_IMPLEMENTATION
 //////////////////////////////////////////////////////////////////////////////////////////////////*/
-#ifdef HOP_IMPLEMENTATION
+#ifdef H2_IMPLEMENTATION
 #include "src/libhop-impl.h"
 __END__
 for f in "$@"; do
@@ -44,7 +44,7 @@ for f in "$@"; do
         *) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
-echo "#endif /* HOP_IMPLEMENTATION */" >> $index_file
+echo "#endif /* H2_IMPLEMENTATION */" >> $index_file
 
 # cp $index_file "$(dirname "$outfile")/amalgamate.h"
 

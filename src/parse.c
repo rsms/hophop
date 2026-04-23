@@ -1,31 +1,31 @@
 #include "libhop-impl.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-static void HOPPSetDiag(HOPDiag* _Nullable diag, HOPDiagCode code, uint32_t start, uint32_t end) {
+static void H2PSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = HOPDiagTypeOfCode(code);
+    diag->type = H2DiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
 }
 
-static void HOPPSetDiagWithArg(
-    HOPDiag* _Nullable diag,
-    HOPDiagCode code,
-    uint32_t    start,
-    uint32_t    end,
-    uint32_t    argStart,
-    uint32_t    argEnd) {
+static void H2PSetDiagWithArg(
+    H2Diag* _Nullable diag,
+    H2DiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    uint32_t   argStart,
+    uint32_t   argEnd) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = HOPDiagTypeOfCode(code);
+    diag->type = H2DiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = argStart;
@@ -33,126 +33,124 @@ static void HOPPSetDiagWithArg(
 }
 
 typedef struct {
-    HOPStrView      src;
-    HOPArena*       arena;
-    const HOPToken* tok;
-    uint32_t        tokLen;
-    uint32_t        pos;
-    HOPAstNode* _Nullable nodes;
+    H2StrView      src;
+    H2Arena*       arena;
+    const H2Token* tok;
+    uint32_t       tokLen;
+    uint32_t       pos;
+    H2AstNode* _Nullable nodes;
     uint32_t nodeLen;
     uint32_t nodeCap;
-    HOPDiag* _Nullable diag;
-    HOPFeatures features;
-} HOPParser;
+    H2Diag* _Nullable diag;
+    H2Features features;
+} H2Parser;
 
-static int HOPPParseExpr(HOPParser* p, int minPrec, int32_t* out);
-static int HOPPParseType(HOPParser* p, int32_t* out);
+static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out);
+static int H2PParseType(H2Parser* p, int32_t* out);
 
-static const HOPToken* HOPPPeek(HOPParser* p) {
+static const H2Token* H2PPeek(H2Parser* p) {
     if (p->pos >= p->tokLen) {
         return &p->tok[p->tokLen - 1];
     }
     return &p->tok[p->pos];
 }
 
-static const HOPToken* HOPPPrev(HOPParser* p) {
+static const H2Token* H2PPrev(H2Parser* p) {
     if (p->pos == 0) {
         return &p->tok[0];
     }
     return &p->tok[p->pos - 1];
 }
 
-static int HOPPAt(HOPParser* p, HOPTokenKind kind) {
-    return HOPPPeek(p)->kind == kind;
+static int H2PAt(H2Parser* p, H2TokenKind kind) {
+    return H2PPeek(p)->kind == kind;
 }
 
-static int HOPPMatch(HOPParser* p, HOPTokenKind kind) {
-    if (!HOPPAt(p, kind)) {
+static int H2PMatch(H2Parser* p, H2TokenKind kind) {
+    if (!H2PAt(p, kind)) {
         return 0;
     }
     p->pos++;
     return 1;
 }
 
-static int HOPPFail(HOPParser* p, HOPDiagCode code) {
-    const HOPToken* t = HOPPPeek(p);
-    HOPPSetDiag(p->diag, code, t->start, t->end);
+static int H2PFail(H2Parser* p, H2DiagCode code) {
+    const H2Token* t = H2PPeek(p);
+    H2PSetDiag(p->diag, code, t->start, t->end);
     return -1;
 }
 
-static int HOPPExpect(HOPParser* p, HOPTokenKind kind, HOPDiagCode code, const HOPToken** out) {
-    if (!HOPPAt(p, kind)) {
-        return HOPPFail(p, code);
+static int H2PExpect(H2Parser* p, H2TokenKind kind, H2DiagCode code, const H2Token** out) {
+    if (!H2PAt(p, kind)) {
+        return H2PFail(p, code);
     }
-    *out = HOPPPeek(p);
+    *out = H2PPeek(p);
     p->pos++;
     return 0;
 }
 
-static int HOPPReservedName(const HOPParser* p, const HOPToken* tok) {
+static int H2PReservedName(const H2Parser* p, const H2Token* tok) {
     static const char reservedPrefix[6] = { '_', '_', 'h', 'o', 'p', '_' };
     uint32_t          n = tok->end - tok->start;
     return n >= 6u && memcmp(p->src.ptr + tok->start, reservedPrefix, 6u) == 0;
 }
 
-static int HOPPIsHoleName(const HOPParser* p, const HOPToken* tok) {
-    return tok->kind == HOPTok_IDENT && tok->end == tok->start + 1u
-        && p->src.ptr[tok->start] == '_';
+static int H2PIsHoleName(const H2Parser* p, const H2Token* tok) {
+    return tok->kind == H2Tok_IDENT && tok->end == tok->start + 1u && p->src.ptr[tok->start] == '_';
 }
 
-static int HOPPFailReservedName(HOPParser* p, const HOPToken* tok) {
-    HOPPSetDiagWithArg(p->diag, HOPDiag_RESERVED_NAME, tok->start, tok->end, tok->start, tok->end);
+static int H2PFailReservedName(H2Parser* p, const H2Token* tok) {
+    H2PSetDiagWithArg(p->diag, H2Diag_RESERVED_NAME, tok->start, tok->end, tok->start, tok->end);
     return -1;
 }
 
-static int HOPPExpectDeclName(HOPParser* p, const HOPToken** out, int allowHole) {
-    const HOPToken* tok;
-    if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &tok) != 0) {
+static int H2PExpectDeclName(H2Parser* p, const H2Token** out, int allowHole) {
+    const H2Token* tok;
+    if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &tok) != 0) {
         return -1;
     }
-    if (!allowHole && HOPPIsHoleName(p, tok)) {
-        return HOPPFailReservedName(p, tok);
+    if (!allowHole && H2PIsHoleName(p, tok)) {
+        return H2PFailReservedName(p, tok);
     }
-    if (HOPPReservedName(p, tok)) {
-        HOPPSetDiag(p->diag, HOPDiag_RESERVED_HOP_PREFIX, tok->start, tok->end);
+    if (H2PReservedName(p, tok)) {
+        H2PSetDiag(p->diag, H2Diag_RESERVED_HOP_PREFIX, tok->start, tok->end);
         return -1;
     }
     *out = tok;
     return 0;
 }
 
-static int HOPPExpectFnName(HOPParser* p, const HOPToken** out) {
-    const HOPToken* tok = HOPPPeek(p);
-    if (tok->kind == HOPTok_SIZEOF) {
+static int H2PExpectFnName(H2Parser* p, const H2Token** out) {
+    const H2Token* tok = H2PPeek(p);
+    if (tok->kind == H2Tok_SIZEOF) {
         *out = tok;
         p->pos++;
         return 0;
     }
-    return HOPPExpectDeclName(p, out, 0);
+    return H2PExpectDeclName(p, out, 0);
 }
 
-static int HOPPIsFieldSeparator(HOPTokenKind kind) {
-    return kind == HOPTok_SEMICOLON || kind == HOPTok_COMMA || kind == HOPTok_RBRACE
-        || kind == HOPTok_ASSIGN || kind == HOPTok_EOF;
+static int H2PIsFieldSeparator(H2TokenKind kind) {
+    return kind == H2Tok_SEMICOLON || kind == H2Tok_COMMA || kind == H2Tok_RBRACE
+        || kind == H2Tok_ASSIGN || kind == H2Tok_EOF;
 }
 
-static int HOPPAnonymousFieldLookahead(HOPParser* p, const HOPToken** outLastIdent) {
-    uint32_t        i = p->pos;
-    const HOPToken* last;
+static int H2PAnonymousFieldLookahead(H2Parser* p, const H2Token** outLastIdent) {
+    uint32_t       i = p->pos;
+    const H2Token* last;
 
-    if (i >= p->tokLen || p->tok[i].kind != HOPTok_IDENT) {
+    if (i >= p->tokLen || p->tok[i].kind != H2Tok_IDENT) {
         return 0;
     }
     last = &p->tok[i];
     i++;
-    while (
-        (i + 1u) < p->tokLen && p->tok[i].kind == HOPTok_DOT && p->tok[i + 1u].kind == HOPTok_IDENT
-        && p->tok[i].start == last->end && p->tok[i + 1u].start == p->tok[i].end)
+    while ((i + 1u) < p->tokLen && p->tok[i].kind == H2Tok_DOT && p->tok[i + 1u].kind == H2Tok_IDENT
+           && p->tok[i].start == last->end && p->tok[i + 1u].start == p->tok[i].end)
     {
         last = &p->tok[i + 1u];
         i += 2u;
     }
-    if (i >= p->tokLen || !HOPPIsFieldSeparator(p->tok[i].kind)) {
+    if (i >= p->tokLen || !H2PIsFieldSeparator(p->tok[i].kind)) {
         return 0;
     }
     if (outLastIdent != NULL) {
@@ -161,10 +159,10 @@ static int HOPPAnonymousFieldLookahead(HOPParser* p, const HOPToken** outLastIde
     return 1;
 }
 
-static int32_t HOPPNewNode(HOPParser* p, HOPAstKind kind, uint32_t start, uint32_t end) {
+static int32_t H2PNewNode(H2Parser* p, H2AstKind kind, uint32_t start, uint32_t end) {
     int32_t idx;
     if (p->nodeLen >= p->nodeCap) {
-        HOPPSetDiag(p->diag, HOPDiag_ARENA_OOM, start, end);
+        H2PSetDiag(p->diag, H2Diag_ARENA_OOM, start, end);
         return -1;
     }
     idx = (int32_t)p->nodeLen++;
@@ -180,7 +178,7 @@ static int32_t HOPPNewNode(HOPParser* p, HOPAstKind kind, uint32_t start, uint32
     return idx;
 }
 
-static int HOPPAddChild(HOPParser* p, int32_t parent, int32_t child) {
+static int H2PAddChild(H2Parser* p, int32_t parent, int32_t child) {
     int32_t n;
     if (parent < 0 || child < 0) {
         return -1;
@@ -197,90 +195,90 @@ static int HOPPAddChild(HOPParser* p, int32_t parent, int32_t child) {
     return 0;
 }
 
-static int HOPIsAssignmentOp(HOPTokenKind kind) {
+static int H2IsAssignmentOp(H2TokenKind kind) {
     switch (kind) {
-        case HOPTok_ASSIGN:
-        case HOPTok_ADD_ASSIGN:
-        case HOPTok_SUB_ASSIGN:
-        case HOPTok_MUL_ASSIGN:
-        case HOPTok_DIV_ASSIGN:
-        case HOPTok_MOD_ASSIGN:
-        case HOPTok_AND_ASSIGN:
-        case HOPTok_OR_ASSIGN:
-        case HOPTok_XOR_ASSIGN:
-        case HOPTok_LSHIFT_ASSIGN:
-        case HOPTok_RSHIFT_ASSIGN: return 1;
-        default:                   return 0;
+        case H2Tok_ASSIGN:
+        case H2Tok_ADD_ASSIGN:
+        case H2Tok_SUB_ASSIGN:
+        case H2Tok_MUL_ASSIGN:
+        case H2Tok_DIV_ASSIGN:
+        case H2Tok_MOD_ASSIGN:
+        case H2Tok_AND_ASSIGN:
+        case H2Tok_OR_ASSIGN:
+        case H2Tok_XOR_ASSIGN:
+        case H2Tok_LSHIFT_ASSIGN:
+        case H2Tok_RSHIFT_ASSIGN: return 1;
+        default:                  return 0;
     }
 }
 
-static int HOPBinPrec(HOPTokenKind kind) {
-    if (HOPIsAssignmentOp(kind)) {
+static int H2BinPrec(H2TokenKind kind) {
+    if (H2IsAssignmentOp(kind)) {
         return 1;
     }
     switch (kind) {
-        case HOPTok_LOGICAL_OR:  return 2;
-        case HOPTok_LOGICAL_AND: return 3;
-        case HOPTok_EQ:
-        case HOPTok_NEQ:
-        case HOPTok_LT:
-        case HOPTok_GT:
-        case HOPTok_LTE:
-        case HOPTok_GTE:         return 4;
-        case HOPTok_OR:
-        case HOPTok_XOR:
-        case HOPTok_ADD:
-        case HOPTok_SUB:         return 5;
-        case HOPTok_AND:
-        case HOPTok_LSHIFT:
-        case HOPTok_RSHIFT:
-        case HOPTok_MUL:
-        case HOPTok_DIV:
-        case HOPTok_MOD:         return 6;
-        default:                 return 0;
+        case H2Tok_LOGICAL_OR:  return 2;
+        case H2Tok_LOGICAL_AND: return 3;
+        case H2Tok_EQ:
+        case H2Tok_NEQ:
+        case H2Tok_LT:
+        case H2Tok_GT:
+        case H2Tok_LTE:
+        case H2Tok_GTE:         return 4;
+        case H2Tok_OR:
+        case H2Tok_XOR:
+        case H2Tok_ADD:
+        case H2Tok_SUB:         return 5;
+        case H2Tok_AND:
+        case H2Tok_LSHIFT:
+        case H2Tok_RSHIFT:
+        case H2Tok_MUL:
+        case H2Tok_DIV:
+        case H2Tok_MOD:         return 6;
+        default:                return 0;
     }
 }
 
-static int HOPPParseType(HOPParser* p, int32_t* out);
-static int HOPPParseFnType(HOPParser* p, int32_t* out);
-static int HOPPParseTupleType(HOPParser* p, int32_t* out);
-static int HOPPParseExpr(HOPParser* p, int minPrec, int32_t* out);
-static int HOPPParseStmt(HOPParser* p, int32_t* out);
-static int HOPPParseDecl(HOPParser* p, int allowBody, int32_t* out);
-static int HOPPParseDeclInner(HOPParser* p, int allowBody, int32_t* out);
-static int HOPPParseDirective(HOPParser* p, int32_t* out);
-static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out);
-static int HOPPParseAggregateDecl(HOPParser* p, int32_t* out);
-static int HOPPParseTypeAliasDecl(HOPParser* p, int32_t* out);
+static int H2PParseType(H2Parser* p, int32_t* out);
+static int H2PParseFnType(H2Parser* p, int32_t* out);
+static int H2PParseTupleType(H2Parser* p, int32_t* out);
+static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out);
+static int H2PParseStmt(H2Parser* p, int32_t* out);
+static int H2PParseDecl(H2Parser* p, int allowBody, int32_t* out);
+static int H2PParseDeclInner(H2Parser* p, int allowBody, int32_t* out);
+static int H2PParseDirective(H2Parser* p, int32_t* out);
+static int H2PParseSwitchStmt(H2Parser* p, int32_t* out);
+static int H2PParseAggregateDecl(H2Parser* p, int32_t* out);
+static int H2PParseTypeAliasDecl(H2Parser* p, int32_t* out);
 
-static int HOPPIsTypeStart(HOPTokenKind kind) {
+static int H2PIsTypeStart(H2TokenKind kind) {
     switch (kind) {
-        case HOPTok_IDENT:
-        case HOPTok_ANYTYPE:
-        case HOPTok_TYPE:
-        case HOPTok_STRUCT:
-        case HOPTok_UNION:
-        case HOPTok_MUL:
-        case HOPTok_AND:
-        case HOPTok_MUT:
-        case HOPTok_LBRACE:
-        case HOPTok_LBRACK:
-        case HOPTok_LPAREN:
-        case HOPTok_QUESTION: return 1;
-        case HOPTok_FN:       return 1;
-        default:              return 0;
+        case H2Tok_IDENT:
+        case H2Tok_ANYTYPE:
+        case H2Tok_TYPE:
+        case H2Tok_STRUCT:
+        case H2Tok_UNION:
+        case H2Tok_MUL:
+        case H2Tok_AND:
+        case H2Tok_MUT:
+        case H2Tok_LBRACE:
+        case H2Tok_LBRACK:
+        case H2Tok_LPAREN:
+        case H2Tok_QUESTION: return 1;
+        case H2Tok_FN:       return 1;
+        default:             return 0;
     }
 }
 
-static int HOPPCloneSubtree(HOPParser* p, int32_t nodeId, int32_t* out) {
-    const HOPAstNode* src;
-    int32_t           clone;
-    int32_t           child;
+static int H2PCloneSubtree(H2Parser* p, int32_t nodeId, int32_t* out) {
+    const H2AstNode* src;
+    int32_t          clone;
+    int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= p->nodeLen) {
         return -1;
     }
     src = &p->nodes[nodeId];
-    clone = HOPPNewNode(p, src->kind, src->start, src->end);
+    clone = H2PNewNode(p, src->kind, src->start, src->end);
     if (clone < 0) {
         return -1;
     }
@@ -291,10 +289,10 @@ static int HOPPCloneSubtree(HOPParser* p, int32_t nodeId, int32_t* out) {
     child = src->firstChild;
     while (child >= 0) {
         int32_t childClone;
-        if (HOPPCloneSubtree(p, child, &childClone) != 0) {
+        if (H2PCloneSubtree(p, child, &childClone) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, clone, childClone) != 0) {
+        if (H2PAddChild(p, clone, childClone) != 0) {
             return -1;
         }
         child = p->nodes[child].nextSibling;
@@ -303,20 +301,20 @@ static int HOPPCloneSubtree(HOPParser* p, int32_t nodeId, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseTypeName(HOPParser* p, int32_t* out) {
-    const HOPToken* first = NULL;
-    const HOPToken* last;
-    int32_t         n;
+static int H2PParseTypeName(H2Parser* p, int32_t* out) {
+    const H2Token* first = NULL;
+    const H2Token* last;
+    int32_t        n;
 
-    if (HOPPAt(p, HOPTok_IDENT) || HOPPAt(p, HOPTok_TYPE) || HOPPAt(p, HOPTok_ANYTYPE)) {
+    if (H2PAt(p, H2Tok_IDENT) || H2PAt(p, H2Tok_TYPE) || H2PAt(p, H2Tok_ANYTYPE)) {
         p->pos++;
-        first = HOPPPrev(p);
+        first = H2PPrev(p);
     } else {
-        return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+        return H2PFail(p, H2Diag_EXPECTED_TYPE);
     }
     last = first;
-    while ((p->pos + 1u) < p->tokLen && p->tok[p->pos].kind == HOPTok_DOT
-           && p->tok[p->pos + 1u].kind == HOPTok_IDENT && p->tok[p->pos].start == last->end
+    while ((p->pos + 1u) < p->tokLen && p->tok[p->pos].kind == H2Tok_DOT
+           && p->tok[p->pos + 1u].kind == H2Tok_IDENT && p->tok[p->pos].start == last->end
            && p->tok[p->pos + 1u].start == p->tok[p->pos].end)
     {
         p->pos++;
@@ -324,29 +322,29 @@ static int HOPPParseTypeName(HOPParser* p, int32_t* out) {
         p->pos++;
     }
 
-    n = HOPPNewNode(p, HOPAst_TYPE_NAME, first->start, last->end);
+    n = H2PNewNode(p, H2Ast_TYPE_NAME, first->start, last->end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = first->start;
     p->nodes[n].dataEnd = last->end;
-    if (HOPPMatch(p, HOPTok_LBRACK)) {
-        const HOPToken* lb = HOPPPrev(p);
-        const HOPToken* rb;
+    if (H2PMatch(p, H2Tok_LBRACK)) {
+        const H2Token* lb = H2PPrev(p);
+        const H2Token* rb;
         p->nodes[n].end = lb->end;
         for (;;) {
             int32_t argType;
-            if (HOPPParseType(p, &argType) != 0) {
+            if (H2PParseType(p, &argType) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, argType) != 0) {
+            if (H2PAddChild(p, n, argType) != 0) {
                 return -1;
             }
-            if (!HOPPMatch(p, HOPTok_COMMA)) {
+            if (!H2PMatch(p, H2Tok_COMMA)) {
                 break;
             }
         }
-        if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_TYPE, &rb) != 0) {
+        if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_TYPE, &rb) != 0) {
             return -1;
         }
         p->nodes[n].end = rb->end;
@@ -355,12 +353,12 @@ static int HOPPParseTypeName(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseTypeParamList(HOPParser* p, int32_t ownerNode) {
-    uint32_t        savedPos = p->pos;
-    uint32_t        savedNodeLen = p->nodeLen;
-    int32_t         lastChild = -1;
-    const HOPToken* rb;
-    int             sawAny = 0;
+static int H2PParseTypeParamList(H2Parser* p, int32_t ownerNode) {
+    uint32_t       savedPos = p->pos;
+    uint32_t       savedNodeLen = p->nodeLen;
+    int32_t        lastChild = -1;
+    const H2Token* rb;
+    int            sawAny = 0;
     if (ownerNode >= 0 && (uint32_t)ownerNode < p->nodeLen) {
         int32_t child = p->nodes[ownerNode].firstChild;
         while (child >= 0) {
@@ -368,13 +366,13 @@ static int HOPPParseTypeParamList(HOPParser* p, int32_t ownerNode) {
             child = p->nodes[child].nextSibling;
         }
     }
-    if (!HOPPMatch(p, HOPTok_LBRACK)) {
+    if (!H2PMatch(p, H2Tok_LBRACK)) {
         return 0;
     }
     for (;;) {
-        const HOPToken* name;
-        int32_t         paramNode;
-        if (!HOPPAt(p, HOPTok_IDENT)) {
+        const H2Token* name;
+        int32_t        paramNode;
+        if (!H2PAt(p, H2Tok_IDENT)) {
             p->pos = savedPos;
             p->nodeLen = savedNodeLen;
             if (lastChild >= 0) {
@@ -385,23 +383,23 @@ static int HOPPParseTypeParamList(HOPParser* p, int32_t ownerNode) {
             return 0;
         }
         sawAny = 1;
-        if (HOPPExpectDeclName(p, &name, 0) != 0) {
+        if (H2PExpectDeclName(p, &name, 0) != 0) {
             return -1;
         }
-        paramNode = HOPPNewNode(p, HOPAst_TYPE_PARAM, name->start, name->end);
+        paramNode = H2PNewNode(p, H2Ast_TYPE_PARAM, name->start, name->end);
         if (paramNode < 0) {
             return -1;
         }
         p->nodes[paramNode].dataStart = name->start;
         p->nodes[paramNode].dataEnd = name->end;
-        if (HOPPAddChild(p, ownerNode, paramNode) != 0) {
+        if (H2PAddChild(p, ownerNode, paramNode) != 0) {
             return -1;
         }
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             break;
         }
     }
-    if (!sawAny || HOPPExpect(p, HOPTok_RBRACK, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (!sawAny || H2PExpect(p, H2Tok_RBRACK, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         p->pos = savedPos;
         p->nodeLen = savedNodeLen;
         if (lastChild >= 0) {
@@ -415,11 +413,11 @@ static int HOPPParseTypeParamList(HOPParser* p, int32_t ownerNode) {
     return 0;
 }
 
-static int HOPPTryParseFnTypeNamedParamGroup(
-    HOPParser* p, int32_t fnTypeNode, int* outConsumedGroup) {
+static int H2PTryParseFnTypeNamedParamGroup(
+    H2Parser* p, int32_t fnTypeNode, int* outConsumedGroup) {
     uint32_t savedPos = p->pos;
     uint32_t savedNodeLen = p->nodeLen;
-    HOPDiag  savedDiag = { 0 };
+    H2Diag   savedDiag = { 0 };
     uint32_t nameCount = 0;
     int32_t  typeNode = -1;
     uint32_t i;
@@ -427,29 +425,29 @@ static int HOPPTryParseFnTypeNamedParamGroup(
     if (p->diag != NULL) {
         savedDiag = *p->diag;
     }
-    if (!HOPPAt(p, HOPTok_IDENT)) {
+    if (!H2PAt(p, H2Tok_IDENT)) {
         *outConsumedGroup = 0;
         return 0;
     }
 
     for (;;) {
-        const HOPToken* name;
-        if (HOPPExpectDeclName(p, &name, 0) != 0) {
+        const H2Token* name;
+        if (H2PExpectDeclName(p, &name, 0) != 0) {
             goto not_group;
         }
         nameCount++;
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             break;
         }
-        if (!HOPPAt(p, HOPTok_IDENT)) {
+        if (!H2PAt(p, H2Tok_IDENT)) {
             goto not_group;
         }
     }
 
-    if (nameCount == 0 || !HOPPIsTypeStart(HOPPPeek(p)->kind)) {
+    if (nameCount == 0 || !H2PIsTypeStart(H2PPeek(p)->kind)) {
         goto not_group;
     }
-    if (HOPPParseType(p, &typeNode) != 0) {
+    if (H2PParseType(p, &typeNode) != 0) {
         goto not_group;
     }
 
@@ -457,10 +455,10 @@ static int HOPPTryParseFnTypeNamedParamGroup(
         int32_t paramType = -1;
         if (i == 0) {
             paramType = typeNode;
-        } else if (HOPPCloneSubtree(p, typeNode, &paramType) != 0) {
+        } else if (H2PCloneSubtree(p, typeNode, &paramType) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, fnTypeNode, paramType) != 0) {
+        if (H2PAddChild(p, fnTypeNode, paramType) != 0) {
             return -1;
         }
     }
@@ -477,67 +475,67 @@ not_group:
     return 0;
 }
 
-static int HOPPParseFnType(HOPParser* p, int32_t* out) {
-    const HOPToken* fnTok;
-    const HOPToken* rp;
-    int32_t         fnTypeNode;
-    int             sawVariadic = 0;
+static int H2PParseFnType(H2Parser* p, int32_t* out) {
+    const H2Token* fnTok;
+    const H2Token* rp;
+    int32_t        fnTypeNode;
+    int            sawVariadic = 0;
 
-    if (HOPPExpect(p, HOPTok_FN, HOPDiag_EXPECTED_TYPE, &fnTok) != 0) {
+    if (H2PExpect(p, H2Tok_FN, H2Diag_EXPECTED_TYPE, &fnTok) != 0) {
         return -1;
     }
-    if (HOPPExpect(p, HOPTok_LPAREN, HOPDiag_EXPECTED_TYPE, &rp) != 0) {
+    if (H2PExpect(p, H2Tok_LPAREN, H2Diag_EXPECTED_TYPE, &rp) != 0) {
         return -1;
     }
 
-    fnTypeNode = HOPPNewNode(p, HOPAst_TYPE_FN, fnTok->start, rp->end);
+    fnTypeNode = H2PNewNode(p, H2Ast_TYPE_FN, fnTok->start, rp->end);
     if (fnTypeNode < 0) {
         return -1;
     }
 
-    if (!HOPPAt(p, HOPTok_RPAREN)) {
+    if (!H2PAt(p, H2Tok_RPAREN)) {
         for (;;) {
             int consumedGroup = 0;
-            int isConstParam = HOPPMatch(p, HOPTok_CONST);
+            int isConstParam = H2PMatch(p, H2Tok_CONST);
             if (isConstParam) {
                 uint32_t savedPos = p->pos;
                 uint32_t savedNodeLen = p->nodeLen;
-                HOPDiag  savedDiag = { 0 };
+                H2Diag   savedDiag = { 0 };
                 int32_t  paramType = -1;
                 int      isVariadicParam = 0;
                 if (p->diag != NULL) {
                     savedDiag = *p->diag;
                 }
-                if (HOPPMatch(p, HOPTok_ELLIPSIS)) {
+                if (H2PMatch(p, H2Tok_ELLIPSIS)) {
                     isVariadicParam = 1;
                     if (sawVariadic) {
-                        return HOPPFail(p, HOPDiag_VARIADIC_PARAM_DUPLICATE);
+                        return H2PFail(p, H2Diag_VARIADIC_PARAM_DUPLICATE);
                     }
-                    if (HOPPParseType(p, &paramType) != 0) {
+                    if (H2PParseType(p, &paramType) != 0) {
                         return -1;
                     }
-                } else if (HOPPAt(p, HOPTok_IDENT)) {
-                    const HOPToken* nameTok = NULL;
-                    if (HOPPExpectDeclName(p, &nameTok, 0) != 0) {
+                } else if (H2PAt(p, H2Tok_IDENT)) {
+                    const H2Token* nameTok = NULL;
+                    if (H2PExpectDeclName(p, &nameTok, 0) != 0) {
                         return -1;
                     }
-                    if (HOPPAt(p, HOPTok_COMMA)) {
+                    if (H2PAt(p, H2Tok_COMMA)) {
                         p->pos = savedPos;
                         p->nodeLen = savedNodeLen;
                         if (p->diag != NULL) {
                             *p->diag = savedDiag;
                         }
                     }
-                    if (paramType < 0 && HOPPMatch(p, HOPTok_ELLIPSIS)) {
+                    if (paramType < 0 && H2PMatch(p, H2Tok_ELLIPSIS)) {
                         isVariadicParam = 1;
                         if (sawVariadic) {
-                            return HOPPFail(p, HOPDiag_VARIADIC_PARAM_DUPLICATE);
+                            return H2PFail(p, H2Diag_VARIADIC_PARAM_DUPLICATE);
                         }
-                        if (HOPPParseType(p, &paramType) != 0) {
+                        if (H2PParseType(p, &paramType) != 0) {
                             return -1;
                         }
-                    } else if (paramType < 0 && HOPPIsTypeStart(HOPPPeek(p)->kind)) {
-                        if (HOPPParseType(p, &paramType) != 0) {
+                    } else if (paramType < 0 && H2PIsTypeStart(H2PPeek(p)->kind)) {
+                        if (H2PParseType(p, &paramType) != 0) {
                             return -1;
                         }
                     } else if (paramType < 0) {
@@ -549,67 +547,67 @@ static int HOPPParseFnType(HOPParser* p, int32_t* out) {
                     }
                 }
                 if (paramType < 0) {
-                    if (HOPPParseType(p, &paramType) != 0) {
+                    if (H2PParseType(p, &paramType) != 0) {
                         return -1;
                     }
                 }
                 if (isVariadicParam) {
-                    p->nodes[paramType].flags |= HOPAstFlag_PARAM_VARIADIC;
+                    p->nodes[paramType].flags |= H2AstFlag_PARAM_VARIADIC;
                     sawVariadic = 1;
                 }
-                p->nodes[paramType].flags |= HOPAstFlag_PARAM_CONST;
-                if (HOPPAddChild(p, fnTypeNode, paramType) != 0) {
+                p->nodes[paramType].flags |= H2AstFlag_PARAM_CONST;
+                if (H2PAddChild(p, fnTypeNode, paramType) != 0) {
                     return -1;
                 }
-            } else if (HOPPMatch(p, HOPTok_ELLIPSIS)) {
+            } else if (H2PMatch(p, H2Tok_ELLIPSIS)) {
                 int32_t paramType = -1;
                 if (sawVariadic) {
-                    return HOPPFail(p, HOPDiag_VARIADIC_PARAM_DUPLICATE);
+                    return H2PFail(p, H2Diag_VARIADIC_PARAM_DUPLICATE);
                 }
-                if (HOPPParseType(p, &paramType) != 0) {
+                if (H2PParseType(p, &paramType) != 0) {
                     return -1;
                 }
-                p->nodes[paramType].flags |= HOPAstFlag_PARAM_VARIADIC;
-                if (HOPPAddChild(p, fnTypeNode, paramType) != 0) {
+                p->nodes[paramType].flags |= H2AstFlag_PARAM_VARIADIC;
+                if (H2PAddChild(p, fnTypeNode, paramType) != 0) {
                     return -1;
                 }
                 sawVariadic = 1;
             } else if (
-                HOPPAt(p, HOPTok_IDENT)
-                && HOPPTryParseFnTypeNamedParamGroup(p, fnTypeNode, &consumedGroup) != 0)
+                H2PAt(p, H2Tok_IDENT)
+                && H2PTryParseFnTypeNamedParamGroup(p, fnTypeNode, &consumedGroup) != 0)
             {
                 return -1;
             }
             if (!consumedGroup && !isConstParam) {
                 int32_t paramType = -1;
-                if (HOPPParseType(p, &paramType) != 0) {
+                if (H2PParseType(p, &paramType) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, fnTypeNode, paramType) != 0) {
+                if (H2PAddChild(p, fnTypeNode, paramType) != 0) {
                     return -1;
                 }
             }
-            if (!HOPPMatch(p, HOPTok_COMMA)) {
+            if (!H2PMatch(p, H2Tok_COMMA)) {
                 break;
             }
             if (sawVariadic) {
-                return HOPPFail(p, HOPDiag_VARIADIC_PARAM_NOT_LAST);
+                return H2PFail(p, H2Diag_VARIADIC_PARAM_NOT_LAST);
             }
         }
     }
 
-    if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_TYPE, &rp) != 0) {
+    if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_TYPE, &rp) != 0) {
         return -1;
     }
     p->nodes[fnTypeNode].end = rp->end;
 
-    if (HOPPIsTypeStart(HOPPPeek(p)->kind)) {
+    if (H2PIsTypeStart(H2PPeek(p)->kind)) {
         int32_t resultType = -1;
-        if (HOPPParseType(p, &resultType) != 0) {
+        if (H2PParseType(p, &resultType) != 0) {
             return -1;
         }
         p->nodes[resultType].flags = 1;
-        if (HOPPAddChild(p, fnTypeNode, resultType) != 0) {
+        if (H2PAddChild(p, fnTypeNode, resultType) != 0) {
             return -1;
         }
         p->nodes[fnTypeNode].end = p->nodes[resultType].end;
@@ -619,46 +617,46 @@ static int HOPPParseFnType(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseTupleType(HOPParser* p, int32_t* out) {
-    const HOPToken* lp = NULL;
-    const HOPToken* rp = NULL;
-    int32_t         items[256];
-    uint32_t        itemCount = 0;
-    int32_t         tupleNode;
-    uint32_t        i;
+static int H2PParseTupleType(H2Parser* p, int32_t* out) {
+    const H2Token* lp = NULL;
+    const H2Token* rp = NULL;
+    int32_t        items[256];
+    uint32_t       itemCount = 0;
+    int32_t        tupleNode;
+    uint32_t       i;
 
-    if (HOPPExpect(p, HOPTok_LPAREN, HOPDiag_EXPECTED_TYPE, &lp) != 0) {
+    if (H2PExpect(p, H2Tok_LPAREN, H2Diag_EXPECTED_TYPE, &lp) != 0) {
         return -1;
     }
-    if (HOPPParseType(p, &items[itemCount]) != 0) {
+    if (H2PParseType(p, &items[itemCount]) != 0) {
         return -1;
     }
     itemCount++;
-    if (!HOPPMatch(p, HOPTok_COMMA)) {
-        return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+    if (!H2PMatch(p, H2Tok_COMMA)) {
+        return H2PFail(p, H2Diag_EXPECTED_TYPE);
     }
     for (;;) {
         if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
-            return HOPPFail(p, HOPDiag_ARENA_OOM);
+            return H2PFail(p, H2Diag_ARENA_OOM);
         }
-        if (HOPPParseType(p, &items[itemCount]) != 0) {
+        if (H2PParseType(p, &items[itemCount]) != 0) {
             return -1;
         }
         itemCount++;
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             break;
         }
     }
-    if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_TYPE, &rp) != 0) {
+    if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_TYPE, &rp) != 0) {
         return -1;
     }
 
-    tupleNode = HOPPNewNode(p, HOPAst_TYPE_TUPLE, lp->start, rp->end);
+    tupleNode = H2PNewNode(p, H2Ast_TYPE_TUPLE, lp->start, rp->end);
     if (tupleNode < 0) {
         return -1;
     }
     for (i = 0; i < itemCount; i++) {
-        if (HOPPAddChild(p, tupleNode, items[i]) != 0) {
+        if (H2PAddChild(p, tupleNode, items[i]) != 0) {
             return -1;
         }
     }
@@ -666,57 +664,57 @@ static int HOPPParseTupleType(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseFnResultClause(HOPParser* p, int32_t fnNode) {
-    const HOPToken* lp = NULL;
-    const HOPToken* rp = NULL;
-    int32_t         resultTypes[256];
-    uint32_t        resultCount = 0;
-    int32_t         resultTypeNode = -1;
-    uint32_t        i;
+static int H2PParseFnResultClause(H2Parser* p, int32_t fnNode) {
+    const H2Token* lp = NULL;
+    const H2Token* rp = NULL;
+    int32_t        resultTypes[256];
+    uint32_t       resultCount = 0;
+    int32_t        resultTypeNode = -1;
+    uint32_t       i;
 
-    if (HOPPExpect(p, HOPTok_LPAREN, HOPDiag_EXPECTED_TYPE, &lp) != 0) {
+    if (H2PExpect(p, H2Tok_LPAREN, H2Diag_EXPECTED_TYPE, &lp) != 0) {
         return -1;
     }
-    if (HOPPAt(p, HOPTok_RPAREN)) {
-        return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+    if (H2PAt(p, H2Tok_RPAREN)) {
+        return H2PFail(p, H2Diag_EXPECTED_TYPE);
     }
 
     for (;;) {
         int consumedGroup = 0;
-        if (HOPPAt(p, HOPTok_IDENT)) {
+        if (H2PAt(p, H2Tok_IDENT)) {
             uint32_t savedPos = p->pos;
             uint32_t savedNodeLen = p->nodeLen;
-            HOPDiag  savedDiag = { 0 };
+            H2Diag   savedDiag = { 0 };
             uint32_t nameCount = 0;
             int32_t  groupType = -1;
             if (p->diag != NULL) {
                 savedDiag = *p->diag;
             }
             for (;;) {
-                const HOPToken* name;
-                if (HOPPExpectDeclName(p, &name, 0) != 0) {
+                const H2Token* name;
+                if (H2PExpectDeclName(p, &name, 0) != 0) {
                     break;
                 }
                 (void)name;
                 nameCount++;
-                if (!HOPPMatch(p, HOPTok_COMMA)) {
+                if (!H2PMatch(p, H2Tok_COMMA)) {
                     break;
                 }
-                if (!HOPPAt(p, HOPTok_IDENT)) {
+                if (!H2PAt(p, H2Tok_IDENT)) {
                     break;
                 }
             }
-            if (nameCount > 0 && HOPPIsTypeStart(HOPPPeek(p)->kind)
-                && HOPPParseType(p, &groupType) == 0)
+            if (nameCount > 0 && H2PIsTypeStart(H2PPeek(p)->kind)
+                && H2PParseType(p, &groupType) == 0)
             {
                 for (i = 0; i < nameCount; i++) {
                     int32_t itemType = -1;
                     if (resultCount >= (uint32_t)(sizeof(resultTypes) / sizeof(resultTypes[0]))) {
-                        return HOPPFail(p, HOPDiag_ARENA_OOM);
+                        return H2PFail(p, H2Diag_ARENA_OOM);
                     }
                     if (i == 0) {
                         itemType = groupType;
-                    } else if (HOPPCloneSubtree(p, groupType, &itemType) != 0) {
+                    } else if (H2PCloneSubtree(p, groupType, &itemType) != 0) {
                         return -1;
                     }
                     resultTypes[resultCount++] = itemType;
@@ -732,85 +730,85 @@ static int HOPPParseFnResultClause(HOPParser* p, int32_t fnNode) {
         }
         if (!consumedGroup) {
             if (resultCount >= (uint32_t)(sizeof(resultTypes) / sizeof(resultTypes[0]))) {
-                return HOPPFail(p, HOPDiag_ARENA_OOM);
+                return H2PFail(p, H2Diag_ARENA_OOM);
             }
-            if (HOPPParseType(p, &resultTypes[resultCount]) != 0) {
+            if (H2PParseType(p, &resultTypes[resultCount]) != 0) {
                 return -1;
             }
             resultCount++;
         }
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             break;
         }
     }
 
-    if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_TYPE, &rp) != 0) {
+    if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_TYPE, &rp) != 0) {
         return -1;
     }
     if (resultCount == 0) {
-        return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+        return H2PFail(p, H2Diag_EXPECTED_TYPE);
     }
 
     if (resultCount == 1) {
         resultTypeNode = resultTypes[0];
     } else {
-        resultTypeNode = HOPPNewNode(p, HOPAst_TYPE_TUPLE, lp->start, rp->end);
+        resultTypeNode = H2PNewNode(p, H2Ast_TYPE_TUPLE, lp->start, rp->end);
         if (resultTypeNode < 0) {
             return -1;
         }
         for (i = 0; i < resultCount; i++) {
-            if (HOPPAddChild(p, resultTypeNode, resultTypes[i]) != 0) {
+            if (H2PAddChild(p, resultTypeNode, resultTypes[i]) != 0) {
                 return -1;
             }
         }
     }
 
     p->nodes[resultTypeNode].flags = 1;
-    if (HOPPAddChild(p, fnNode, resultTypeNode) != 0) {
+    if (H2PAddChild(p, fnNode, resultTypeNode) != 0) {
         return -1;
     }
     p->nodes[fnNode].end = p->nodes[resultTypeNode].end;
     return 0;
 }
 
-static int HOPPParseAnonymousAggregateFieldDeclList(HOPParser* p, int32_t aggTypeNode) {
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-        const HOPToken* names[256];
-        uint32_t        nameCount = 0;
-        int32_t         typeNode = -1;
-        int32_t         defaultExpr = -1;
-        uint32_t        i;
+static int H2PParseAnonymousAggregateFieldDeclList(H2Parser* p, int32_t aggTypeNode) {
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+        const H2Token* names[256];
+        uint32_t       nameCount = 0;
+        int32_t        typeNode = -1;
+        int32_t        defaultExpr = -1;
+        uint32_t       i;
 
-        if (HOPPMatch(p, HOPTok_SEMICOLON)) {
+        if (H2PMatch(p, H2Tok_SEMICOLON)) {
             continue;
         }
-        if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+        if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
             return -1;
         }
         nameCount++;
-        while (HOPPMatch(p, HOPTok_COMMA)) {
-            if (!HOPPAt(p, HOPTok_IDENT)) {
-                return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+        while (H2PMatch(p, H2Tok_COMMA)) {
+            if (!H2PAt(p, H2Tok_IDENT)) {
+                return H2PFail(p, H2Diag_EXPECTED_TYPE);
             }
             if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
-                return HOPPFail(p, HOPDiag_ARENA_OOM);
+                return H2PFail(p, H2Diag_ARENA_OOM);
             }
-            if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+            if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
                 return -1;
             }
             nameCount++;
         }
 
-        if (HOPPParseType(p, &typeNode) != 0) {
+        if (H2PParseType(p, &typeNode) != 0) {
             return -1;
         }
-        if (HOPPMatch(p, HOPTok_ASSIGN)) {
+        if (H2PMatch(p, H2Tok_ASSIGN)) {
             if (nameCount > 1) {
-                const HOPToken* eq = HOPPPrev(p);
-                HOPPSetDiag(p->diag, HOPDiag_UNEXPECTED_TOKEN, eq->start, eq->end);
+                const H2Token* eq = H2PPrev(p);
+                H2PSetDiag(p->diag, H2Diag_UNEXPECTED_TOKEN, eq->start, eq->end);
                 return -1;
             }
-            if (HOPPParseExpr(p, 1, &defaultExpr) != 0) {
+            if (H2PParseExpr(p, 1, &defaultExpr) != 0) {
                 return -1;
             }
         }
@@ -820,66 +818,66 @@ static int HOPPParseAnonymousAggregateFieldDeclList(HOPParser* p, int32_t aggTyp
             if (i == 0) {
                 fieldTypeNode = typeNode;
             } else {
-                if (HOPPCloneSubtree(p, typeNode, &fieldTypeNode) != 0) {
+                if (H2PCloneSubtree(p, typeNode, &fieldTypeNode) != 0) {
                     return -1;
                 }
             }
-            fieldNode = HOPPNewNode(p, HOPAst_FIELD, names[i]->start, p->nodes[fieldTypeNode].end);
+            fieldNode = H2PNewNode(p, H2Ast_FIELD, names[i]->start, p->nodes[fieldTypeNode].end);
             if (fieldNode < 0) {
                 return -1;
             }
             p->nodes[fieldNode].dataStart = names[i]->start;
             p->nodes[fieldNode].dataEnd = names[i]->end;
-            if (HOPPAddChild(p, fieldNode, fieldTypeNode) != 0) {
+            if (H2PAddChild(p, fieldNode, fieldTypeNode) != 0) {
                 return -1;
             }
             if (i == 0 && defaultExpr >= 0) {
                 p->nodes[fieldNode].end = p->nodes[defaultExpr].end;
-                if (HOPPAddChild(p, fieldNode, defaultExpr) != 0) {
+                if (H2PAddChild(p, fieldNode, defaultExpr) != 0) {
                     return -1;
                 }
             }
-            if (HOPPAddChild(p, aggTypeNode, fieldNode) != 0) {
+            if (H2PAddChild(p, aggTypeNode, fieldNode) != 0) {
                 return -1;
             }
         }
 
-        if (HOPPMatch(p, HOPTok_SEMICOLON)) {
+        if (H2PMatch(p, H2Tok_SEMICOLON)) {
             continue;
         }
-        if (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
     }
     return 0;
 }
 
-static int HOPPParseAnonymousAggregateType(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = NULL;
-    const HOPToken* lb;
-    const HOPToken* rb;
-    HOPAstKind      kind = HOPAst_TYPE_ANON_STRUCT;
-    int32_t         typeNode;
+static int H2PParseAnonymousAggregateType(H2Parser* p, int32_t* out) {
+    const H2Token* kw = NULL;
+    const H2Token* lb;
+    const H2Token* rb;
+    H2AstKind      kind = H2Ast_TYPE_ANON_STRUCT;
+    int32_t        typeNode;
 
-    if (HOPPAt(p, HOPTok_STRUCT) || HOPPAt(p, HOPTok_UNION)) {
+    if (H2PAt(p, H2Tok_STRUCT) || H2PAt(p, H2Tok_UNION)) {
         p->pos++;
-        kw = HOPPPrev(p);
-        if (kw->kind == HOPTok_UNION) {
-            kind = HOPAst_TYPE_ANON_UNION;
+        kw = H2PPrev(p);
+        if (kw->kind == H2Tok_UNION) {
+            kind = H2Ast_TYPE_ANON_UNION;
         }
     }
 
-    if (HOPPExpect(p, HOPTok_LBRACE, HOPDiag_EXPECTED_TYPE, &lb) != 0) {
+    if (H2PExpect(p, H2Tok_LBRACE, H2Diag_EXPECTED_TYPE, &lb) != 0) {
         return -1;
     }
-    typeNode = HOPPNewNode(p, kind, kw != NULL ? kw->start : lb->start, lb->end);
+    typeNode = H2PNewNode(p, kind, kw != NULL ? kw->start : lb->start, lb->end);
     if (typeNode < 0) {
         return -1;
     }
-    if (HOPPParseAnonymousAggregateFieldDeclList(p, typeNode) != 0) {
+    if (H2PParseAnonymousAggregateFieldDeclList(p, typeNode) != 0) {
         return -1;
     }
-    if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_EXPECTED_TYPE, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_RBRACE, H2Diag_EXPECTED_TYPE, &rb) != 0) {
         return -1;
     }
     p->nodes[typeNode].end = rb->end;
@@ -887,93 +885,93 @@ static int HOPPParseAnonymousAggregateType(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseType(HOPParser* p, int32_t* out) {
-    const HOPToken* t;
-    int32_t         typeNode;
-    int32_t         child;
+static int H2PParseType(H2Parser* p, int32_t* out) {
+    const H2Token* t;
+    int32_t        typeNode;
+    int32_t        child;
 
     /* Prefix '?' optional type. */
-    if (HOPPMatch(p, HOPTok_QUESTION)) {
-        t = HOPPPrev(p);
-        typeNode = HOPPNewNode(p, HOPAst_TYPE_OPTIONAL, t->start, t->end);
+    if (H2PMatch(p, H2Tok_QUESTION)) {
+        t = H2PPrev(p);
+        typeNode = H2PNewNode(p, H2Ast_TYPE_OPTIONAL, t->start, t->end);
         if (typeNode < 0) {
             return -1;
         }
-        if (HOPPParseType(p, &child) != 0) {
+        if (H2PParseType(p, &child) != 0) {
             return -1;
         }
         p->nodes[typeNode].end = p->nodes[child].end;
-        return HOPPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        return H2PAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
-    if (HOPPMatch(p, HOPTok_MUL)) {
-        t = HOPPPrev(p);
-        typeNode = HOPPNewNode(p, HOPAst_TYPE_PTR, t->start, t->end);
+    if (H2PMatch(p, H2Tok_MUL)) {
+        t = H2PPrev(p);
+        typeNode = H2PNewNode(p, H2Ast_TYPE_PTR, t->start, t->end);
         if (typeNode < 0) {
             return -1;
         }
-        if (HOPPParseType(p, &child) != 0) {
+        if (H2PParseType(p, &child) != 0) {
             return -1;
         }
         p->nodes[typeNode].end = p->nodes[child].end;
-        return HOPPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        return H2PAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
-    if (HOPPMatch(p, HOPTok_AND)) {
-        t = HOPPPrev(p);
-        typeNode = HOPPNewNode(p, HOPAst_TYPE_REF, t->start, t->end);
+    if (H2PMatch(p, H2Tok_AND)) {
+        t = H2PPrev(p);
+        typeNode = H2PNewNode(p, H2Ast_TYPE_REF, t->start, t->end);
         if (typeNode < 0) {
             return -1;
         }
-        if (HOPPParseType(p, &child) != 0) {
+        if (H2PParseType(p, &child) != 0) {
             return -1;
         }
         p->nodes[typeNode].end = p->nodes[child].end;
-        return HOPPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+        return H2PAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
     }
 
-    if (HOPPMatch(p, HOPTok_MUT)) {
-        (void)HOPPPrev(p);
-        return HOPPFail(p, HOPDiag_EXPECTED_TYPE);
+    if (H2PMatch(p, H2Tok_MUT)) {
+        (void)H2PPrev(p);
+        return H2PFail(p, H2Diag_EXPECTED_TYPE);
     }
 
-    if (HOPPAt(p, HOPTok_LPAREN)) {
-        return HOPPParseTupleType(p, out);
+    if (H2PAt(p, H2Tok_LPAREN)) {
+        return H2PParseTupleType(p, out);
     }
 
-    if (HOPPMatch(p, HOPTok_LBRACK)) {
-        const HOPToken* lb = HOPPPrev(p);
-        const HOPToken* nTok = NULL;
-        int32_t         lenExpr = -1;
-        const HOPToken* rb;
-        HOPAstKind      kind;
+    if (H2PMatch(p, H2Tok_LBRACK)) {
+        const H2Token* lb = H2PPrev(p);
+        const H2Token* nTok = NULL;
+        int32_t        lenExpr = -1;
+        const H2Token* rb;
+        H2AstKind      kind;
 
-        if (HOPPParseType(p, &child) != 0) {
+        if (H2PParseType(p, &child) != 0) {
             return -1;
         }
 
-        if (HOPPMatch(p, HOPTok_RBRACK)) {
-            rb = HOPPPrev(p);
-            typeNode = HOPPNewNode(p, HOPAst_TYPE_SLICE, lb->start, rb->end);
+        if (H2PMatch(p, H2Tok_RBRACK)) {
+            rb = H2PPrev(p);
+            typeNode = H2PNewNode(p, H2Ast_TYPE_SLICE, lb->start, rb->end);
             if (typeNode < 0) {
                 return -1;
             }
-            return HOPPAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
+            return H2PAddChild(p, typeNode, child) == 0 ? (*out = typeNode, 0) : -1;
         }
 
-        if (HOPPMatch(p, HOPTok_DOT)) {
-            kind = HOPAst_TYPE_VARRAY;
-            if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_EXPECTED_TYPE, &nTok) != 0) {
+        if (H2PMatch(p, H2Tok_DOT)) {
+            kind = H2Ast_TYPE_VARRAY;
+            if (H2PExpect(p, H2Tok_IDENT, H2Diag_EXPECTED_TYPE, &nTok) != 0) {
                 return -1;
             }
         } else {
-            kind = HOPAst_TYPE_ARRAY;
-            if (HOPPParseExpr(p, 1, &lenExpr) != 0) {
+            kind = H2Ast_TYPE_ARRAY;
+            if (H2PParseExpr(p, 1, &lenExpr) != 0) {
                 return -1;
             }
         }
 
-        typeNode = HOPPNewNode(p, kind, lb->start, lb->end);
+        typeNode = H2PNewNode(p, kind, lb->start, lb->end);
         if (typeNode < 0) {
             return -1;
         }
@@ -981,24 +979,24 @@ static int HOPPParseType(HOPParser* p, int32_t* out) {
             p->nodes[typeNode].dataStart = nTok->start;
             p->nodes[typeNode].dataEnd = nTok->end;
         }
-        if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_TYPE, &rb) != 0) {
+        if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_TYPE, &rb) != 0) {
             return -1;
         }
         p->nodes[typeNode].end = rb->end;
-        if (HOPPAddChild(p, typeNode, child) != 0) {
+        if (H2PAddChild(p, typeNode, child) != 0) {
             return -1;
         }
-        if (kind == HOPAst_TYPE_ARRAY) {
-            const HOPAstNode* lenNode = &p->nodes[lenExpr];
-            if ((lenNode->kind == HOPAst_INT && lenNode->dataEnd > lenNode->dataStart)
-                && (lenNode->flags & HOPAstFlag_PAREN) == 0)
+        if (kind == H2Ast_TYPE_ARRAY) {
+            const H2AstNode* lenNode = &p->nodes[lenExpr];
+            if ((lenNode->kind == H2Ast_INT && lenNode->dataEnd > lenNode->dataStart)
+                && (lenNode->flags & H2AstFlag_PAREN) == 0)
             {
                 p->nodes[typeNode].dataStart = lenNode->dataStart;
                 p->nodes[typeNode].dataEnd = lenNode->dataEnd;
             } else {
                 p->nodes[typeNode].dataStart = lenNode->start;
                 p->nodes[typeNode].dataEnd = lenNode->end;
-                if (HOPPAddChild(p, typeNode, lenExpr) != 0) {
+                if (H2PAddChild(p, typeNode, lenExpr) != 0) {
                     return -1;
                 }
             }
@@ -1007,81 +1005,81 @@ static int HOPPParseType(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPAt(p, HOPTok_FN)) {
-        return HOPPParseFnType(p, out);
+    if (H2PAt(p, H2Tok_FN)) {
+        return H2PParseFnType(p, out);
     }
 
-    if (HOPPAt(p, HOPTok_LBRACE) || HOPPAt(p, HOPTok_STRUCT) || HOPPAt(p, HOPTok_UNION)) {
-        return HOPPParseAnonymousAggregateType(p, out);
+    if (H2PAt(p, H2Tok_LBRACE) || H2PAt(p, H2Tok_STRUCT) || H2PAt(p, H2Tok_UNION)) {
+        return H2PParseAnonymousAggregateType(p, out);
     }
 
-    if (HOPPParseTypeName(p, out) != 0) {
+    if (H2PParseTypeName(p, out) != 0) {
         return -1;
     }
     return 0;
 }
 
-static int HOPPParseCompoundLiteralTail(HOPParser* p, int32_t typeNode, int32_t* out) {
-    const HOPToken* lb;
-    const HOPToken* rb;
-    int32_t         lit;
+static int H2PParseCompoundLiteralTail(H2Parser* p, int32_t typeNode, int32_t* out) {
+    const H2Token* lb;
+    const H2Token* rb;
+    int32_t        lit;
 
-    if (HOPPExpect(p, HOPTok_LBRACE, HOPDiag_EXPECTED_EXPR, &lb) != 0) {
+    if (H2PExpect(p, H2Tok_LBRACE, H2Diag_EXPECTED_EXPR, &lb) != 0) {
         return -1;
     }
 
-    lit = HOPPNewNode(
-        p, HOPAst_COMPOUND_LIT, typeNode >= 0 ? p->nodes[typeNode].start : lb->start, lb->end);
+    lit = H2PNewNode(
+        p, H2Ast_COMPOUND_LIT, typeNode >= 0 ? p->nodes[typeNode].start : lb->start, lb->end);
     if (lit < 0) {
         return -1;
     }
-    if (typeNode >= 0 && HOPPAddChild(p, lit, typeNode) != 0) {
+    if (typeNode >= 0 && H2PAddChild(p, lit, typeNode) != 0) {
         return -1;
     }
 
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-        const HOPToken* fieldName;
-        int32_t         field;
-        int32_t         expr = -1;
-        int             hasDottedPath = 0;
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+        const H2Token* fieldName;
+        int32_t        field;
+        int32_t        expr = -1;
+        int            hasDottedPath = 0;
 
-        if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &fieldName) != 0) {
+        if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &fieldName) != 0) {
             return -1;
         }
-        field = HOPPNewNode(p, HOPAst_COMPOUND_FIELD, fieldName->start, fieldName->end);
+        field = H2PNewNode(p, H2Ast_COMPOUND_FIELD, fieldName->start, fieldName->end);
         if (field < 0) {
             return -1;
         }
         p->nodes[field].dataStart = fieldName->start;
         p->nodes[field].dataEnd = fieldName->end;
-        while (HOPPMatch(p, HOPTok_DOT)) {
-            const HOPToken* seg;
-            if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &seg) != 0) {
+        while (H2PMatch(p, H2Tok_DOT)) {
+            const H2Token* seg;
+            if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &seg) != 0) {
                 return -1;
             }
             p->nodes[field].dataEnd = seg->end;
             hasDottedPath = 1;
         }
-        if (HOPPMatch(p, HOPTok_COLON)) {
-            if (HOPPParseExpr(p, 1, &expr) != 0) {
+        if (H2PMatch(p, H2Tok_COLON)) {
+            if (H2PParseExpr(p, 1, &expr) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, field, expr) != 0) {
+            if (H2PAddChild(p, field, expr) != 0) {
                 return -1;
             }
             p->nodes[field].end = p->nodes[expr].end;
         } else {
             if (hasDottedPath) {
-                return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
             }
-            p->nodes[field].flags |= HOPAstFlag_COMPOUND_FIELD_SHORTHAND;
+            p->nodes[field].flags |= H2AstFlag_COMPOUND_FIELD_SHORTHAND;
         }
-        if (HOPPAddChild(p, lit, field) != 0) {
+        if (H2PAddChild(p, lit, field) != 0) {
             return -1;
         }
 
-        if (HOPPMatch(p, HOPTok_COMMA) || HOPPMatch(p, HOPTok_SEMICOLON)) {
-            if (HOPPAt(p, HOPTok_RBRACE)) {
+        if (H2PMatch(p, H2Tok_COMMA) || H2PMatch(p, H2Tok_SEMICOLON)) {
+            if (H2PAt(p, H2Tok_RBRACE)) {
                 break;
             }
             continue;
@@ -1089,7 +1087,7 @@ static int HOPPParseCompoundLiteralTail(HOPParser* p, int32_t typeNode, int32_t*
         break;
     }
 
-    if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
     p->nodes[lit].end = rb->end;
@@ -1097,69 +1095,69 @@ static int HOPPParseCompoundLiteralTail(HOPParser* p, int32_t typeNode, int32_t*
     return 0;
 }
 
-static int HOPPParseNewExpr(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPrev(p);
-    const HOPToken* rb;
-    int32_t         n;
-    int32_t         typeNode;
-    int32_t         countNode = -1;
-    int32_t         initNode = -1;
-    int32_t         allocNode = -1;
+static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPrev(p);
+    const H2Token* rb;
+    int32_t        n;
+    int32_t        typeNode;
+    int32_t        countNode = -1;
+    int32_t        initNode = -1;
+    int32_t        allocNode = -1;
 
-    n = HOPPNewNode(p, HOPAst_NEW, kw->start, kw->end);
+    n = H2PNewNode(p, H2Ast_NEW, kw->start, kw->end);
     if (n < 0) {
         return -1;
     }
 
-    if (HOPPMatch(p, HOPTok_LBRACK)) {
-        if (HOPPParseType(p, &typeNode) != 0) {
+    if (H2PMatch(p, H2Tok_LBRACK)) {
+        if (H2PParseType(p, &typeNode) != 0) {
             return -1;
         }
-        if (HOPPParseExpr(p, 1, &countNode) != 0) {
+        if (H2PParseExpr(p, 1, &countNode) != 0) {
             return -1;
         }
-        if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_EXPR, &rb) != 0) {
+        if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &rb) != 0) {
             return -1;
         }
-        p->nodes[n].flags |= HOPAstFlag_NEW_HAS_COUNT;
+        p->nodes[n].flags |= H2AstFlag_NEW_HAS_COUNT;
         p->nodes[n].end = rb->end;
     } else {
-        if (HOPPParseType(p, &typeNode) != 0) {
+        if (H2PParseType(p, &typeNode) != 0) {
             return -1;
         }
         p->nodes[n].end = p->nodes[typeNode].end;
-        if (HOPPAt(p, HOPTok_LBRACE)) {
-            if (HOPPParseCompoundLiteralTail(p, -1, &initNode) != 0) {
+        if (H2PAt(p, H2Tok_LBRACE)) {
+            if (H2PParseCompoundLiteralTail(p, -1, &initNode) != 0) {
                 return -1;
             }
-            p->nodes[n].flags |= HOPAstFlag_NEW_HAS_INIT;
+            p->nodes[n].flags |= H2AstFlag_NEW_HAS_INIT;
             p->nodes[n].end = p->nodes[initNode].end;
         }
     }
 
-    if (HOPPMatch(p, HOPTok_IN)) {
-        if (HOPPParseExpr(p, 1, &allocNode) != 0) {
+    if (H2PMatch(p, H2Tok_IN)) {
+        if (H2PParseExpr(p, 1, &allocNode) != 0) {
             return -1;
         }
-        p->nodes[n].flags |= HOPAstFlag_NEW_HAS_ALLOC;
+        p->nodes[n].flags |= H2AstFlag_NEW_HAS_ALLOC;
         p->nodes[n].end = p->nodes[allocNode].end;
     }
 
-    if (HOPPAddChild(p, n, typeNode) != 0) {
+    if (H2PAddChild(p, n, typeNode) != 0) {
         return -1;
     }
     if (countNode >= 0) {
-        if (HOPPAddChild(p, n, countNode) != 0) {
+        if (H2PAddChild(p, n, countNode) != 0) {
             return -1;
         }
     }
     if (initNode >= 0) {
-        if (HOPPAddChild(p, n, initNode) != 0) {
+        if (H2PAddChild(p, n, initNode) != 0) {
             return -1;
         }
     }
     if (allocNode >= 0) {
-        if (HOPPAddChild(p, n, allocNode) != 0) {
+        if (H2PAddChild(p, n, allocNode) != 0) {
             return -1;
         }
     }
@@ -1168,22 +1166,22 @@ static int HOPPParseNewExpr(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
-    const HOPToken* t = HOPPPeek(p);
-    int32_t         n;
+static int H2PParsePrimary(H2Parser* p, int32_t* out) {
+    const H2Token* t = H2PPeek(p);
+    int32_t        n;
 
-    if (HOPPAt(p, HOPTok_IDENT)) {
+    if (H2PAt(p, H2Tok_IDENT)) {
         uint32_t savedPos = p->pos;
         uint32_t savedNodeLen = p->nodeLen;
-        HOPDiag  savedDiag = { 0 };
+        H2Diag   savedDiag = { 0 };
         int32_t  typeNode;
         if (p->diag != NULL) {
             savedDiag = *p->diag;
         }
-        if (HOPPParseTypeName(p, &typeNode) == 0 && HOPPAt(p, HOPTok_LBRACE)
-            && HOPPPeek(p)->start == p->nodes[typeNode].end)
+        if (H2PParseTypeName(p, &typeNode) == 0 && H2PAt(p, H2Tok_LBRACE)
+            && H2PPeek(p)->start == p->nodes[typeNode].end)
         {
-            return HOPPParseCompoundLiteralTail(p, typeNode, out);
+            return H2PParseCompoundLiteralTail(p, typeNode, out);
         }
         p->pos = savedPos;
         p->nodeLen = savedNodeLen;
@@ -1192,34 +1190,34 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         }
     }
 
-    if (HOPPAt(p, HOPTok_LBRACE)) {
-        return HOPPParseCompoundLiteralTail(p, -1, out);
+    if (H2PAt(p, H2Tok_LBRACE)) {
+        return H2PParseCompoundLiteralTail(p, -1, out);
     }
 
-    if (HOPPAt(p, HOPTok_TYPE) && (p->pos + 1u) < p->tokLen
-        && HOPPIsTypeStart(p->tok[p->pos + 1u].kind))
+    if (H2PAt(p, H2Tok_TYPE) && (p->pos + 1u) < p->tokLen
+        && H2PIsTypeStart(p->tok[p->pos + 1u].kind))
     {
         int32_t typeNode;
         p->pos++;
-        t = HOPPPrev(p);
-        n = HOPPNewNode(p, HOPAst_TYPE_VALUE, t->start, t->end);
+        t = H2PPrev(p);
+        n = H2PNewNode(p, H2Ast_TYPE_VALUE, t->start, t->end);
         if (n < 0) {
             return -1;
         }
-        if (HOPPParseType(p, &typeNode) != 0) {
+        if (H2PParseType(p, &typeNode) != 0) {
             return -1;
         }
         p->nodes[n].end = p->nodes[typeNode].end;
-        if (HOPPAddChild(p, n, typeNode) != 0) {
+        if (H2PAddChild(p, n, typeNode) != 0) {
             return -1;
         }
         *out = n;
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_IDENT) || HOPPMatch(p, HOPTok_TYPE)) {
-        t = HOPPPrev(p);
-        n = HOPPNewNode(p, HOPAst_IDENT, t->start, t->end);
+    if (H2PMatch(p, H2Tok_IDENT) || H2PMatch(p, H2Tok_TYPE)) {
+        t = H2PPrev(p);
+        n = H2PNewNode(p, H2Ast_IDENT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1229,8 +1227,8 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_INT)) {
-        n = HOPPNewNode(p, HOPAst_INT, t->start, t->end);
+    if (H2PMatch(p, H2Tok_INT)) {
+        n = H2PNewNode(p, H2Ast_INT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1240,8 +1238,8 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_FLOAT)) {
-        n = HOPPNewNode(p, HOPAst_FLOAT, t->start, t->end);
+    if (H2PMatch(p, H2Tok_FLOAT)) {
+        n = H2PNewNode(p, H2Ast_FLOAT, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1251,8 +1249,8 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_STRING)) {
-        n = HOPPNewNode(p, HOPAst_STRING, t->start, t->end);
+    if (H2PMatch(p, H2Tok_STRING)) {
+        n = H2PNewNode(p, H2Ast_STRING, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1262,8 +1260,8 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_RUNE)) {
-        n = HOPPNewNode(p, HOPAst_RUNE, t->start, t->end);
+    if (H2PMatch(p, H2Tok_RUNE)) {
+        n = H2PNewNode(p, H2Ast_RUNE, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1273,9 +1271,9 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_TRUE) || HOPPMatch(p, HOPTok_FALSE)) {
-        t = HOPPPrev(p);
-        n = HOPPNewNode(p, HOPAst_BOOL, t->start, t->end);
+    if (H2PMatch(p, H2Tok_TRUE) || H2PMatch(p, H2Tok_FALSE)) {
+        t = H2PPrev(p);
+        n = H2PNewNode(p, H2Ast_BOOL, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1285,9 +1283,9 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_NULL)) {
-        t = HOPPPrev(p);
-        n = HOPPNewNode(p, HOPAst_NULL, t->start, t->end);
+    if (H2PMatch(p, H2Tok_NULL)) {
+        t = H2PPrev(p);
+        n = H2PNewNode(p, H2Ast_NULL, t->start, t->end);
         if (n < 0) {
             return -1;
         }
@@ -1295,23 +1293,23 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_LPAREN)) {
-        const HOPToken* lp = HOPPPrev(p);
-        int32_t         firstExpr = -1;
-        int32_t         exprItems[256];
-        uint32_t        exprCount = 0;
-        int32_t         tupleExpr = -1;
-        uint32_t        i;
-        if (HOPPParseExpr(p, 1, &firstExpr) != 0) {
+    if (H2PMatch(p, H2Tok_LPAREN)) {
+        const H2Token* lp = H2PPrev(p);
+        int32_t        firstExpr = -1;
+        int32_t        exprItems[256];
+        uint32_t       exprCount = 0;
+        int32_t        tupleExpr = -1;
+        uint32_t       i;
+        if (H2PParseExpr(p, 1, &firstExpr) != 0) {
             return -1;
         }
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             *out = firstExpr;
-            if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+            if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_EXPR, &t) != 0) {
                 return -1;
             }
             if (*out >= 0) {
-                p->nodes[*out].flags |= HOPAstFlag_PAREN;
+                p->nodes[*out].flags |= H2AstFlag_PAREN;
             }
             return 0;
         }
@@ -1319,25 +1317,25 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         exprItems[exprCount++] = firstExpr;
         for (;;) {
             if (exprCount >= (uint32_t)(sizeof(exprItems) / sizeof(exprItems[0]))) {
-                return HOPPFail(p, HOPDiag_ARENA_OOM);
+                return H2PFail(p, H2Diag_ARENA_OOM);
             }
-            if (HOPPParseExpr(p, 1, &exprItems[exprCount]) != 0) {
+            if (H2PParseExpr(p, 1, &exprItems[exprCount]) != 0) {
                 return -1;
             }
             exprCount++;
-            if (!HOPPMatch(p, HOPTok_COMMA)) {
+            if (!H2PMatch(p, H2Tok_COMMA)) {
                 break;
             }
         }
-        if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+        if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_EXPR, &t) != 0) {
             return -1;
         }
-        tupleExpr = HOPPNewNode(p, HOPAst_TUPLE_EXPR, lp->start, t->end);
+        tupleExpr = H2PNewNode(p, H2Ast_TUPLE_EXPR, lp->start, t->end);
         if (tupleExpr < 0) {
             return -1;
         }
         for (i = 0; i < exprCount; i++) {
-            if (HOPPAddChild(p, tupleExpr, exprItems[i]) != 0) {
+            if (H2PAddChild(p, tupleExpr, exprItems[i]) != 0) {
                 return -1;
             }
         }
@@ -1345,28 +1343,28 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_SIZEOF)) {
-        const HOPToken* kw = HOPPPrev(p);
-        const HOPToken* rp;
-        int32_t         inner;
-        uint32_t        savePos;
-        uint32_t        saveNodeLen;
-        if (HOPPExpect(p, HOPTok_LPAREN, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+    if (H2PMatch(p, H2Tok_SIZEOF)) {
+        const H2Token* kw = H2PPrev(p);
+        const H2Token* rp;
+        int32_t        inner;
+        uint32_t       savePos;
+        uint32_t       saveNodeLen;
+        if (H2PExpect(p, H2Tok_LPAREN, H2Diag_EXPECTED_EXPR, &t) != 0) {
             return -1;
         }
-        n = HOPPNewNode(p, HOPAst_SIZEOF, kw->start, t->end);
+        n = H2PNewNode(p, H2Ast_SIZEOF, kw->start, t->end);
         if (n < 0) {
             return -1;
         }
 
         savePos = p->pos;
         saveNodeLen = p->nodeLen;
-        if (HOPPParseType(p, &inner) == 0 && HOPPAt(p, HOPTok_RPAREN)) {
+        if (H2PParseType(p, &inner) == 0 && H2PAt(p, H2Tok_RPAREN)) {
             p->nodes[n].flags = 1;
-            if (HOPPAddChild(p, n, inner) != 0) {
+            if (H2PAddChild(p, n, inner) != 0) {
                 return -1;
             }
-            if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_EXPR, &rp) != 0) {
+            if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_EXPR, &rp) != 0) {
                 return -1;
             }
             p->nodes[n].end = rp->end;
@@ -1376,17 +1374,17 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         p->pos = savePos;
         p->nodeLen = saveNodeLen;
         if (p->diag != NULL) {
-            *p->diag = (HOPDiag){ 0 };
+            *p->diag = (H2Diag){ 0 };
         }
 
-        if (HOPPParseExpr(p, 1, &inner) != 0) {
+        if (H2PParseExpr(p, 1, &inner) != 0) {
             return -1;
         }
         p->nodes[n].flags = 0;
-        if (HOPPAddChild(p, n, inner) != 0) {
+        if (H2PAddChild(p, n, inner) != 0) {
             return -1;
         }
-        if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_EXPR, &rp) != 0) {
+        if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_EXPR, &rp) != 0) {
             return -1;
         }
         p->nodes[n].end = rp->end;
@@ -1394,48 +1392,48 @@ static int HOPPParsePrimary(HOPParser* p, int32_t* out) {
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_NEW)) {
-        return HOPPParseNewExpr(p, out);
+    if (H2PMatch(p, H2Tok_NEW)) {
+        return H2PParseNewExpr(p, out);
     }
 
-    return HOPPFail(p, HOPDiag_EXPECTED_EXPR);
+    return H2PFail(p, H2Diag_EXPECTED_EXPR);
 }
 
-static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
+static int H2PParsePostfix(H2Parser* p, int32_t* expr) {
     for (;;) {
-        int32_t         n;
-        const HOPToken* t;
+        int32_t        n;
+        const H2Token* t;
 
-        if (HOPPMatch(p, HOPTok_LPAREN)) {
-            n = HOPPNewNode(p, HOPAst_CALL, p->nodes[*expr].start, HOPPPrev(p)->end);
+        if (H2PMatch(p, H2Tok_LPAREN)) {
+            n = H2PNewNode(p, H2Ast_CALL, p->nodes[*expr].start, H2PPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, *expr) != 0) {
+            if (H2PAddChild(p, n, *expr) != 0) {
                 return -1;
             }
-            if (!HOPPAt(p, HOPTok_RPAREN)) {
+            if (!H2PAt(p, H2Tok_RPAREN)) {
                 for (;;) {
-                    int32_t         arg;
-                    int32_t         argNode;
-                    const HOPToken* labelTok = NULL;
-                    const HOPToken* spreadTok = NULL;
-                    uint32_t        argStart = HOPPPeek(p)->start;
-                    if (HOPPAt(p, HOPTok_IDENT) && (p->pos + 1u) < p->tokLen
-                        && p->tok[p->pos + 1u].kind == HOPTok_COLON)
+                    int32_t        arg;
+                    int32_t        argNode;
+                    const H2Token* labelTok = NULL;
+                    const H2Token* spreadTok = NULL;
+                    uint32_t       argStart = H2PPeek(p)->start;
+                    if (H2PAt(p, H2Tok_IDENT) && (p->pos + 1u) < p->tokLen
+                        && p->tok[p->pos + 1u].kind == H2Tok_COLON)
                     {
-                        labelTok = HOPPPeek(p);
+                        labelTok = H2PPeek(p);
                         p->pos += 2u;
                     }
-                    if (HOPPParseExpr(p, 1, &arg) != 0) {
+                    if (H2PParseExpr(p, 1, &arg) != 0) {
                         return -1;
                     }
-                    if (HOPPMatch(p, HOPTok_ELLIPSIS)) {
-                        spreadTok = HOPPPrev(p);
+                    if (H2PMatch(p, H2Tok_ELLIPSIS)) {
+                        spreadTok = H2PPrev(p);
                     }
-                    argNode = HOPPNewNode(
+                    argNode = H2PNewNode(
                         p,
-                        HOPAst_CALL_ARG,
+                        H2Ast_CALL_ARG,
                         labelTok != NULL ? labelTok->start : argStart,
                         spreadTok != NULL ? spreadTok->end : p->nodes[arg].end);
                     if (argNode < 0) {
@@ -1446,17 +1444,17 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
                         p->nodes[argNode].dataEnd = labelTok->end;
                     }
                     if (spreadTok != NULL) {
-                        p->nodes[argNode].flags |= HOPAstFlag_CALL_ARG_SPREAD;
+                        p->nodes[argNode].flags |= H2AstFlag_CALL_ARG_SPREAD;
                     }
-                    if (HOPPAddChild(p, argNode, arg) != 0 || HOPPAddChild(p, n, argNode) != 0) {
+                    if (H2PAddChild(p, argNode, arg) != 0 || H2PAddChild(p, n, argNode) != 0) {
                         return -1;
                     }
-                    if (!HOPPMatch(p, HOPTok_COMMA)) {
+                    if (!H2PMatch(p, H2Tok_COMMA)) {
                         break;
                     }
                 }
             }
-            if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+            if (H2PExpect(p, H2Tok_RPAREN, H2Diag_EXPECTED_EXPR, &t) != 0) {
                 return -1;
             }
             p->nodes[n].end = t->end;
@@ -1464,28 +1462,28 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_LBRACK)) {
+        if (H2PMatch(p, H2Tok_LBRACK)) {
             int32_t firstExpr = -1;
-            n = HOPPNewNode(p, HOPAst_INDEX, p->nodes[*expr].start, HOPPPrev(p)->end);
+            n = H2PNewNode(p, H2Ast_INDEX, p->nodes[*expr].start, H2PPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, *expr) != 0) {
+            if (H2PAddChild(p, n, *expr) != 0) {
                 return -1;
             }
 
-            if (HOPPMatch(p, HOPTok_COLON)) {
-                p->nodes[n].flags |= HOPAstFlag_INDEX_SLICE;
-                if (!HOPPAt(p, HOPTok_RBRACK)) {
-                    if (HOPPParseExpr(p, 1, &firstExpr) != 0) {
+            if (H2PMatch(p, H2Tok_COLON)) {
+                p->nodes[n].flags |= H2AstFlag_INDEX_SLICE;
+                if (!H2PAt(p, H2Tok_RBRACK)) {
+                    if (H2PParseExpr(p, 1, &firstExpr) != 0) {
                         return -1;
                     }
-                    p->nodes[n].flags |= HOPAstFlag_INDEX_HAS_END;
-                    if (HOPPAddChild(p, n, firstExpr) != 0) {
+                    p->nodes[n].flags |= H2AstFlag_INDEX_HAS_END;
+                    if (H2PAddChild(p, n, firstExpr) != 0) {
                         return -1;
                     }
                 }
-                if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+                if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &t) != 0) {
                     return -1;
                 }
                 p->nodes[n].end = t->end;
@@ -1493,26 +1491,26 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
                 continue;
             }
 
-            if (HOPPParseExpr(p, 1, &firstExpr) != 0) {
+            if (H2PParseExpr(p, 1, &firstExpr) != 0) {
                 return -1;
             }
-            if (HOPPMatch(p, HOPTok_COLON)) {
+            if (H2PMatch(p, H2Tok_COLON)) {
                 int32_t endExpr = -1;
-                p->nodes[n].flags |= HOPAstFlag_INDEX_SLICE;
-                p->nodes[n].flags |= HOPAstFlag_INDEX_HAS_START;
-                if (HOPPAddChild(p, n, firstExpr) != 0) {
+                p->nodes[n].flags |= H2AstFlag_INDEX_SLICE;
+                p->nodes[n].flags |= H2AstFlag_INDEX_HAS_START;
+                if (H2PAddChild(p, n, firstExpr) != 0) {
                     return -1;
                 }
-                if (!HOPPAt(p, HOPTok_RBRACK)) {
-                    if (HOPPParseExpr(p, 1, &endExpr) != 0) {
+                if (!H2PAt(p, H2Tok_RBRACK)) {
+                    if (H2PParseExpr(p, 1, &endExpr) != 0) {
                         return -1;
                     }
-                    p->nodes[n].flags |= HOPAstFlag_INDEX_HAS_END;
-                    if (HOPPAddChild(p, n, endExpr) != 0) {
+                    p->nodes[n].flags |= H2AstFlag_INDEX_HAS_END;
+                    if (H2PAddChild(p, n, endExpr) != 0) {
                         return -1;
                     }
                 }
-                if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+                if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &t) != 0) {
                     return -1;
                 }
                 p->nodes[n].end = t->end;
@@ -1520,10 +1518,10 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
                 continue;
             }
 
-            if (HOPPAddChild(p, n, firstExpr) != 0) {
+            if (H2PAddChild(p, n, firstExpr) != 0) {
                 return -1;
             }
-            if (HOPPExpect(p, HOPTok_RBRACK, HOPDiag_EXPECTED_EXPR, &t) != 0) {
+            if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &t) != 0) {
                 return -1;
             }
             p->nodes[n].end = t->end;
@@ -1531,16 +1529,16 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_DOT)) {
-            const HOPToken* fieldTok;
-            n = HOPPNewNode(p, HOPAst_FIELD_EXPR, p->nodes[*expr].start, HOPPPrev(p)->end);
+        if (H2PMatch(p, H2Tok_DOT)) {
+            const H2Token* fieldTok;
+            n = H2PNewNode(p, H2Ast_FIELD_EXPR, p->nodes[*expr].start, H2PPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, *expr) != 0) {
+            if (H2PAddChild(p, n, *expr) != 0) {
                 return -1;
             }
-            if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_EXPECTED_EXPR, &fieldTok) != 0) {
+            if (H2PExpect(p, H2Tok_IDENT, H2Diag_EXPECTED_EXPR, &fieldTok) != 0) {
                 return -1;
             }
             p->nodes[n].dataStart = fieldTok->start;
@@ -1550,20 +1548,20 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_AS)) {
+        if (H2PMatch(p, H2Tok_AS)) {
             int32_t typeNode;
-            n = HOPPNewNode(p, HOPAst_CAST, p->nodes[*expr].start, HOPPPrev(p)->end);
+            n = H2PNewNode(p, H2Ast_CAST, p->nodes[*expr].start, H2PPrev(p)->end);
             if (n < 0) {
                 return -1;
             }
-            p->nodes[n].op = (uint16_t)HOPTok_AS;
-            if (HOPPAddChild(p, n, *expr) != 0) {
+            p->nodes[n].op = (uint16_t)H2Tok_AS;
+            if (H2PAddChild(p, n, *expr) != 0) {
                 return -1;
             }
-            if (HOPPParseType(p, &typeNode) != 0) {
+            if (H2PParseType(p, &typeNode) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, typeNode) != 0) {
+            if (H2PAddChild(p, n, typeNode) != 0) {
                 return -1;
             }
             p->nodes[n].end = p->nodes[typeNode].end;
@@ -1571,13 +1569,13 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_NOT)) {
-            t = HOPPPrev(p);
-            n = HOPPNewNode(p, HOPAst_UNWRAP, p->nodes[*expr].start, t->end);
+        if (H2PMatch(p, H2Tok_NOT)) {
+            t = H2PPrev(p);
+            n = H2PNewNode(p, H2Ast_UNWRAP, p->nodes[*expr].start, t->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, *expr) != 0) {
+            if (H2PAddChild(p, n, *expr) != 0) {
                 return -1;
             }
             *expr = n;
@@ -1589,66 +1587,66 @@ static int HOPPParsePostfix(HOPParser* p, int32_t* expr) {
     return 0;
 }
 
-static int HOPPParsePrefix(HOPParser* p, int32_t* out) {
-    HOPTokenKind    op = HOPPPeek(p)->kind;
-    int32_t         rhs;
-    int32_t         n;
-    const HOPToken* t = HOPPPeek(p);
+static int H2PParsePrefix(H2Parser* p, int32_t* out) {
+    H2TokenKind    op = H2PPeek(p)->kind;
+    int32_t        rhs;
+    int32_t        n;
+    const H2Token* t = H2PPeek(p);
 
     switch (op) {
-        case HOPTok_ADD:
-        case HOPTok_SUB:
-        case HOPTok_NOT:
-        case HOPTok_MUL:
-        case HOPTok_AND:
+        case H2Tok_ADD:
+        case H2Tok_SUB:
+        case H2Tok_NOT:
+        case H2Tok_MUL:
+        case H2Tok_AND:
             p->pos++;
-            if (HOPPParsePrefix(p, &rhs) != 0) {
+            if (H2PParsePrefix(p, &rhs) != 0) {
                 return -1;
             }
-            n = HOPPNewNode(p, HOPAst_UNARY, t->start, p->nodes[rhs].end);
+            n = H2PNewNode(p, H2Ast_UNARY, t->start, p->nodes[rhs].end);
             if (n < 0) {
                 return -1;
             }
             p->nodes[n].op = (uint16_t)op;
-            if (HOPPAddChild(p, n, rhs) != 0) {
+            if (H2PAddChild(p, n, rhs) != 0) {
                 return -1;
             }
             *out = n;
             return 0;
         default:
-            if (HOPPParsePrimary(p, out) != 0) {
+            if (H2PParsePrimary(p, out) != 0) {
                 return -1;
             }
-            return HOPPParsePostfix(p, out);
+            return H2PParsePostfix(p, out);
     }
 }
 
-static int HOPPParseExpr(HOPParser* p, int minPrec, int32_t* out) {
+static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out) {
     int32_t lhs;
-    if (HOPPParsePrefix(p, &lhs) != 0) {
+    if (H2PParsePrefix(p, &lhs) != 0) {
         return -1;
     }
 
     for (;;) {
-        HOPTokenKind op = HOPPPeek(p)->kind;
-        int          prec = HOPBinPrec(op);
-        int          rightAssoc = HOPIsAssignmentOp(op);
-        int32_t      rhs;
-        int32_t      n;
+        H2TokenKind op = H2PPeek(p)->kind;
+        int         prec = H2BinPrec(op);
+        int         rightAssoc = H2IsAssignmentOp(op);
+        int32_t     rhs;
+        int32_t     n;
 
         if (prec < minPrec || prec == 0) {
             break;
         }
         p->pos++;
-        if (HOPPParseExpr(p, rightAssoc ? prec : prec + 1, &rhs) != 0) {
+        if (H2PParseExpr(p, rightAssoc ? prec : prec + 1, &rhs) != 0) {
             return -1;
         }
-        n = HOPPNewNode(p, HOPAst_BINARY, p->nodes[lhs].start, p->nodes[rhs].end);
+        n = H2PNewNode(p, H2Ast_BINARY, p->nodes[lhs].start, p->nodes[rhs].end);
         if (n < 0) {
             return -1;
         }
         p->nodes[n].op = (uint16_t)op;
-        if (HOPPAddChild(p, n, lhs) != 0 || HOPPAddChild(p, n, rhs) != 0) {
+        if (H2PAddChild(p, n, lhs) != 0 || H2PAddChild(p, n, rhs) != 0) {
             return -1;
         }
         lhs = n;
@@ -1658,19 +1656,19 @@ static int HOPPParseExpr(HOPParser* p, int minPrec, int32_t* out) {
     return 0;
 }
 
-static int HOPPBuildListNode(
-    HOPParser* p, HOPAstKind kind, int32_t* items, uint32_t itemCount, int32_t* out) {
+static int H2PBuildListNode(
+    H2Parser* p, H2AstKind kind, int32_t* items, uint32_t itemCount, int32_t* out) {
     int32_t  n;
     uint32_t i;
     if (itemCount == 0) {
-        return HOPPFail(p, HOPDiag_EXPECTED_EXPR);
+        return H2PFail(p, H2Diag_EXPECTED_EXPR);
     }
-    n = HOPPNewNode(p, kind, p->nodes[items[0]].start, p->nodes[items[itemCount - 1u]].end);
+    n = H2PNewNode(p, kind, p->nodes[items[0]].start, p->nodes[items[itemCount - 1u]].end);
     if (n < 0) {
         return -1;
     }
     for (i = 0; i < itemCount; i++) {
-        if (HOPPAddChild(p, n, items[i]) != 0) {
+        if (H2PAddChild(p, n, items[i]) != 0) {
             return -1;
         }
     }
@@ -1678,61 +1676,61 @@ static int HOPPBuildListNode(
     return 0;
 }
 
-static int HOPPParseExprList(HOPParser* p, int32_t* out) {
+static int H2PParseExprList(H2Parser* p, int32_t* out) {
     int32_t  items[256];
     uint32_t itemCount = 0;
-    if (HOPPParseExpr(p, 1, &items[itemCount]) != 0) {
+    if (H2PParseExpr(p, 1, &items[itemCount]) != 0) {
         return -1;
     }
     itemCount++;
-    while (HOPPMatch(p, HOPTok_COMMA)) {
+    while (H2PMatch(p, H2Tok_COMMA)) {
         if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
-            return HOPPFail(p, HOPDiag_ARENA_OOM);
+            return H2PFail(p, H2Diag_ARENA_OOM);
         }
-        if (HOPPParseExpr(p, 1, &items[itemCount]) != 0) {
+        if (H2PParseExpr(p, 1, &items[itemCount]) != 0) {
             return -1;
         }
         itemCount++;
     }
-    return HOPPBuildListNode(p, HOPAst_EXPR_LIST, items, itemCount, out);
+    return H2PBuildListNode(p, H2Ast_EXPR_LIST, items, itemCount, out);
 }
 
-static int HOPPParseDirectiveLiteral(HOPParser* p, int32_t* out) {
-    const HOPToken* t = HOPPPeek(p);
-    int32_t         n;
+static int H2PParseDirectiveLiteral(H2Parser* p, int32_t* out) {
+    const H2Token* t = H2PPeek(p);
+    int32_t        n;
 
     switch (t->kind) {
-        case HOPTok_INT:
+        case H2Tok_INT:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_INT, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_INT, t->start, t->end);
             break;
-        case HOPTok_FLOAT:
+        case H2Tok_FLOAT:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_FLOAT, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_FLOAT, t->start, t->end);
             break;
-        case HOPTok_STRING:
+        case H2Tok_STRING:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_STRING, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_STRING, t->start, t->end);
             break;
-        case HOPTok_RUNE:
+        case H2Tok_RUNE:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_RUNE, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_RUNE, t->start, t->end);
             break;
-        case HOPTok_TRUE:
-        case HOPTok_FALSE:
+        case H2Tok_TRUE:
+        case H2Tok_FALSE:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_BOOL, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_BOOL, t->start, t->end);
             break;
-        case HOPTok_NULL:
+        case H2Tok_NULL:
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_NULL, t->start, t->end);
+            n = H2PNewNode(p, H2Ast_NULL, t->start, t->end);
             break;
-        default: return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        default: return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
     }
     if (n < 0) {
         return -1;
     }
-    if (p->nodes[n].kind != HOPAst_NULL) {
+    if (p->nodes[n].kind != H2Ast_NULL) {
         p->nodes[n].dataStart = t->start;
         p->nodes[n].dataEnd = t->end;
     }
@@ -1740,44 +1738,44 @@ static int HOPPParseDirectiveLiteral(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseDirective(HOPParser* p, int32_t* out) {
-    const HOPToken* atTok = NULL;
-    const HOPToken* nameTok = NULL;
-    const HOPToken* rp = NULL;
-    int32_t         directive;
+static int H2PParseDirective(H2Parser* p, int32_t* out) {
+    const H2Token* atTok = NULL;
+    const H2Token* nameTok = NULL;
+    const H2Token* rp = NULL;
+    int32_t        directive;
 
-    if (HOPPExpect(p, HOPTok_AT, HOPDiag_UNEXPECTED_TOKEN, &atTok) != 0) {
+    if (H2PExpect(p, H2Tok_AT, H2Diag_UNEXPECTED_TOKEN, &atTok) != 0) {
         return -1;
     }
-    if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &nameTok) != 0) {
+    if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &nameTok) != 0) {
         return -1;
     }
-    directive = HOPPNewNode(p, HOPAst_DIRECTIVE, atTok->start, nameTok->end);
+    directive = H2PNewNode(p, H2Ast_DIRECTIVE, atTok->start, nameTok->end);
     if (directive < 0) {
         return -1;
     }
     p->nodes[directive].dataStart = nameTok->start;
     p->nodes[directive].dataEnd = nameTok->end;
 
-    if (HOPPMatch(p, HOPTok_LPAREN)) {
-        if (!HOPPAt(p, HOPTok_RPAREN)) {
+    if (H2PMatch(p, H2Tok_LPAREN)) {
+        if (!H2PAt(p, H2Tok_RPAREN)) {
             for (;;) {
                 int32_t argNode = -1;
-                if (HOPPParseDirectiveLiteral(p, &argNode) != 0) {
+                if (H2PParseDirectiveLiteral(p, &argNode) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, directive, argNode) != 0) {
+                if (H2PAddChild(p, directive, argNode) != 0) {
                     return -1;
                 }
-                if (!HOPPMatch(p, HOPTok_COMMA)) {
+                if (!H2PMatch(p, H2Tok_COMMA)) {
                     break;
                 }
-                if (HOPPAt(p, HOPTok_RPAREN)) {
+                if (H2PAt(p, H2Tok_RPAREN)) {
                     break;
                 }
             }
         }
-        if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_UNEXPECTED_TOKEN, &rp) != 0) {
+        if (H2PExpect(p, H2Tok_RPAREN, H2Diag_UNEXPECTED_TOKEN, &rp) != 0) {
             return -1;
         }
         p->nodes[directive].end = rp->end;
@@ -1786,33 +1784,33 @@ static int HOPPParseDirective(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseDeclNameList(
-    HOPParser*       p,
-    int              allowHole,
-    const HOPToken** names,
-    uint32_t         namesCap,
-    uint32_t*        outNameCount,
-    const HOPToken** outFirstHole) {
-    uint32_t        nameCount = 0;
-    const HOPToken* hole = NULL;
-    if (HOPPExpectDeclName(p, &names[nameCount], allowHole) != 0) {
+static int H2PParseDeclNameList(
+    H2Parser*       p,
+    int             allowHole,
+    const H2Token** names,
+    uint32_t        namesCap,
+    uint32_t*       outNameCount,
+    const H2Token** outFirstHole) {
+    uint32_t       nameCount = 0;
+    const H2Token* hole = NULL;
+    if (H2PExpectDeclName(p, &names[nameCount], allowHole) != 0) {
         return -1;
     }
-    if (hole == NULL && HOPPIsHoleName(p, names[nameCount])) {
+    if (hole == NULL && H2PIsHoleName(p, names[nameCount])) {
         hole = names[nameCount];
     }
     nameCount++;
-    while (HOPPMatch(p, HOPTok_COMMA)) {
+    while (H2PMatch(p, H2Tok_COMMA)) {
         if (nameCount >= namesCap) {
-            return HOPPFail(p, HOPDiag_ARENA_OOM);
+            return H2PFail(p, H2Diag_ARENA_OOM);
         }
-        if (!HOPPAt(p, HOPTok_IDENT)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PAt(p, H2Tok_IDENT)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
-        if (HOPPExpectDeclName(p, &names[nameCount], allowHole) != 0) {
+        if (H2PExpectDeclName(p, &names[nameCount], allowHole) != 0) {
             return -1;
         }
-        if (hole == NULL && HOPPIsHoleName(p, names[nameCount])) {
+        if (hole == NULL && H2PIsHoleName(p, names[nameCount])) {
             hole = names[nameCount];
         }
         nameCount++;
@@ -1822,26 +1820,26 @@ static int HOPPParseDeclNameList(
     return 0;
 }
 
-static int HOPPBuildNameListNode(
-    HOPParser* p, const HOPToken** names, uint32_t nameCount, int32_t* outNameList) {
+static int H2PBuildNameListNode(
+    H2Parser* p, const H2Token** names, uint32_t nameCount, int32_t* outNameList) {
     int32_t  items[256];
     uint32_t i;
     for (i = 0; i < nameCount; i++) {
-        items[i] = HOPPNewNode(p, HOPAst_IDENT, names[i]->start, names[i]->end);
+        items[i] = H2PNewNode(p, H2Ast_IDENT, names[i]->start, names[i]->end);
         if (items[i] < 0) {
             return -1;
         }
         p->nodes[items[i]].dataStart = names[i]->start;
         p->nodes[items[i]].dataEnd = names[i]->end;
     }
-    return HOPPBuildListNode(p, HOPAst_NAME_LIST, items, nameCount, outNameList);
+    return H2PBuildListNode(p, H2Ast_NAME_LIST, items, nameCount, outNameList);
 }
 
-static int HOPPFnHasVariadicParam(HOPParser* p, int32_t fnNode) {
+static int H2PFnHasVariadicParam(H2Parser* p, int32_t fnNode) {
     int32_t child = p->nodes[fnNode].firstChild;
     while (child >= 0) {
-        if (p->nodes[child].kind == HOPAst_PARAM
-            && (p->nodes[child].flags & HOPAstFlag_PARAM_VARIADIC) != 0)
+        if (p->nodes[child].kind == H2Ast_PARAM
+            && (p->nodes[child].flags & H2AstFlag_PARAM_VARIADIC) != 0)
         {
             return 1;
         }
@@ -1850,23 +1848,23 @@ static int HOPPFnHasVariadicParam(HOPParser* p, int32_t fnNode) {
     return 0;
 }
 
-static int HOPPParseParamGroup(HOPParser* p, int32_t fnNode, int* outIsVariadic) {
-    const HOPToken* lastName = NULL;
-    int32_t         firstParam = -1;
-    int32_t         lastParam = -1;
-    int32_t         type = -1;
-    int             isVariadic = 0;
-    int             isConstGroup = HOPPMatch(p, HOPTok_CONST);
-    int             hasExistingVariadic = HOPPFnHasVariadicParam(p, fnNode);
+static int H2PParseParamGroup(H2Parser* p, int32_t fnNode, int* outIsVariadic) {
+    const H2Token* lastName = NULL;
+    int32_t        firstParam = -1;
+    int32_t        lastParam = -1;
+    int32_t        type = -1;
+    int            isVariadic = 0;
+    int            isConstGroup = H2PMatch(p, H2Tok_CONST);
+    int            hasExistingVariadic = H2PFnHasVariadicParam(p, fnNode);
 
     for (;;) {
-        const HOPToken* name;
-        int32_t         param;
-        if (HOPPExpectDeclName(p, &name, 1) != 0) {
+        const H2Token* name;
+        int32_t        param;
+        if (H2PExpectDeclName(p, &name, 1) != 0) {
             return -1;
         }
         lastName = name;
-        param = HOPPNewNode(p, HOPAst_PARAM, name->start, name->end);
+        param = H2PNewNode(p, H2Ast_PARAM, name->start, name->end);
         if (param < 0) {
             return -1;
         }
@@ -1879,45 +1877,45 @@ static int HOPPParseParamGroup(HOPParser* p, int32_t fnNode, int* outIsVariadic)
         }
         lastParam = param;
 
-        if (!HOPPMatch(p, HOPTok_COMMA)) {
+        if (!H2PMatch(p, H2Tok_COMMA)) {
             break;
         }
         if (isConstGroup) {
-            return HOPPFail(p, HOPDiag_CONST_PARAM_GROUPED_NAME_INVALID);
+            return H2PFail(p, H2Diag_CONST_PARAM_GROUPED_NAME_INVALID);
         }
-        if (!HOPPAt(p, HOPTok_IDENT)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PAt(p, H2Tok_IDENT)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
     }
 
-    if (HOPPMatch(p, HOPTok_ELLIPSIS)) {
+    if (H2PMatch(p, H2Tok_ELLIPSIS)) {
         if (firstParam != lastParam) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
         if (hasExistingVariadic) {
-            return HOPPFail(p, HOPDiag_VARIADIC_PARAM_DUPLICATE);
+            return H2PFail(p, H2Diag_VARIADIC_PARAM_DUPLICATE);
         }
         isVariadic = 1;
     } else if (hasExistingVariadic) {
-        return HOPPFail(p, HOPDiag_VARIADIC_PARAM_NOT_LAST);
+        return H2PFail(p, H2Diag_VARIADIC_PARAM_NOT_LAST);
     }
 
-    if (!HOPPIsTypeStart(HOPPPeek(p)->kind)) {
+    if (!H2PIsTypeStart(H2PPeek(p)->kind)) {
         if (lastName != NULL) {
-            HOPPSetDiagWithArg(
+            H2PSetDiagWithArg(
                 p->diag,
-                HOPDiag_PARAM_MISSING_TYPE,
+                H2Diag_PARAM_MISSING_TYPE,
                 lastName->start,
                 lastName->end,
                 lastName->start,
                 lastName->end);
         } else {
-            HOPPSetDiag(p->diag, HOPDiag_PARAM_MISSING_TYPE, HOPPPeek(p)->start, HOPPPeek(p)->end);
+            H2PSetDiag(p->diag, H2Diag_PARAM_MISSING_TYPE, H2PPeek(p)->start, H2PPeek(p)->end);
         }
         return -1;
     }
 
-    if (HOPPParseType(p, &type) != 0) {
+    if (H2PParseType(p, &type) != 0) {
         return -1;
     }
 
@@ -1928,24 +1926,24 @@ static int HOPPParseParamGroup(HOPParser* p, int32_t fnNode, int* outIsVariadic)
             int32_t typeNode = -1;
             if (param == firstParam) {
                 typeNode = type;
-            } else if (HOPPCloneSubtree(p, type, &typeNode) != 0) {
+            } else if (H2PCloneSubtree(p, type, &typeNode) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, param, typeNode) != 0) {
+            if (H2PAddChild(p, param, typeNode) != 0) {
                 return -1;
             }
             if (isVariadic) {
-                p->nodes[param].flags |= HOPAstFlag_PARAM_VARIADIC;
+                p->nodes[param].flags |= H2AstFlag_PARAM_VARIADIC;
             }
             if (isConstGroup) {
-                p->nodes[param].flags |= HOPAstFlag_PARAM_CONST;
+                p->nodes[param].flags |= H2AstFlag_PARAM_CONST;
             }
             p->nodes[param].end = p->nodes[typeNode].end;
             param = nextParam;
         }
     }
 
-    if (HOPPAddChild(p, fnNode, firstParam) != 0) {
+    if (H2PAddChild(p, fnNode, firstParam) != 0) {
         return -1;
     }
     if (outIsVariadic != NULL) {
@@ -1954,34 +1952,34 @@ static int HOPPParseParamGroup(HOPParser* p, int32_t fnNode, int* outIsVariadic)
     return 0;
 }
 
-static int HOPPParseBlock(HOPParser* p, int32_t* out) {
-    const HOPToken* lb;
-    const HOPToken* rb;
-    int32_t         block;
+static int H2PParseBlock(H2Parser* p, int32_t* out) {
+    const H2Token* lb;
+    const H2Token* rb;
+    int32_t        block;
 
-    if (HOPPExpect(p, HOPTok_LBRACE, HOPDiag_UNEXPECTED_TOKEN, &lb) != 0) {
+    if (H2PExpect(p, H2Tok_LBRACE, H2Diag_UNEXPECTED_TOKEN, &lb) != 0) {
         return -1;
     }
-    block = HOPPNewNode(p, HOPAst_BLOCK, lb->start, lb->end);
+    block = H2PNewNode(p, H2Ast_BLOCK, lb->start, lb->end);
     if (block < 0) {
         return -1;
     }
 
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
         int32_t stmt = -1;
-        if (HOPPAt(p, HOPTok_SEMICOLON)) {
+        if (H2PAt(p, H2Tok_SEMICOLON)) {
             p->pos++;
             continue;
         }
-        if (HOPPParseStmt(p, &stmt) != 0) {
+        if (H2PParseStmt(p, &stmt) != 0) {
             return -1;
         }
-        if (stmt >= 0 && HOPPAddChild(p, block, stmt) != 0) {
+        if (stmt >= 0 && H2PAddChild(p, block, stmt) != 0) {
             return -1;
         }
     }
 
-    if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
     p->nodes[block].end = rb->end;
@@ -1990,37 +1988,37 @@ static int HOPPParseBlock(HOPParser* p, int32_t* out) {
 }
 
 /* Statement separators may omit trailing semicolon before closing `}`. */
-static int HOPPConsumeStmtTerminator(HOPParser* p, const HOPToken** semiTok) {
-    if (HOPPAt(p, HOPTok_SEMICOLON)) {
+static int H2PConsumeStmtTerminator(H2Parser* p, const H2Token** semiTok) {
+    if (H2PAt(p, H2Tok_SEMICOLON)) {
         if (semiTok != NULL) {
-            *semiTok = HOPPPeek(p);
+            *semiTok = H2PPeek(p);
         }
         p->pos++;
         return 1;
     }
-    if (HOPPAt(p, HOPTok_RBRACE)) {
+    if (H2PAt(p, H2Tok_RBRACE)) {
         if (semiTok != NULL) {
             *semiTok = NULL;
         }
         return 0;
     }
-    return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
 }
 
-static int HOPPParseVarLikeStmt(
-    HOPParser* p, HOPAstKind kind, int requireSemi, int allowHole, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* names[256];
-    const HOPToken* firstHole = NULL;
-    uint32_t        stmtStart = kw->start;
-    uint32_t        nameCount = 0;
-    int32_t         n;
-    int32_t         nameList = -1;
-    int32_t         type = -1;
-    int32_t         init = -1;
+static int H2PParseVarLikeStmt(
+    H2Parser* p, H2AstKind kind, int requireSemi, int allowHole, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* names[256];
+    const H2Token* firstHole = NULL;
+    uint32_t       stmtStart = kw->start;
+    uint32_t       nameCount = 0;
+    int32_t        n;
+    int32_t        nameList = -1;
+    int32_t        type = -1;
+    int32_t        init = -1;
 
     p->pos++;
-    if (HOPPParseDeclNameList(
+    if (H2PParseDeclNameList(
             p,
             allowHole,
             names,
@@ -2034,60 +2032,60 @@ static int HOPPParseVarLikeStmt(
 
     if (nameCount == 1u && firstHole != NULL) {
         int hasSemi;
-        if (!HOPPMatch(p, HOPTok_ASSIGN)) {
-            return HOPPFailReservedName(p, firstHole);
+        if (!H2PMatch(p, H2Tok_ASSIGN)) {
+            return H2PFailReservedName(p, firstHole);
         }
-        if (HOPPParseExpr(p, 1, &init) != 0) {
+        if (H2PParseExpr(p, 1, &init) != 0) {
             return -1;
         }
         if (!requireSemi) {
             *out = init;
             return 0;
         }
-        hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+        hasSemi = H2PConsumeStmtTerminator(p, &kw);
         if (hasSemi < 0) {
             return -1;
         }
-        n = HOPPNewNode(p, HOPAst_EXPR_STMT, stmtStart, hasSemi ? kw->end : p->nodes[init].end);
+        n = H2PNewNode(p, H2Ast_EXPR_STMT, stmtStart, hasSemi ? kw->end : p->nodes[init].end);
         if (n < 0) {
             return -1;
         }
-        if (HOPPAddChild(p, n, init) != 0) {
+        if (H2PAddChild(p, n, init) != 0) {
             return -1;
         }
         *out = n;
         return 0;
     }
 
-    if (HOPPMatch(p, HOPTok_ASSIGN)) {
+    if (H2PMatch(p, H2Tok_ASSIGN)) {
         if (nameCount == 1u) {
-            if (HOPPParseExpr(p, 1, &init) != 0) {
+            if (H2PParseExpr(p, 1, &init) != 0) {
                 return -1;
             }
         } else {
-            if (HOPPParseExprList(p, &init) != 0) {
+            if (H2PParseExprList(p, &init) != 0) {
                 return -1;
             }
         }
     } else {
         if (firstHole != NULL) {
-            return HOPPFailReservedName(p, firstHole);
+            return H2PFailReservedName(p, firstHole);
         }
-        if (HOPPParseType(p, &type) != 0) {
+        if (H2PParseType(p, &type) != 0) {
             return -1;
         }
-        if (HOPPMatch(p, HOPTok_ASSIGN)) {
+        if (H2PMatch(p, H2Tok_ASSIGN)) {
             if (nameCount == 1u) {
-                if (HOPPParseExpr(p, 1, &init) != 0) {
+                if (H2PParseExpr(p, 1, &init) != 0) {
                     return -1;
                 }
-            } else if (HOPPParseExprList(p, &init) != 0) {
+            } else if (H2PParseExprList(p, &init) != 0) {
                 return -1;
             }
         }
     }
 
-    n = HOPPNewNode(
+    n = H2PNewNode(
         p,
         kind,
         kw->start,
@@ -2099,26 +2097,26 @@ static int HOPPParseVarLikeStmt(
     p->nodes[n].dataStart = names[0]->start;
     p->nodes[n].dataEnd = names[0]->end;
     if (nameCount > 1u) {
-        if (HOPPBuildNameListNode(p, names, nameCount, &nameList) != 0) {
+        if (H2PBuildNameListNode(p, names, nameCount, &nameList) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, n, nameList) != 0) {
+        if (H2PAddChild(p, n, nameList) != 0) {
             return -1;
         }
     }
     if (type >= 0) {
-        if (HOPPAddChild(p, n, type) != 0) {
+        if (H2PAddChild(p, n, type) != 0) {
             return -1;
         }
     }
     if (init >= 0) {
-        if (HOPPAddChild(p, n, init) != 0) {
+        if (H2PAddChild(p, n, init) != 0) {
             return -1;
         }
     }
 
     if (requireSemi) {
-        int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+        int hasSemi = H2PConsumeStmtTerminator(p, &kw);
         if (hasSemi < 0) {
             return -1;
         }
@@ -2131,54 +2129,54 @@ static int HOPPParseVarLikeStmt(
     return 0;
 }
 
-static int HOPPIsShortAssignStart(HOPParser* p) {
+static int H2PIsShortAssignStart(H2Parser* p) {
     uint32_t i;
-    if (!HOPPAt(p, HOPTok_IDENT)) {
+    if (!H2PAt(p, H2Tok_IDENT)) {
         return 0;
     }
     i = p->pos + 1u;
     while (
-        i + 1u < p->tokLen && p->tok[i].kind == HOPTok_COMMA && p->tok[i + 1u].kind == HOPTok_IDENT)
+        i + 1u < p->tokLen && p->tok[i].kind == H2Tok_COMMA && p->tok[i + 1u].kind == H2Tok_IDENT)
     {
         i += 2u;
     }
-    return i < p->tokLen && p->tok[i].kind == HOPTok_SHORT_ASSIGN;
+    return i < p->tokLen && p->tok[i].kind == H2Tok_SHORT_ASSIGN;
 }
 
-static int HOPPParseShortAssignStmt(HOPParser* p, int requireSemi, int32_t* out) {
-    const HOPToken* names[256];
-    const HOPToken* firstHole = NULL;
-    const HOPToken* semiTok = NULL;
-    uint32_t        nameCount = 0;
-    int32_t         nameList = -1;
-    int32_t         rhsList = -1;
-    int32_t         n;
+static int H2PParseShortAssignStmt(H2Parser* p, int requireSemi, int32_t* out) {
+    const H2Token* names[256];
+    const H2Token* firstHole = NULL;
+    const H2Token* semiTok = NULL;
+    uint32_t       nameCount = 0;
+    int32_t        nameList = -1;
+    int32_t        rhsList = -1;
+    int32_t        n;
 
-    if (HOPPParseDeclNameList(
+    if (H2PParseDeclNameList(
             p, 1, names, (uint32_t)(sizeof(names) / sizeof(names[0])), &nameCount, &firstHole)
         != 0)
     {
         return -1;
     }
     (void)firstHole;
-    if (HOPPExpect(p, HOPTok_SHORT_ASSIGN, HOPDiag_UNEXPECTED_TOKEN, &semiTok) != 0) {
+    if (H2PExpect(p, H2Tok_SHORT_ASSIGN, H2Diag_UNEXPECTED_TOKEN, &semiTok) != 0) {
         return -1;
     }
-    if (HOPPParseExprList(p, &rhsList) != 0) {
+    if (H2PParseExprList(p, &rhsList) != 0) {
         return -1;
     }
-    if (HOPPBuildNameListNode(p, names, nameCount, &nameList) != 0) {
+    if (H2PBuildNameListNode(p, names, nameCount, &nameList) != 0) {
         return -1;
     }
-    n = HOPPNewNode(p, HOPAst_SHORT_ASSIGN, p->nodes[nameList].start, p->nodes[rhsList].end);
+    n = H2PNewNode(p, H2Ast_SHORT_ASSIGN, p->nodes[nameList].start, p->nodes[rhsList].end);
     if (n < 0) {
         return -1;
     }
-    if (HOPPAddChild(p, n, nameList) != 0 || HOPPAddChild(p, n, rhsList) != 0) {
+    if (H2PAddChild(p, n, nameList) != 0 || H2PAddChild(p, n, rhsList) != 0) {
         return -1;
     }
     if (requireSemi) {
-        int hasSemi = HOPPConsumeStmtTerminator(p, &semiTok);
+        int hasSemi = H2PConsumeStmtTerminator(p, &semiTok);
         if (hasSemi < 0) {
             return -1;
         }
@@ -2190,46 +2188,46 @@ static int HOPPParseShortAssignStmt(HOPParser* p, int requireSemi, int32_t* out)
     return 0;
 }
 
-static int HOPPParseIfStmt(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    int32_t         n;
-    int32_t         cond;
-    int32_t         thenBlock;
+static int H2PParseIfStmt(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    int32_t        n;
+    int32_t        cond;
+    int32_t        thenBlock;
 
     p->pos++;
-    if (HOPPParseExpr(p, 1, &cond) != 0) {
+    if (H2PParseExpr(p, 1, &cond) != 0) {
         return -1;
     }
-    if (HOPPParseBlock(p, &thenBlock) != 0) {
+    if (H2PParseBlock(p, &thenBlock) != 0) {
         return -1;
     }
 
-    n = HOPPNewNode(p, HOPAst_IF, kw->start, p->nodes[thenBlock].end);
+    n = H2PNewNode(p, H2Ast_IF, kw->start, p->nodes[thenBlock].end);
     if (n < 0) {
         return -1;
     }
-    if (HOPPAddChild(p, n, cond) != 0 || HOPPAddChild(p, n, thenBlock) != 0) {
+    if (H2PAddChild(p, n, cond) != 0 || H2PAddChild(p, n, thenBlock) != 0) {
         return -1;
     }
 
-    if (HOPPMatch(p, HOPTok_SEMICOLON) && HOPPAt(p, HOPTok_ELSE)) {
+    if (H2PMatch(p, H2Tok_SEMICOLON) && H2PAt(p, H2Tok_ELSE)) {
         /* Allow newline between `}` and `else`. */
-    } else if (p->pos > 0 && HOPPPrev(p)->kind == HOPTok_SEMICOLON && !HOPPAt(p, HOPTok_ELSE)) {
+    } else if (p->pos > 0 && H2PPrev(p)->kind == H2Tok_SEMICOLON && !H2PAt(p, H2Tok_ELSE)) {
         p->pos--;
     }
 
-    if (HOPPMatch(p, HOPTok_ELSE)) {
+    if (H2PMatch(p, H2Tok_ELSE)) {
         int32_t elseNode;
-        if (HOPPAt(p, HOPTok_IF)) {
-            if (HOPPParseIfStmt(p, &elseNode) != 0) {
+        if (H2PAt(p, H2Tok_IF)) {
+            if (H2PParseIfStmt(p, &elseNode) != 0) {
                 return -1;
             }
         } else {
-            if (HOPPParseBlock(p, &elseNode) != 0) {
+            if (H2PParseBlock(p, &elseNode) != 0) {
                 return -1;
             }
         }
-        if (HOPPAddChild(p, n, elseNode) != 0) {
+        if (H2PAddChild(p, n, elseNode) != 0) {
             return -1;
         }
         p->nodes[n].end = p->nodes[elseNode].end;
@@ -2239,14 +2237,14 @@ static int HOPPParseIfStmt(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPForStmtHeadHasInToken(HOPParser* p) {
+static int H2PForStmtHeadHasInToken(H2Parser* p) {
     uint32_t i = p->pos;
     while (i < p->tokLen) {
-        HOPTokenKind k = p->tok[i].kind;
-        if (k == HOPTok_IN) {
+        H2TokenKind k = p->tok[i].kind;
+        if (k == H2Tok_IN) {
             return 1;
         }
-        if (k == HOPTok_LBRACE || k == HOPTok_SEMICOLON || k == HOPTok_EOF) {
+        if (k == H2Tok_LBRACE || k == H2Tok_SEMICOLON || k == H2Tok_EOF) {
             break;
         }
         i++;
@@ -2254,8 +2252,8 @@ static int HOPPForStmtHeadHasInToken(HOPParser* p) {
     return 0;
 }
 
-static int HOPPNewIdentNodeFromToken(HOPParser* p, const HOPToken* tok, int32_t* out) {
-    int32_t n = HOPPNewNode(p, HOPAst_IDENT, tok->start, tok->end);
+static int H2PNewIdentNodeFromToken(H2Parser* p, const H2Token* tok, int32_t* out) {
+    int32_t n = H2PNewNode(p, H2Ast_IDENT, tok->start, tok->end);
     if (n < 0) {
         return -1;
     }
@@ -2265,76 +2263,76 @@ static int HOPPNewIdentNodeFromToken(HOPParser* p, const HOPToken* tok, int32_t*
     return 0;
 }
 
-static int HOPPParseForInKeyBinding(HOPParser* p, int32_t* outIdent, uint32_t* outFlags) {
-    const HOPToken* name = NULL;
-    int             keyRef = 0;
-    if (HOPPMatch(p, HOPTok_AND)) {
+static int H2PParseForInKeyBinding(H2Parser* p, int32_t* outIdent, uint32_t* outFlags) {
+    const H2Token* name = NULL;
+    int            keyRef = 0;
+    if (H2PMatch(p, H2Tok_AND)) {
         keyRef = 1;
     }
-    if (HOPPExpectDeclName(p, &name, 0) != 0) {
+    if (H2PExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
-    if (HOPPNewIdentNodeFromToken(p, name, outIdent) != 0) {
+    if (H2PNewIdentNodeFromToken(p, name, outIdent) != 0) {
         return -1;
     }
     if (keyRef) {
-        *outFlags |= HOPAstFlag_FOR_IN_KEY_REF;
+        *outFlags |= H2AstFlag_FOR_IN_KEY_REF;
     }
     return 0;
 }
 
-static int HOPPParseForInValueBinding(HOPParser* p, int32_t* outIdent, uint32_t* outFlags) {
-    const HOPToken* name = NULL;
-    int             byRef = 0;
-    if (HOPPMatch(p, HOPTok_AND)) {
+static int H2PParseForInValueBinding(H2Parser* p, int32_t* outIdent, uint32_t* outFlags) {
+    const H2Token* name = NULL;
+    int            byRef = 0;
+    if (H2PMatch(p, H2Tok_AND)) {
         byRef = 1;
     }
-    if (HOPPExpectDeclName(p, &name, 1) != 0) {
+    if (H2PExpectDeclName(p, &name, 1) != 0) {
         return -1;
     }
-    if (HOPPIsHoleName(p, name)) {
+    if (H2PIsHoleName(p, name)) {
         if (byRef) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
-        *outFlags |= HOPAstFlag_FOR_IN_VALUE_DISCARD;
+        *outFlags |= H2AstFlag_FOR_IN_VALUE_DISCARD;
     } else if (byRef) {
-        *outFlags |= HOPAstFlag_FOR_IN_VALUE_REF;
+        *outFlags |= H2AstFlag_FOR_IN_VALUE_REF;
     }
-    return HOPPNewIdentNodeFromToken(p, name, outIdent);
+    return H2PNewIdentNodeFromToken(p, name, outIdent);
 }
 
-static int HOPPParseForInClause(
-    HOPParser* p,
-    int32_t*   outKeyBinding,
-    int32_t*   outValueBinding,
-    int32_t*   outSourceExpr,
-    int32_t*   outBody,
-    uint32_t*  outFlags) {
+static int H2PParseForInClause(
+    H2Parser* p,
+    int32_t*  outKeyBinding,
+    int32_t*  outValueBinding,
+    int32_t*  outSourceExpr,
+    int32_t*  outBody,
+    uint32_t* outFlags) {
     uint32_t savedPos = p->pos;
     uint32_t savedNodeLen = p->nodeLen;
-    HOPDiag  savedDiag = { 0 };
+    H2Diag   savedDiag = { 0 };
     int32_t  keyBinding = -1;
     int32_t  valueBinding = -1;
     int32_t  sourceExpr = -1;
-    uint32_t forFlags = HOPAstFlag_FOR_IN;
+    uint32_t forFlags = H2AstFlag_FOR_IN;
     int32_t  body = -1;
 
     if (p->diag != NULL) {
         savedDiag = *p->diag;
     }
 
-    if (HOPPParseForInKeyBinding(p, &keyBinding, &forFlags) == 0 && HOPPMatch(p, HOPTok_COMMA)) {
-        forFlags |= HOPAstFlag_FOR_IN_HAS_KEY;
-        if (HOPPParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
+    if (H2PParseForInKeyBinding(p, &keyBinding, &forFlags) == 0 && H2PMatch(p, H2Tok_COMMA)) {
+        forFlags |= H2AstFlag_FOR_IN_HAS_KEY;
+        if (H2PParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
             return -1;
         }
-        if (!HOPPMatch(p, HOPTok_IN)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PMatch(p, H2Tok_IN)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
-        if (HOPPParseExpr(p, 1, &sourceExpr) != 0) {
+        if (H2PParseExpr(p, 1, &sourceExpr) != 0) {
             return -1;
         }
-        if (HOPPParseBlock(p, &body) != 0) {
+        if (H2PParseBlock(p, &body) != 0) {
             return -1;
         }
         *outKeyBinding = keyBinding;
@@ -2353,17 +2351,17 @@ static int HOPPParseForInClause(
 
     valueBinding = -1;
     sourceExpr = -1;
-    forFlags = HOPAstFlag_FOR_IN;
-    if (HOPPParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
+    forFlags = H2AstFlag_FOR_IN;
+    if (H2PParseForInValueBinding(p, &valueBinding, &forFlags) != 0) {
         return -1;
     }
-    if (!HOPPMatch(p, HOPTok_IN)) {
-        return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+    if (!H2PMatch(p, H2Tok_IN)) {
+        return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
     }
-    if (HOPPParseExpr(p, 1, &sourceExpr) != 0) {
+    if (H2PParseExpr(p, 1, &sourceExpr) != 0) {
         return -1;
     }
-    if (HOPPParseBlock(p, &body) != 0) {
+    if (H2PParseBlock(p, &body) != 0) {
         return -1;
     }
     *outKeyBinding = -1;
@@ -2374,31 +2372,31 @@ static int HOPPParseForInClause(
     return 0;
 }
 
-static int HOPPParseForStmt(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    int32_t         n;
-    int32_t         body;
-    int32_t         init = -1;
-    int32_t         cond = -1;
-    int32_t         post = -1;
-    int32_t         keyBinding = -1;
-    int32_t         valueBinding = -1;
-    int32_t         sourceExpr = -1;
-    uint32_t        forInFlags = 0;
-    int             isForIn = 0;
+static int H2PParseForStmt(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    int32_t        n;
+    int32_t        body;
+    int32_t        init = -1;
+    int32_t        cond = -1;
+    int32_t        post = -1;
+    int32_t        keyBinding = -1;
+    int32_t        valueBinding = -1;
+    int32_t        sourceExpr = -1;
+    uint32_t       forInFlags = 0;
+    int            isForIn = 0;
 
     p->pos++;
-    n = HOPPNewNode(p, HOPAst_FOR, kw->start, kw->end);
+    n = H2PNewNode(p, H2Ast_FOR, kw->start, kw->end);
     if (n < 0) {
         return -1;
     }
 
-    if (HOPPAt(p, HOPTok_LBRACE)) {
-        if (HOPPParseBlock(p, &body) != 0) {
+    if (H2PAt(p, H2Tok_LBRACE)) {
+        if (H2PParseBlock(p, &body) != 0) {
             return -1;
         }
-    } else if (HOPPForStmtHeadHasInToken(p)) {
-        if (HOPPParseForInClause(p, &keyBinding, &valueBinding, &sourceExpr, &body, &forInFlags)
+    } else if (H2PForStmtHeadHasInToken(p)) {
+        if (H2PParseForInClause(p, &keyBinding, &valueBinding, &sourceExpr, &body, &forInFlags)
             != 0)
         {
             return -1;
@@ -2406,33 +2404,33 @@ static int HOPPParseForStmt(HOPParser* p, int32_t* out) {
         isForIn = 1;
         p->nodes[n].flags |= forInFlags;
     } else {
-        if (HOPPAt(p, HOPTok_SEMICOLON)) {
+        if (H2PAt(p, H2Tok_SEMICOLON)) {
             p->pos++;
-        } else if (HOPPAt(p, HOPTok_VAR)) {
-            if (HOPPParseVarLikeStmt(p, HOPAst_VAR, 0, 1, &init) != 0) {
+        } else if (H2PAt(p, H2Tok_VAR)) {
+            if (H2PParseVarLikeStmt(p, H2Ast_VAR, 0, 1, &init) != 0) {
                 return -1;
             }
-        } else if (HOPPIsShortAssignStart(p)) {
-            if (HOPPParseShortAssignStmt(p, 0, &init) != 0) {
+        } else if (H2PIsShortAssignStart(p)) {
+            if (H2PParseShortAssignStmt(p, 0, &init) != 0) {
                 return -1;
             }
         } else {
-            if (HOPPParseExpr(p, 1, &init) != 0) {
+            if (H2PParseExpr(p, 1, &init) != 0) {
                 return -1;
             }
         }
 
-        if (HOPPMatch(p, HOPTok_SEMICOLON)) {
-            if (!HOPPAt(p, HOPTok_SEMICOLON)) {
-                if (HOPPParseExpr(p, 1, &cond) != 0) {
+        if (H2PMatch(p, H2Tok_SEMICOLON)) {
+            if (!H2PAt(p, H2Tok_SEMICOLON)) {
+                if (H2PParseExpr(p, 1, &cond) != 0) {
                     return -1;
                 }
             }
-            if (!HOPPMatch(p, HOPTok_SEMICOLON)) {
-                return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            if (!H2PMatch(p, H2Tok_SEMICOLON)) {
+                return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
             }
-            if (!HOPPAt(p, HOPTok_LBRACE)) {
-                if (HOPPParseExpr(p, 1, &post) != 0) {
+            if (!H2PAt(p, H2Tok_LBRACE)) {
+                if (H2PParseExpr(p, 1, &post) != 0) {
                     return -1;
                 }
             }
@@ -2441,35 +2439,35 @@ static int HOPPParseForStmt(HOPParser* p, int32_t* out) {
             init = -1;
         }
 
-        if (HOPPParseBlock(p, &body) != 0) {
+        if (H2PParseBlock(p, &body) != 0) {
             return -1;
         }
     }
 
     if (isForIn) {
-        if (keyBinding >= 0 && HOPPAddChild(p, n, keyBinding) != 0) {
+        if (keyBinding >= 0 && H2PAddChild(p, n, keyBinding) != 0) {
             return -1;
         }
-        if (valueBinding >= 0 && HOPPAddChild(p, n, valueBinding) != 0) {
+        if (valueBinding >= 0 && H2PAddChild(p, n, valueBinding) != 0) {
             return -1;
         }
-        if (sourceExpr >= 0 && HOPPAddChild(p, n, sourceExpr) != 0) {
+        if (sourceExpr >= 0 && H2PAddChild(p, n, sourceExpr) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, n, body) != 0) {
+        if (H2PAddChild(p, n, body) != 0) {
             return -1;
         }
     } else {
-        if (init >= 0 && HOPPAddChild(p, n, init) != 0) {
+        if (init >= 0 && H2PAddChild(p, n, init) != 0) {
             return -1;
         }
-        if (cond >= 0 && HOPPAddChild(p, n, cond) != 0) {
+        if (cond >= 0 && H2PAddChild(p, n, cond) != 0) {
             return -1;
         }
-        if (post >= 0 && HOPPAddChild(p, n, post) != 0) {
+        if (post >= 0 && H2PAddChild(p, n, post) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, n, body) != 0) {
+        if (H2PAddChild(p, n, body) != 0) {
             return -1;
         }
     }
@@ -2478,42 +2476,42 @@ static int HOPPParseForStmt(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* rb;
-    int32_t         sw;
-    int             sawDefault = 0;
+static int H2PParseSwitchStmt(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* rb;
+    int32_t        sw;
+    int            sawDefault = 0;
 
     p->pos++;
-    sw = HOPPNewNode(p, HOPAst_SWITCH, kw->start, kw->end);
+    sw = H2PNewNode(p, H2Ast_SWITCH, kw->start, kw->end);
     if (sw < 0) {
         return -1;
     }
 
     // Expression switch: switch <expr> { ... }
     // Condition switch:  switch { ... }
-    if (!HOPPAt(p, HOPTok_LBRACE)) {
+    if (!H2PAt(p, H2Tok_LBRACE)) {
         int32_t subject;
-        if (HOPPParseExpr(p, 1, &subject) != 0) {
+        if (H2PParseExpr(p, 1, &subject) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, sw, subject) != 0) {
+        if (H2PAddChild(p, sw, subject) != 0) {
             return -1;
         }
         p->nodes[sw].flags = 1;
     }
 
-    if (HOPPExpect(p, HOPTok_LBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_LBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
 
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-        if (HOPPMatch(p, HOPTok_SEMICOLON)) {
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+        if (H2PMatch(p, H2Tok_SEMICOLON)) {
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_CASE)) {
-            int32_t caseNode = HOPPNewNode(p, HOPAst_CASE, HOPPPrev(p)->start, HOPPPrev(p)->end);
+        if (H2PMatch(p, H2Tok_CASE)) {
+            int32_t caseNode = H2PNewNode(p, H2Ast_CASE, H2PPrev(p)->start, H2PPrev(p)->end);
             int32_t body;
             if (caseNode < 0) {
                 return -1;
@@ -2522,7 +2520,7 @@ static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
             for (;;) {
                 uint32_t savedPos = p->pos;
                 uint32_t savedNodeLen = p->nodeLen;
-                HOPDiag  savedDiag = { 0 };
+                H2Diag   savedDiag = { 0 };
                 int32_t  patternExpr = -1;
                 int32_t  patternNode = -1;
                 int32_t  aliasNode = -1;
@@ -2535,29 +2533,29 @@ static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
                  *   case Type.Variant [as alias]
                  * This avoids interpreting `as alias` as a cast in case labels.
                  */
-                if (HOPPAt(p, HOPTok_IDENT)) {
-                    const HOPToken* firstSeg = NULL;
-                    const HOPToken* seg = NULL;
-                    int             sawDot = 0;
-                    if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_EXPECTED_EXPR, &firstSeg) == 0) {
-                        patternExpr = HOPPNewNode(p, HOPAst_IDENT, firstSeg->start, firstSeg->end);
+                if (H2PAt(p, H2Tok_IDENT)) {
+                    const H2Token* firstSeg = NULL;
+                    const H2Token* seg = NULL;
+                    int            sawDot = 0;
+                    if (H2PExpect(p, H2Tok_IDENT, H2Diag_EXPECTED_EXPR, &firstSeg) == 0) {
+                        patternExpr = H2PNewNode(p, H2Ast_IDENT, firstSeg->start, firstSeg->end);
                         if (patternExpr < 0) {
                             return -1;
                         }
                         p->nodes[patternExpr].dataStart = firstSeg->start;
                         p->nodes[patternExpr].dataEnd = firstSeg->end;
-                        while (HOPPMatch(p, HOPTok_DOT)) {
+                        while (H2PMatch(p, H2Tok_DOT)) {
                             int32_t fieldExpr;
-                            if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_EXPECTED_EXPR, &seg) != 0) {
+                            if (H2PExpect(p, H2Tok_IDENT, H2Diag_EXPECTED_EXPR, &seg) != 0) {
                                 goto parse_case_label_fallback;
                             }
                             sawDot = 1;
-                            fieldExpr = HOPPNewNode(
-                                p, HOPAst_FIELD_EXPR, p->nodes[patternExpr].start, seg->end);
+                            fieldExpr = H2PNewNode(
+                                p, H2Ast_FIELD_EXPR, p->nodes[patternExpr].start, seg->end);
                             if (fieldExpr < 0) {
                                 return -1;
                             }
-                            if (HOPPAddChild(p, fieldExpr, patternExpr) != 0) {
+                            if (H2PAddChild(p, fieldExpr, patternExpr) != 0) {
                                 return -1;
                             }
                             p->nodes[fieldExpr].dataStart = seg->start;
@@ -2565,34 +2563,33 @@ static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
                             patternExpr = fieldExpr;
                         }
                         if (sawDot) {
-                            if (HOPPMatch(p, HOPTok_AS)) {
-                                const HOPToken* aliasTok;
-                                if (HOPPExpectDeclName(p, &aliasTok, 0) != 0) {
+                            if (H2PMatch(p, H2Tok_AS)) {
+                                const H2Token* aliasTok;
+                                if (H2PExpectDeclName(p, &aliasTok, 0) != 0) {
                                     goto parse_case_label_fallback;
                                 }
-                                aliasNode = HOPPNewNode(
-                                    p, HOPAst_IDENT, aliasTok->start, aliasTok->end);
+                                aliasNode = H2PNewNode(
+                                    p, H2Ast_IDENT, aliasTok->start, aliasTok->end);
                                 if (aliasNode < 0) {
                                     return -1;
                                 }
                                 p->nodes[aliasNode].dataStart = aliasTok->start;
                                 p->nodes[aliasNode].dataEnd = aliasTok->end;
                             }
-                            if (HOPPAt(p, HOPTok_COMMA) || HOPPAt(p, HOPTok_LBRACE)) {
-                                patternNode = HOPPNewNode(
+                            if (H2PAt(p, H2Tok_COMMA) || H2PAt(p, H2Tok_LBRACE)) {
+                                patternNode = H2PNewNode(
                                     p,
-                                    HOPAst_CASE_PATTERN,
+                                    H2Ast_CASE_PATTERN,
                                     p->nodes[patternExpr].start,
                                     aliasNode >= 0 ? p->nodes[aliasNode].end
                                                    : p->nodes[patternExpr].end);
                                 if (patternNode < 0) {
                                     return -1;
                                 }
-                                if (HOPPAddChild(p, patternNode, patternExpr) != 0) {
+                                if (H2PAddChild(p, patternNode, patternExpr) != 0) {
                                     return -1;
                                 }
-                                if (aliasNode >= 0 && HOPPAddChild(p, patternNode, aliasNode) != 0)
-                                {
+                                if (aliasNode >= 0 && H2PAddChild(p, patternNode, aliasNode) != 0) {
                                     return -1;
                                 }
                             }
@@ -2607,71 +2604,71 @@ static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
                     if (p->diag != NULL) {
                         *p->diag = savedDiag;
                     }
-                    if (HOPPParseExpr(p, 1, &patternExpr) != 0) {
+                    if (H2PParseExpr(p, 1, &patternExpr) != 0) {
                         return -1;
                     }
-                    patternNode = HOPPNewNode(
+                    patternNode = H2PNewNode(
                         p,
-                        HOPAst_CASE_PATTERN,
+                        H2Ast_CASE_PATTERN,
                         p->nodes[patternExpr].start,
                         p->nodes[patternExpr].end);
                     if (patternNode < 0) {
                         return -1;
                     }
-                    if (HOPPAddChild(p, patternNode, patternExpr) != 0) {
+                    if (H2PAddChild(p, patternNode, patternExpr) != 0) {
                         return -1;
                     }
                 }
 
-                if (HOPPAddChild(p, caseNode, patternNode) != 0) {
+                if (H2PAddChild(p, caseNode, patternNode) != 0) {
                     return -1;
                 }
-                if (!HOPPMatch(p, HOPTok_COMMA)) {
+                if (!H2PMatch(p, H2Tok_COMMA)) {
                     break;
                 }
             }
 
-            if (HOPPParseBlock(p, &body) != 0) {
+            if (H2PParseBlock(p, &body) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, caseNode, body) != 0) {
+            if (H2PAddChild(p, caseNode, body) != 0) {
                 return -1;
             }
             p->nodes[caseNode].end = p->nodes[body].end;
-            if (HOPPAddChild(p, sw, caseNode) != 0) {
+            if (H2PAddChild(p, sw, caseNode) != 0) {
                 return -1;
             }
             continue;
         }
 
-        if (HOPPMatch(p, HOPTok_DEFAULT)) {
+        if (H2PMatch(p, H2Tok_DEFAULT)) {
             int32_t defNode;
             int32_t body;
             if (sawDefault) {
-                return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
             }
             sawDefault = 1;
-            defNode = HOPPNewNode(p, HOPAst_DEFAULT, HOPPPrev(p)->start, HOPPPrev(p)->end);
+            defNode = H2PNewNode(p, H2Ast_DEFAULT, H2PPrev(p)->start, H2PPrev(p)->end);
             if (defNode < 0) {
                 return -1;
             }
-            if (HOPPParseBlock(p, &body) != 0) {
+            if (H2PParseBlock(p, &body) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, defNode, body) != 0) {
+            if (H2PAddChild(p, defNode, body) != 0) {
                 return -1;
             }
             p->nodes[defNode].end = p->nodes[body].end;
-            if (HOPPAddChild(p, sw, defNode) != 0) {
+            if (H2PAddChild(p, sw, defNode) != 0) {
                 return -1;
             }
             continue;
         }
 
-        return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
     }
 
-    if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
     p->nodes[sw].end = rb->end;
@@ -2679,26 +2676,26 @@ static int HOPPParseSwitchStmt(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseStmt(HOPParser* p, int32_t* out) {
-    const HOPToken* kw;
-    int32_t         n;
-    int32_t         expr;
-    int32_t         block;
+static int H2PParseStmt(H2Parser* p, int32_t* out) {
+    const H2Token* kw;
+    int32_t        n;
+    int32_t        expr;
+    int32_t        block;
 
-    switch (HOPPPeek(p)->kind) {
-        case HOPTok_VAR: return HOPPParseVarLikeStmt(p, HOPAst_VAR, 1, 1, out);
-        case HOPTok_CONST:
-            kw = HOPPPeek(p);
+    switch (H2PPeek(p)->kind) {
+        case H2Tok_VAR: return H2PParseVarLikeStmt(p, H2Ast_VAR, 1, 1, out);
+        case H2Tok_CONST:
+            kw = H2PPeek(p);
             p->pos++;
-            if (HOPPAt(p, HOPTok_LBRACE)) {
-                n = HOPPNewNode(p, HOPAst_CONST_BLOCK, kw->start, kw->end);
+            if (H2PAt(p, H2Tok_LBRACE)) {
+                n = H2PNewNode(p, H2Ast_CONST_BLOCK, kw->start, kw->end);
                 if (n < 0) {
                     return -1;
                 }
-                if (HOPPParseBlock(p, &block) != 0) {
+                if (H2PParseBlock(p, &block) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, n, block) != 0) {
+                if (H2PAddChild(p, n, block) != 0) {
                     return -1;
                 }
                 p->nodes[n].end = p->nodes[block].end;
@@ -2706,50 +2703,50 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
                 return 0;
             }
             p->pos--;
-            return HOPPParseVarLikeStmt(p, HOPAst_CONST, 1, 1, out);
-        case HOPTok_IF:     return HOPPParseIfStmt(p, out);
-        case HOPTok_FOR:    return HOPPParseForStmt(p, out);
-        case HOPTok_SWITCH: return HOPPParseSwitchStmt(p, out);
-        case HOPTok_RETURN:
-            kw = HOPPPeek(p);
+            return H2PParseVarLikeStmt(p, H2Ast_CONST, 1, 1, out);
+        case H2Tok_IF:     return H2PParseIfStmt(p, out);
+        case H2Tok_FOR:    return H2PParseForStmt(p, out);
+        case H2Tok_SWITCH: return H2PParseSwitchStmt(p, out);
+        case H2Tok_RETURN:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_RETURN, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_RETURN, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
-            if (!HOPPAt(p, HOPTok_SEMICOLON)) {
-                if (HOPPParseExpr(p, 1, &expr) != 0) {
+            if (!H2PAt(p, H2Tok_SEMICOLON)) {
+                if (H2PParseExpr(p, 1, &expr) != 0) {
                     return -1;
                 }
-                if (HOPPMatch(p, HOPTok_COMMA)) {
+                if (H2PMatch(p, H2Tok_COMMA)) {
                     int32_t  items[256];
                     uint32_t itemCount = 0;
                     int32_t  exprList;
                     items[itemCount++] = expr;
                     for (;;) {
                         if (itemCount >= (uint32_t)(sizeof(items) / sizeof(items[0]))) {
-                            return HOPPFail(p, HOPDiag_ARENA_OOM);
+                            return H2PFail(p, H2Diag_ARENA_OOM);
                         }
-                        if (HOPPParseExpr(p, 1, &items[itemCount]) != 0) {
+                        if (H2PParseExpr(p, 1, &items[itemCount]) != 0) {
                             return -1;
                         }
                         itemCount++;
-                        if (!HOPPMatch(p, HOPTok_COMMA)) {
+                        if (!H2PMatch(p, H2Tok_COMMA)) {
                             break;
                         }
                     }
-                    if (HOPPBuildListNode(p, HOPAst_EXPR_LIST, items, itemCount, &exprList) != 0) {
+                    if (H2PBuildListNode(p, H2Ast_EXPR_LIST, items, itemCount, &exprList) != 0) {
                         return -1;
                     }
                     expr = exprList;
                 }
-                if (HOPPAddChild(p, n, expr) != 0) {
+                if (H2PAddChild(p, n, expr) != 0) {
                     return -1;
                 }
                 p->nodes[n].end = p->nodes[expr].end;
             }
             {
-                int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                int hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2759,15 +2756,15 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case HOPTok_BREAK:
-            kw = HOPPPeek(p);
+        case H2Tok_BREAK:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_BREAK, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_BREAK, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
             {
-                int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                int hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2777,15 +2774,15 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case HOPTok_CONTINUE:
-            kw = HOPPPeek(p);
+        case H2Tok_CONTINUE:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_CONTINUE, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_CONTINUE, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
             {
-                int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                int hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2795,52 +2792,52 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case HOPTok_DEFER:
-            kw = HOPPPeek(p);
+        case H2Tok_DEFER:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_DEFER, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_DEFER, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAt(p, HOPTok_LBRACE)) {
-                if (HOPPParseBlock(p, &block) != 0) {
+            if (H2PAt(p, H2Tok_LBRACE)) {
+                if (H2PParseBlock(p, &block) != 0) {
                     return -1;
                 }
             } else {
-                if (HOPPParseStmt(p, &block) != 0) {
+                if (H2PParseStmt(p, &block) != 0) {
                     return -1;
                 }
             }
-            if (HOPPAddChild(p, n, block) != 0) {
+            if (H2PAddChild(p, n, block) != 0) {
                 return -1;
             }
             p->nodes[n].end = p->nodes[block].end;
             *out = n;
             return 0;
-        case HOPTok_ASSERT:
-            kw = HOPPPeek(p);
+        case H2Tok_ASSERT:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_ASSERT, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_ASSERT, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPParseExpr(p, 1, &expr) != 0) {
+            if (H2PParseExpr(p, 1, &expr) != 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, expr) != 0) {
+            if (H2PAddChild(p, n, expr) != 0) {
                 return -1;
             }
-            while (HOPPMatch(p, HOPTok_COMMA)) {
+            while (H2PMatch(p, H2Tok_COMMA)) {
                 int32_t arg;
-                if (HOPPParseExpr(p, 1, &arg) != 0) {
+                if (H2PParseExpr(p, 1, &arg) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, n, arg) != 0) {
+                if (H2PAddChild(p, n, arg) != 0) {
                     return -1;
                 }
             }
             {
-                int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                int hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2850,37 +2847,37 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case HOPTok_DEL:
-            kw = HOPPPeek(p);
+        case H2Tok_DEL:
+            kw = H2PPeek(p);
             p->pos++;
-            n = HOPPNewNode(p, HOPAst_DEL, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_DEL, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
             for (;;) {
-                if (HOPPParseExpr(p, 1, &expr) != 0) {
+                if (H2PParseExpr(p, 1, &expr) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, n, expr) != 0) {
+                if (H2PAddChild(p, n, expr) != 0) {
                     return -1;
                 }
                 p->nodes[n].end = p->nodes[expr].end;
-                if (!HOPPMatch(p, HOPTok_COMMA)) {
+                if (!H2PMatch(p, H2Tok_COMMA)) {
                     break;
                 }
             }
-            if (HOPPMatch(p, HOPTok_IN)) {
-                if (HOPPParseExpr(p, 1, &expr) != 0) {
+            if (H2PMatch(p, H2Tok_IN)) {
+                if (H2PParseExpr(p, 1, &expr) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, n, expr) != 0) {
+                if (H2PAddChild(p, n, expr) != 0) {
                     return -1;
                 }
-                p->nodes[n].flags |= HOPAstFlag_DEL_HAS_ALLOC;
+                p->nodes[n].flags |= H2AstFlag_DEL_HAS_ALLOC;
                 p->nodes[n].end = p->nodes[expr].end;
             }
             {
-                int hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                int hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2890,16 +2887,16 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case HOPTok_LBRACE: return HOPPParseBlock(p, out);
-        default:            {
+        case H2Tok_LBRACE: return H2PParseBlock(p, out);
+        default:           {
             int hasSemi;
-            if (HOPPIsShortAssignStart(p)) {
-                return HOPPParseShortAssignStmt(p, 1, out);
+            if (H2PIsShortAssignStart(p)) {
+                return H2PParseShortAssignStmt(p, 1, out);
             }
-            if (HOPPParseExpr(p, 1, &expr) != 0) {
+            if (H2PParseExpr(p, 1, &expr) != 0) {
                 return -1;
             }
-            if (HOPPMatch(p, HOPTok_COMMA)) {
+            if (H2PMatch(p, H2Tok_COMMA)) {
                 int32_t  lhsExprs[256];
                 int32_t  rhsExprs[256];
                 uint32_t lhsCount = 0;
@@ -2907,49 +2904,49 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
                 int32_t  lhsList;
                 int32_t  rhsList;
                 lhsExprs[lhsCount++] = expr;
-                if (HOPPParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
+                if (H2PParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
                     return -1;
                 }
                 lhsCount++;
-                while (HOPPMatch(p, HOPTok_COMMA)) {
+                while (H2PMatch(p, H2Tok_COMMA)) {
                     if (lhsCount >= (uint32_t)(sizeof(lhsExprs) / sizeof(lhsExprs[0]))) {
-                        return HOPPFail(p, HOPDiag_ARENA_OOM);
+                        return H2PFail(p, H2Diag_ARENA_OOM);
                     }
-                    if (HOPPParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
+                    if (H2PParseExpr(p, 2, &lhsExprs[lhsCount]) != 0) {
                         return -1;
                     }
                     lhsCount++;
                 }
-                if (!HOPPMatch(p, HOPTok_ASSIGN)) {
-                    return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                if (!H2PMatch(p, H2Tok_ASSIGN)) {
+                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
                 }
-                if (HOPPParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
+                if (H2PParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
                     return -1;
                 }
                 rhsCount++;
-                while (HOPPMatch(p, HOPTok_COMMA)) {
+                while (H2PMatch(p, H2Tok_COMMA)) {
                     if (rhsCount >= (uint32_t)(sizeof(rhsExprs) / sizeof(rhsExprs[0]))) {
-                        return HOPPFail(p, HOPDiag_ARENA_OOM);
+                        return H2PFail(p, H2Diag_ARENA_OOM);
                     }
-                    if (HOPPParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
+                    if (H2PParseExpr(p, 1, &rhsExprs[rhsCount]) != 0) {
                         return -1;
                     }
                     rhsCount++;
                 }
-                if (HOPPBuildListNode(p, HOPAst_EXPR_LIST, lhsExprs, lhsCount, &lhsList) != 0
-                    || HOPPBuildListNode(p, HOPAst_EXPR_LIST, rhsExprs, rhsCount, &rhsList) != 0)
+                if (H2PBuildListNode(p, H2Ast_EXPR_LIST, lhsExprs, lhsCount, &lhsList) != 0
+                    || H2PBuildListNode(p, H2Ast_EXPR_LIST, rhsExprs, rhsCount, &rhsList) != 0)
                 {
                     return -1;
                 }
-                n = HOPPNewNode(
-                    p, HOPAst_MULTI_ASSIGN, p->nodes[lhsList].start, p->nodes[rhsList].end);
+                n = H2PNewNode(
+                    p, H2Ast_MULTI_ASSIGN, p->nodes[lhsList].start, p->nodes[rhsList].end);
                 if (n < 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, n, lhsList) != 0 || HOPPAddChild(p, n, rhsList) != 0) {
+                if (H2PAddChild(p, n, lhsList) != 0 || H2PAddChild(p, n, rhsList) != 0) {
                     return -1;
                 }
-                hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+                hasSemi = H2PConsumeStmtTerminator(p, &kw);
                 if (hasSemi < 0) {
                     return -1;
                 }
@@ -2959,16 +2956,16 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
                 *out = n;
                 return 0;
             }
-            hasSemi = HOPPConsumeStmtTerminator(p, &kw);
+            hasSemi = H2PConsumeStmtTerminator(p, &kw);
             if (hasSemi < 0) {
                 return -1;
             }
-            n = HOPPNewNode(
-                p, HOPAst_EXPR_STMT, p->nodes[expr].start, hasSemi ? kw->end : p->nodes[expr].end);
+            n = H2PNewNode(
+                p, H2Ast_EXPR_STMT, p->nodes[expr].start, hasSemi ? kw->end : p->nodes[expr].end);
             if (n < 0) {
                 return -1;
             }
-            if (HOPPAddChild(p, n, expr) != 0) {
+            if (H2PAddChild(p, n, expr) != 0) {
                 return -1;
             }
             *out = n;
@@ -2977,58 +2974,58 @@ static int HOPPParseStmt(HOPParser* p, int32_t* out) {
     }
 }
 
-static int HOPPParseFieldList(HOPParser* p, int32_t agg) {
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-        const HOPToken* names[256];
-        uint32_t        nameCount = 0;
-        const HOPToken* embeddedTypeName = NULL;
-        int32_t         type = -1;
-        int32_t         defaultExpr = -1;
-        uint32_t        i;
-        int             isEmbedded = 0;
-        if (HOPPAt(p, HOPTok_SEMICOLON) || HOPPAt(p, HOPTok_COMMA)) {
+static int H2PParseFieldList(H2Parser* p, int32_t agg) {
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+        const H2Token* names[256];
+        uint32_t       nameCount = 0;
+        const H2Token* embeddedTypeName = NULL;
+        int32_t        type = -1;
+        int32_t        defaultExpr = -1;
+        uint32_t       i;
+        int            isEmbedded = 0;
+        if (H2PAt(p, H2Tok_SEMICOLON) || H2PAt(p, H2Tok_COMMA)) {
             p->pos++;
             continue;
         }
-        if (HOPPAnonymousFieldLookahead(p, &embeddedTypeName)
+        if (H2PAnonymousFieldLookahead(p, &embeddedTypeName)
             && !(
-                p->pos + 2u < p->tokLen && p->tok[p->pos].kind == HOPTok_IDENT
-                && p->tok[p->pos + 1u].kind == HOPTok_COMMA
-                && p->tok[p->pos + 2u].kind == HOPTok_IDENT))
+                p->pos + 2u < p->tokLen && p->tok[p->pos].kind == H2Tok_IDENT
+                && p->tok[p->pos + 1u].kind == H2Tok_COMMA
+                && p->tok[p->pos + 2u].kind == H2Tok_IDENT))
         {
-            if (HOPPParseTypeName(p, &type) != 0) {
+            if (H2PParseTypeName(p, &type) != 0) {
                 return -1;
             }
             isEmbedded = 1;
             nameCount = 1;
         } else {
-            if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+            if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
                 return -1;
             }
             nameCount++;
-            while (HOPPMatch(p, HOPTok_COMMA)) {
-                if (!HOPPAt(p, HOPTok_IDENT)) {
-                    return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            while (H2PMatch(p, H2Tok_COMMA)) {
+                if (!H2PAt(p, H2Tok_IDENT)) {
+                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
                 }
                 if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
-                    return HOPPFail(p, HOPDiag_ARENA_OOM);
+                    return H2PFail(p, H2Diag_ARENA_OOM);
                 }
-                if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+                if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
                     return -1;
                 }
                 nameCount++;
             }
-            if (HOPPParseType(p, &type) != 0) {
+            if (H2PParseType(p, &type) != 0) {
                 return -1;
             }
         }
-        if (HOPPMatch(p, HOPTok_ASSIGN)) {
+        if (H2PMatch(p, H2Tok_ASSIGN)) {
             if (!isEmbedded && nameCount > 1) {
-                const HOPToken* eq = HOPPPrev(p);
-                HOPPSetDiag(p->diag, HOPDiag_UNEXPECTED_TOKEN, eq->start, eq->end);
+                const H2Token* eq = H2PPrev(p);
+                H2PSetDiag(p->diag, H2Diag_UNEXPECTED_TOKEN, eq->start, eq->end);
                 return -1;
             }
-            if (HOPPParseExpr(p, 1, &defaultExpr) != 0) {
+            if (H2PParseExpr(p, 1, &defaultExpr) != 0) {
                 return -1;
             }
         }
@@ -3038,16 +3035,16 @@ static int HOPPParseFieldList(HOPParser* p, int32_t agg) {
             if (isEmbedded) {
                 fieldType = type;
                 if (i != 0) {
-                    return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
                 }
             } else if (i == 0) {
                 fieldType = type;
-            } else if (HOPPCloneSubtree(p, type, &fieldType) != 0) {
+            } else if (H2PCloneSubtree(p, type, &fieldType) != 0) {
                 return -1;
             }
-            field = HOPPNewNode(
+            field = H2PNewNode(
                 p,
-                HOPAst_FIELD,
+                H2Ast_FIELD,
                 isEmbedded ? p->nodes[fieldType].start : names[i]->start,
                 p->nodes[fieldType].end);
             if (field < 0) {
@@ -3056,121 +3053,121 @@ static int HOPPParseFieldList(HOPParser* p, int32_t agg) {
             if (isEmbedded) {
                 p->nodes[field].dataStart = embeddedTypeName->start;
                 p->nodes[field].dataEnd = embeddedTypeName->end;
-                p->nodes[field].flags |= HOPAstFlag_FIELD_EMBEDDED;
+                p->nodes[field].flags |= H2AstFlag_FIELD_EMBEDDED;
             } else {
                 p->nodes[field].dataStart = names[i]->start;
                 p->nodes[field].dataEnd = names[i]->end;
             }
-            if (HOPPAddChild(p, field, fieldType) != 0) {
+            if (H2PAddChild(p, field, fieldType) != 0) {
                 return -1;
             }
             if (i == 0 && defaultExpr >= 0) {
                 p->nodes[field].end = p->nodes[defaultExpr].end;
-                if (HOPPAddChild(p, field, defaultExpr) != 0) {
+                if (H2PAddChild(p, field, defaultExpr) != 0) {
                     return -1;
                 }
             }
-            if (HOPPAddChild(p, agg, field) != 0) {
+            if (H2PAddChild(p, agg, field) != 0) {
                 return -1;
             }
         }
-        if (HOPPMatch(p, HOPTok_SEMICOLON) || HOPPMatch(p, HOPTok_COMMA)) {
+        if (H2PMatch(p, H2Tok_SEMICOLON) || H2PMatch(p, H2Tok_COMMA)) {
             continue;
         }
-        if (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
     }
     return 0;
 }
 
-static int HOPPParseAggregateMemberList(HOPParser* p, int32_t agg) {
-    while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-        if (HOPPAt(p, HOPTok_SEMICOLON) || HOPPAt(p, HOPTok_COMMA)) {
+static int H2PParseAggregateMemberList(H2Parser* p, int32_t agg) {
+    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+        if (H2PAt(p, H2Tok_SEMICOLON) || H2PAt(p, H2Tok_COMMA)) {
             p->pos++;
             continue;
         }
 
-        if (HOPPAt(p, HOPTok_STRUCT) || HOPPAt(p, HOPTok_UNION) || HOPPAt(p, HOPTok_ENUM)
-            || HOPPAt(p, HOPTok_TYPE))
+        if (H2PAt(p, H2Tok_STRUCT) || H2PAt(p, H2Tok_UNION) || H2PAt(p, H2Tok_ENUM)
+            || H2PAt(p, H2Tok_TYPE))
         {
             int32_t declNode = -1;
-            if (HOPPAt(p, HOPTok_TYPE)) {
-                if (HOPPParseTypeAliasDecl(p, &declNode) != 0) {
+            if (H2PAt(p, H2Tok_TYPE)) {
+                if (H2PParseTypeAliasDecl(p, &declNode) != 0) {
                     return -1;
                 }
             } else {
-                if (HOPPParseAggregateDecl(p, &declNode) != 0) {
+                if (H2PParseAggregateDecl(p, &declNode) != 0) {
                     return -1;
                 }
             }
-            if (HOPPAddChild(p, agg, declNode) != 0) {
+            if (H2PAddChild(p, agg, declNode) != 0) {
                 return -1;
             }
-            if (HOPPMatch(p, HOPTok_SEMICOLON) || HOPPMatch(p, HOPTok_COMMA)) {
+            if (H2PMatch(p, H2Tok_SEMICOLON) || H2PMatch(p, H2Tok_COMMA)) {
                 continue;
             }
-            if (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-                return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            if (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+                return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
             }
             continue;
         }
 
-        if (HOPPAt(p, HOPTok_FN) || HOPPAt(p, HOPTok_CONST) || HOPPAt(p, HOPTok_VAR)
-            || HOPPAt(p, HOPTok_PUB))
+        if (H2PAt(p, H2Tok_FN) || H2PAt(p, H2Tok_CONST) || H2PAt(p, H2Tok_VAR)
+            || H2PAt(p, H2Tok_PUB))
         {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
 
         {
-            const HOPToken* names[256];
-            uint32_t        nameCount = 0;
-            const HOPToken* embeddedTypeName = NULL;
-            int32_t         type = -1;
-            int32_t         defaultExpr = -1;
-            uint32_t        i;
-            int             isEmbedded = 0;
+            const H2Token* names[256];
+            uint32_t       nameCount = 0;
+            const H2Token* embeddedTypeName = NULL;
+            int32_t        type = -1;
+            int32_t        defaultExpr = -1;
+            uint32_t       i;
+            int            isEmbedded = 0;
 
-            if (HOPPAnonymousFieldLookahead(p, &embeddedTypeName)
+            if (H2PAnonymousFieldLookahead(p, &embeddedTypeName)
                 && !(
-                    p->pos + 2u < p->tokLen && p->tok[p->pos].kind == HOPTok_IDENT
-                    && p->tok[p->pos + 1u].kind == HOPTok_COMMA
-                    && p->tok[p->pos + 2u].kind == HOPTok_IDENT))
+                    p->pos + 2u < p->tokLen && p->tok[p->pos].kind == H2Tok_IDENT
+                    && p->tok[p->pos + 1u].kind == H2Tok_COMMA
+                    && p->tok[p->pos + 2u].kind == H2Tok_IDENT))
             {
-                if (HOPPParseTypeName(p, &type) != 0) {
+                if (H2PParseTypeName(p, &type) != 0) {
                     return -1;
                 }
                 isEmbedded = 1;
                 nameCount = 1;
             } else {
-                if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+                if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
                     return -1;
                 }
                 nameCount++;
-                while (HOPPMatch(p, HOPTok_COMMA)) {
-                    if (!HOPPAt(p, HOPTok_IDENT)) {
-                        return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                while (H2PMatch(p, H2Tok_COMMA)) {
+                    if (!H2PAt(p, H2Tok_IDENT)) {
+                        return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
                     }
                     if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
-                        return HOPPFail(p, HOPDiag_ARENA_OOM);
+                        return H2PFail(p, H2Diag_ARENA_OOM);
                     }
-                    if (HOPPExpectDeclName(p, &names[nameCount], 0) != 0) {
+                    if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
                         return -1;
                     }
                     nameCount++;
                 }
-                if (HOPPParseType(p, &type) != 0) {
+                if (H2PParseType(p, &type) != 0) {
                     return -1;
                 }
             }
 
-            if (HOPPMatch(p, HOPTok_ASSIGN)) {
+            if (H2PMatch(p, H2Tok_ASSIGN)) {
                 if (!isEmbedded && nameCount > 1) {
-                    const HOPToken* eq = HOPPPrev(p);
-                    HOPPSetDiag(p->diag, HOPDiag_UNEXPECTED_TOKEN, eq->start, eq->end);
+                    const H2Token* eq = H2PPrev(p);
+                    H2PSetDiag(p->diag, H2Diag_UNEXPECTED_TOKEN, eq->start, eq->end);
                     return -1;
                 }
-                if (HOPPParseExpr(p, 1, &defaultExpr) != 0) {
+                if (H2PParseExpr(p, 1, &defaultExpr) != 0) {
                     return -1;
                 }
             }
@@ -3181,16 +3178,16 @@ static int HOPPParseAggregateMemberList(HOPParser* p, int32_t agg) {
                 if (isEmbedded) {
                     fieldType = type;
                     if (i != 0) {
-                        return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+                        return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
                     }
                 } else if (i == 0) {
                     fieldType = type;
-                } else if (HOPPCloneSubtree(p, type, &fieldType) != 0) {
+                } else if (H2PCloneSubtree(p, type, &fieldType) != 0) {
                     return -1;
                 }
-                field = HOPPNewNode(
+                field = H2PNewNode(
                     p,
-                    HOPAst_FIELD,
+                    H2Ast_FIELD,
                     isEmbedded ? p->nodes[fieldType].start : names[i]->start,
                     p->nodes[fieldType].end);
                 if (field < 0) {
@@ -3199,125 +3196,125 @@ static int HOPPParseAggregateMemberList(HOPParser* p, int32_t agg) {
                 if (isEmbedded) {
                     p->nodes[field].dataStart = embeddedTypeName->start;
                     p->nodes[field].dataEnd = embeddedTypeName->end;
-                    p->nodes[field].flags |= HOPAstFlag_FIELD_EMBEDDED;
+                    p->nodes[field].flags |= H2AstFlag_FIELD_EMBEDDED;
                 } else {
                     p->nodes[field].dataStart = names[i]->start;
                     p->nodes[field].dataEnd = names[i]->end;
                 }
-                if (HOPPAddChild(p, field, fieldType) != 0) {
+                if (H2PAddChild(p, field, fieldType) != 0) {
                     return -1;
                 }
                 if (i == 0 && defaultExpr >= 0) {
                     p->nodes[field].end = p->nodes[defaultExpr].end;
-                    if (HOPPAddChild(p, field, defaultExpr) != 0) {
+                    if (H2PAddChild(p, field, defaultExpr) != 0) {
                         return -1;
                     }
                 }
-                if (HOPPAddChild(p, agg, field) != 0) {
+                if (H2PAddChild(p, agg, field) != 0) {
                     return -1;
                 }
             }
         }
-        if (HOPPMatch(p, HOPTok_SEMICOLON) || HOPPMatch(p, HOPTok_COMMA)) {
+        if (H2PMatch(p, H2Tok_SEMICOLON) || H2PMatch(p, H2Tok_COMMA)) {
             continue;
         }
-        if (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+        if (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
     }
     return 0;
 }
 
-static int HOPPParseAggregateDecl(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* name;
-    const HOPToken* rb;
-    HOPAstKind      kind = HOPAst_STRUCT;
-    int32_t         n;
+static int H2PParseAggregateDecl(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* name;
+    const H2Token* rb;
+    H2AstKind      kind = H2Ast_STRUCT;
+    int32_t        n;
 
-    if (kw->kind == HOPTok_UNION) {
-        kind = HOPAst_UNION;
-    } else if (kw->kind == HOPTok_ENUM) {
-        kind = HOPAst_ENUM;
+    if (kw->kind == H2Tok_UNION) {
+        kind = H2Ast_UNION;
+    } else if (kw->kind == H2Tok_ENUM) {
+        kind = H2Ast_ENUM;
     }
 
     p->pos++;
-    if (HOPPExpectDeclName(p, &name, 0) != 0) {
+    if (H2PExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
-    n = HOPPNewNode(p, kind, kw->start, name->end);
+    n = H2PNewNode(p, kind, kw->start, name->end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = name->start;
     p->nodes[n].dataEnd = name->end;
-    if (HOPPParseTypeParamList(p, n) != 0) {
+    if (H2PParseTypeParamList(p, n) != 0) {
         return -1;
     }
 
-    if (kw->kind == HOPTok_ENUM) {
+    if (kw->kind == H2Tok_ENUM) {
         int32_t underType;
-        if (HOPPParseType(p, &underType) != 0) {
+        if (H2PParseType(p, &underType) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, n, underType) != 0) {
+        if (H2PAddChild(p, n, underType) != 0) {
             return -1;
         }
     }
 
-    if (HOPPExpect(p, HOPTok_LBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_LBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
-    if (kw->kind == HOPTok_ENUM) {
-        while (!HOPPAt(p, HOPTok_RBRACE) && !HOPPAt(p, HOPTok_EOF)) {
-            const HOPToken* itemName;
-            int32_t         item;
-            if (HOPPAt(p, HOPTok_COMMA) || HOPPAt(p, HOPTok_SEMICOLON)) {
+    if (kw->kind == H2Tok_ENUM) {
+        while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
+            const H2Token* itemName;
+            int32_t        item;
+            if (H2PAt(p, H2Tok_COMMA) || H2PAt(p, H2Tok_SEMICOLON)) {
                 p->pos++;
                 continue;
             }
-            if (HOPPExpectDeclName(p, &itemName, 0) != 0) {
+            if (H2PExpectDeclName(p, &itemName, 0) != 0) {
                 return -1;
             }
-            item = HOPPNewNode(p, HOPAst_FIELD, itemName->start, itemName->end);
+            item = H2PNewNode(p, H2Ast_FIELD, itemName->start, itemName->end);
             if (item < 0) {
                 return -1;
             }
             p->nodes[item].dataStart = itemName->start;
             p->nodes[item].dataEnd = itemName->end;
-            if (HOPPMatch(p, HOPTok_LBRACE)) {
-                if (HOPPParseFieldList(p, item) != 0) {
+            if (H2PMatch(p, H2Tok_LBRACE)) {
+                if (H2PParseFieldList(p, item) != 0) {
                     return -1;
                 }
-                if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+                if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
                     return -1;
                 }
                 p->nodes[item].end = rb->end;
             }
-            if (HOPPMatch(p, HOPTok_ASSIGN)) {
+            if (H2PMatch(p, H2Tok_ASSIGN)) {
                 int32_t vexpr;
-                if (HOPPParseExpr(p, 1, &vexpr) != 0) {
+                if (H2PParseExpr(p, 1, &vexpr) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(p, item, vexpr) != 0) {
+                if (H2PAddChild(p, item, vexpr) != 0) {
                     return -1;
                 }
                 p->nodes[item].end = p->nodes[vexpr].end;
             }
-            if (HOPPAddChild(p, n, item) != 0) {
+            if (H2PAddChild(p, n, item) != 0) {
                 return -1;
             }
-            if (HOPPMatch(p, HOPTok_COMMA) || HOPPMatch(p, HOPTok_SEMICOLON)) {
+            if (H2PMatch(p, H2Tok_COMMA) || H2PMatch(p, H2Tok_SEMICOLON)) {
                 continue;
             }
         }
     } else {
-        if (HOPPParseAggregateMemberList(p, n) != 0) {
+        if (H2PParseAggregateMemberList(p, n) != 0) {
             return -1;
         }
     }
 
-    if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &rb) != 0) {
+    if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
         return -1;
     }
     p->nodes[n].end = rb->end;
@@ -3325,78 +3322,78 @@ static int HOPPParseAggregateDecl(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseFunDecl(HOPParser* p, int allowBody, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* name;
-    const HOPToken* t;
-    int32_t         fn;
+static int H2PParseFunDecl(H2Parser* p, int allowBody, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* name;
+    const H2Token* t;
+    int32_t        fn;
 
     p->pos++;
-    if (HOPPExpectFnName(p, &name) != 0) {
+    if (H2PExpectFnName(p, &name) != 0) {
         return -1;
     }
-    fn = HOPPNewNode(p, HOPAst_FN, kw->start, name->end);
+    fn = H2PNewNode(p, H2Ast_FN, kw->start, name->end);
     if (fn < 0) {
         return -1;
     }
     p->nodes[fn].dataStart = name->start;
     p->nodes[fn].dataEnd = name->end;
-    if (HOPPParseTypeParamList(p, fn) != 0) {
+    if (H2PParseTypeParamList(p, fn) != 0) {
         return -1;
     }
-    if (HOPPExpect(p, HOPTok_LPAREN, HOPDiag_UNEXPECTED_TOKEN, &t) != 0) {
+    if (H2PExpect(p, H2Tok_LPAREN, H2Diag_UNEXPECTED_TOKEN, &t) != 0) {
         return -1;
     }
 
-    if (!HOPPAt(p, HOPTok_RPAREN)) {
+    if (!H2PAt(p, H2Tok_RPAREN)) {
         for (;;) {
             int isVariadic = 0;
-            if (HOPPParseParamGroup(p, fn, &isVariadic) != 0) {
+            if (H2PParseParamGroup(p, fn, &isVariadic) != 0) {
                 return -1;
             }
-            if (!HOPPMatch(p, HOPTok_COMMA)) {
+            if (!H2PMatch(p, H2Tok_COMMA)) {
                 break;
             }
         }
     }
 
-    if (HOPPExpect(p, HOPTok_RPAREN, HOPDiag_UNEXPECTED_TOKEN, &t) != 0) {
+    if (H2PExpect(p, H2Tok_RPAREN, H2Diag_UNEXPECTED_TOKEN, &t) != 0) {
         return -1;
     }
     p->nodes[fn].end = t->end;
 
-    if (!HOPPAt(p, HOPTok_LBRACE) && !HOPPAt(p, HOPTok_SEMICOLON)) {
-        if (HOPPAt(p, HOPTok_LPAREN)) {
-            if (HOPPParseFnResultClause(p, fn) != 0) {
+    if (!H2PAt(p, H2Tok_LBRACE) && !H2PAt(p, H2Tok_SEMICOLON)) {
+        if (H2PAt(p, H2Tok_LPAREN)) {
+            if (H2PParseFnResultClause(p, fn) != 0) {
                 return -1;
             }
         } else {
             int32_t retType;
-            if (HOPPParseType(p, &retType) != 0) {
+            if (H2PParseType(p, &retType) != 0) {
                 return -1;
             }
             p->nodes[retType].flags = 1;
-            if (HOPPAddChild(p, fn, retType) != 0) {
+            if (H2PAddChild(p, fn, retType) != 0) {
                 return -1;
             }
             p->nodes[fn].end = p->nodes[retType].end;
         }
     }
 
-    if (HOPPAt(p, HOPTok_LBRACE)) {
+    if (H2PAt(p, H2Tok_LBRACE)) {
         int32_t body;
         if (!allowBody) {
-            return HOPPFail(p, HOPDiag_UNEXPECTED_TOKEN);
+            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
         }
-        if (HOPPParseBlock(p, &body) != 0) {
+        if (H2PParseBlock(p, &body) != 0) {
             return -1;
         }
-        if (HOPPAddChild(p, fn, body) != 0) {
+        if (H2PAddChild(p, fn, body) != 0) {
             return -1;
         }
         p->nodes[fn].end = p->nodes[body].end;
     } else {
-        if (HOPPExpect(p, HOPTok_SEMICOLON, HOPDiag_UNEXPECTED_TOKEN, &t) != 0) {
+        if (H2PExpect(p, H2Tok_SEMICOLON, H2Diag_UNEXPECTED_TOKEN, &t) != 0) {
             return -1;
         }
         p->nodes[fn].end = t->end;
@@ -3406,35 +3403,35 @@ static int HOPPParseFunDecl(HOPParser* p, int allowBody, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseTypeAliasDecl(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* name;
-    const HOPToken* semi;
-    int32_t         n;
-    int32_t         targetType;
+static int H2PParseTypeAliasDecl(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* name;
+    const H2Token* semi;
+    int32_t        n;
+    int32_t        targetType;
 
     p->pos++;
-    if (HOPPExpectDeclName(p, &name, 0) != 0) {
+    if (H2PExpectDeclName(p, &name, 0) != 0) {
         return -1;
     }
-    n = HOPPNewNode(p, HOPAst_TYPE_ALIAS, kw->start, name->end);
+    n = H2PNewNode(p, H2Ast_TYPE_ALIAS, kw->start, name->end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = name->start;
     p->nodes[n].dataEnd = name->end;
-    if (HOPPParseTypeParamList(p, n) != 0) {
+    if (H2PParseTypeParamList(p, n) != 0) {
         return -1;
     }
-    if (HOPPParseType(p, &targetType) != 0) {
+    if (H2PParseType(p, &targetType) != 0) {
         return -1;
     }
     p->nodes[n].end = p->nodes[targetType].end;
-    if (HOPPAddChild(p, n, targetType) != 0) {
+    if (H2PAddChild(p, n, targetType) != 0) {
         return -1;
     }
 
-    if (HOPPExpect(p, HOPTok_SEMICOLON, HOPDiag_UNEXPECTED_TOKEN, &semi) != 0) {
+    if (H2PExpect(p, H2Tok_SEMICOLON, H2Diag_UNEXPECTED_TOKEN, &semi) != 0) {
         return -1;
     }
     p->nodes[n].end = semi->end;
@@ -3442,106 +3439,106 @@ static int HOPPParseTypeAliasDecl(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseImport(HOPParser* p, int32_t* out) {
-    const HOPToken* kw = HOPPPeek(p);
-    const HOPToken* path;
-    const HOPToken* alias = NULL;
-    int32_t         n;
+static int H2PParseImport(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* path;
+    const H2Token* alias = NULL;
+    int32_t        n;
     p->pos++;
 
-    if (HOPPExpect(p, HOPTok_STRING, HOPDiag_UNEXPECTED_TOKEN, &path) != 0) {
+    if (H2PExpect(p, H2Tok_STRING, H2Diag_UNEXPECTED_TOKEN, &path) != 0) {
         return -1;
     }
 
-    n = HOPPNewNode(p, HOPAst_IMPORT, kw->start, path->end);
+    n = H2PNewNode(p, H2Ast_IMPORT, kw->start, path->end);
     if (n < 0) {
         return -1;
     }
     p->nodes[n].dataStart = path->start;
     p->nodes[n].dataEnd = path->end;
 
-    if (HOPPMatch(p, HOPTok_AS)) {
+    if (H2PMatch(p, H2Tok_AS)) {
         int32_t aliasNode;
-        if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &alias) != 0) {
+        if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &alias) != 0) {
             return -1;
         }
-        if (HOPPReservedName(p, alias)) {
-            HOPPSetDiag(p->diag, HOPDiag_RESERVED_HOP_PREFIX, alias->start, alias->end);
+        if (H2PReservedName(p, alias)) {
+            H2PSetDiag(p->diag, H2Diag_RESERVED_HOP_PREFIX, alias->start, alias->end);
             return -1;
         }
-        aliasNode = HOPPNewNode(p, HOPAst_IDENT, alias->start, alias->end);
+        aliasNode = H2PNewNode(p, H2Ast_IDENT, alias->start, alias->end);
         if (aliasNode < 0) {
             return -1;
         }
         p->nodes[aliasNode].dataStart = alias->start;
         p->nodes[aliasNode].dataEnd = alias->end;
-        if (HOPPAddChild(p, n, aliasNode) != 0) {
+        if (H2PAddChild(p, n, aliasNode) != 0) {
             return -1;
         }
     }
 
-    if (HOPPMatch(p, HOPTok_LBRACE)) {
-        if (!HOPPAt(p, HOPTok_RBRACE)) {
+    if (H2PMatch(p, H2Tok_LBRACE)) {
+        if (!H2PAt(p, H2Tok_RBRACE)) {
             for (;;) {
-                const HOPToken* symName = NULL;
-                const HOPToken* symAlias = NULL;
-                int32_t         symNode;
+                const H2Token* symName = NULL;
+                const H2Token* symAlias = NULL;
+                int32_t        symNode;
 
-                if (HOPPAt(p, HOPTok_MUL)) {
-                    const HOPToken* starTok = HOPPPeek(p);
-                    HOPPSetDiag(
+                if (H2PAt(p, H2Tok_MUL)) {
+                    const H2Token* starTok = H2PPeek(p);
+                    H2PSetDiag(
                         p->diag,
-                        HOPDiag_IMPORT_WILDCARD_NOT_SUPPORTED,
+                        H2Diag_IMPORT_WILDCARD_NOT_SUPPORTED,
                         starTok->start,
                         starTok->end);
                     return -1;
                 }
-                if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &symName) != 0) {
+                if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &symName) != 0) {
                     return -1;
                 }
-                symNode = HOPPNewNode(p, HOPAst_IMPORT_SYMBOL, symName->start, symName->end);
+                symNode = H2PNewNode(p, H2Ast_IMPORT_SYMBOL, symName->start, symName->end);
                 if (symNode < 0) {
                     return -1;
                 }
                 p->nodes[symNode].dataStart = symName->start;
                 p->nodes[symNode].dataEnd = symName->end;
 
-                if (HOPPMatch(p, HOPTok_AS)) {
+                if (H2PMatch(p, H2Tok_AS)) {
                     int32_t symAliasNode;
-                    if (HOPPExpect(p, HOPTok_IDENT, HOPDiag_UNEXPECTED_TOKEN, &symAlias) != 0) {
+                    if (H2PExpect(p, H2Tok_IDENT, H2Diag_UNEXPECTED_TOKEN, &symAlias) != 0) {
                         return -1;
                     }
-                    if (HOPPReservedName(p, symAlias)) {
-                        HOPPSetDiag(
-                            p->diag, HOPDiag_RESERVED_HOP_PREFIX, symAlias->start, symAlias->end);
+                    if (H2PReservedName(p, symAlias)) {
+                        H2PSetDiag(
+                            p->diag, H2Diag_RESERVED_HOP_PREFIX, symAlias->start, symAlias->end);
                         return -1;
                     }
-                    symAliasNode = HOPPNewNode(p, HOPAst_IDENT, symAlias->start, symAlias->end);
+                    symAliasNode = H2PNewNode(p, H2Ast_IDENT, symAlias->start, symAlias->end);
                     if (symAliasNode < 0) {
                         return -1;
                     }
                     p->nodes[symAliasNode].dataStart = symAlias->start;
                     p->nodes[symAliasNode].dataEnd = symAlias->end;
-                    if (HOPPAddChild(p, symNode, symAliasNode) != 0) {
+                    if (H2PAddChild(p, symNode, symAliasNode) != 0) {
                         return -1;
                     }
                     p->nodes[symNode].end = symAlias->end;
                 }
 
-                if (HOPPAddChild(p, n, symNode) != 0) {
+                if (H2PAddChild(p, n, symNode) != 0) {
                     return -1;
                 }
 
-                if (!HOPPMatch(p, HOPTok_COMMA) && !HOPPMatch(p, HOPTok_SEMICOLON)) {
+                if (!H2PMatch(p, H2Tok_COMMA) && !H2PMatch(p, H2Tok_SEMICOLON)) {
                     break;
                 }
-                while (HOPPMatch(p, HOPTok_COMMA) || HOPPMatch(p, HOPTok_SEMICOLON)) {}
-                if (HOPPAt(p, HOPTok_RBRACE)) {
+                while (H2PMatch(p, H2Tok_COMMA) || H2PMatch(p, H2Tok_SEMICOLON)) {}
+                if (H2PAt(p, H2Tok_RBRACE)) {
                     break;
                 }
             }
         }
-        if (HOPPExpect(p, HOPTok_RBRACE, HOPDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+        if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &kw) != 0) {
             return -1;
         }
         p->nodes[n].end = kw->end;
@@ -3549,16 +3546,16 @@ static int HOPPParseImport(HOPParser* p, int32_t* out) {
 
     /* Detect feature imports and set feature flags using decoded import path bytes. */
     {
-        HOPStringLitErr litErr = { 0 };
-        uint8_t*        decoded = NULL;
-        uint32_t        decodedLen = 0;
-        const uint8_t*  name = NULL;
-        uint32_t        nameLen = 0;
-        if (HOPDecodeStringLiteralArena(
+        H2StringLitErr litErr = { 0 };
+        uint8_t*       decoded = NULL;
+        uint32_t       decodedLen = 0;
+        const uint8_t* name = NULL;
+        uint32_t       nameLen = 0;
+        if (H2DecodeStringLiteralArena(
                 p->arena, p->src.ptr, path->start, path->end, &decoded, &decodedLen, &litErr)
             != 0)
         {
-            HOPPSetDiag(p->diag, HOPStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+            H2PSetDiag(p->diag, H2StringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
             return -1;
         }
         if (decodedLen > 15u && memcmp(decoded, "hophop/feature/", 15u) == 0) {
@@ -3574,13 +3571,13 @@ static int HOPPParseImport(HOPParser* p, int32_t* out) {
                 && name[2] == (uint8_t)'t' && name[3] == (uint8_t)'i' && name[4] == (uint8_t)'o'
                 && name[5] == (uint8_t)'n' && name[6] == (uint8_t)'a' && name[7] == (uint8_t)'l')
             {
-                p->features |= HOPFeature_OPTIONAL;
+                p->features |= H2Feature_OPTIONAL;
             }
             /* Unknown feature names: silently ignored here; CLI layer warns later. */
         }
     }
 
-    if (HOPPExpect(p, HOPTok_SEMICOLON, HOPDiag_UNEXPECTED_TOKEN, &kw) != 0) {
+    if (H2PExpect(p, H2Tok_SEMICOLON, H2Diag_UNEXPECTED_TOKEN, &kw) != 0) {
         return -1;
     }
     p->nodes[n].end = kw->end;
@@ -3588,137 +3585,137 @@ static int HOPPParseImport(HOPParser* p, int32_t* out) {
     return 0;
 }
 
-static int HOPPParseDeclInner(HOPParser* p, int allowBody, int32_t* out) {
-    switch (HOPPPeek(p)->kind) {
-        case HOPTok_FN:   return HOPPParseFunDecl(p, allowBody, out);
-        case HOPTok_TYPE: return HOPPParseTypeAliasDecl(p, out);
-        case HOPTok_STRUCT:
-        case HOPTok_UNION:
-        case HOPTok_ENUM:
-            if (HOPPParseAggregateDecl(p, out) != 0) {
+static int H2PParseDeclInner(H2Parser* p, int allowBody, int32_t* out) {
+    switch (H2PPeek(p)->kind) {
+        case H2Tok_FN:   return H2PParseFunDecl(p, allowBody, out);
+        case H2Tok_TYPE: return H2PParseTypeAliasDecl(p, out);
+        case H2Tok_STRUCT:
+        case H2Tok_UNION:
+        case H2Tok_ENUM:
+            if (H2PParseAggregateDecl(p, out) != 0) {
                 return -1;
             }
-            if (HOPPMatch(p, HOPTok_SEMICOLON)) {
-                p->nodes[*out].end = HOPPPrev(p)->end;
+            if (H2PMatch(p, H2Tok_SEMICOLON)) {
+                p->nodes[*out].end = H2PPrev(p)->end;
             }
             return 0;
-        case HOPTok_VAR:   return HOPPParseVarLikeStmt(p, HOPAst_VAR, 1, 0, out);
-        case HOPTok_CONST: return HOPPParseVarLikeStmt(p, HOPAst_CONST, 1, 0, out);
-        default:           return HOPPFail(p, HOPDiag_EXPECTED_DECL);
+        case H2Tok_VAR:   return H2PParseVarLikeStmt(p, H2Ast_VAR, 1, 0, out);
+        case H2Tok_CONST: return H2PParseVarLikeStmt(p, H2Ast_CONST, 1, 0, out);
+        default:          return H2PFail(p, H2Diag_EXPECTED_DECL);
     }
 }
 
-static int HOPPParseDecl(HOPParser* p, int allowBody, int32_t* out) {
+static int H2PParseDecl(H2Parser* p, int allowBody, int32_t* out) {
     int      isPub = 0;
     uint32_t pubStart = 0;
-    if (HOPPMatch(p, HOPTok_PUB)) {
+    if (H2PMatch(p, H2Tok_PUB)) {
         isPub = 1;
-        pubStart = HOPPPrev(p)->start;
+        pubStart = H2PPrev(p)->start;
     }
-    if (HOPPParseDeclInner(p, allowBody, out) != 0) {
+    if (H2PParseDeclInner(p, allowBody, out) != 0) {
         return -1;
     }
     if (isPub) {
         p->nodes[*out].start = pubStart;
-        p->nodes[*out].flags |= HOPAstFlag_PUB;
+        p->nodes[*out].flags |= H2AstFlag_PUB;
     }
     return 0;
 }
 
-const char* HOPAstKindName(HOPAstKind kind) {
+const char* H2AstKindName(H2AstKind kind) {
     switch (kind) {
-        case HOPAst_FILE:              return "FILE";
-        case HOPAst_IMPORT:            return "IMPORT";
-        case HOPAst_IMPORT_SYMBOL:     return "IMPORT_SYMBOL";
-        case HOPAst_DIRECTIVE:         return "DIRECTIVE";
-        case HOPAst_PUB:               return "PUB";
-        case HOPAst_FN:                return "FN";
-        case HOPAst_PARAM:             return "PARAM";
-        case HOPAst_TYPE_PARAM:        return "TYPE_PARAM";
-        case HOPAst_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";
-        case HOPAst_TYPE_NAME:         return "TYPE_NAME";
-        case HOPAst_TYPE_PTR:          return "TYPE_PTR";
-        case HOPAst_TYPE_REF:          return "TYPE_REF";
-        case HOPAst_TYPE_MUTREF:       return "TYPE_MUTREF";
-        case HOPAst_TYPE_ARRAY:        return "TYPE_ARRAY";
-        case HOPAst_TYPE_VARRAY:       return "TYPE_VARRAY";
-        case HOPAst_TYPE_SLICE:        return "TYPE_SLICE";
-        case HOPAst_TYPE_MUTSLICE:     return "TYPE_MUTSLICE";
-        case HOPAst_TYPE_OPTIONAL:     return "TYPE_OPTIONAL";
-        case HOPAst_TYPE_FN:           return "TYPE_FN";
-        case HOPAst_TYPE_ALIAS:        return "TYPE_ALIAS";
-        case HOPAst_TYPE_ANON_STRUCT:  return "TYPE_ANON_STRUCT";
-        case HOPAst_TYPE_ANON_UNION:   return "TYPE_ANON_UNION";
-        case HOPAst_TYPE_TUPLE:        return "TYPE_TUPLE";
-        case HOPAst_STRUCT:            return "STRUCT";
-        case HOPAst_UNION:             return "UNION";
-        case HOPAst_ENUM:              return "ENUM";
-        case HOPAst_FIELD:             return "FIELD";
-        case HOPAst_BLOCK:             return "BLOCK";
-        case HOPAst_VAR:               return "VAR";
-        case HOPAst_CONST:             return "CONST";
-        case HOPAst_CONST_BLOCK:       return "CONST_BLOCK";
-        case HOPAst_IF:                return "IF";
-        case HOPAst_FOR:               return "FOR";
-        case HOPAst_SWITCH:            return "SWITCH";
-        case HOPAst_CASE:              return "CASE";
-        case HOPAst_CASE_PATTERN:      return "CASE_PATTERN";
-        case HOPAst_DEFAULT:           return "DEFAULT";
-        case HOPAst_RETURN:            return "RETURN";
-        case HOPAst_BREAK:             return "BREAK";
-        case HOPAst_CONTINUE:          return "CONTINUE";
-        case HOPAst_DEFER:             return "DEFER";
-        case HOPAst_ASSERT:            return "ASSERT";
-        case HOPAst_DEL:               return "DEL";
-        case HOPAst_EXPR_STMT:         return "EXPR_STMT";
-        case HOPAst_MULTI_ASSIGN:      return "MULTI_ASSIGN";
-        case HOPAst_SHORT_ASSIGN:      return "SHORT_ASSIGN";
-        case HOPAst_NAME_LIST:         return "NAME_LIST";
-        case HOPAst_EXPR_LIST:         return "EXPR_LIST";
-        case HOPAst_TUPLE_EXPR:        return "TUPLE_EXPR";
-        case HOPAst_TYPE_VALUE:        return "TYPE_VALUE";
-        case HOPAst_IDENT:             return "IDENT";
-        case HOPAst_INT:               return "INT";
-        case HOPAst_FLOAT:             return "FLOAT";
-        case HOPAst_STRING:            return "STRING";
-        case HOPAst_RUNE:              return "RUNE";
-        case HOPAst_BOOL:              return "BOOL";
-        case HOPAst_UNARY:             return "UNARY";
-        case HOPAst_BINARY:            return "BINARY";
-        case HOPAst_CALL:              return "CALL";
-        case HOPAst_CALL_ARG:          return "CALL_ARG";
-        case HOPAst_CALL_WITH_CONTEXT: return "CALL_WITH_CONTEXT";
-        case HOPAst_CONTEXT_OVERLAY:   return "CONTEXT_OVERLAY";
-        case HOPAst_CONTEXT_BIND:      return "CONTEXT_BIND";
-        case HOPAst_COMPOUND_LIT:      return "COMPOUND_LIT";
-        case HOPAst_COMPOUND_FIELD:    return "COMPOUND_FIELD";
-        case HOPAst_INDEX:             return "INDEX";
-        case HOPAst_FIELD_EXPR:        return "FIELD_EXPR";
-        case HOPAst_CAST:              return "CAST";
-        case HOPAst_SIZEOF:            return "SIZEOF";
-        case HOPAst_NEW:               return "NEW";
-        case HOPAst_NULL:              return "NULL";
-        case HOPAst_UNWRAP:            return "UNWRAP";
+        case H2Ast_FILE:              return "FILE";
+        case H2Ast_IMPORT:            return "IMPORT";
+        case H2Ast_IMPORT_SYMBOL:     return "IMPORT_SYMBOL";
+        case H2Ast_DIRECTIVE:         return "DIRECTIVE";
+        case H2Ast_PUB:               return "PUB";
+        case H2Ast_FN:                return "FN";
+        case H2Ast_PARAM:             return "PARAM";
+        case H2Ast_TYPE_PARAM:        return "TYPE_PARAM";
+        case H2Ast_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";
+        case H2Ast_TYPE_NAME:         return "TYPE_NAME";
+        case H2Ast_TYPE_PTR:          return "TYPE_PTR";
+        case H2Ast_TYPE_REF:          return "TYPE_REF";
+        case H2Ast_TYPE_MUTREF:       return "TYPE_MUTREF";
+        case H2Ast_TYPE_ARRAY:        return "TYPE_ARRAY";
+        case H2Ast_TYPE_VARRAY:       return "TYPE_VARRAY";
+        case H2Ast_TYPE_SLICE:        return "TYPE_SLICE";
+        case H2Ast_TYPE_MUTSLICE:     return "TYPE_MUTSLICE";
+        case H2Ast_TYPE_OPTIONAL:     return "TYPE_OPTIONAL";
+        case H2Ast_TYPE_FN:           return "TYPE_FN";
+        case H2Ast_TYPE_ALIAS:        return "TYPE_ALIAS";
+        case H2Ast_TYPE_ANON_STRUCT:  return "TYPE_ANON_STRUCT";
+        case H2Ast_TYPE_ANON_UNION:   return "TYPE_ANON_UNION";
+        case H2Ast_TYPE_TUPLE:        return "TYPE_TUPLE";
+        case H2Ast_STRUCT:            return "STRUCT";
+        case H2Ast_UNION:             return "UNION";
+        case H2Ast_ENUM:              return "ENUM";
+        case H2Ast_FIELD:             return "FIELD";
+        case H2Ast_BLOCK:             return "BLOCK";
+        case H2Ast_VAR:               return "VAR";
+        case H2Ast_CONST:             return "CONST";
+        case H2Ast_CONST_BLOCK:       return "CONST_BLOCK";
+        case H2Ast_IF:                return "IF";
+        case H2Ast_FOR:               return "FOR";
+        case H2Ast_SWITCH:            return "SWITCH";
+        case H2Ast_CASE:              return "CASE";
+        case H2Ast_CASE_PATTERN:      return "CASE_PATTERN";
+        case H2Ast_DEFAULT:           return "DEFAULT";
+        case H2Ast_RETURN:            return "RETURN";
+        case H2Ast_BREAK:             return "BREAK";
+        case H2Ast_CONTINUE:          return "CONTINUE";
+        case H2Ast_DEFER:             return "DEFER";
+        case H2Ast_ASSERT:            return "ASSERT";
+        case H2Ast_DEL:               return "DEL";
+        case H2Ast_EXPR_STMT:         return "EXPR_STMT";
+        case H2Ast_MULTI_ASSIGN:      return "MULTI_ASSIGN";
+        case H2Ast_SHORT_ASSIGN:      return "SHORT_ASSIGN";
+        case H2Ast_NAME_LIST:         return "NAME_LIST";
+        case H2Ast_EXPR_LIST:         return "EXPR_LIST";
+        case H2Ast_TUPLE_EXPR:        return "TUPLE_EXPR";
+        case H2Ast_TYPE_VALUE:        return "TYPE_VALUE";
+        case H2Ast_IDENT:             return "IDENT";
+        case H2Ast_INT:               return "INT";
+        case H2Ast_FLOAT:             return "FLOAT";
+        case H2Ast_STRING:            return "STRING";
+        case H2Ast_RUNE:              return "RUNE";
+        case H2Ast_BOOL:              return "BOOL";
+        case H2Ast_UNARY:             return "UNARY";
+        case H2Ast_BINARY:            return "BINARY";
+        case H2Ast_CALL:              return "CALL";
+        case H2Ast_CALL_ARG:          return "CALL_ARG";
+        case H2Ast_CALL_WITH_CONTEXT: return "CALL_WITH_CONTEXT";
+        case H2Ast_CONTEXT_OVERLAY:   return "CONTEXT_OVERLAY";
+        case H2Ast_CONTEXT_BIND:      return "CONTEXT_BIND";
+        case H2Ast_COMPOUND_LIT:      return "COMPOUND_LIT";
+        case H2Ast_COMPOUND_FIELD:    return "COMPOUND_FIELD";
+        case H2Ast_INDEX:             return "INDEX";
+        case H2Ast_FIELD_EXPR:        return "FIELD_EXPR";
+        case H2Ast_CAST:              return "CAST";
+        case H2Ast_SIZEOF:            return "SIZEOF";
+        case H2Ast_NEW:               return "NEW";
+        case H2Ast_NULL:              return "NULL";
+        case H2Ast_UNWRAP:            return "UNWRAP";
     }
     return "UNKNOWN";
 }
 
-static int HOPPIsSpaceButNotNewline(char c) {
+static int H2PIsSpaceButNotNewline(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
 }
 
-static int HOPPHasCodeOnLineBefore(const char* src, uint32_t lineStart, uint32_t pos) {
+static int H2PHasCodeOnLineBefore(const char* src, uint32_t lineStart, uint32_t pos) {
     uint32_t i;
     for (i = lineStart; i < pos; i++) {
         char c = src[i];
-        if (!HOPPIsSpaceButNotNewline(c)) {
+        if (!H2PIsSpaceButNotNewline(c)) {
             return 1;
         }
     }
     return 0;
 }
 
-static uint32_t HOPPFindLineStart(const char* src, uint32_t pos) {
+static uint32_t H2PFindLineStart(const char* src, uint32_t pos) {
     while (pos > 0) {
         if (src[pos - 1] == '\n') {
             break;
@@ -3728,14 +3725,14 @@ static uint32_t HOPPFindLineStart(const char* src, uint32_t pos) {
     return pos;
 }
 
-static int32_t HOPPFindPrevNodeByEnd(const HOPAst* ast, uint32_t pos) {
+static int32_t H2PFindPrevNodeByEnd(const H2Ast* ast, uint32_t pos) {
     int32_t  best = -1;
     uint32_t bestEnd = 0;
     uint32_t bestSpan = 0;
     uint32_t i;
     for (i = 0; i < ast->len; i++) {
-        const HOPAstNode* n;
-        uint32_t          span;
+        const H2AstNode* n;
+        uint32_t         span;
         if ((int32_t)i == ast->root) {
             continue;
         }
@@ -3753,14 +3750,14 @@ static int32_t HOPPFindPrevNodeByEnd(const HOPAst* ast, uint32_t pos) {
     return best;
 }
 
-static int32_t HOPPFindNextNodeByStart(const HOPAst* ast, uint32_t pos) {
+static int32_t H2PFindNextNodeByStart(const H2Ast* ast, uint32_t pos) {
     int32_t  best = -1;
     uint32_t bestStart = 0;
     uint32_t bestSpan = 0;
     uint32_t i;
     for (i = 0; i < ast->len; i++) {
-        const HOPAstNode* n;
-        uint32_t          span;
+        const H2AstNode* n;
+        uint32_t         span;
         if ((int32_t)i == ast->root) {
             continue;
         }
@@ -3778,7 +3775,7 @@ static int32_t HOPPFindNextNodeByStart(const HOPAst* ast, uint32_t pos) {
     return best;
 }
 
-static int32_t HOPPFindContainerNode(const HOPAst* ast, uint32_t pos) {
+static int32_t H2PFindContainerNode(const H2Ast* ast, uint32_t pos) {
     int32_t nodeId = ast->root;
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
@@ -3788,7 +3785,7 @@ static int32_t HOPPFindContainerNode(const HOPAst* ast, uint32_t pos) {
         int32_t  child = ast->nodes[nodeId].firstChild;
         uint32_t bestSpan = 0;
         while (child >= 0) {
-            const HOPAstNode* n = &ast->nodes[child];
+            const H2AstNode* n = &ast->nodes[child];
             if (n->start <= pos && pos <= n->end) {
                 uint32_t span = n->end >= n->start ? (n->end - n->start) : 0;
                 if (bestChild < 0 || span < bestSpan) {
@@ -3806,8 +3803,8 @@ static int32_t HOPPFindContainerNode(const HOPAst* ast, uint32_t pos) {
     return nodeId;
 }
 
-static int HOPPNextCommentRange(
-    HOPStrView src, uint32_t* ioPos, uint32_t* outStart, uint32_t* outEnd) {
+static int H2PNextCommentRange(
+    H2StrView src, uint32_t* ioPos, uint32_t* outStart, uint32_t* outEnd) {
     uint32_t pos = *ioPos;
     while (pos < src.len) {
         unsigned char c = (unsigned char)src.ptr[pos];
@@ -3906,19 +3903,19 @@ static int HOPPNextCommentRange(
     return 0;
 }
 
-static int HOPPCollectFormattingData(
-    HOPArena*       arena,
-    HOPStrView      src,
-    const HOPAst*   ast,
-    HOPParseExtras* outExtras,
-    HOPDiag* _Nullable diag) {
-    HOPComment* comments;
-    uint32_t    count = 0;
-    uint32_t    pos = 0;
+static int H2PCollectFormattingData(
+    H2Arena*       arena,
+    H2StrView      src,
+    const H2Ast*   ast,
+    H2ParseExtras* outExtras,
+    H2Diag* _Nullable diag) {
+    H2Comment* comments;
+    uint32_t   count = 0;
+    uint32_t   pos = 0;
     for (;;) {
         uint32_t start;
         uint32_t end;
-        if (!HOPPNextCommentRange(src, &pos, &start, &end)) {
+        if (!H2PNextCommentRange(src, &pos, &start, &end)) {
             break;
         }
         count++;
@@ -3929,10 +3926,10 @@ static int HOPPCollectFormattingData(
         return 0;
     }
 
-    comments = (HOPComment*)HOPArenaAlloc(
-        arena, count * (uint32_t)sizeof(HOPComment), (uint32_t)_Alignof(HOPComment));
+    comments = (H2Comment*)H2ArenaAlloc(
+        arena, count * (uint32_t)sizeof(H2Comment), (uint32_t)_Alignof(H2Comment));
     if (comments == NULL) {
-        HOPPSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2PSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
 
@@ -3945,13 +3942,13 @@ static int HOPPCollectFormattingData(
         int32_t  prevNode;
         int32_t  nextNode;
         int32_t  containerNode;
-        if (!HOPPNextCommentRange(src, &pos, &start, &end)) {
+        if (!H2PNextCommentRange(src, &pos, &start, &end)) {
             break;
         }
-        lineStart = HOPPFindLineStart(src.ptr, start);
-        prevNode = HOPPFindPrevNodeByEnd(ast, start);
-        nextNode = HOPPFindNextNodeByStart(ast, end);
-        containerNode = HOPPFindContainerNode(ast, start);
+        lineStart = H2PFindLineStart(src.ptr, start);
+        prevNode = H2PFindPrevNodeByEnd(ast, start);
+        nextNode = H2PFindNextNodeByStart(ast, end);
+        containerNode = H2PFindContainerNode(ast, start);
 
         comments[count].start = start;
         comments[count].end = end;
@@ -3968,22 +3965,22 @@ static int HOPPCollectFormattingData(
         }
         comments[count].containerNode = containerNode;
         comments[count].anchorNode = -1;
-        comments[count].attachment = HOPCommentAttachment_FLOATING;
+        comments[count].attachment = H2CommentAttachment_FLOATING;
         comments[count]._reserved[0] = 0;
         comments[count]._reserved[1] = 0;
         comments[count]._reserved[2] = 0;
 
-        if (HOPPHasCodeOnLineBefore(src.ptr, lineStart, start)) {
-            comments[count].attachment = HOPCommentAttachment_TRAILING;
+        if (H2PHasCodeOnLineBefore(src.ptr, lineStart, start)) {
+            comments[count].attachment = H2CommentAttachment_TRAILING;
             comments[count].anchorNode = prevNode >= 0 ? prevNode : containerNode;
         } else if (nextNode >= 0) {
-            comments[count].attachment = HOPCommentAttachment_LEADING;
+            comments[count].attachment = H2CommentAttachment_LEADING;
             comments[count].anchorNode = nextNode;
         } else if (prevNode >= 0) {
-            comments[count].attachment = HOPCommentAttachment_TRAILING;
+            comments[count].attachment = H2CommentAttachment_TRAILING;
             comments[count].anchorNode = prevNode;
         } else {
-            comments[count].attachment = HOPCommentAttachment_FLOATING;
+            comments[count].attachment = H2CommentAttachment_FLOATING;
             comments[count].anchorNode = containerNode;
         }
         count++;
@@ -3994,20 +3991,20 @@ static int HOPPCollectFormattingData(
     return 0;
 }
 
-int HOPParse(
-    HOPArena*  arena,
-    HOPStrView src,
-    const HOPParseOptions* _Nullable options,
-    HOPAst* out,
-    HOPParseExtras* _Nullable outExtras,
-    HOPDiag* _Nullable diag) {
-    HOPTokenStream ts;
-    HOPParser      p;
-    int32_t        root;
-    uint32_t       parseFlags = options != NULL ? options->flags : 0;
+int H2Parse(
+    H2Arena*  arena,
+    H2StrView src,
+    const H2ParseOptions* _Nullable options,
+    H2Ast* out,
+    H2ParseExtras* _Nullable outExtras,
+    H2Diag* _Nullable diag) {
+    H2TokenStream ts;
+    H2Parser      p;
+    int32_t       root;
+    uint32_t      parseFlags = options != NULL ? options->flags : 0;
 
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     if (outExtras != NULL) {
         outExtras->comments = NULL;
@@ -4016,9 +4013,9 @@ int HOPParse(
     out->nodes = NULL;
     out->len = 0;
     out->root = -1;
-    out->features = HOPFeature_NONE;
+    out->features = H2Feature_NONE;
 
-    if (HOPLex(arena, src, &ts, diag) != 0) {
+    if (H2Lex(arena, src, &ts, diag) != 0) {
         return -1;
     }
 
@@ -4030,56 +4027,56 @@ int HOPParse(
     p.nodeLen = 0;
     p.nodeCap = ts.len * 4u + 16u;
     p.diag = diag;
-    p.features = HOPFeature_NONE;
-    p.nodes = (HOPAstNode*)HOPArenaAlloc(
-        arena, p.nodeCap * (uint32_t)sizeof(HOPAstNode), (uint32_t)_Alignof(HOPAstNode));
+    p.features = H2Feature_NONE;
+    p.nodes = (H2AstNode*)H2ArenaAlloc(
+        arena, p.nodeCap * (uint32_t)sizeof(H2AstNode), (uint32_t)_Alignof(H2AstNode));
     if (p.nodes == NULL) {
-        HOPPSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2PSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
 
-    root = HOPPNewNode(&p, HOPAst_FILE, 0, src.len);
+    root = H2PNewNode(&p, H2Ast_FILE, 0, src.len);
     if (root < 0) {
         return -1;
     }
 
-    while (HOPPAt(&p, HOPTok_IMPORT)) {
+    while (H2PAt(&p, H2Tok_IMPORT)) {
         int32_t imp;
-        if (HOPPParseImport(&p, &imp) != 0) {
+        if (H2PParseImport(&p, &imp) != 0) {
             return -1;
         }
-        if (HOPPAddChild(&p, root, imp) != 0) {
+        if (H2PAddChild(&p, root, imp) != 0) {
             return -1;
         }
     }
 
-    while (!HOPPAt(&p, HOPTok_EOF)) {
+    while (!H2PAt(&p, H2Tok_EOF)) {
         int32_t decl;
-        if (HOPPAt(&p, HOPTok_SEMICOLON)) {
+        if (H2PAt(&p, H2Tok_SEMICOLON)) {
             p.pos++;
             continue;
         }
         for (;;) {
-            if (HOPPAt(&p, HOPTok_SEMICOLON)) {
+            if (H2PAt(&p, H2Tok_SEMICOLON)) {
                 p.pos++;
                 continue;
             }
-            if (HOPPAt(&p, HOPTok_AT)) {
+            if (H2PAt(&p, H2Tok_AT)) {
                 int32_t directive;
-                if (HOPPParseDirective(&p, &directive) != 0) {
+                if (H2PParseDirective(&p, &directive) != 0) {
                     return -1;
                 }
-                if (HOPPAddChild(&p, root, directive) != 0) {
+                if (H2PAddChild(&p, root, directive) != 0) {
                     return -1;
                 }
                 continue;
             }
             break;
         }
-        if (HOPPParseDecl(&p, 1, &decl) != 0) {
+        if (H2PParseDecl(&p, 1, &decl) != 0) {
             return -1;
         }
-        if (HOPPAddChild(&p, root, decl) != 0) {
+        if (H2PAddChild(&p, root, decl) != 0) {
             return -1;
         }
     }
@@ -4088,12 +4085,12 @@ int HOPParse(
     out->len = p.nodeLen;
     out->root = root;
     out->features = p.features;
-    if ((parseFlags & HOPParseFlag_COLLECT_FORMATTING) != 0 && outExtras != NULL
-        && HOPPCollectFormattingData(arena, src, out, outExtras, diag) != 0)
+    if ((parseFlags & H2ParseFlag_COLLECT_FORMATTING) != 0 && outExtras != NULL
+        && H2PCollectFormattingData(arena, src, out, outExtras, diag) != 0)
     {
         return -1;
     }
     return 0;
 }
 
-HOP_API_END
+H2_API_END

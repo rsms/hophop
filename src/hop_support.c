@@ -23,16 +23,16 @@
 #include "mir_lower_stmt.h"
 #include "hop_internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-int ASTFirstChild(const HOPAst* ast, int32_t nodeId) {
+int ASTFirstChild(const H2Ast* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     return ast->nodes[nodeId].firstChild;
 }
 
-int ASTNextSibling(const HOPAst* ast, int32_t nodeId) {
+int ASTNextSibling(const H2Ast* ast, int32_t nodeId) {
     if (nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
@@ -58,8 +58,8 @@ const char* DisplayPath(const char* path) {
 static void DiagOffsetToLineCol(
     const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol);
 
-static const char* DiagIdOrFallback(HOPDiagCode code) {
-    const char* id = HOPDiagId(code);
+static const char* DiagIdOrFallback(H2DiagCode code) {
+    const char* id = H2DiagId(code);
     if (id == NULL || id[0] == '\0') {
         return "HOP0000";
     }
@@ -90,12 +90,12 @@ int Errorf(
 int ErrorDiagf(
     const char* file,
     const char* _Nullable source,
-    uint32_t    start,
-    uint32_t    end,
-    HOPDiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    H2DiagCode code,
     ...) {
     va_list     ap;
-    const char* fmt = HOPDiagMessage(code);
+    const char* fmt = H2DiagMessage(code);
     uint32_t    line = start;
     uint32_t    col = end;
     if (source != NULL) {
@@ -133,11 +133,11 @@ int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr) {
     return cstr[i] == '\0';
 }
 
-int IsFnReturnTypeNodeKind(HOPAstKind kind) {
-    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
-        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
-        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
-        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_TUPLE;
+int IsFnReturnTypeNodeKind(H2AstKind kind) {
+    return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
+        || kind == H2Ast_TYPE_MUTREF || kind == H2Ast_TYPE_ARRAY || kind == H2Ast_TYPE_VARRAY
+        || kind == H2Ast_TYPE_SLICE || kind == H2Ast_TYPE_MUTSLICE || kind == H2Ast_TYPE_OPTIONAL
+        || kind == H2Ast_TYPE_FN || kind == H2Ast_TYPE_TUPLE;
 }
 
 int SliceEqSlice(
@@ -159,7 +159,7 @@ int SliceEqSlice(
     return 1;
 }
 
-char* _Nullable HOPCDupCStr(const char* s) {
+char* _Nullable H2CDupCStr(const char* s) {
     size_t n = strlen(s);
     char*  out = (char*)malloc(n + 1u);
     if (out == NULL) {
@@ -169,7 +169,7 @@ char* _Nullable HOPCDupCStr(const char* s) {
     return out;
 }
 
-char* _Nullable HOPCDupSlice(const char* s, uint32_t start, uint32_t end) {
+char* _Nullable H2CDupSlice(const char* s, uint32_t start, uint32_t end) {
     uint32_t len;
     char*    out;
     if (end < start) {
@@ -365,14 +365,14 @@ static void DiagOffsetToLineCol(
 static int PrintHOPDiagEx(
     const char* filename,
     const char* _Nullable source,
-    const HOPDiag* diag,
-    int            includeHint,
-    int            useLineCol,
-    int            useIdentifierWording) {
-    const char* msg = HOPDiagMessage(diag->code);
-    uint8_t     argCount = HOPDiagArgCount(diag->code);
+    const H2Diag* diag,
+    int           includeHint,
+    int           useLineCol,
+    int           useIdentifierWording) {
+    const char* msg = H2DiagMessage(diag->code);
+    uint8_t     argCount = H2DiagArgCount(diag->code);
     const char* diagId = DiagIdOrFallback(diag->code);
-    const char* severity = diag->type == HOPDiagType_WARNING ? "warning" : "error";
+    const char* severity = diag->type == H2DiagType_WARNING ? "warning" : "error";
     const char* hint;
     uint32_t    sourceLen = source != NULL ? (uint32_t)strlen(source) : 0u;
     uint32_t    spanStart = diag->start;
@@ -415,10 +415,10 @@ static int PrintHOPDiagEx(
 
     fprintf(stderr, "%s:%u:%u: %s: %s: ", DisplayPath(filename), locA, locB, severity, diagId);
 
-    if (useIdentifierWording && diag->code == HOPDiag_UNKNOWN_SYMBOL && source != NULL
+    if (useIdentifierWording && diag->code == H2Diag_UNKNOWN_SYMBOL && source != NULL
         && spanEnd > spanStart)
     {
-        char* ident = HOPCDupSlice(source, spanStart, spanEnd);
+        char* ident = H2CDupSlice(source, spanStart, spanEnd);
         if (ident != NULL) {
             fprintf(stderr, "unknown identifier '%s'", ident);
             free(ident);
@@ -430,9 +430,9 @@ static int PrintHOPDiagEx(
     } else if (argCount == 1) {
         char* arg = NULL;
         if (source != NULL && argEnd > argStart) {
-            arg = HOPCDupSlice(source, argStart, argEnd);
+            arg = H2CDupSlice(source, argStart, argEnd);
         } else {
-            arg = HOPCDupCStr("");
+            arg = H2CDupCStr("");
         }
         if (arg == NULL) {
             fputs(msg, stderr);
@@ -444,13 +444,13 @@ static int PrintHOPDiagEx(
         fputs(msg, stderr);
     }
     if (diag->detail != NULL && diag->detail[0] != '\0') {
-        if (diag->code == HOPDiag_SWITCH_MISSING_CASES) {
+        if (diag->code == H2Diag_SWITCH_MISSING_CASES) {
             fprintf(stderr, " %s", diag->detail);
         } else {
             fprintf(stderr, ": %s", diag->detail);
         }
     }
-    if (diag->code == HOPDiag_ARENA_OOM && diag->argEnd > 0) {
+    if (diag->code == H2Diag_ARENA_OOM && diag->argEnd > 0) {
         fprintf(
             stderr,
             " (used %u / %u bytes, %.1f%%)",
@@ -463,7 +463,7 @@ static int PrintHOPDiagEx(
     (void)includeHint;
     hint = (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
              ? diag->hintOverride
-             : HOPDiagHint(diag->code);
+             : H2DiagHint(diag->code);
     if (hint != NULL) {
         fprintf(
             stderr,
@@ -474,22 +474,22 @@ static int PrintHOPDiagEx(
             diagId,
             hint);
     }
-    return diag->type == HOPDiagType_WARNING ? 0 : -1;
+    return diag->type == H2DiagType_WARNING ? 0 : -1;
 }
 
 int PrintHOPDiag(
-    const char* filename, const char* _Nullable source, const HOPDiag* diag, int includeHint) {
+    const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint) {
     return PrintHOPDiagEx(filename, source, diag, includeHint, 1, 1);
 }
 
 int PrintHOPDiagLineCol(
-    const char* filename, const char* _Nullable source, const HOPDiag* diag, int includeHint) {
+    const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint) {
     return PrintHOPDiagEx(filename, source, diag, includeHint, 1, 1);
 }
 
-uint32_t ArenaBytesUsed(const HOPArena* arena) {
-    const HOPArenaBlock* block;
-    uint64_t             sum = 0;
+uint32_t ArenaBytesUsed(const H2Arena* arena) {
+    const H2ArenaBlock* block;
+    uint64_t            sum = 0;
     if (arena == NULL) {
         return 0;
     }
@@ -501,9 +501,9 @@ uint32_t ArenaBytesUsed(const HOPArena* arena) {
     return sum > UINT32_MAX ? UINT32_MAX : (uint32_t)sum;
 }
 
-uint32_t ArenaBytesCapacity(const HOPArena* arena) {
-    const HOPArenaBlock* block;
-    uint64_t             sum = 0;
+uint32_t ArenaBytesCapacity(const H2Arena* arena) {
+    const H2ArenaBlock* block;
+    uint64_t            sum = 0;
     if (arena == NULL) {
         return 0;
     }
@@ -516,28 +516,28 @@ uint32_t ArenaBytesCapacity(const HOPArena* arena) {
 }
 
 int ArenaDebugEnabled(void) {
-    const char* s = getenv("HOP_ARENA_DEBUG");
+    const char* s = getenv("H2_ARENA_DEBUG");
     return s != NULL && s[0] != '\0' && s[0] != '0';
 }
 
-int CompactAstInArena(HOPArena* arena, HOPAst* ast) {
-    uint32_t    bytes;
-    HOPAstNode* compactNodes;
-    HOPAstNode* temp;
+int CompactAstInArena(H2Arena* arena, H2Ast* ast) {
+    uint32_t   bytes;
+    H2AstNode* compactNodes;
+    H2AstNode* temp;
     if (arena == NULL || ast == NULL || ast->nodes == NULL || ast->len == 0) {
         return 0;
     }
-    if (ast->len > UINT32_MAX / (uint32_t)sizeof(HOPAstNode)) {
+    if (ast->len > UINT32_MAX / (uint32_t)sizeof(H2AstNode)) {
         return -1;
     }
-    bytes = ast->len * (uint32_t)sizeof(HOPAstNode);
-    temp = (HOPAstNode*)malloc(bytes);
+    bytes = ast->len * (uint32_t)sizeof(H2AstNode);
+    temp = (H2AstNode*)malloc(bytes);
     if (temp == NULL) {
         return -1;
     }
     memcpy(temp, ast->nodes, bytes);
-    HOPArenaReset(arena);
-    compactNodes = (HOPAstNode*)HOPArenaAlloc(arena, bytes, (uint32_t)_Alignof(HOPAstNode));
+    H2ArenaReset(arena);
+    compactNodes = (H2AstNode*)H2ArenaAlloc(arena, bytes, (uint32_t)_Alignof(H2AstNode));
     if (compactNodes == NULL) {
         free(temp);
         return -1;
@@ -589,7 +589,7 @@ int EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize) {
     return 0;
 }
 
-void CombinedSourceMapFree(HOPCombinedSourceMap* map) {
+void CombinedSourceMapFree(H2CombinedSourceMap* map) {
     if (map == NULL) {
         return;
     }
@@ -600,18 +600,17 @@ void CombinedSourceMapFree(HOPCombinedSourceMap* map) {
 }
 
 int CombinedSourceMapAdd(
-    HOPCombinedSourceMap* map,
-    uint32_t              combinedStart,
-    uint32_t              combinedEnd,
-    uint32_t              sourceStart,
-    uint32_t              sourceEnd,
-    uint32_t              fileIndex,
-    int32_t               nodeId) {
+    H2CombinedSourceMap* map,
+    uint32_t             combinedStart,
+    uint32_t             combinedEnd,
+    uint32_t             sourceStart,
+    uint32_t             sourceEnd,
+    uint32_t             fileIndex,
+    int32_t              nodeId) {
     if (map == NULL) {
         return 0;
     }
-    if (EnsureCap((void**)&map->spans, &map->cap, map->len + 1u, sizeof(HOPCombinedSourceSpan))
-        != 0)
+    if (EnsureCap((void**)&map->spans, &map->cap, map->len + 1u, sizeof(H2CombinedSourceSpan)) != 0)
     {
         return -1;
     }
@@ -626,17 +625,17 @@ int CombinedSourceMapAdd(
 }
 
 int RemapCombinedOffset(
-    const HOPCombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex) {
+    const H2CombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex) {
     uint32_t i;
     if (map == NULL || outOffset == NULL || outFileIndex == NULL) {
         return 0;
     }
     for (i = 0; i < map->len; i++) {
-        const HOPCombinedSourceSpan* s = &map->spans[i];
-        uint32_t                     combinedLen;
-        uint32_t                     sourceLen;
-        uint32_t                     rel;
-        uint32_t                     mapped;
+        const H2CombinedSourceSpan* s = &map->spans[i];
+        uint32_t                    combinedLen;
+        uint32_t                    sourceLen;
+        uint32_t                    rel;
+        uint32_t                    mapped;
         if (offset < s->combinedStart || offset > s->combinedEnd) {
             continue;
         }
@@ -665,12 +664,12 @@ int RemapCombinedOffset(
 }
 
 void RemapCombinedDiag(
-    const HOPCombinedSourceMap* map,
-    const HOPDiag*              diagIn,
-    HOPDiag*                    diagOut,
-    uint32_t*                   outFileIndex,
+    const H2CombinedSourceMap* map,
+    const H2Diag*              diagIn,
+    H2Diag*                    diagOut,
+    uint32_t*                  outFileIndex,
     const char* _Nullable source,
-    HOPRemapDiagStatus* _Nullable outStatus) {
+    H2RemapDiagStatus* _Nullable outStatus) {
     uint32_t fileIndexStart = 0;
     uint32_t fileIndexEnd = 0;
     int      startMapped;
@@ -717,19 +716,19 @@ void RemapCombinedDiag(
             diagOut->argEnd = diagIn->argEnd;
         }
         if (source != NULL
-            && (diagOut->code == HOPDiag_UNUSED_FUNCTION || diagOut->code == HOPDiag_UNUSED_VARIABLE
-                || diagOut->code == HOPDiag_UNUSED_VARIABLE_NEVER_READ
-                || diagOut->code == HOPDiag_UNUSED_PARAMETER
-                || diagOut->code == HOPDiag_UNUSED_PARAMETER_NEVER_READ
-                || diagOut->code == HOPDiag_LOCAL_PTR_REF_UNINIT
-                || diagOut->code == HOPDiag_LOCAL_PTR_REF_MAYBE_UNINIT
-                || diagOut->code == HOPDiag_CONST_PARAM_ARG_NOT_CONST
-                || diagOut->code == HOPDiag_CONST_PARAM_SPREAD_NOT_CONST)
+            && (diagOut->code == H2Diag_UNUSED_FUNCTION || diagOut->code == H2Diag_UNUSED_VARIABLE
+                || diagOut->code == H2Diag_UNUSED_VARIABLE_NEVER_READ
+                || diagOut->code == H2Diag_UNUSED_PARAMETER
+                || diagOut->code == H2Diag_UNUSED_PARAMETER_NEVER_READ
+                || diagOut->code == H2Diag_LOCAL_PTR_REF_UNINIT
+                || diagOut->code == H2Diag_LOCAL_PTR_REF_MAYBE_UNINIT
+                || diagOut->code == H2Diag_CONST_PARAM_ARG_NOT_CONST
+                || diagOut->code == H2Diag_CONST_PARAM_SPREAD_NOT_CONST)
             && diagOut->argEnd > diagOut->argStart)
         {
             int normalized = NormalizeIdentifierTokenSpan(
                 source, diagOut->argStart, diagOut->argEnd, &diagOut->argStart, &diagOut->argEnd);
-            if (!normalized && diagOut->code == HOPDiag_UNUSED_FUNCTION) {
+            if (!normalized && diagOut->code == H2Diag_UNUSED_FUNCTION) {
                 (void)NormalizeIdentifierAdjacentSpan(
                     source,
                     diagOut->argStart,
@@ -739,14 +738,13 @@ void RemapCombinedDiag(
             }
         }
     }
-    if (source != NULL && diagOut->code == HOPDiag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start)
-    {
+    if (source != NULL && diagOut->code == H2Diag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start) {
         (void)NormalizeUnknownIdentifierSpan(
             source, diagOut->start, diagOut->end, &diagOut->start, &diagOut->end);
     }
 }
 
-int SBReserve(HOPStringBuilder* b, uint32_t extra) {
+int SBReserve(H2StringBuilder* b, uint32_t extra) {
     uint32_t need;
     char*    newPtr;
     if (UINT32_MAX - b->len < extra + 1u) {
@@ -767,7 +765,7 @@ int SBReserve(HOPStringBuilder* b, uint32_t extra) {
     return 0;
 }
 
-int SBAppend(HOPStringBuilder* b, const char* s, uint32_t len) {
+int SBAppend(H2StringBuilder* b, const char* s, uint32_t len) {
     if (b == NULL || len == 0) {
         return 0;
     }
@@ -783,21 +781,21 @@ int SBAppend(HOPStringBuilder* b, const char* s, uint32_t len) {
     return 0;
 }
 
-int SBAppendCStr(HOPStringBuilder* b, const char* _Nullable s) {
+int SBAppendCStr(H2StringBuilder* b, const char* _Nullable s) {
     if (s == NULL) {
         return -1;
     }
     return SBAppend(b, s, (uint32_t)strlen(s));
 }
 
-int SBAppendSlice(HOPStringBuilder* b, const char* s, uint32_t start, uint32_t end) {
+int SBAppendSlice(H2StringBuilder* b, const char* s, uint32_t start, uint32_t end) {
     if (end < start) {
         return -1;
     }
     return SBAppend(b, s + start, end - start);
 }
 
-char* _Nullable SBFinish(HOPStringBuilder* b, uint32_t* _Nullable outLen) {
+char* _Nullable SBFinish(H2StringBuilder* b, uint32_t* _Nullable outLen) {
     char* out;
     if (b->v == NULL) {
         out = (char*)malloc(1u);
@@ -852,11 +850,11 @@ char* _Nullable DirNameDup(const char* path) {
     char*       out;
     size_t      len;
     if (slash == NULL) {
-        return HOPCDupCStr(".");
+        return H2CDupCStr(".");
     }
     len = (size_t)(slash - path);
     if (len == 0) {
-        return HOPCDupCStr("/");
+        return H2CDupCStr("/");
     }
     out = (char*)malloc(len + 1u);
     if (out == NULL) {
@@ -957,7 +955,7 @@ char* _Nullable MakeAbsolutePathDup(const char* path) {
         return NULL;
     }
     if (path[0] == '/') {
-        return HOPCDupCStr(path);
+        return H2CDupCStr(path);
     }
     if (getcwd(cwd, sizeof(cwd)) == NULL) {
         return NULL;
@@ -980,7 +978,7 @@ char* _Nullable BuildSanitizedIdent(const char* s, const char* fallback) {
     size_t len;
     char*  out;
     if (s == NULL || s[0] == '\0') {
-        return HOPCDupCStr(fallback);
+        return H2CDupCStr(fallback);
     }
     len = strlen(s);
     out = (char*)malloc(len + 2u);
@@ -1005,7 +1003,7 @@ char* _Nullable BuildSanitizedIdent(const char* s, const char* fallback) {
     }
     if (out[0] == '\0') {
         free(out);
-        return HOPCDupCStr(fallback);
+        return H2CDupCStr(fallback);
     }
     return out;
 }
@@ -1059,9 +1057,9 @@ int IsReservedHOPPrefixName(const char* s) {
 char* _Nullable BaseNameDup(const char* path) {
     const char* slash = strrchr(path, '/');
     if (slash == NULL || slash[1] == '\0') {
-        return HOPCDupCStr(path);
+        return H2CDupCStr(path);
     }
-    return HOPCDupCStr(slash + 1);
+    return H2CDupCStr(slash + 1);
 }
 
 char* _Nullable LastPathComponentDup(const char* path) {
@@ -1072,7 +1070,7 @@ char* _Nullable LastPathComponentDup(const char* path) {
         end--;
     }
     if (end == path) {
-        return HOPCDupCStr("");
+        return H2CDupCStr("");
     }
     start = end;
     while (start > path && start[-1] != '/') {
@@ -1080,7 +1078,7 @@ char* _Nullable LastPathComponentDup(const char* path) {
     }
     len = (size_t)(end - start);
     if (len == 0) {
-        return HOPCDupCStr("");
+        return H2CDupCStr("");
     }
     {
         char* out = (char*)malloc(len + 1u);
@@ -1104,7 +1102,7 @@ char* _Nullable StripHOPExtensionDup(const char* filename) {
         out[len - 4u] = '\0';
         return out;
     }
-    return HOPCDupCStr(filename);
+    return H2CDupCStr(filename);
 }
 
 int CompareStringPtrs(const void* a, const void* b) {
@@ -1328,22 +1326,22 @@ int WriteFileAtomic(const char* filename, const char* data, uint32_t len) {
 typedef struct {
     uint32_t start;
     uint32_t end;
-} HOPFmtCheckLine;
+} H2FmtCheckLine;
 
-static int HOPFmtCheckBuildLines(
-    const char* src, uint32_t srcLen, HOPFmtCheckLine** outLines, uint32_t* outLineLen) {
-    HOPFmtCheckLine* lines = NULL;
-    uint32_t         lineCap = 1u;
-    uint32_t         lineLen = 0u;
-    uint32_t         i;
-    uint32_t         start;
+static int H2FmtCheckBuildLines(
+    const char* src, uint32_t srcLen, H2FmtCheckLine** outLines, uint32_t* outLineLen) {
+    H2FmtCheckLine* lines = NULL;
+    uint32_t        lineCap = 1u;
+    uint32_t        lineLen = 0u;
+    uint32_t        i;
+    uint32_t        start;
 
     for (i = 0; i < srcLen; i++) {
         if (src[i] == '\n') {
             lineCap++;
         }
     }
-    lines = (HOPFmtCheckLine*)malloc((size_t)lineCap * sizeof(HOPFmtCheckLine));
+    lines = (H2FmtCheckLine*)malloc((size_t)lineCap * sizeof(H2FmtCheckLine));
     if (lines == NULL) {
         return -1;
     }
@@ -1368,8 +1366,8 @@ static int HOPFmtCheckBuildLines(
     return 0;
 }
 
-static int HOPFmtCheckLineEq(
-    const char* a, const HOPFmtCheckLine* al, const char* b, const HOPFmtCheckLine* bl) {
+static int H2FmtCheckLineEq(
+    const char* a, const H2FmtCheckLine* al, const char* b, const H2FmtCheckLine* bl) {
     uint32_t aLen = al->end - al->start;
     uint32_t bLen = bl->end - bl->start;
     if (aLen != bLen) {
@@ -1381,26 +1379,26 @@ static int HOPFmtCheckLineEq(
     return memcmp(a + al->start, b + bl->start, aLen) == 0;
 }
 
-static uint32_t HOPFmtCheckTrimLeft(const char* s, uint32_t start, uint32_t end) {
+static uint32_t H2FmtCheckTrimLeft(const char* s, uint32_t start, uint32_t end) {
     while (start < end && isspace((unsigned char)s[start])) {
         start++;
     }
     return start;
 }
 
-static uint32_t HOPFmtCheckTrimRight(const char* s, uint32_t start, uint32_t end) {
+static uint32_t H2FmtCheckTrimRight(const char* s, uint32_t start, uint32_t end) {
     while (end > start && isspace((unsigned char)s[end - 1u])) {
         end--;
     }
     return end;
 }
 
-static int HOPFmtCheckLineEqTrimmed(
-    const char* a, const HOPFmtCheckLine* al, const char* b, const HOPFmtCheckLine* bl) {
-    uint32_t aStart = HOPFmtCheckTrimLeft(a, al->start, al->end);
-    uint32_t aEnd = HOPFmtCheckTrimRight(a, aStart, al->end);
-    uint32_t bStart = HOPFmtCheckTrimLeft(b, bl->start, bl->end);
-    uint32_t bEnd = HOPFmtCheckTrimRight(b, bStart, bl->end);
+static int H2FmtCheckLineEqTrimmed(
+    const char* a, const H2FmtCheckLine* al, const char* b, const H2FmtCheckLine* bl) {
+    uint32_t aStart = H2FmtCheckTrimLeft(a, al->start, al->end);
+    uint32_t aEnd = H2FmtCheckTrimRight(a, aStart, al->end);
+    uint32_t bStart = H2FmtCheckTrimLeft(b, bl->start, bl->end);
+    uint32_t bEnd = H2FmtCheckTrimRight(b, bStart, bl->end);
     uint32_t aLen = aEnd - aStart;
     uint32_t bLen = bEnd - bStart;
     if (aLen != bLen) {
@@ -1412,8 +1410,8 @@ static int HOPFmtCheckLineEqTrimmed(
     return memcmp(a + aStart, b + bStart, aLen) == 0;
 }
 
-static int HOPFmtCheckLineEqNoWhitespace(
-    const char* a, const HOPFmtCheckLine* al, const char* b, const HOPFmtCheckLine* bl) {
+static int H2FmtCheckLineEqNoWhitespace(
+    const char* a, const H2FmtCheckLine* al, const char* b, const H2FmtCheckLine* bl) {
     uint32_t ai = al->start;
     uint32_t bi = bl->start;
     while (ai < al->end || bi < bl->end) {
@@ -1441,7 +1439,7 @@ static int HOPFmtCheckLineEqNoWhitespace(
     return ai == al->end && bi == bl->end;
 }
 
-static void HOPFmtCheckPrintEscapedLine(const char* s, uint32_t start, uint32_t end) {
+static void H2FmtCheckPrintEscapedLine(const char* s, uint32_t start, uint32_t end) {
     uint32_t i;
     fputc('"', stdout);
     for (i = start; i < end; i++) {
@@ -1464,28 +1462,28 @@ static void HOPFmtCheckPrintEscapedLine(const char* s, uint32_t start, uint32_t 
 }
 
 typedef struct {
-    const HOPPackageLoader* loader;
-    const HOPPackage*       pkg;
-    const HOPParsedFile*    file;
-} HOPFmtLiteralCastCtx;
+    const H2PackageLoader* loader;
+    const H2Package*       pkg;
+    const H2ParsedFile*    file;
+} H2FmtLiteralCastCtx;
 
 typedef struct {
-    const HOPPackage*    pkg;
-    const HOPParsedFile* file;
-    int32_t              nodeId;
-} HOPFmtFnCandidate;
+    const H2Package*    pkg;
+    const H2ParsedFile* file;
+    int32_t             nodeId;
+} H2FmtFnCandidate;
 
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     int32_t  typeNodeId;
-} HOPFmtFnParam;
+} H2FmtFnParam;
 
 static char* _Nullable CanonicalizeFmtPath(const char* path) {
     return realpath(path, NULL);
 }
 
-static int32_t HOPFmtFindParentNode(const HOPAst* ast, int32_t childNodeId) {
+static int32_t H2FmtFindParentNode(const H2Ast* ast, int32_t childNodeId) {
     uint32_t i;
     if (childNodeId < 0 || (uint32_t)childNodeId >= ast->len) {
         return -1;
@@ -1507,7 +1505,7 @@ static int IsPlatformImportPathFmt(const char* _Nullable path) {
 }
 
 static int IsSelectedPlatformImportPathFmt(
-    const HOPPackageLoader* loader, const char* _Nullable path) {
+    const H2PackageLoader* loader, const char* _Nullable path) {
     size_t prefixLen = 9u;
     if (loader == NULL || loader->platformTarget == NULL || path == NULL) {
         return 0;
@@ -1519,8 +1517,8 @@ static int IsSelectedPlatformImportPathFmt(
         && StrEq(path + prefixLen, loader->platformTarget);
 }
 
-static const HOPPackage* _Nullable EffectiveFmtImportTargetPackage(
-    const HOPPackageLoader* loader, const HOPImportRef* imp) {
+static const H2Package* _Nullable EffectiveFmtImportTargetPackage(
+    const H2PackageLoader* loader, const H2ImportRef* imp) {
     if (imp == NULL) {
         return NULL;
     }
@@ -1532,15 +1530,15 @@ static const HOPPackage* _Nullable EffectiveFmtImportTargetPackage(
     return imp->target;
 }
 
-static const HOPImportSymbolRef* _Nullable FindImportFunctionSymbolBySliceFmt(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const H2ImportSymbolRef* _Nullable FindImportFunctionSymbolBySliceFmt(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL || src == NULL || end <= start) {
         return NULL;
     }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if (!sym->isFunction || sym->useWrapper) {
             continue;
         }
@@ -1552,26 +1550,26 @@ static const HOPImportSymbolRef* _Nullable FindImportFunctionSymbolBySliceFmt(
     return NULL;
 }
 
-static int ASTHasCallLiteralCast(const HOPAst* ast) {
+static int ASTHasCallLiteralCast(const H2Ast* ast) {
     uint32_t i;
     if (ast == NULL || ast->nodes == NULL) {
         return 0;
     }
     for (i = 0; i < ast->len; i++) {
         int32_t parentNodeId;
-        if (ast->nodes[i].kind != HOPAst_CAST) {
+        if (ast->nodes[i].kind != H2Ast_CAST) {
             continue;
         }
-        parentNodeId = HOPFmtFindParentNode(ast, (int32_t)i);
+        parentNodeId = H2FmtFindParentNode(ast, (int32_t)i);
         if (parentNodeId < 0) {
             continue;
         }
-        if (ast->nodes[parentNodeId].kind == HOPAst_CALL) {
+        if (ast->nodes[parentNodeId].kind == H2Ast_CALL) {
             return 1;
         }
-        if (ast->nodes[parentNodeId].kind == HOPAst_CALL_ARG) {
-            int32_t callNodeId = HOPFmtFindParentNode(ast, parentNodeId);
-            if (callNodeId >= 0 && ast->nodes[callNodeId].kind == HOPAst_CALL) {
+        if (ast->nodes[parentNodeId].kind == H2Ast_CALL_ARG) {
+            int32_t callNodeId = H2FmtFindParentNode(ast, parentNodeId);
+            if (callNodeId >= 0 && ast->nodes[callNodeId].kind == H2Ast_CALL) {
                 return 1;
             }
         }
@@ -1580,13 +1578,13 @@ static int ASTHasCallLiteralCast(const HOPAst* ast) {
 }
 
 static int SourceNeedsPackageLiteralCastRewrite(
-    HOPArena* arena, const char* source, uint32_t sourceLen) {
-    HOPAst          ast = { 0 };
-    HOPParseOptions parseOptions = { 0 };
+    H2Arena* arena, const char* source, uint32_t sourceLen) {
+    H2Ast          ast = { 0 };
+    H2ParseOptions parseOptions = { 0 };
     if (arena == NULL || source == NULL) {
         return 0;
     }
-    if (HOPParse(arena, (HOPStrView){ source, sourceLen }, &parseOptions, &ast, NULL, NULL) != 0) {
+    if (H2Parse(arena, (H2StrView){ source, sourceLen }, &parseOptions, &ast, NULL, NULL) != 0) {
         return 0;
     }
     return ASTHasCallLiteralCast(&ast);
@@ -1598,11 +1596,11 @@ static int StrSliceEqSlice(
     return len == (bEnd - bStart) && (len == 0 || memcmp(a + aStart, b + bStart, len) == 0);
 }
 
-static int HOPFmtFindFileByPath(
-    const HOPPackageLoader* loader,
-    const char*             canonicalPath,
-    const HOPPackage**      outPkg,
-    const HOPParsedFile**   outFile) {
+static int H2FmtFindFileByPath(
+    const H2PackageLoader* loader,
+    const char*            canonicalPath,
+    const H2Package**      outPkg,
+    const H2ParsedFile**   outFile) {
     uint32_t pkgIndex;
     if (outPkg != NULL) {
         *outPkg = NULL;
@@ -1614,8 +1612,8 @@ static int HOPFmtFindFileByPath(
         return 0;
     }
     for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
             if (pkg->files[fileIndex].path != NULL
                 && StrEq(pkg->files[fileIndex].path, canonicalPath))
@@ -1633,13 +1631,13 @@ static int HOPFmtFindFileByPath(
     return 0;
 }
 
-static int HOPFmtAddFnCandidate(
-    HOPFmtFnCandidate*   candidates,
-    uint32_t             cap,
-    uint32_t*            len,
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId) {
+static int H2FmtAddFnCandidate(
+    H2FmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len,
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId) {
     uint32_t i;
     if (candidates == NULL || len == NULL || pkg == NULL || file == NULL || nodeId < 0) {
         return -1;
@@ -1659,25 +1657,24 @@ static int HOPFmtAddFnCandidate(
     return 0;
 }
 
-static int HOPFmtCollectFunctionCandidatesFromDecls(
-    const HOPPackage*    pkg,
-    const HOPSymbolDecl* decls,
-    uint32_t             declLen,
-    const char*          name,
-    HOPFmtFnCandidate*   candidates,
-    uint32_t             cap,
-    uint32_t*            len) {
+static int H2FmtCollectFunctionCandidatesFromDecls(
+    const H2Package*    pkg,
+    const H2SymbolDecl* decls,
+    uint32_t            declLen,
+    const char*         name,
+    H2FmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len) {
     uint32_t i;
     if (pkg == NULL || decls == NULL || name == NULL) {
         return 0;
     }
     for (i = 0; i < declLen; i++) {
-        const HOPSymbolDecl* decl = &decls[i];
-        if (decl->kind != HOPAst_FN || !StrEq(decl->name, name) || decl->fileIndex >= pkg->fileLen)
-        {
+        const H2SymbolDecl* decl = &decls[i];
+        if (decl->kind != H2Ast_FN || !StrEq(decl->name, name) || decl->fileIndex >= pkg->fileLen) {
             continue;
         }
-        if (HOPFmtAddFnCandidate(
+        if (H2FmtAddFnCandidate(
                 candidates, cap, len, pkg, &pkg->files[decl->fileIndex], decl->nodeId)
             != 0)
         {
@@ -1687,20 +1684,20 @@ static int HOPFmtCollectFunctionCandidatesFromDecls(
     return 0;
 }
 
-static int HOPFmtCollectFunctionCandidatesBySlice(
-    const HOPPackage*    pkg,
-    const HOPSymbolDecl* decls,
-    uint32_t             declLen,
-    const char*          src,
-    uint32_t             start,
-    uint32_t             end,
-    HOPFmtFnCandidate*   candidates,
-    uint32_t             cap,
-    uint32_t*            len) {
+static int H2FmtCollectFunctionCandidatesBySlice(
+    const H2Package*    pkg,
+    const H2SymbolDecl* decls,
+    uint32_t            declLen,
+    const char*         src,
+    uint32_t            start,
+    uint32_t            end,
+    H2FmtFnCandidate*   candidates,
+    uint32_t            cap,
+    uint32_t*           len) {
     uint32_t i;
     for (i = 0; i < declLen; i++) {
-        const HOPSymbolDecl* decl = &decls[i];
-        if (decl->kind != HOPAst_FN || decl->fileIndex >= pkg->fileLen) {
+        const H2SymbolDecl* decl = &decls[i];
+        if (decl->kind != H2Ast_FN || decl->fileIndex >= pkg->fileLen) {
             continue;
         }
         if (strlen(decl->name) != (size_t)(end - start)
@@ -1708,7 +1705,7 @@ static int HOPFmtCollectFunctionCandidatesBySlice(
         {
             continue;
         }
-        if (HOPFmtAddFnCandidate(
+        if (H2FmtAddFnCandidate(
                 candidates, cap, len, pkg, &pkg->files[decl->fileIndex], decl->nodeId)
             != 0)
         {
@@ -1718,13 +1715,13 @@ static int HOPFmtCollectFunctionCandidatesBySlice(
     return 0;
 }
 
-static int HOPFmtCollectFnParams(
-    const HOPParsedFile* file,
-    int32_t              fnNodeId,
-    HOPFmtFnParam*       params,
-    uint32_t             cap,
-    uint32_t*            len,
-    int*                 outHasVariadic) {
+static int H2FmtCollectFnParams(
+    const H2ParsedFile* file,
+    int32_t             fnNodeId,
+    H2FmtFnParam*       params,
+    uint32_t            cap,
+    uint32_t*           len,
+    int*                outHasVariadic) {
     int32_t child;
     if (len != NULL) {
         *len = 0;
@@ -1733,21 +1730,21 @@ static int HOPFmtCollectFnParams(
         *outHasVariadic = 0;
     }
     if (file == NULL || params == NULL || len == NULL || fnNodeId < 0
-        || (uint32_t)fnNodeId >= file->ast.len || file->ast.nodes[fnNodeId].kind != HOPAst_FN)
+        || (uint32_t)fnNodeId >= file->ast.len || file->ast.nodes[fnNodeId].kind != H2Ast_FN)
     {
         return 0;
     }
     child = ASTFirstChild(&file->ast, fnNodeId);
-    while (child >= 0 && file->ast.nodes[child].kind == HOPAst_PARAM) {
-        const HOPAstNode* paramNode = &file->ast.nodes[child];
-        int32_t           typeNodeId = ASTFirstChild(&file->ast, child);
+    while (child >= 0 && file->ast.nodes[child].kind == H2Ast_PARAM) {
+        const H2AstNode* paramNode = &file->ast.nodes[child];
+        int32_t          typeNodeId = ASTFirstChild(&file->ast, child);
         if (*len >= cap || typeNodeId < 0) {
             return 0;
         }
         params[*len].nameStart = paramNode->dataStart;
         params[*len].nameEnd = paramNode->dataEnd;
         params[*len].typeNodeId = typeNodeId;
-        if (outHasVariadic != NULL && (paramNode->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
+        if (outHasVariadic != NULL && (paramNode->flags & H2AstFlag_PARAM_VARIADIC) != 0) {
             *outHasVariadic = 1;
         }
         (*len)++;
@@ -1756,28 +1753,28 @@ static int HOPFmtCollectFnParams(
     return 1;
 }
 
-static int HOPFmtMapArgToParamTypeNode(
-    const HOPParsedFile* callFile,
-    int32_t              callNodeId,
-    int32_t              targetArgNodeId,
-    const HOPParsedFile* fnFile,
-    int32_t              fnNodeId,
-    int32_t*             outTypeNodeId) {
-    HOPFmtFnParam params[128];
-    int32_t       argNodes[128];
-    uint32_t      paramCount = 0;
-    uint32_t      argCount = 0;
-    uint32_t      targetArgIndex = UINT32_MAX;
-    uint32_t      firstNamedIndex = UINT32_MAX;
-    uint32_t      i;
-    int           hasVariadic = 0;
-    int32_t       cur;
+static int H2FmtMapArgToParamTypeNode(
+    const H2ParsedFile* callFile,
+    int32_t             callNodeId,
+    int32_t             targetArgNodeId,
+    const H2ParsedFile* fnFile,
+    int32_t             fnNodeId,
+    int32_t*            outTypeNodeId) {
+    H2FmtFnParam params[128];
+    int32_t      argNodes[128];
+    uint32_t     paramCount = 0;
+    uint32_t     argCount = 0;
+    uint32_t     targetArgIndex = UINT32_MAX;
+    uint32_t     firstNamedIndex = UINT32_MAX;
+    uint32_t     i;
+    int          hasVariadic = 0;
+    int32_t      cur;
     if (outTypeNodeId != NULL) {
         *outTypeNodeId = -1;
     }
     if (callFile == NULL || fnFile == NULL || outTypeNodeId == NULL || callNodeId < 0
         || (uint32_t)callNodeId >= callFile->ast.len
-        || !HOPFmtCollectFnParams(fnFile, fnNodeId, params, 128u, &paramCount, &hasVariadic)
+        || !H2FmtCollectFnParams(fnFile, fnNodeId, params, 128u, &paramCount, &hasVariadic)
         || hasVariadic)
     {
         return 0;
@@ -1785,15 +1782,15 @@ static int HOPFmtMapArgToParamTypeNode(
     cur = ASTFirstChild(&callFile->ast, callNodeId);
     cur = cur >= 0 ? ASTNextSibling(&callFile->ast, cur) : -1;
     while (cur >= 0) {
-        const HOPAstNode* argNode = &callFile->ast.nodes[cur];
-        if (argCount >= 128u || (argNode->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) {
+        const H2AstNode* argNode = &callFile->ast.nodes[cur];
+        if (argCount >= 128u || (argNode->flags & H2AstFlag_CALL_ARG_SPREAD) != 0) {
             return 0;
         }
         argNodes[argCount] = cur;
         if (cur == targetArgNodeId) {
             targetArgIndex = argCount;
         }
-        if (firstNamedIndex == UINT32_MAX && argNode->kind == HOPAst_CALL_ARG
+        if (firstNamedIndex == UINT32_MAX && argNode->kind == H2Ast_CALL_ARG
             && argNode->dataEnd > argNode->dataStart)
         {
             firstNamedIndex = argCount;
@@ -1809,9 +1806,9 @@ static int HOPFmtMapArgToParamTypeNode(
         return 1;
     }
     for (i = firstNamedIndex; i < argCount; i++) {
-        const HOPAstNode* argNode = &callFile->ast.nodes[argNodes[i]];
-        uint32_t          p;
-        if (argNode->kind != HOPAst_CALL_ARG || argNode->dataEnd <= argNode->dataStart) {
+        const H2AstNode* argNode = &callFile->ast.nodes[argNodes[i]];
+        uint32_t         p;
+        if (argNode->kind != H2Ast_CALL_ARG || argNode->dataEnd <= argNode->dataStart) {
             return 0;
         }
         for (p = firstNamedIndex; p < paramCount; p++) {
@@ -1837,18 +1834,18 @@ static int HOPFmtMapArgToParamTypeNode(
     return 0;
 }
 
-static int HOPFmtResolveCallTarget(
-    const HOPFmtLiteralCastCtx* ctx,
-    const HOPParsedFile*        callFile,
-    int32_t                     callNodeId,
-    char*                       nameBuf,
-    size_t                      nameBufCap,
-    const HOPPackage**          outTargetPkg,
-    uint32_t*                   outNameStart,
-    uint32_t*                   outNameEnd,
-    const char**                outNameCStr) {
-    const HOPAstNode* calleeNode;
-    int32_t           calleeNodeId;
+static int H2FmtResolveCallTarget(
+    const H2FmtLiteralCastCtx* ctx,
+    const H2ParsedFile*        callFile,
+    int32_t                    callNodeId,
+    char*                      nameBuf,
+    size_t                     nameBufCap,
+    const H2Package**          outTargetPkg,
+    uint32_t*                  outNameStart,
+    uint32_t*                  outNameEnd,
+    const char**               outNameCStr) {
+    const H2AstNode* calleeNode;
+    int32_t          calleeNodeId;
     if (outTargetPkg != NULL) {
         *outTargetPkg = NULL;
     }
@@ -1871,11 +1868,11 @@ static int HOPFmtResolveCallTarget(
         return 0;
     }
     calleeNode = &callFile->ast.nodes[calleeNodeId];
-    if (calleeNode->kind == HOPAst_IDENT) {
-        const HOPImportSymbolRef* sym = FindImportFunctionSymbolBySliceFmt(
+    if (calleeNode->kind == H2Ast_IDENT) {
+        const H2ImportSymbolRef* sym = FindImportFunctionSymbolBySliceFmt(
             ctx->pkg, callFile->source, calleeNode->dataStart, calleeNode->dataEnd);
         if (sym != NULL && sym->importIndex < ctx->pkg->importLen) {
-            const HOPPackage* targetPkg = EffectiveFmtImportTargetPackage(
+            const H2Package* targetPkg = EffectiveFmtImportTargetPackage(
                 ctx->loader, &ctx->pkg->imports[sym->importIndex]);
             if (targetPkg == NULL || outTargetPkg == NULL || outNameCStr == NULL) {
                 return 0;
@@ -1892,13 +1889,13 @@ static int HOPFmtResolveCallTarget(
         *outNameEnd = calleeNode->dataEnd;
         return 1;
     }
-    if (calleeNode->kind == HOPAst_FIELD_EXPR) {
+    if (calleeNode->kind == H2Ast_FIELD_EXPR) {
         int32_t recvNodeId = ASTFirstChild(&callFile->ast, calleeNodeId);
         if (recvNodeId >= 0 && (uint32_t)recvNodeId < callFile->ast.len
-            && callFile->ast.nodes[recvNodeId].kind == HOPAst_IDENT)
+            && callFile->ast.nodes[recvNodeId].kind == H2Ast_IDENT)
         {
-            const HOPAstNode*   recvNode = &callFile->ast.nodes[recvNodeId];
-            const HOPImportRef* imp = FindImportByAliasSlice(
+            const H2AstNode*   recvNode = &callFile->ast.nodes[recvNodeId];
+            const H2ImportRef* imp = FindImportByAliasSlice(
                 ctx->pkg, callFile->source, recvNode->dataStart, recvNode->dataEnd);
             size_t len;
             if (imp == NULL || outTargetPkg == NULL || outNameCStr == NULL || nameBuf == NULL
@@ -1920,15 +1917,14 @@ static int HOPFmtResolveCallTarget(
     return 0;
 }
 
-static int HOPFmtCastIsNumericLiteral(
-    const HOPAst* ast, int32_t castNodeId, int32_t* outTypeNodeId) {
+static int H2FmtCastIsNumericLiteral(const H2Ast* ast, int32_t castNodeId, int32_t* outTypeNodeId) {
     int32_t exprNodeId;
     int32_t typeNodeId;
     if (outTypeNodeId != NULL) {
         *outTypeNodeId = -1;
     }
     if (ast == NULL || castNodeId < 0 || (uint32_t)castNodeId >= ast->len
-        || ast->nodes[castNodeId].kind != HOPAst_CAST)
+        || ast->nodes[castNodeId].kind != H2Ast_CAST)
     {
         return 0;
     }
@@ -1939,7 +1935,7 @@ static int HOPFmtCastIsNumericLiteral(
     {
         return 0;
     }
-    if (ast->nodes[exprNodeId].kind != HOPAst_INT && ast->nodes[exprNodeId].kind != HOPAst_FLOAT) {
+    if (ast->nodes[exprNodeId].kind != H2Ast_INT && ast->nodes[exprNodeId].kind != H2Ast_FLOAT) {
         return 0;
     }
     if (outTypeNodeId != NULL) {
@@ -1948,16 +1944,16 @@ static int HOPFmtCastIsNumericLiteral(
     return 1;
 }
 
-static int HOPFmtTypeNodesEqualAcrossFiles(
-    const HOPAst*        ast,
-    HOPStrView           src,
-    int32_t              castTypeNodeId,
-    const HOPParsedFile* file,
-    int32_t              otherTypeNodeId) {
-    const HOPAstNode* castTypeNode;
-    const HOPAstNode* otherTypeNode;
-    uint32_t          castLen;
-    uint32_t          otherLen;
+static int H2FmtTypeNodesEqualAcrossFiles(
+    const H2Ast*        ast,
+    H2StrView           src,
+    int32_t             castTypeNodeId,
+    const H2ParsedFile* file,
+    int32_t             otherTypeNodeId) {
+    const H2AstNode* castTypeNode;
+    const H2AstNode* otherTypeNode;
+    uint32_t         castLen;
+    uint32_t         otherLen;
     if (ast == NULL || file == NULL || castTypeNodeId < 0 || otherTypeNodeId < 0
         || (uint32_t)castTypeNodeId >= ast->len || (uint32_t)otherTypeNodeId >= file->ast.len)
     {
@@ -1973,49 +1969,49 @@ static int HOPFmtTypeNodesEqualAcrossFiles(
                == 0;
 }
 
-static int HOPFmtCanDropLiteralCastViaPackage(
-    void* _Nullable opaqueCtx, const HOPAst* ast, HOPStrView src, int32_t castNodeId) {
-    const HOPFmtLiteralCastCtx* ctx = (const HOPFmtLiteralCastCtx*)opaqueCtx;
-    HOPParsedFile               callFile = { 0 };
-    HOPFmtFnCandidate           candidates[64];
-    uint32_t                    candidateLen = 0;
-    const HOPPackage*           targetPkg = NULL;
-    const char*                 targetNameCStr = NULL;
-    uint32_t                    targetNameStart = 0;
-    uint32_t                    targetNameEnd = 0;
-    char                        targetNameBuf[256];
-    int32_t                     parentNodeId;
-    int32_t                     callNodeId;
-    int32_t                     argNodeId;
-    int32_t                     castTypeNodeId = -1;
-    uint32_t                    i;
-    int                         sawMappedCandidate = 0;
+static int H2FmtCanDropLiteralCastViaPackage(
+    void* _Nullable opaqueCtx, const H2Ast* ast, H2StrView src, int32_t castNodeId) {
+    const H2FmtLiteralCastCtx* ctx = (const H2FmtLiteralCastCtx*)opaqueCtx;
+    H2ParsedFile               callFile = { 0 };
+    H2FmtFnCandidate           candidates[64];
+    uint32_t                   candidateLen = 0;
+    const H2Package*           targetPkg = NULL;
+    const char*                targetNameCStr = NULL;
+    uint32_t                   targetNameStart = 0;
+    uint32_t                   targetNameEnd = 0;
+    char                       targetNameBuf[256];
+    int32_t                    parentNodeId;
+    int32_t                    callNodeId;
+    int32_t                    argNodeId;
+    int32_t                    castTypeNodeId = -1;
+    uint32_t                   i;
+    int                        sawMappedCandidate = 0;
     if (ctx == NULL || ctx->pkg == NULL || ctx->loader == NULL || ast == NULL || src.ptr == NULL) {
         return 0;
     }
-    if (!HOPFmtCastIsNumericLiteral(ast, castNodeId, &castTypeNodeId)) {
+    if (!H2FmtCastIsNumericLiteral(ast, castNodeId, &castTypeNodeId)) {
         return 0;
     }
     callFile.source = (char*)src.ptr;
     callFile.sourceLen = src.len;
     callFile.ast = *ast;
-    parentNodeId = HOPFmtFindParentNode(ast, castNodeId);
+    parentNodeId = H2FmtFindParentNode(ast, castNodeId);
     if (parentNodeId < 0) {
         return 0;
     }
-    if (ast->nodes[parentNodeId].kind == HOPAst_CALL_ARG) {
+    if (ast->nodes[parentNodeId].kind == H2Ast_CALL_ARG) {
         argNodeId = parentNodeId;
-        callNodeId = HOPFmtFindParentNode(ast, parentNodeId);
-    } else if (ast->nodes[parentNodeId].kind == HOPAst_CALL) {
+        callNodeId = H2FmtFindParentNode(ast, parentNodeId);
+    } else if (ast->nodes[parentNodeId].kind == H2Ast_CALL) {
         argNodeId = castNodeId;
         callNodeId = parentNodeId;
     } else {
         return 0;
     }
-    if (callNodeId < 0 || ast->nodes[callNodeId].kind != HOPAst_CALL) {
+    if (callNodeId < 0 || ast->nodes[callNodeId].kind != H2Ast_CALL) {
         return 0;
     }
-    if (!HOPFmtResolveCallTarget(
+    if (!H2FmtResolveCallTarget(
             ctx,
             &callFile,
             callNodeId,
@@ -2029,7 +2025,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
         return 0;
     }
     if (targetNameCStr != NULL) {
-        if (HOPFmtCollectFunctionCandidatesFromDecls(
+        if (H2FmtCollectFunctionCandidatesFromDecls(
                 targetPkg,
                 targetPkg->pubDecls,
                 targetPkg->pubDeclLen,
@@ -2042,7 +2038,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
             return 0;
         }
         if (targetPkg == ctx->pkg
-            && HOPFmtCollectFunctionCandidatesFromDecls(
+            && H2FmtCollectFunctionCandidatesFromDecls(
                    targetPkg,
                    targetPkg->decls,
                    targetPkg->declLen,
@@ -2055,7 +2051,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
             return 0;
         }
     } else {
-        if (HOPFmtCollectFunctionCandidatesBySlice(
+        if (H2FmtCollectFunctionCandidatesBySlice(
                 targetPkg,
                 targetPkg->pubDecls,
                 targetPkg->pubDeclLen,
@@ -2070,7 +2066,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
             return 0;
         }
         if (targetPkg == ctx->pkg
-            && HOPFmtCollectFunctionCandidatesBySlice(
+            && H2FmtCollectFunctionCandidatesBySlice(
                    targetPkg,
                    targetPkg->decls,
                    targetPkg->declLen,
@@ -2087,7 +2083,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
     }
     for (i = 0; i < candidateLen; i++) {
         int32_t paramTypeNodeId = -1;
-        if (!HOPFmtMapArgToParamTypeNode(
+        if (!H2FmtMapArgToParamTypeNode(
                 &callFile,
                 callNodeId,
                 argNodeId,
@@ -2098,7 +2094,7 @@ static int HOPFmtCanDropLiteralCastViaPackage(
             continue;
         }
         sawMappedCandidate = 1;
-        if (!HOPFmtTypeNodesEqualAcrossFiles(
+        if (!H2FmtTypeNodesEqualAcrossFiles(
                 ast, src, castTypeNodeId, candidates[i].file, paramTypeNodeId))
         {
             return 0;
@@ -2107,39 +2103,39 @@ static int HOPFmtCanDropLiteralCastViaPackage(
     return sawMappedCandidate;
 }
 
-static void HOPFmtCheckPrintIssue(
-    const char*            filename,
-    uint32_t               lineNo,
-    const char*            reason,
-    const char*            current,
-    const HOPFmtCheckLine* currentLine,
-    const char*            expected,
-    const HOPFmtCheckLine* expectedLine) {
+static void H2FmtCheckPrintIssue(
+    const char*           filename,
+    uint32_t              lineNo,
+    const char*           reason,
+    const char*           current,
+    const H2FmtCheckLine* currentLine,
+    const char*           expected,
+    const H2FmtCheckLine* expectedLine) {
     fprintf(stdout, "%s:%u:1: %s\n", filename, lineNo, reason);
     fputs("  current : ", stdout);
-    HOPFmtCheckPrintEscapedLine(current, currentLine->start, currentLine->end);
+    H2FmtCheckPrintEscapedLine(current, currentLine->start, currentLine->end);
     fputc('\n', stdout);
     fputs("  expected: ", stdout);
-    HOPFmtCheckPrintEscapedLine(expected, expectedLine->start, expectedLine->end);
+    H2FmtCheckPrintEscapedLine(expected, expectedLine->start, expectedLine->end);
     fputc('\n', stdout);
 }
 
-static void HOPFmtCheckReport(
+static void H2FmtCheckReport(
     const char* filename,
     const char* current,
     uint32_t    currentLen,
     const char* expected,
     uint32_t    expectedLen) {
-    HOPFmtCheckLine* currentLines = NULL;
-    HOPFmtCheckLine* expectedLines = NULL;
-    uint32_t         currentLineLen = 0;
-    uint32_t         expectedLineLen = 0;
-    uint32_t         i = 0;
-    uint32_t         j = 0;
-    uint32_t         issues = 0;
+    H2FmtCheckLine* currentLines = NULL;
+    H2FmtCheckLine* expectedLines = NULL;
+    uint32_t        currentLineLen = 0;
+    uint32_t        expectedLineLen = 0;
+    uint32_t        i = 0;
+    uint32_t        j = 0;
+    uint32_t        issues = 0;
 
-    if (HOPFmtCheckBuildLines(current, currentLen, &currentLines, &currentLineLen) != 0
-        || HOPFmtCheckBuildLines(expected, expectedLen, &expectedLines, &expectedLineLen) != 0)
+    if (H2FmtCheckBuildLines(current, currentLen, &currentLines, &currentLineLen) != 0
+        || H2FmtCheckBuildLines(expected, expectedLen, &expectedLines, &expectedLineLen) != 0)
     {
         fputs("  note: unable to allocate detailed formatter mismatch report\n", stdout);
         free(currentLines);
@@ -2148,9 +2144,9 @@ static void HOPFmtCheckReport(
     }
 
     while (i < currentLineLen || j < expectedLineLen) {
-        HOPFmtCheckLine empty = { 0, 0 };
+        H2FmtCheckLine empty = { 0, 0 };
         if (i < currentLineLen && j < expectedLineLen
-            && HOPFmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j]))
+            && H2FmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j]))
         {
             i++;
             j++;
@@ -2158,9 +2154,9 @@ static void HOPFmtCheckReport(
         }
 
         if (i + 1u < currentLineLen && j < expectedLineLen
-            && HOPFmtCheckLineEq(current, &currentLines[i + 1u], expected, &expectedLines[j]))
+            && H2FmtCheckLineEq(current, &currentLines[i + 1u], expected, &expectedLines[j]))
         {
-            HOPFmtCheckPrintIssue(
+            H2FmtCheckPrintIssue(
                 filename,
                 i + 1u,
                 "line should be removed",
@@ -2173,9 +2169,9 @@ static void HOPFmtCheckReport(
             continue;
         }
         if (i < currentLineLen && j + 1u < expectedLineLen
-            && HOPFmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j + 1u]))
+            && H2FmtCheckLineEq(current, &currentLines[i], expected, &expectedLines[j + 1u]))
         {
-            HOPFmtCheckPrintIssue(
+            H2FmtCheckPrintIssue(
                 filename,
                 i + 1u,
                 "line should be inserted",
@@ -2190,15 +2186,15 @@ static void HOPFmtCheckReport(
 
         if (i < currentLineLen && j < expectedLineLen) {
             const char* reason = "line content differs";
-            if (HOPFmtCheckLineEqTrimmed(current, &currentLines[i], expected, &expectedLines[j])) {
+            if (H2FmtCheckLineEqTrimmed(current, &currentLines[i], expected, &expectedLines[j])) {
                 reason = "leading or trailing whitespace differs";
             } else if (
-                HOPFmtCheckLineEqNoWhitespace(
+                H2FmtCheckLineEqNoWhitespace(
                     current, &currentLines[i], expected, &expectedLines[j]))
             {
                 reason = "internal whitespace differs";
             }
-            HOPFmtCheckPrintIssue(
+            H2FmtCheckPrintIssue(
                 filename, i + 1u, reason, current, &currentLines[i], expected, &expectedLines[j]);
             issues++;
             i++;
@@ -2207,7 +2203,7 @@ static void HOPFmtCheckReport(
         }
 
         if (i < currentLineLen) {
-            HOPFmtCheckPrintIssue(
+            H2FmtCheckPrintIssue(
                 filename,
                 i + 1u,
                 "line should be removed",
@@ -2219,7 +2215,7 @@ static void HOPFmtCheckReport(
             i++;
             continue;
         }
-        HOPFmtCheckPrintIssue(
+        H2FmtCheckPrintIssue(
             filename,
             currentLineLen + 1u,
             "line should be inserted",
@@ -2238,31 +2234,31 @@ static void HOPFmtCheckReport(
 }
 
 static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
-    char*                source = NULL;
-    uint32_t             sourceLen = 0;
-    uint64_t             arenaCap64;
-    size_t               arenaCap;
-    void*                arenaMem = NULL;
-    HOPArena             arena;
-    HOPDiag              diag = { 0 };
-    HOPStrView           formatted = { 0 };
-    HOPFormatOptions     formatOptions = { 0 };
-    HOPFmtLiteralCastCtx fmtCastCtx = { 0 };
-    HOPPackageLoader     fmtLoader = { 0 };
-    char*                canonicalPath = NULL;
-    char*                packagePath = NULL;
-    HOPPackage*          fmtEntryPkg = NULL;
-    const HOPPackage*    fmtPkg = NULL;
-    const HOPParsedFile* fmtFile = NULL;
-    int                  changed = 0;
-    int                  rc = -1;
+    char*               source = NULL;
+    uint32_t            sourceLen = 0;
+    uint64_t            arenaCap64;
+    size_t              arenaCap;
+    void*               arenaMem = NULL;
+    H2Arena             arena;
+    H2Diag              diag = { 0 };
+    H2StrView           formatted = { 0 };
+    H2FormatOptions     formatOptions = { 0 };
+    H2FmtLiteralCastCtx fmtCastCtx = { 0 };
+    H2PackageLoader     fmtLoader = { 0 };
+    char*               canonicalPath = NULL;
+    char*               packagePath = NULL;
+    H2Package*          fmtEntryPkg = NULL;
+    const H2Package*    fmtPkg = NULL;
+    const H2ParsedFile* fmtFile = NULL;
+    int                 changed = 0;
+    int                 rc = -1;
 
     *outChanged = 0;
     if (ReadFile(filename, &source, &sourceLen) != 0) {
         return -1;
     }
 
-    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(HOPAstNode) + 65536u;
+    arenaCap64 = (uint64_t)(sourceLen + 128u) * (uint64_t)sizeof(H2AstNode) + 65536u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         goto done;
@@ -2273,31 +2269,31 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
         fprintf(stderr, "failed to allocate arena\n");
         goto done;
     }
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    HOPArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
 
     if (SourceNeedsPackageLiteralCastRewrite(&arena, source, sourceLen)) {
         canonicalPath = CanonicalizeFmtPath(filename);
         packagePath = canonicalPath != NULL ? DirNameDup(canonicalPath) : NULL;
         if (packagePath != NULL
-            && LoadPackageForFmt(packagePath, HOP_DEFAULT_PLATFORM_TARGET, &fmtLoader, &fmtEntryPkg)
+            && LoadPackageForFmt(packagePath, H2_DEFAULT_PLATFORM_TARGET, &fmtLoader, &fmtEntryPkg)
                    == 0
             && fmtEntryPkg != NULL
-            && HOPFmtFindFileByPath(&fmtLoader, canonicalPath, &fmtPkg, &fmtFile))
+            && H2FmtFindFileByPath(&fmtLoader, canonicalPath, &fmtPkg, &fmtFile))
         {
             fmtCastCtx.loader = &fmtLoader;
             fmtCastCtx.pkg = fmtPkg;
             fmtCastCtx.file = fmtFile;
             formatOptions.ctx = &fmtCastCtx;
-            formatOptions.canDropLiteralCast = HOPFmtCanDropLiteralCastViaPackage;
+            formatOptions.canDropLiteralCast = H2FmtCanDropLiteralCastViaPackage;
         } else {
             FreeLoader(&fmtLoader);
         }
     }
 
-    if (HOPFormat(
+    if (H2Format(
             &arena,
-            (HOPStrView){ source, sourceLen },
+            (H2StrView){ source, sourceLen },
             formatOptions.canDropLiteralCast != NULL ? &formatOptions : NULL,
             &formatted,
             &diag)
@@ -2313,7 +2309,7 @@ static int FormatOneFile(const char* filename, int checkOnly, int* outChanged) {
     if (changed) {
         if (checkOnly) {
             fprintf(stdout, "%s\n", filename);
-            HOPFmtCheckReport(filename, source, sourceLen, formatted.ptr, formatted.len);
+            H2FmtCheckReport(filename, source, sourceLen, formatted.ptr, formatted.len);
         } else if (WriteFileAtomic(filename, formatted.ptr, formatted.len) != 0) {
             fprintf(stderr, "error: failed to write %s\n", filename);
             goto done;
@@ -2328,7 +2324,7 @@ done:
     free(packagePath);
     free(canonicalPath);
     if (arenaMem != NULL) {
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
     }
     free(source);
@@ -2340,7 +2336,7 @@ static int AddFmtPath(char*** outFiles, uint32_t* outLen, uint32_t* outCap, cons
     if (EnsureCap((void**)outFiles, outCap, *outLen + 1u, sizeof(char*)) != 0) {
         return -1;
     }
-    dup = HOPCDupCStr(path);
+    dup = H2CDupCStr(path);
     if (dup == NULL) {
         return -1;
     }
@@ -2483,15 +2479,15 @@ void StdoutWrite(void* ctx, const char* data, uint32_t len) {
 }
 
 int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
-    void*          arenaMem;
-    uint64_t       arenaCap64;
-    size_t         arenaCap;
-    HOPArena       arena;
-    HOPTokenStream stream;
-    HOPDiag        diag = { 0 };
-    uint32_t       i;
+    void*         arenaMem;
+    uint64_t      arenaCap64;
+    size_t        arenaCap;
+    H2Arena       arena;
+    H2TokenStream stream;
+    H2Diag        diag = { 0 };
+    uint32_t      i;
 
-    arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(HOPToken) + 4096u;
+    arenaCap64 = (uint64_t)(sourceLen + 16u) * (uint64_t)sizeof(H2Token) + 4096u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -2504,19 +2500,19 @@ int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
         return -1;
     }
 
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (HOPLex(&arena, (HOPStrView){ source, sourceLen }, &stream, &diag) != 0) {
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (H2Lex(&arena, (H2StrView){ source, sourceLen }, &stream, &diag) != 0) {
         int diagStatus = PrintHOPDiag(filename, source, &diag, 0);
         free(arenaMem);
         return diagStatus;
     }
 
     for (i = 0; i < stream.len; i++) {
-        const HOPToken* t = &stream.v[i];
-        printf("%s %u %u ", HOPTokenKindName(t->kind), t->start, t->end);
-        if (t->kind == HOPTok_EOF) {
+        const H2Token* t = &stream.v[i];
+        printf("%s %u %u ", H2TokenKindName(t->kind), t->start, t->end);
+        if (t->kind == H2Tok_EOF) {
             printf("<eof>");
-        } else if (t->kind == HOPTok_SEMICOLON && t->start == t->end) {
+        } else if (t->kind == H2Tok_SEMICOLON && t->start == t->end) {
             printf("<auto>");
         } else {
             PrintEscaped(stdout, source, t->start, t->end);
@@ -2529,15 +2525,15 @@ int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
 }
 
 int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
-    void*     arenaMem;
-    uint64_t  arenaCap64;
-    size_t    arenaCap;
-    HOPArena  arena;
-    HOPAst    ast;
-    HOPDiag   diag = { 0 };
-    HOPWriter writer;
+    void*    arenaMem;
+    uint64_t arenaCap64;
+    size_t   arenaCap;
+    H2Arena  arena;
+    H2Ast    ast;
+    H2Diag   diag = { 0 };
+    H2Writer writer;
 
-    arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(HOPAstNode) + 32768u;
+    arenaCap64 = (uint64_t)(sourceLen + 64u) * (uint64_t)sizeof(H2AstNode) + 32768u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -2550,8 +2546,8 @@ int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
         return -1;
     }
 
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (HOPParse(&arena, (HOPStrView){ source, sourceLen }, NULL, &ast, NULL, &diag) != 0) {
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (H2Parse(&arena, (H2StrView){ source, sourceLen }, NULL, &ast, NULL, &diag) != 0) {
         int diagStatus = PrintHOPDiag(filename, source, &diag, 0);
         free(arenaMem);
         return diagStatus;
@@ -2559,7 +2555,7 @@ int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
 
     writer.ctx = NULL;
     writer.write = StdoutWrite;
-    if (HOPAstDump(&ast, (HOPStrView){ source, sourceLen }, &writer, &diag) != 0) {
+    if (H2AstDump(&ast, (H2StrView){ source, sourceLen }, &writer, &diag) != 0) {
         int diagStatus = PrintHOPDiag(filename, source, &diag, 0);
         free(arenaMem);
         return diagStatus;
@@ -2569,4 +2565,4 @@ int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
     return 0;
 }
 
-HOP_API_END
+H2_API_END

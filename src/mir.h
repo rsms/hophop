@@ -3,150 +3,150 @@
 
 // Documentation for this IR lives in docs/mir.md
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef enum {
-    HOPMirOp_INVALID = 0,
-    HOPMirOp_PUSH_CONST,
-    HOPMirOp_PUSH_INT,
-    HOPMirOp_PUSH_FLOAT,
-    HOPMirOp_PUSH_BOOL,
-    HOPMirOp_PUSH_STRING,
-    HOPMirOp_PUSH_NULL,
-    HOPMirOp_LOAD_IDENT,
-    HOPMirOp_STORE_IDENT,
-    HOPMirOp_CALL,
-    HOPMirOp_UNARY,
-    HOPMirOp_BINARY,
-    HOPMirOp_INDEX,
-    HOPMirOp_SEQ_LEN,
-    HOPMirOp_STR_CSTR,
-    HOPMirOp_ITER_INIT,
-    HOPMirOp_ITER_NEXT,
-    HOPMirOp_CAST,
-    HOPMirOp_COERCE,
-    HOPMirOp_LOCAL_ZERO,
-    HOPMirOp_LOCAL_LOAD,
-    HOPMirOp_LOCAL_STORE,
-    HOPMirOp_LOCAL_ADDR,
-    HOPMirOp_DROP,
-    HOPMirOp_JUMP,
-    HOPMirOp_JUMP_IF_FALSE,
-    HOPMirOp_ASSERT,
-    HOPMirOp_CALL_FN,
-    HOPMirOp_CALL_HOST,
-    HOPMirOp_CALL_INDIRECT,
-    HOPMirOp_DEREF_LOAD,
-    HOPMirOp_DEREF_STORE,
-    HOPMirOp_ADDR_OF,
-    HOPMirOp_AGG_MAKE,
-    HOPMirOp_AGG_ZERO,
-    HOPMirOp_AGG_GET,
-    HOPMirOp_AGG_SET,
-    HOPMirOp_AGG_ADDR,
-    HOPMirOp_ARRAY_ZERO,
-    HOPMirOp_ARRAY_GET,
-    HOPMirOp_ARRAY_SET,
-    HOPMirOp_ARRAY_ADDR,
-    HOPMirOp_TUPLE_MAKE,
-    HOPMirOp_SLICE_MAKE,
-    HOPMirOp_OPTIONAL_WRAP,
-    HOPMirOp_OPTIONAL_UNWRAP,
-    HOPMirOp_TAGGED_MAKE,
-    HOPMirOp_TAGGED_TAG,
-    HOPMirOp_TAGGED_PAYLOAD,
-    HOPMirOp_ALLOC_NEW,
-    HOPMirOp_CTX_GET,
-    HOPMirOp_CTX_ADDR,
-    HOPMirOp_CTX_SET,
-    HOPMirOp_RETURN,
-    HOPMirOp_RETURN_VOID,
-} HOPMirOp;
+    H2MirOp_INVALID = 0,
+    H2MirOp_PUSH_CONST,
+    H2MirOp_PUSH_INT,
+    H2MirOp_PUSH_FLOAT,
+    H2MirOp_PUSH_BOOL,
+    H2MirOp_PUSH_STRING,
+    H2MirOp_PUSH_NULL,
+    H2MirOp_LOAD_IDENT,
+    H2MirOp_STORE_IDENT,
+    H2MirOp_CALL,
+    H2MirOp_UNARY,
+    H2MirOp_BINARY,
+    H2MirOp_INDEX,
+    H2MirOp_SEQ_LEN,
+    H2MirOp_STR_CSTR,
+    H2MirOp_ITER_INIT,
+    H2MirOp_ITER_NEXT,
+    H2MirOp_CAST,
+    H2MirOp_COERCE,
+    H2MirOp_LOCAL_ZERO,
+    H2MirOp_LOCAL_LOAD,
+    H2MirOp_LOCAL_STORE,
+    H2MirOp_LOCAL_ADDR,
+    H2MirOp_DROP,
+    H2MirOp_JUMP,
+    H2MirOp_JUMP_IF_FALSE,
+    H2MirOp_ASSERT,
+    H2MirOp_CALL_FN,
+    H2MirOp_CALL_HOST,
+    H2MirOp_CALL_INDIRECT,
+    H2MirOp_DEREF_LOAD,
+    H2MirOp_DEREF_STORE,
+    H2MirOp_ADDR_OF,
+    H2MirOp_AGG_MAKE,
+    H2MirOp_AGG_ZERO,
+    H2MirOp_AGG_GET,
+    H2MirOp_AGG_SET,
+    H2MirOp_AGG_ADDR,
+    H2MirOp_ARRAY_ZERO,
+    H2MirOp_ARRAY_GET,
+    H2MirOp_ARRAY_SET,
+    H2MirOp_ARRAY_ADDR,
+    H2MirOp_TUPLE_MAKE,
+    H2MirOp_SLICE_MAKE,
+    H2MirOp_OPTIONAL_WRAP,
+    H2MirOp_OPTIONAL_UNWRAP,
+    H2MirOp_TAGGED_MAKE,
+    H2MirOp_TAGGED_TAG,
+    H2MirOp_TAGGED_PAYLOAD,
+    H2MirOp_ALLOC_NEW,
+    H2MirOp_CTX_GET,
+    H2MirOp_CTX_ADDR,
+    H2MirOp_CTX_SET,
+    H2MirOp_RETURN,
+    H2MirOp_RETURN_VOID,
+} H2MirOp;
 
 typedef enum {
-    HOPMirCastTarget_INVALID = 0,
-    HOPMirCastTarget_INT = 1,
-    HOPMirCastTarget_FLOAT = 2,
-    HOPMirCastTarget_BOOL = 3,
-    HOPMirCastTarget_STR_VIEW = 4,
-    HOPMirCastTarget_PTR_LIKE = 5,
-} HOPMirCastTarget;
+    H2MirCastTarget_INVALID = 0,
+    H2MirCastTarget_INT = 1,
+    H2MirCastTarget_FLOAT = 2,
+    H2MirCastTarget_BOOL = 3,
+    H2MirCastTarget_STR_VIEW = 4,
+    H2MirCastTarget_PTR_LIKE = 5,
+} H2MirCastTarget;
 
 enum {
-    HOPMirCallArgFlag_RECEIVER_ARG0 = 0x8000u,
-    HOPMirCallArgFlag_SPREAD_LAST = 0x4000u,
-    HOPMirCallArgFlag_MASK = HOPMirCallArgFlag_RECEIVER_ARG0 | HOPMirCallArgFlag_SPREAD_LAST,
+    H2MirCallArgFlag_RECEIVER_ARG0 = 0x8000u,
+    H2MirCallArgFlag_SPREAD_LAST = 0x4000u,
+    H2MirCallArgFlag_MASK = H2MirCallArgFlag_RECEIVER_ARG0 | H2MirCallArgFlag_SPREAD_LAST,
 };
 
-static inline uint32_t HOPMirCallArgCountFromTok(uint16_t tok) {
-    return (uint32_t)(tok & ~HOPMirCallArgFlag_MASK);
+static inline uint32_t H2MirCallArgCountFromTok(uint16_t tok) {
+    return (uint32_t)(tok & ~H2MirCallArgFlag_MASK);
 }
 
-static inline int HOPMirCallTokDropsReceiverArg0(uint16_t tok) {
-    return (tok & HOPMirCallArgFlag_RECEIVER_ARG0) != 0;
+static inline int H2MirCallTokDropsReceiverArg0(uint16_t tok) {
+    return (tok & H2MirCallArgFlag_RECEIVER_ARG0) != 0;
 }
 
-static inline int HOPMirCallTokHasSpreadLast(uint16_t tok) {
-    return (tok & HOPMirCallArgFlag_SPREAD_LAST) != 0;
+static inline int H2MirCallTokHasSpreadLast(uint16_t tok) {
+    return (tok & H2MirCallArgFlag_SPREAD_LAST) != 0;
 }
 
 enum {
-    HOPMirIterFlag_HAS_KEY = 1u << 0,
-    HOPMirIterFlag_KEY_REF = 1u << 1,
-    HOPMirIterFlag_VALUE_REF = 1u << 2,
-    HOPMirIterFlag_VALUE_DISCARD = 1u << 3,
+    H2MirIterFlag_HAS_KEY = 1u << 0,
+    H2MirIterFlag_KEY_REF = 1u << 1,
+    H2MirIterFlag_VALUE_REF = 1u << 2,
+    H2MirIterFlag_VALUE_DISCARD = 1u << 3,
 };
 
 typedef struct {
-    HOPMirOp op;
+    H2MirOp  op;
     uint16_t tok;
     uint16_t _reserved;
     uint32_t aux;
     uint32_t start;
     uint32_t end;
-} HOPMirInst;
+} H2MirInst;
 
 typedef struct {
-    const HOPMirInst* _Nullable v;
+    const H2MirInst* _Nullable v;
     uint32_t len;
-} HOPMirChunk;
+} H2MirChunk;
 
 typedef enum {
-    HOPMirConst_INVALID = 0,
-    HOPMirConst_INT,
-    HOPMirConst_FLOAT,
-    HOPMirConst_BOOL,
-    HOPMirConst_STRING,
-    HOPMirConst_NULL,
-    HOPMirConst_TYPE,
-    HOPMirConst_FUNCTION,
-    HOPMirConst_HOST,
-} HOPMirConstKind;
+    H2MirConst_INVALID = 0,
+    H2MirConst_INT,
+    H2MirConst_FLOAT,
+    H2MirConst_BOOL,
+    H2MirConst_STRING,
+    H2MirConst_NULL,
+    H2MirConst_TYPE,
+    H2MirConst_FUNCTION,
+    H2MirConst_HOST,
+} H2MirConstKind;
 
 typedef struct {
-    HOPMirConstKind kind;
-    uint32_t        aux;
-    uint64_t        bits;
-    HOPStrView      bytes;
-} HOPMirConst;
+    H2MirConstKind kind;
+    uint32_t       aux;
+    uint64_t       bits;
+    H2StrView      bytes;
+} H2MirConst;
 
 typedef struct {
-    HOPStrView src;
-} HOPMirSourceRef;
+    H2StrView src;
+} H2MirSourceRef;
 
 typedef enum {
-    HOPMirLocalFlag_NONE = 0,
-    HOPMirLocalFlag_PARAM = 1u << 0,
-    HOPMirLocalFlag_MUTABLE = 1u << 1,
-    HOPMirLocalFlag_ZERO_INIT = 1u << 2,
-} HOPMirLocalFlag;
+    H2MirLocalFlag_NONE = 0,
+    H2MirLocalFlag_PARAM = 1u << 0,
+    H2MirLocalFlag_MUTABLE = 1u << 1,
+    H2MirLocalFlag_ZERO_INIT = 1u << 2,
+} H2MirLocalFlag;
 
 typedef struct {
     uint32_t typeRef;
     uint32_t flags;
     uint32_t nameStart;
     uint32_t nameEnd;
-} HOPMirLocal;
+} H2MirLocal;
 
 typedef struct {
     uint32_t instStart;
@@ -160,11 +160,11 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     uint32_t flags;
-} HOPMirFunction;
+} H2MirFunction;
 
 enum {
-    HOPMirFunctionFlag_NONE = 0,
-    HOPMirFunctionFlag_VARIADIC = 1u << 0,
+    H2MirFunctionFlag_NONE = 0,
+    H2MirFunctionFlag_VARIADIC = 1u << 0,
 };
 
 typedef struct {
@@ -173,382 +173,379 @@ typedef struct {
     uint32_t sourceRef;
     uint32_t ownerTypeRef;
     uint32_t typeRef;
-} HOPMirField;
+} H2MirField;
 
 typedef struct {
     uint32_t astNode;
     uint32_t sourceRef;
     uint32_t flags;
     uint32_t aux;
-} HOPMirTypeRef;
+} H2MirTypeRef;
 
 typedef enum {
-    HOPMirTypeScalar_NONE = 0,
-    HOPMirTypeScalar_I32 = 1,
-    HOPMirTypeScalar_I64 = 2,
-    HOPMirTypeScalar_F32 = 3,
-    HOPMirTypeScalar_F64 = 4,
-} HOPMirTypeScalar;
+    H2MirTypeScalar_NONE = 0,
+    H2MirTypeScalar_I32 = 1,
+    H2MirTypeScalar_I64 = 2,
+    H2MirTypeScalar_F32 = 3,
+    H2MirTypeScalar_F64 = 4,
+} H2MirTypeScalar;
 
 enum {
-    HOPMirTypeFlag_SCALAR_MASK = 0x000000ffu,
-    HOPMirTypeFlag_STR_REF = 0x00000100u,
-    HOPMirTypeFlag_STR_PTR = 0x00000200u,
-    HOPMirTypeFlag_U8_PTR = 0x00000400u,
-    HOPMirTypeFlag_I32_PTR = 0x00000800u,
-    HOPMirTypeFlag_I8_PTR = 0x00001000u,
-    HOPMirTypeFlag_U16_PTR = 0x00002000u,
-    HOPMirTypeFlag_I16_PTR = 0x00004000u,
-    HOPMirTypeFlag_U32_PTR = 0x00008000u,
-    HOPMirTypeFlag_FIXED_ARRAY = 0x00010000u,
-    HOPMirTypeFlag_FIXED_ARRAY_VIEW = 0x00020000u,
-    HOPMirTypeFlag_SLICE_VIEW = 0x00040000u,
-    HOPMirTypeFlag_AGGREGATE = 0x00080000u,
-    HOPMirTypeFlag_OPAQUE_PTR = 0x00100000u,
-    HOPMirTypeFlag_OPTIONAL = 0x00200000u,
-    HOPMirTypeFlag_FUNC_REF = 0x00400000u,
-    HOPMirTypeFlag_STR_OBJ = 0x00800000u,
-    HOPMirTypeFlag_VARRAY_VIEW = 0x01000000u,
-    HOPMirTypeFlag_AGG_SLICE_VIEW = 0x02000000u,
+    H2MirTypeFlag_SCALAR_MASK = 0x000000ffu,
+    H2MirTypeFlag_STR_REF = 0x00000100u,
+    H2MirTypeFlag_STR_PTR = 0x00000200u,
+    H2MirTypeFlag_U8_PTR = 0x00000400u,
+    H2MirTypeFlag_I32_PTR = 0x00000800u,
+    H2MirTypeFlag_I8_PTR = 0x00001000u,
+    H2MirTypeFlag_U16_PTR = 0x00002000u,
+    H2MirTypeFlag_I16_PTR = 0x00004000u,
+    H2MirTypeFlag_U32_PTR = 0x00008000u,
+    H2MirTypeFlag_FIXED_ARRAY = 0x00010000u,
+    H2MirTypeFlag_FIXED_ARRAY_VIEW = 0x00020000u,
+    H2MirTypeFlag_SLICE_VIEW = 0x00040000u,
+    H2MirTypeFlag_AGGREGATE = 0x00080000u,
+    H2MirTypeFlag_OPAQUE_PTR = 0x00100000u,
+    H2MirTypeFlag_OPTIONAL = 0x00200000u,
+    H2MirTypeFlag_FUNC_REF = 0x00400000u,
+    H2MirTypeFlag_STR_OBJ = 0x00800000u,
+    H2MirTypeFlag_VARRAY_VIEW = 0x01000000u,
+    H2MirTypeFlag_AGG_SLICE_VIEW = 0x02000000u,
 };
 
 typedef enum {
-    HOPMirIntKind_NONE = 0,
-    HOPMirIntKind_BOOL = 1,
-    HOPMirIntKind_U8 = 2,
-    HOPMirIntKind_I8 = 3,
-    HOPMirIntKind_U16 = 4,
-    HOPMirIntKind_I16 = 5,
-    HOPMirIntKind_U32 = 6,
-    HOPMirIntKind_I32 = 7,
-} HOPMirIntKind;
+    H2MirIntKind_NONE = 0,
+    H2MirIntKind_BOOL = 1,
+    H2MirIntKind_U8 = 2,
+    H2MirIntKind_I8 = 3,
+    H2MirIntKind_U16 = 4,
+    H2MirIntKind_I16 = 5,
+    H2MirIntKind_U32 = 6,
+    H2MirIntKind_I32 = 7,
+} H2MirIntKind;
 
 enum {
-    HOPMirTypeAux_INT_KIND_MASK = 0x000000ffu,
-    HOPMirTypeAux_ARRAY_COUNT_SHIFT = 8u,
-    HOPMirTypeAux_ARRAY_COUNT_MASK = 0x00ffff00u,
+    H2MirTypeAux_INT_KIND_MASK = 0x000000ffu,
+    H2MirTypeAux_ARRAY_COUNT_SHIFT = 8u,
+    H2MirTypeAux_ARRAY_COUNT_MASK = 0x00ffff00u,
 };
 
-static inline uint32_t HOPMirTypeAuxMakeScalarInt(HOPMirIntKind intKind) {
+static inline uint32_t H2MirTypeAuxMakeScalarInt(H2MirIntKind intKind) {
     return (uint32_t)intKind;
 }
 
-static inline uint32_t HOPMirTypeAuxMakeFixedArray(HOPMirIntKind elemKind, uint32_t count) {
+static inline uint32_t H2MirTypeAuxMakeFixedArray(H2MirIntKind elemKind, uint32_t count) {
     return (uint32_t)elemKind
-         | ((count << HOPMirTypeAux_ARRAY_COUNT_SHIFT) & HOPMirTypeAux_ARRAY_COUNT_MASK);
+         | ((count << H2MirTypeAux_ARRAY_COUNT_SHIFT) & H2MirTypeAux_ARRAY_COUNT_MASK);
 }
 
-static inline uint32_t HOPMirTypeAuxMakeVArrayView(HOPMirIntKind elemKind, uint32_t countFieldRef) {
+static inline uint32_t H2MirTypeAuxMakeVArrayView(H2MirIntKind elemKind, uint32_t countFieldRef) {
     return (uint32_t)elemKind
-         | (((countFieldRef + 1u) << HOPMirTypeAux_ARRAY_COUNT_SHIFT)
-            & HOPMirTypeAux_ARRAY_COUNT_MASK);
+         | (((countFieldRef + 1u) << H2MirTypeAux_ARRAY_COUNT_SHIFT)
+            & H2MirTypeAux_ARRAY_COUNT_MASK);
 }
 
-static inline HOPMirIntKind HOPMirTypeRefIntKind(const HOPMirTypeRef* typeRef) {
+static inline H2MirIntKind H2MirTypeRefIntKind(const H2MirTypeRef* typeRef) {
     return typeRef != NULL
-             ? (HOPMirIntKind)(typeRef->aux & HOPMirTypeAux_INT_KIND_MASK)
-             : HOPMirIntKind_NONE;
+             ? (H2MirIntKind)(typeRef->aux & H2MirTypeAux_INT_KIND_MASK)
+             : H2MirIntKind_NONE;
 }
 
-static inline uint32_t HOPMirTypeRefFixedArrayCount(const HOPMirTypeRef* typeRef) {
+static inline uint32_t H2MirTypeRefFixedArrayCount(const H2MirTypeRef* typeRef) {
     return typeRef != NULL
-             ? (typeRef->aux & HOPMirTypeAux_ARRAY_COUNT_MASK) >> HOPMirTypeAux_ARRAY_COUNT_SHIFT
+             ? (typeRef->aux & H2MirTypeAux_ARRAY_COUNT_MASK) >> H2MirTypeAux_ARRAY_COUNT_SHIFT
              : 0u;
 }
 
-static inline uint32_t HOPMirTypeRefVArrayCountField(const HOPMirTypeRef* typeRef) {
+static inline uint32_t H2MirTypeRefVArrayCountField(const H2MirTypeRef* typeRef) {
     uint32_t encoded;
     if (typeRef == NULL) {
         return UINT32_MAX;
     }
-    encoded = (typeRef->aux & HOPMirTypeAux_ARRAY_COUNT_MASK) >> HOPMirTypeAux_ARRAY_COUNT_SHIFT;
+    encoded = (typeRef->aux & H2MirTypeAux_ARRAY_COUNT_MASK) >> H2MirTypeAux_ARRAY_COUNT_SHIFT;
     return encoded == 0u ? UINT32_MAX : encoded - 1u;
 }
 
-static inline uint32_t HOPMirTypeAuxMakeAggSliceView(uint32_t elemTypeRef) {
+static inline uint32_t H2MirTypeAuxMakeAggSliceView(uint32_t elemTypeRef) {
     return elemTypeRef == UINT32_MAX ? 0u : (elemTypeRef + 1u);
 }
 
-static inline uint32_t HOPMirTypeRefAggSliceElemTypeRef(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_AGG_SLICE_VIEW) != 0u
+static inline uint32_t H2MirTypeRefAggSliceElemTypeRef(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_AGG_SLICE_VIEW) != 0u
                 && typeRef->aux != 0u
              ? typeRef->aux - 1u
              : UINT32_MAX;
 }
 
-static inline HOPMirTypeScalar HOPMirTypeRefScalarKind(const HOPMirTypeRef* typeRef) {
+static inline H2MirTypeScalar H2MirTypeRefScalarKind(const H2MirTypeRef* typeRef) {
     return typeRef != NULL
-             ? (HOPMirTypeScalar)(typeRef->flags & HOPMirTypeFlag_SCALAR_MASK)
-             : HOPMirTypeScalar_NONE;
+             ? (H2MirTypeScalar)(typeRef->flags & H2MirTypeFlag_SCALAR_MASK)
+             : H2MirTypeScalar_NONE;
 }
 
-static inline int HOPMirTypeRefIsStrRef(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_STR_REF) != 0;
+static inline int H2MirTypeRefIsStrRef(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_STR_REF) != 0;
 }
 
-static inline int HOPMirTypeRefIsStrPtr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_STR_PTR) != 0;
+static inline int H2MirTypeRefIsStrPtr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_STR_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsStrObj(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_STR_OBJ) != 0;
+static inline int H2MirTypeRefIsStrObj(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_STR_OBJ) != 0;
 }
 
-static inline int HOPMirTypeRefIsU8Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_U8_PTR) != 0;
+static inline int H2MirTypeRefIsU8Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_U8_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsI32Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_I32_PTR) != 0;
+static inline int H2MirTypeRefIsI32Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_I32_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsI8Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_I8_PTR) != 0;
+static inline int H2MirTypeRefIsI8Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_I8_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsU16Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_U16_PTR) != 0;
+static inline int H2MirTypeRefIsU16Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_U16_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsI16Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_I16_PTR) != 0;
+static inline int H2MirTypeRefIsI16Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_I16_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsU32Ptr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_U32_PTR) != 0;
+static inline int H2MirTypeRefIsU32Ptr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_U32_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsFixedArray(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_FIXED_ARRAY) != 0;
+static inline int H2MirTypeRefIsFixedArray(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_FIXED_ARRAY) != 0;
 }
 
-static inline int HOPMirTypeRefIsFixedArrayView(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_FIXED_ARRAY_VIEW) != 0;
+static inline int H2MirTypeRefIsFixedArrayView(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_FIXED_ARRAY_VIEW) != 0;
 }
 
-static inline int HOPMirTypeRefIsSliceView(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_SLICE_VIEW) != 0;
+static inline int H2MirTypeRefIsSliceView(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_SLICE_VIEW) != 0;
 }
 
-static inline int HOPMirTypeRefIsVArrayView(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_VARRAY_VIEW) != 0;
+static inline int H2MirTypeRefIsVArrayView(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_VARRAY_VIEW) != 0;
 }
 
-static inline int HOPMirTypeRefIsAggSliceView(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_AGG_SLICE_VIEW) != 0;
+static inline int H2MirTypeRefIsAggSliceView(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_AGG_SLICE_VIEW) != 0;
 }
 
-static inline int HOPMirTypeRefIsAggregate(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_AGGREGATE) != 0;
+static inline int H2MirTypeRefIsAggregate(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_AGGREGATE) != 0;
 }
 
-static inline int HOPMirTypeRefIsOpaquePtr(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_OPAQUE_PTR) != 0;
+static inline int H2MirTypeRefIsOpaquePtr(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_OPAQUE_PTR) != 0;
 }
 
-static inline int HOPMirTypeRefIsOptional(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_OPTIONAL) != 0;
+static inline int H2MirTypeRefIsOptional(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_OPTIONAL) != 0;
 }
 
-static inline int HOPMirTypeRefIsFuncRef(const HOPMirTypeRef* typeRef) {
-    return typeRef != NULL && (typeRef->flags & HOPMirTypeFlag_FUNC_REF) != 0;
+static inline int H2MirTypeRefIsFuncRef(const H2MirTypeRef* typeRef) {
+    return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_FUNC_REF) != 0;
 }
 
-static inline uint32_t HOPMirTypeRefFuncRefFunctionIndex(const HOPMirTypeRef* typeRef) {
-    if (!HOPMirTypeRefIsFuncRef(typeRef) || typeRef->aux == 0u) {
+static inline uint32_t H2MirTypeRefFuncRefFunctionIndex(const H2MirTypeRef* typeRef) {
+    if (!H2MirTypeRefIsFuncRef(typeRef) || typeRef->aux == 0u) {
         return UINT32_MAX;
     }
     return typeRef->aux - 1u;
 }
 
-static inline uint32_t HOPMirTypeRefOpaquePointeeTypeRef(const HOPMirTypeRef* typeRef) {
-    return HOPMirTypeRefIsOpaquePtr(typeRef) ? typeRef->aux : UINT32_MAX;
+static inline uint32_t H2MirTypeRefOpaquePointeeTypeRef(const H2MirTypeRef* typeRef) {
+    return H2MirTypeRefIsOpaquePtr(typeRef) ? typeRef->aux : UINT32_MAX;
 }
 
 typedef enum {
-    HOPMirHost_INVALID = 0,
-    HOPMirHost_GENERIC,
-} HOPMirHostKind;
+    H2MirHost_INVALID = 0,
+    H2MirHost_GENERIC,
+} H2MirHostKind;
 
 typedef enum {
-    HOPMirHostTarget_INVALID = 0,
-    HOPMirHostTarget_PRINT = 1,
-    HOPMirHostTarget_PLATFORM_EXIT = 2,
-    HOPMirHostTarget_FREE = 3,
-    HOPMirHostTarget_CONCAT = 4,
-    HOPMirHostTarget_COPY = 5,
-    HOPMirHostTarget_PLATFORM_CONSOLE_LOG = 6,
-} HOPMirHostTarget;
+    H2MirHostTarget_INVALID = 0,
+    H2MirHostTarget_PRINT = 1,
+    H2MirHostTarget_PLATFORM_EXIT = 2,
+    H2MirHostTarget_FREE = 3,
+    H2MirHostTarget_CONCAT = 4,
+    H2MirHostTarget_COPY = 5,
+    H2MirHostTarget_PLATFORM_CONSOLE_LOG = 6,
+} H2MirHostTarget;
 
 typedef enum {
-    HOPMirContextField_INVALID = 0,
-    HOPMirContextField_ALLOCATOR = 1,
-    HOPMirContextField_TEMP_ALLOCATOR = 2,
-    HOPMirContextField_LOGGER = 3,
-} HOPMirContextField;
+    H2MirContextField_INVALID = 0,
+    H2MirContextField_ALLOCATOR = 1,
+    H2MirContextField_TEMP_ALLOCATOR = 2,
+    H2MirContextField_LOGGER = 3,
+} H2MirContextField;
 
 typedef struct {
-    uint32_t       nameStart;
-    uint32_t       nameEnd;
-    HOPMirHostKind kind;
-    uint32_t       flags;
-    uint32_t       target;
-} HOPMirHostRef;
+    uint32_t      nameStart;
+    uint32_t      nameEnd;
+    H2MirHostKind kind;
+    uint32_t      flags;
+    uint32_t      target;
+} H2MirHostRef;
 
 typedef enum {
-    HOPMirSymbol_INVALID = 0,
-    HOPMirSymbol_IDENT,
-    HOPMirSymbol_CALL,
-    HOPMirSymbol_HOST,
-} HOPMirSymbolKind;
+    H2MirSymbol_INVALID = 0,
+    H2MirSymbol_IDENT,
+    H2MirSymbol_CALL,
+    H2MirSymbol_HOST,
+} H2MirSymbolKind;
 
 typedef enum {
-    HOPMirSymbolFlag_NONE = 0,
-    HOPMirSymbolFlag_CALL_RECEIVER_ARG0 = 1u << 0,
-} HOPMirSymbolFlag;
+    H2MirSymbolFlag_NONE = 0,
+    H2MirSymbolFlag_CALL_RECEIVER_ARG0 = 1u << 0,
+} H2MirSymbolFlag;
 
 enum {
-    HOPMIR_RAW_CALL_AUX_FLAG_MASK = (1u << 1u) - 1u,
+    H2MIR_RAW_CALL_AUX_FLAG_MASK = (1u << 1u) - 1u,
 };
 
-static inline uint32_t HOPMirRawCallAuxPack(uint32_t nodeId, uint32_t flags) {
-    return (nodeId << 1u) | (flags & HOPMIR_RAW_CALL_AUX_FLAG_MASK);
+static inline uint32_t H2MirRawCallAuxPack(uint32_t nodeId, uint32_t flags) {
+    return (nodeId << 1u) | (flags & H2MIR_RAW_CALL_AUX_FLAG_MASK);
 }
 
-static inline uint32_t HOPMirRawCallAuxNode(uint32_t aux) {
+static inline uint32_t H2MirRawCallAuxNode(uint32_t aux) {
     return aux >> 1u;
 }
 
-static inline uint32_t HOPMirRawCallAuxFlags(uint32_t aux) {
-    return aux & HOPMIR_RAW_CALL_AUX_FLAG_MASK;
+static inline uint32_t H2MirRawCallAuxFlags(uint32_t aux) {
+    return aux & H2MIR_RAW_CALL_AUX_FLAG_MASK;
 }
 
 typedef struct {
-    uint32_t         nameStart;
-    uint32_t         nameEnd;
-    HOPMirSymbolKind kind;
-    uint32_t         flags;
-    uint32_t         target;
-} HOPMirSymbolRef;
+    uint32_t        nameStart;
+    uint32_t        nameEnd;
+    H2MirSymbolKind kind;
+    uint32_t        flags;
+    uint32_t        target;
+} H2MirSymbolRef;
 
 typedef struct {
-    const HOPMirInst*      insts;
-    uint32_t               instLen;
-    const HOPMirConst*     consts;
-    uint32_t               constLen;
-    const HOPMirSourceRef* sources;
-    uint32_t               sourceLen;
-    const HOPMirFunction*  funcs;
-    uint32_t               funcLen;
-    const HOPMirLocal*     locals;
-    uint32_t               localLen;
-    const HOPMirField*     fields;
-    uint32_t               fieldLen;
-    const HOPMirTypeRef*   types;
-    uint32_t               typeLen;
-    const HOPMirHostRef*   hosts;
-    uint32_t               hostLen;
-    const HOPMirSymbolRef* symbols;
-    uint32_t               symbolLen;
-} HOPMirProgram;
+    const H2MirInst*      insts;
+    uint32_t              instLen;
+    const H2MirConst*     consts;
+    uint32_t              constLen;
+    const H2MirSourceRef* sources;
+    uint32_t              sourceLen;
+    const H2MirFunction*  funcs;
+    uint32_t              funcLen;
+    const H2MirLocal*     locals;
+    uint32_t              localLen;
+    const H2MirField*     fields;
+    uint32_t              fieldLen;
+    const H2MirTypeRef*   types;
+    uint32_t              typeLen;
+    const H2MirHostRef*   hosts;
+    uint32_t              hostLen;
+    const H2MirSymbolRef* symbols;
+    uint32_t              symbolLen;
+} H2MirProgram;
 
 typedef struct {
-    HOPArena*        arena;
-    HOPMirInst*      insts;
-    uint32_t         instLen;
-    uint32_t         instCap;
-    HOPMirConst*     consts;
-    uint32_t         constLen;
-    uint32_t         constCap;
-    HOPMirSourceRef* sources;
-    uint32_t         sourceLen;
-    uint32_t         sourceCap;
-    HOPMirFunction*  funcs;
-    uint32_t         funcLen;
-    uint32_t         funcCap;
-    HOPMirLocal*     locals;
-    uint32_t         localLen;
-    uint32_t         localCap;
-    HOPMirField*     fields;
-    uint32_t         fieldLen;
-    uint32_t         fieldCap;
-    HOPMirTypeRef*   types;
-    uint32_t         typeLen;
-    uint32_t         typeCap;
-    HOPMirHostRef*   hosts;
-    uint32_t         hostLen;
-    uint32_t         hostCap;
-    HOPMirSymbolRef* symbols;
-    uint32_t         symbolLen;
-    uint32_t         symbolCap;
-    uint32_t         openFunc;
-    uint8_t          hasOpenFunc;
-    uint8_t          _reserved[3];
-} HOPMirProgramBuilder;
+    H2Arena*        arena;
+    H2MirInst*      insts;
+    uint32_t        instLen;
+    uint32_t        instCap;
+    H2MirConst*     consts;
+    uint32_t        constLen;
+    uint32_t        constCap;
+    H2MirSourceRef* sources;
+    uint32_t        sourceLen;
+    uint32_t        sourceCap;
+    H2MirFunction*  funcs;
+    uint32_t        funcLen;
+    uint32_t        funcCap;
+    H2MirLocal*     locals;
+    uint32_t        localLen;
+    uint32_t        localCap;
+    H2MirField*     fields;
+    uint32_t        fieldLen;
+    uint32_t        fieldCap;
+    H2MirTypeRef*   types;
+    uint32_t        typeLen;
+    uint32_t        typeCap;
+    H2MirHostRef*   hosts;
+    uint32_t        hostLen;
+    uint32_t        hostCap;
+    H2MirSymbolRef* symbols;
+    uint32_t        symbolLen;
+    uint32_t        symbolCap;
+    uint32_t        openFunc;
+    uint8_t         hasOpenFunc;
+    uint8_t         _reserved[3];
+} H2MirProgramBuilder;
 
-int HOPMirBuildExpr(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    nodeId,
-    HOPMirChunk* _Nonnull outChunk,
+int H2MirBuildExpr(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   nodeId,
+    H2MirChunk* _Nonnull outChunk,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-void HOPMirProgramBuilderInit(HOPMirProgramBuilder* _Nonnull b, HOPArena* _Nonnull arena);
-int  HOPMirProgramBuilderAddConst(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirConst* _Nonnull value,
+void H2MirProgramBuilderInit(H2MirProgramBuilder* _Nonnull b, H2Arena* _Nonnull arena);
+int  H2MirProgramBuilderAddConst(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirConst* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAddSource(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirSourceRef* _Nonnull value,
+int H2MirProgramBuilderAddSource(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirSourceRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAddLocal(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirLocal* _Nonnull value,
-    uint32_t* _Nullable outSlot);
-int HOPMirProgramBuilderAddField(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirField* _Nonnull value,
+int H2MirProgramBuilderAddLocal(
+    H2MirProgramBuilder* _Nonnull b, const H2MirLocal* _Nonnull value, uint32_t* _Nullable outSlot);
+int H2MirProgramBuilderAddField(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirField* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAddType(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirTypeRef* _Nonnull value,
+int H2MirProgramBuilderAddType(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirTypeRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAddHost(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirHostRef* _Nonnull value,
+int H2MirProgramBuilderAddHost(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirHostRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAddSymbol(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirSymbolRef* _Nonnull value,
+int H2MirProgramBuilderAddSymbol(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirSymbolRef* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderBeginFunction(
-    HOPMirProgramBuilder* _Nonnull b,
-    const HOPMirFunction* _Nonnull value,
+int H2MirProgramBuilderBeginFunction(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirFunction* _Nonnull value,
     uint32_t* _Nullable outIndex);
-int HOPMirProgramBuilderAppendInst(
-    HOPMirProgramBuilder* _Nonnull b, const HOPMirInst* _Nonnull value);
-int HOPMirProgramBuilderInsertInst(
-    HOPMirProgramBuilder* _Nonnull b,
+int H2MirProgramBuilderAppendInst(H2MirProgramBuilder* _Nonnull b, const H2MirInst* _Nonnull value);
+int H2MirProgramBuilderInsertInst(
+    H2MirProgramBuilder* _Nonnull b,
     uint32_t functionIndex,
     uint32_t instIndexInFunction,
-    const HOPMirInst* _Nonnull value);
-int  HOPMirProgramBuilderEndFunction(HOPMirProgramBuilder* _Nonnull b);
-void HOPMirProgramBuilderFinish(
-    const HOPMirProgramBuilder* _Nonnull b, HOPMirProgram* _Nonnull outProgram);
-int HOPMirValidateProgram(const HOPMirProgram* _Nonnull program, HOPDiag* _Nullable diag);
-int HOPMirProgramNeedsDynamicResolution(const HOPMirProgram* _Nonnull program);
-int HOPMirFindFirstDynamicResolutionInst(
-    const HOPMirProgram* _Nonnull program,
+    const H2MirInst* _Nonnull value);
+int  H2MirProgramBuilderEndFunction(H2MirProgramBuilder* _Nonnull b);
+void H2MirProgramBuilderFinish(
+    const H2MirProgramBuilder* _Nonnull b, H2MirProgram* _Nonnull outProgram);
+int H2MirValidateProgram(const H2MirProgram* _Nonnull program, H2Diag* _Nullable diag);
+int H2MirProgramNeedsDynamicResolution(const H2MirProgram* _Nonnull program);
+int H2MirFindFirstDynamicResolutionInst(
+    const H2MirProgram* _Nonnull program,
     uint32_t* _Nullable outFunctionIndex,
     uint32_t* _Nullable outPc,
-    const HOPMirInst** _Nullable outInst);
-int HOPMirDumpProgram(
-    const HOPMirProgram* _Nonnull program,
-    HOPStrView src,
-    HOPWriter* _Nonnull w,
-    HOPDiag* _Nullable diag);
+    const H2MirInst** _Nullable outInst);
+int H2MirDumpProgram(
+    const H2MirProgram* _Nonnull program,
+    H2StrView src,
+    H2Writer* _Nonnull w,
+    H2Diag* _Nullable diag);
 
-HOP_API_END
+H2_API_END

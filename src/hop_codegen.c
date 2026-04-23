@@ -23,7 +23,7 @@
 #include "mir_lower_stmt.h"
 #include "hop_internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 static int WriteOutput(const char* _Nullable outFilename, const char* data, uint32_t len) {
     FILE*  out;
@@ -45,7 +45,7 @@ static int WriteOutput(const char* _Nullable outFilename, const char* data, uint
 }
 
 static int HasCBackendBuild(void) {
-#if HOP_WITH_C_BACKEND
+#if H2_WITH_C_BACKEND
     return 1;
 #else
     return 0;
@@ -53,7 +53,7 @@ static int HasCBackendBuild(void) {
 }
 
 static int HasWasmBackendBuild(void) {
-#if HOP_WITH_WASM_BACKEND
+#if H2_WITH_WASM_BACKEND
     return 1;
 #else
     return 0;
@@ -72,29 +72,29 @@ int GeneratePackage(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    uint8_t                  mirArenaStorage[4096];
-    HOPArena                 mirArena;
-    HOPPackageLoader         loader;
-    HOPPackage*              entryPkg = NULL;
-    char*                    source = NULL;
-    uint32_t                 sourceLen = 0;
-    HOPMirProgram            mirProgram = { 0 };
-    HOPForeignLinkageInfo    foreignLinkage = { 0 };
-    HOPCodegenArtifact       artifact = { 0 };
-    HOPDiag                  diag = { 0 };
-    HOPCodegenUnit           unit;
-    const HOPCodegenBackend* backend;
-    const char*              effectivePlatformTarget = platformTarget;
-    int                      mirIncludeSelectedPlatform = 0;
-    int                      retriedWithImplicitPlatformPanic = 0;
-    int                      needsMir = 0;
+    uint8_t                 mirArenaStorage[4096];
+    H2Arena                 mirArena;
+    H2PackageLoader         loader;
+    H2Package*              entryPkg = NULL;
+    char*                   source = NULL;
+    uint32_t                sourceLen = 0;
+    H2MirProgram            mirProgram = { 0 };
+    H2ForeignLinkageInfo    foreignLinkage = { 0 };
+    H2CodegenArtifact       artifact = { 0 };
+    H2Diag                  diag = { 0 };
+    H2CodegenUnit           unit;
+    const H2CodegenBackend* backend;
+    const char*             effectivePlatformTarget = platformTarget;
+    int                     mirIncludeSelectedPlatform = 0;
+    int                     retriedWithImplicitPlatformPanic = 0;
+    int                     needsMir = 0;
     (void)cacheDirArg;
 
     memset(&mirArena, 0, sizeof(mirArena));
     if (StrEq(backendName, "wasm")
         && (effectivePlatformTarget == NULL || effectivePlatformTarget[0] == '\0'))
     {
-        effectivePlatformTarget = HOP_WASM_MIN_PLATFORM_TARGET;
+        effectivePlatformTarget = H2_WASM_MIN_PLATFORM_TARGET;
     }
 
     if (LoadAndCheckPackage(
@@ -118,7 +118,7 @@ int GeneratePackage(
             entryPkg->name);
     }
 
-    backend = HOPCodegenFindBackend(backendName);
+    backend = H2CodegenFindBackend(backendName);
     if (backend == NULL) {
         free(source);
         FreeLoader(&loader);
@@ -144,11 +144,11 @@ int GeneratePackage(
     mirIncludeSelectedPlatform =
         PackageUsesPlatformImport(&loader)
         || (effectivePlatformTarget != NULL
-            && StrEq(effectivePlatformTarget, HOP_PLAYBIT_PLATFORM_TARGET));
+            && StrEq(effectivePlatformTarget, H2_PLAYBIT_PLATFORM_TARGET));
     if (needsMir) {
     rebuild_mir:
-        HOPArenaInit(&mirArena, mirArenaStorage, sizeof(mirArenaStorage));
-        HOPArenaSetAllocator(&mirArena, NULL, CodegenArenaGrow, CodegenArenaFree);
+        H2ArenaInit(&mirArena, mirArenaStorage, sizeof(mirArenaStorage));
+        H2ArenaSetAllocator(&mirArena, NULL, CodegenArenaGrow, CodegenArenaFree);
         if (BuildPackageMirProgram(
                 &loader,
                 entryPkg,
@@ -159,17 +159,17 @@ int GeneratePackage(
                 &diag)
             != 0)
         {
-            if (diag.code != HOPDiag_NONE && entryPkg->fileLen == 1
+            if (diag.code != H2Diag_NONE && entryPkg->fileLen == 1
                 && entryPkg->files[0].source != NULL)
             {
                 (void)PrintHOPDiagLineCol(
                     entryPkg->files[0].path, entryPkg->files[0].source, &diag, 0);
-            } else if (diag.code != HOPDiag_NONE) {
+            } else if (diag.code != H2Diag_NONE) {
                 (void)ErrorSimple("invalid MIR program");
             }
             free(source);
             FreeLoader(&loader);
-            HOPArenaDispose(&mirArena);
+            H2ArenaDispose(&mirArena);
             return -1;
         }
         unit.mirProgram = &mirProgram;
@@ -177,31 +177,31 @@ int GeneratePackage(
         unit.usesPlatform = PackageUsesPlatformImport(&loader) ? 1u : 0u;
     }
 
-    HOPCodegenOptions codegenOptions = { 0 };
+    H2CodegenOptions codegenOptions = { 0 };
     codegenOptions.arenaGrow = CodegenArenaGrow;
     codegenOptions.arenaFree = CodegenArenaFree;
 
     if (backend->emit(backend, &unit, &codegenOptions, &artifact, &diag) != 0) {
         if (needsMir && !retriedWithImplicitPlatformPanic && !mirIncludeSelectedPlatform
             && effectivePlatformTarget != NULL
-            && StrEq(effectivePlatformTarget, HOP_WASM_MIN_PLATFORM_TARGET)
-            && diag.code == HOPDiag_WASM_BACKEND_UNSUPPORTED_MIR && diag.detail != NULL
+            && StrEq(effectivePlatformTarget, H2_WASM_MIN_PLATFORM_TARGET)
+            && diag.code == H2Diag_WASM_BACKEND_UNSUPPORTED_MIR && diag.detail != NULL
             && StrEq(
                 diag.detail, "selected platform does not provide imported panic for direct Wasm"))
         {
             if (artifact.data != NULL) {
                 free(artifact.data);
-                artifact = (HOPCodegenArtifact){ 0 };
+                artifact = (H2CodegenArtifact){ 0 };
             }
             FreeForeignLinkageInfo(&foreignLinkage);
             memset(&mirProgram, 0, sizeof(mirProgram));
-            HOPArenaDispose(&mirArena);
-            diag = (HOPDiag){ 0 };
+            H2ArenaDispose(&mirArena);
+            diag = (H2Diag){ 0 };
             mirIncludeSelectedPlatform = 1;
             retriedWithImplicitPlatformPanic = 1;
             goto rebuild_mir;
         }
-        if (diag.code != HOPDiag_NONE) {
+        if (diag.code != H2Diag_NONE) {
             int diagStatus;
             if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
                 diagStatus = PrintHOPDiagLineCol(
@@ -213,14 +213,14 @@ int GeneratePackage(
                 free(source);
                 FreeForeignLinkageInfo(&foreignLinkage);
                 FreeLoader(&loader);
-                HOPArenaDispose(&mirArena);
+                H2ArenaDispose(&mirArena);
                 return -1;
             }
         } else {
             fprintf(stderr, "error: codegen failed\n");
             free(source);
             FreeLoader(&loader);
-            HOPArenaDispose(&mirArena);
+            H2ArenaDispose(&mirArena);
             return -1;
         }
     }
@@ -230,7 +230,7 @@ int GeneratePackage(
         free(artifact.data);
         free(source);
         FreeLoader(&loader);
-        HOPArenaDispose(&mirArena);
+        H2ArenaDispose(&mirArena);
         return -1;
     }
 
@@ -238,7 +238,7 @@ int GeneratePackage(
     free(source);
     FreeForeignLinkageInfo(&foreignLinkage);
     FreeLoader(&loader);
-    HOPArenaDispose(&mirArena);
+    H2ArenaDispose(&mirArena);
     return 0;
 }
 
@@ -291,7 +291,7 @@ static int RunCommandExitCode(const char* const* argv, int* outExitCode) {
     return -1;
 }
 
-static void FreePackageArtifacts(HOPPackageArtifact* _Nullable artifacts, uint32_t artifactLen) {
+static void FreePackageArtifacts(H2PackageArtifact* _Nullable artifacts, uint32_t artifactLen) {
     uint32_t i;
     if (artifacts == NULL) {
         return;
@@ -366,7 +366,7 @@ static int ResolvePlaybitPbPath(char** outPath) {
         return -1;
     }
     *outPath = NULL;
-    envPath = getenv("HOP_PLAYBIT_PB");
+    envPath = getenv("H2_PLAYBIT_PB");
     if (envPath == NULL || envPath[0] == '\0') {
         envPath = getenv("PLAYBIT_PB");
     }
@@ -374,7 +374,7 @@ static int ResolvePlaybitPbPath(char** outPath) {
         envPath = getenv("PB");
     }
     if (envPath != NULL && envPath[0] != '\0') {
-        *outPath = HOPCDupCStr(envPath);
+        *outPath = H2CDupCStr(envPath);
         return *outPath != NULL ? 0 : ErrorSimple("out of memory");
     }
     home = getenv("HOME");
@@ -398,7 +398,7 @@ static int ResolvePlaybitPbPath(char** outPath) {
         }
         free(candidate);
     }
-    *outPath = HOPCDupCStr("pb");
+    *outPath = H2CDupCStr("pb");
     return *outPath != NULL ? 0 : ErrorSimple("out of memory");
 }
 
@@ -458,7 +458,7 @@ static int ResolveBuiltinPath(
 }
 
 static int ResolveCacheRoot(
-    const HOPPackageLoader* _Nullable loader,
+    const H2PackageLoader* _Nullable loader,
     const char* _Nullable cacheDirArg,
     char** outCacheRoot) {
     char* cacheRoot;
@@ -481,7 +481,7 @@ static int ResolveCacheRoot(
     return 0;
 }
 
-int FindPackageIndex(const HOPPackageLoader* loader, const HOPPackage* pkg) {
+int FindPackageIndex(const H2PackageLoader* loader, const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < loader->packageLen; i++) {
         if (&loader->packages[i] == pkg) {
@@ -492,12 +492,12 @@ int FindPackageIndex(const HOPPackageLoader* loader, const HOPPackage* pkg) {
 }
 
 static const char* _Nullable FindPreferredImportPath(
-    const HOPPackageLoader* loader, const HOPPackage* pkg) {
+    const H2PackageLoader* loader, const H2Package* pkg) {
     const char* best = NULL;
     uint32_t    i;
     for (i = 0; i < loader->packageLen; i++) {
-        const HOPPackage* src = &loader->packages[i];
-        uint32_t          j;
+        const H2Package* src = &loader->packages[i];
+        uint32_t         j;
         for (j = 0; j < src->importLen; j++) {
             if (src->imports[j].target != pkg) {
                 continue;
@@ -513,7 +513,7 @@ static const char* _Nullable FindPreferredImportPath(
     return best;
 }
 
-static char* _Nullable BuildPackageKey(const HOPPackageLoader* loader, const HOPPackage* pkg) {
+static char* _Nullable BuildPackageKey(const H2PackageLoader* loader, const H2Package* pkg) {
     const char* hashSource = pkg->dirPath;
     const char* keyHint = FindPreferredImportPath(loader, pkg);
     char*       keyBase = NULL;
@@ -543,7 +543,7 @@ static char* _Nullable BuildPackageKey(const HOPPackageLoader* loader, const HOP
     return out;
 }
 
-static char* _Nullable BuildPackageLinkPrefix(const HOPPackage* pkg) {
+static char* _Nullable BuildPackageLinkPrefix(const H2Package* pkg) {
     (void)pkg;
     return BuildSanitizedIdent(pkg->name, "pkg");
 }
@@ -576,10 +576,8 @@ static char* _Nullable BuildPackageMacro(const char* key, const char* suffix) {
     return out;
 }
 
-static HOPPackageArtifact* _Nullable FindArtifactByPkg(
-    HOPPackageArtifact* _Nullable artifacts,
-    uint32_t artifactLen,
-    const HOPPackage* _Nullable pkg) {
+static H2PackageArtifact* _Nullable FindArtifactByPkg(
+    H2PackageArtifact* _Nullable artifacts, uint32_t artifactLen, const H2Package* _Nullable pkg) {
     uint32_t i;
     if (artifacts == NULL || pkg == NULL) {
         return NULL;
@@ -593,13 +591,13 @@ static HOPPackageArtifact* _Nullable FindArtifactByPkg(
 }
 
 static int BuildToolchainSignature(
-    const HOPPackageLoader* loader, const char* libDir, char** outSignature) {
-    HOPStringBuilder b = { 0 };
-    char*            sig;
-    char             tmp[64];
-    int              n;
+    const H2PackageLoader* loader, const char* libDir, char** outSignature) {
+    H2StringBuilder b = { 0 };
+    char*           sig;
+    char            tmp[64];
+    int             n;
     *outSignature = NULL;
-    n = snprintf(tmp, sizeof(tmp), "%d", HOP_VERSION);
+    n = snprintf(tmp, sizeof(tmp), "%d", H2_VERSION);
     if (n <= 0) {
         return -1;
     }
@@ -607,7 +605,7 @@ static int BuildToolchainSignature(
         free(b.v);
         return -1;
     }
-    if (SBAppendCStr(&b, ";source_hash=") != 0 || SBAppendCStr(&b, HOP_SOURCE_HASH) != 0
+    if (SBAppendCStr(&b, ";source_hash=") != 0 || SBAppendCStr(&b, H2_SOURCE_HASH) != 0
         || SBAppendCStr(&b, ";backend=c;platform=") != 0
         || SBAppendCStr(&b, loader->platformTarget) != 0 || SBAppendCStr(&b, ";arch=") != 0
         || SBAppendCStr(&b, loader->archTarget) != 0 || SBAppendCStr(&b, ";testing=") != 0
@@ -667,7 +665,7 @@ static int ToolchainSignatureMatches(const char* sigPath, const char* signature)
     return 1;
 }
 
-static int PackageNewestSourceMtime(const HOPPackage* pkg, uint64_t* outMtimeNs) {
+static int PackageNewestSourceMtime(const H2Package* pkg, uint64_t* outMtimeNs) {
     uint64_t maxMtime = 0;
     uint64_t mt;
     uint32_t i;
@@ -686,18 +684,18 @@ static int PackageNewestSourceMtime(const HOPPackage* pkg, uint64_t* outMtimeNs)
     return 0;
 }
 
-static int PackageHasUnsupportedImportedPubGlobals(const HOPPackage* pkg) {
+static int PackageHasUnsupportedImportedPubGlobals(const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPImportRef* imp = &pkg->imports[i];
-        const HOPPackage*   dep = imp->target;
-        uint32_t            j;
+        const H2ImportRef* imp = &pkg->imports[i];
+        const H2Package*   dep = imp->target;
+        uint32_t           j;
         if (dep == NULL) {
             return ErrorSimple("internal error: unresolved import");
         }
         for (j = 0; j < dep->pubDeclLen; j++) {
-            if (dep->pubDecls[j].kind == HOPAst_VAR || dep->pubDecls[j].kind == HOPAst_CONST) {
-                const HOPParsedFile* file = &pkg->files[imp->fileIndex];
+            if (dep->pubDecls[j].kind == H2Ast_VAR || dep->pubDecls[j].kind == H2Ast_CONST) {
+                const H2ParsedFile* file = &pkg->files[imp->fileIndex];
                 return Errorf(
                     file->path,
                     file->source,
@@ -711,11 +709,11 @@ static int PackageHasUnsupportedImportedPubGlobals(const HOPPackage* pkg) {
 }
 
 static int IsPackageArtifactUpToDate(
-    const HOPPackage*   pkg,
-    HOPPackageArtifact* artifact,
-    HOPPackageArtifact* artifacts,
-    uint32_t            artifactLen,
-    const char*         toolchainSignature) {
+    const H2Package*   pkg,
+    H2PackageArtifact* artifact,
+    H2PackageArtifact* artifacts,
+    uint32_t           artifactLen,
+    const char*        toolchainSignature) {
     struct stat st;
     uint64_t    objMtime;
     uint64_t    srcMtime;
@@ -734,7 +732,7 @@ static int IsPackageArtifactUpToDate(
         return 0;
     }
     for (i = 0; i < pkg->importLen; i++) {
-        HOPPackageArtifact* depArtifact = FindArtifactByPkg(
+        H2PackageArtifact* depArtifact = FindArtifactByPkg(
             artifacts, artifactLen, pkg->imports[i].target);
         uint64_t depMtime = 0;
         if (depArtifact == NULL) {
@@ -754,9 +752,9 @@ static int IsPackageArtifactUpToDate(
 }
 
 static void RestoreImportOverrides(
-    HOPAliasOverride* _Nullable aliasOverrides,
+    H2AliasOverride* _Nullable aliasOverrides,
     uint32_t aliasOverrideLen,
-    HOPImportSymbolOverride* _Nullable symbolOverrides,
+    H2ImportSymbolOverride* _Nullable symbolOverrides,
     uint32_t symbolOverrideLen) {
     uint32_t i;
     for (i = 0; aliasOverrides != NULL && i < aliasOverrideLen; i++) {
@@ -772,33 +770,33 @@ static void RestoreImportOverrides(
 }
 
 static int ApplyLinkPrefixImportOverrides(
-    HOPPackageLoader*         loader,
-    HOPPackageArtifact*       artifacts,
-    uint32_t                  artifactLen,
-    HOPAliasOverride**        outAliasOverrides,
-    uint32_t*                 outAliasOverrideLen,
-    HOPImportSymbolOverride** outSymbolOverrides,
-    uint32_t*                 outSymbolOverrideLen) {
-    HOPAliasOverride*        aliasOverrides = NULL;
-    HOPImportSymbolOverride* symbolOverrides = NULL;
-    uint32_t                 aliasCap = 0;
-    uint32_t                 symbolCap = 0;
-    uint32_t                 aliasLen = 0;
-    uint32_t                 symbolLen = 0;
-    uint32_t                 i;
+    H2PackageLoader*         loader,
+    H2PackageArtifact*       artifacts,
+    uint32_t                 artifactLen,
+    H2AliasOverride**        outAliasOverrides,
+    uint32_t*                outAliasOverrideLen,
+    H2ImportSymbolOverride** outSymbolOverrides,
+    uint32_t*                outSymbolOverrideLen) {
+    H2AliasOverride*        aliasOverrides = NULL;
+    H2ImportSymbolOverride* symbolOverrides = NULL;
+    uint32_t                aliasCap = 0;
+    uint32_t                symbolCap = 0;
+    uint32_t                aliasLen = 0;
+    uint32_t                symbolLen = 0;
+    uint32_t                i;
     for (i = 0; i < loader->packageLen; i++) {
         aliasCap += loader->packages[i].importLen;
         symbolCap += loader->packages[i].importSymbolLen;
     }
     if (aliasCap > 0) {
-        aliasOverrides = (HOPAliasOverride*)calloc(aliasCap, sizeof(HOPAliasOverride));
+        aliasOverrides = (H2AliasOverride*)calloc(aliasCap, sizeof(H2AliasOverride));
         if (aliasOverrides == NULL) {
             return ErrorSimple("out of memory");
         }
     }
     if (symbolCap > 0) {
-        symbolOverrides = (HOPImportSymbolOverride*)calloc(
-            symbolCap, sizeof(HOPImportSymbolOverride));
+        symbolOverrides = (H2ImportSymbolOverride*)calloc(
+            symbolCap, sizeof(H2ImportSymbolOverride));
         if (symbolOverrides == NULL) {
             free(aliasOverrides);
             return ErrorSimple("out of memory");
@@ -806,18 +804,17 @@ static int ApplyLinkPrefixImportOverrides(
     }
 
     for (i = 0; i < loader->packageLen; i++) {
-        HOPPackage* pkg = &loader->packages[i];
-        uint32_t    j;
+        H2Package* pkg = &loader->packages[i];
+        uint32_t   j;
         for (j = 0; j < pkg->importLen; j++) {
-            HOPImportRef*       imp = &pkg->imports[j];
-            HOPPackageArtifact* depArtifact = FindArtifactByPkg(
-                artifacts, artifactLen, imp->target);
-            char* newAlias;
+            H2ImportRef*       imp = &pkg->imports[j];
+            H2PackageArtifact* depArtifact = FindArtifactByPkg(artifacts, artifactLen, imp->target);
+            char*              newAlias;
             if (depArtifact == NULL) {
                 RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
                 return ErrorSimple("internal error: unresolved import artifact");
             }
-            newAlias = HOPCDupCStr(depArtifact->linkPrefix);
+            newAlias = H2CDupCStr(depArtifact->linkPrefix);
             if (newAlias == NULL) {
                 RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
                 return ErrorSimple("out of memory");
@@ -836,12 +833,12 @@ static int ApplyLinkPrefixImportOverrides(
     }
 
     for (i = 0; i < loader->packageLen; i++) {
-        HOPPackage* pkg = &loader->packages[i];
-        uint32_t    j;
+        H2Package* pkg = &loader->packages[i];
+        uint32_t   j;
         for (j = 0; j < pkg->importSymbolLen; j++) {
-            HOPImportSymbolRef* sym = &pkg->importSymbols[j];
-            HOPImportRef*       imp;
-            char*               newQualifiedName = NULL;
+            H2ImportSymbolRef* sym = &pkg->importSymbols[j];
+            H2ImportRef*       imp;
+            char*              newQualifiedName = NULL;
             if (sym->importIndex >= pkg->importLen) {
                 RestoreImportOverrides(aliasOverrides, aliasLen, symbolOverrides, symbolLen);
                 return ErrorSimple("internal error: invalid import symbol mapping");
@@ -872,29 +869,29 @@ static int ApplyLinkPrefixImportOverrides(
 }
 
 static int EmitPackageArtifact(
-    HOPPackageLoader*        loader,
-    const HOPPackage*        pkg,
-    HOPPackageArtifact*      artifact,
-    HOPPackageArtifact*      artifacts,
-    uint32_t                 artifactLen,
-    const char*              libDir,
-    const char*              cachePkgDir,
-    const char*              toolchainSignature,
-    const HOPCodegenBackend* backend) {
-    char*              source = NULL;
-    uint32_t           sourceLen = 0;
-    uint32_t           ownDeclStartOffset = 0;
-    HOPCodegenUnit     unit;
-    HOPCodegenOptions  codegenOptions = { 0 };
-    HOPDiag            diag = { 0 };
-    HOPCodegenArtifact outArtifact = { 0 };
-    char*              headerGuard = NULL;
-    char*              implMacro = NULL;
-    HOPStringBuilder   cBuilder = { 0 };
-    char*              cSource = NULL;
-    const char*        ccArgv[16];
-    uint32_t           i;
-    int                rc = -1;
+    H2PackageLoader*        loader,
+    const H2Package*        pkg,
+    H2PackageArtifact*      artifact,
+    H2PackageArtifact*      artifacts,
+    uint32_t                artifactLen,
+    const char*             libDir,
+    const char*             cachePkgDir,
+    const char*             toolchainSignature,
+    const H2CodegenBackend* backend) {
+    char*             source = NULL;
+    uint32_t          sourceLen = 0;
+    uint32_t          ownDeclStartOffset = 0;
+    H2CodegenUnit     unit;
+    H2CodegenOptions  codegenOptions = { 0 };
+    H2Diag            diag = { 0 };
+    H2CodegenArtifact outArtifact = { 0 };
+    char*             headerGuard = NULL;
+    char*             implMacro = NULL;
+    H2StringBuilder   cBuilder = { 0 };
+    char*             cSource = NULL;
+    const char*       ccArgv[16];
+    uint32_t          i;
+    int               rc = -1;
 
     if (PackageHasUnsupportedImportedPubGlobals(pkg) != 0) {
         return -1;
@@ -929,7 +926,7 @@ static int EmitPackageArtifact(
     codegenOptions.arenaFree = CodegenArenaFree;
 
     if (backend->emit(backend, &unit, &codegenOptions, &outArtifact, &diag) != 0) {
-        if (diag.code != HOPDiag_NONE) {
+        if (diag.code != H2Diag_NONE) {
             int diagStatus;
             if (pkg->fileLen == 1 && pkg->importLen == 0) {
                 diagStatus = PrintHOPDiagLineCol(
@@ -951,10 +948,10 @@ static int EmitPackageArtifact(
     }
 
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPPackage*   dep = pkg->imports[i].target;
-        HOPPackageArtifact* depArtifact;
-        uint32_t            j;
-        int                 alreadyIncluded = 0;
+        const H2Package*   dep = pkg->imports[i].target;
+        H2PackageArtifact* depArtifact;
+        uint32_t           j;
+        int                alreadyIncluded = 0;
         if (dep == NULL || dep->pubDeclLen == 0) {
             continue;
         }
@@ -964,7 +961,7 @@ static int EmitPackageArtifact(
             goto end;
         }
         for (j = 0; j < i; j++) {
-            const HOPPackage* prevDep = pkg->imports[j].target;
+            const H2Package* prevDep = pkg->imports[j].target;
             if (prevDep != NULL && prevDep == dep) {
                 alreadyIncluded = 1;
                 break;
@@ -1047,13 +1044,13 @@ end:
 }
 
 static int VisitTopoPackage(
-    const HOPPackageLoader* loader,
-    uint32_t                pkgIndex,
-    uint8_t*                state,
-    uint32_t*               order,
-    uint32_t*               orderLen) {
-    const HOPPackage* pkg = &loader->packages[pkgIndex];
-    uint32_t          i;
+    const H2PackageLoader* loader,
+    uint32_t               pkgIndex,
+    uint8_t*               state,
+    uint32_t*              order,
+    uint32_t*              orderLen) {
+    const H2Package* pkg = &loader->packages[pkgIndex];
+    uint32_t         i;
     if (state[pkgIndex] == 2) {
         return 0;
     }
@@ -1076,10 +1073,10 @@ static int VisitTopoPackage(
 }
 
 static int BuildPackageTopologicalOrder(
-    const HOPPackageLoader* loader,
-    uint32_t*               outOrder,
-    uint32_t                outOrderCap,
-    uint32_t*               outOrderLen) {
+    const H2PackageLoader* loader,
+    uint32_t*              outOrder,
+    uint32_t               outOrderCap,
+    uint32_t*              outOrderLen) {
     uint8_t* state = NULL;
     uint32_t i;
     *outOrderLen = 0;
@@ -1101,30 +1098,30 @@ static int BuildPackageTopologicalOrder(
 }
 
 static int BuildCachedPackageArtifacts(
-    HOPPackageLoader* loader,
+    H2PackageLoader* loader,
     const char* _Nullable cacheDirArg,
-    const char*          libDir,
-    HOPPackageArtifact** outArtifacts,
-    uint32_t*            outArtifactLen) {
-    HOPPackageArtifact*      artifacts = NULL;
-    uint32_t                 artifactLen = loader->packageLen;
-    char*                    cacheRoot = NULL;
-    char*                    cacheV1Dir = NULL;
-    char*                    cachePkgDir = NULL;
-    char*                    toolchainSignature = NULL;
-    const HOPCodegenBackend* backend;
-    uint32_t*                topoOrder = NULL;
-    uint32_t                 topoOrderLen = 0;
-    HOPAliasOverride*        aliasOverrides = NULL;
-    uint32_t                 aliasOverrideLen = 0;
-    HOPImportSymbolOverride* symbolOverrides = NULL;
-    uint32_t                 symbolOverrideLen = 0;
-    uint32_t                 i;
+    const char*         libDir,
+    H2PackageArtifact** outArtifacts,
+    uint32_t*           outArtifactLen) {
+    H2PackageArtifact*      artifacts = NULL;
+    uint32_t                artifactLen = loader->packageLen;
+    char*                   cacheRoot = NULL;
+    char*                   cacheV1Dir = NULL;
+    char*                   cachePkgDir = NULL;
+    char*                   toolchainSignature = NULL;
+    const H2CodegenBackend* backend;
+    uint32_t*               topoOrder = NULL;
+    uint32_t                topoOrderLen = 0;
+    H2AliasOverride*        aliasOverrides = NULL;
+    uint32_t                aliasOverrideLen = 0;
+    H2ImportSymbolOverride* symbolOverrides = NULL;
+    uint32_t                symbolOverrideLen = 0;
+    uint32_t                i;
 
     *outArtifacts = NULL;
     *outArtifactLen = 0;
 
-    backend = HOPCodegenFindBackend("c");
+    backend = H2CodegenFindBackend("c");
     if (backend == NULL) {
         return ErrorSimple("unknown backend: c");
     }
@@ -1147,7 +1144,7 @@ static int BuildCachedPackageArtifacts(
         return ErrorSimple("failed to create cache directory");
     }
 
-    artifacts = (HOPPackageArtifact*)calloc(artifactLen, sizeof(HOPPackageArtifact));
+    artifacts = (H2PackageArtifact*)calloc(artifactLen, sizeof(H2PackageArtifact));
     topoOrder = (uint32_t*)calloc(artifactLen, sizeof(uint32_t));
     if ((artifactLen > 0 && artifacts == NULL) || (artifactLen > 0 && topoOrder == NULL)) {
         free(topoOrder);
@@ -1159,7 +1156,7 @@ static int BuildCachedPackageArtifacts(
     }
 
     for (i = 0; i < artifactLen; i++) {
-        HOPPackageArtifact* a = &artifacts[i];
+        H2PackageArtifact* a = &artifacts[i];
         a->pkg = &loader->packages[i];
         a->pkgIndex = i;
         a->key = BuildPackageKey(loader, a->pkg);
@@ -1196,8 +1193,8 @@ static int BuildCachedPackageArtifacts(
     }
 
     for (i = 0; i < topoOrderLen; i++) {
-        uint32_t            pkgIndex = topoOrder[i];
-        HOPPackageArtifact* artifact = &artifacts[pkgIndex];
+        uint32_t           pkgIndex = topoOrder[i];
+        H2PackageArtifact* artifact = &artifacts[pkgIndex];
         if (IsPackageArtifactUpToDate(
                 artifact->pkg, artifact, artifacts, artifactLen, toolchainSignature))
         {
@@ -1241,7 +1238,7 @@ fail:
 }
 
 static int BuildCachedPlatformObject(
-    const HOPPackageLoader* loader,
+    const H2PackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char* libDir,
     const char* _Nullable platformPath,
@@ -1336,7 +1333,7 @@ fail:
 }
 
 static int BuildCachedBuiltinObject(
-    const HOPPackageLoader* loader,
+    const H2PackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char* libDir,
     const char* _Nullable builtinPath,
@@ -1435,33 +1432,33 @@ fail:
 }
 
 static int BuildCachedWrapperObject(
-    const HOPPackageLoader* loader,
+    const H2PackageLoader* loader,
     const char* _Nullable cacheDirArg,
     const char* libDir,
     const char* wrapperLinkPrefix,
     const char* toolchainSignature,
     char**      outWrapperObjPath) {
-    char*            cacheRoot = NULL;
-    char*            cacheV1Dir = NULL;
-    char*            cacheWrapperDir = NULL;
-    char*            cacheWrapperTargetDir = NULL;
-    char*            wrapperKey = NULL;
-    char*            cacheWrapperEntryDir = NULL;
-    char*            wrapperCPath = NULL;
-    char*            wrapperOPath = NULL;
-    char*            wrapperSigPath = NULL;
-    HOPStringBuilder wrapperBuilder = { 0 };
-    char*            wrapperSource = NULL;
-    uint32_t         wrapperSourceLen = 0;
-    char*            existingSource = NULL;
-    FILE*            existingSourceFile = NULL;
-    long             existingSourceFileLen = 0;
-    size_t           nread = 0;
-    uint64_t         srcMtimeNs = 0;
-    uint64_t         objMtimeNs = 0;
-    const char*      ccArgv[12];
-    int              sourceMatches = 0;
-    int              isUpToDate = 0;
+    char*           cacheRoot = NULL;
+    char*           cacheV1Dir = NULL;
+    char*           cacheWrapperDir = NULL;
+    char*           cacheWrapperTargetDir = NULL;
+    char*           wrapperKey = NULL;
+    char*           cacheWrapperEntryDir = NULL;
+    char*           wrapperCPath = NULL;
+    char*           wrapperOPath = NULL;
+    char*           wrapperSigPath = NULL;
+    H2StringBuilder wrapperBuilder = { 0 };
+    char*           wrapperSource = NULL;
+    uint32_t        wrapperSourceLen = 0;
+    char*           existingSource = NULL;
+    FILE*           existingSourceFile = NULL;
+    long            existingSourceFileLen = 0;
+    size_t          nread = 0;
+    uint64_t        srcMtimeNs = 0;
+    uint64_t        objMtimeNs = 0;
+    const char*     ccArgv[12];
+    int             sourceMatches = 0;
+    int             isUpToDate = 0;
 
     *outWrapperObjPath = NULL;
     if (ResolveCacheRoot(loader, cacheDirArg, &cacheRoot) != 0) {
@@ -1609,12 +1606,12 @@ fail:
 }
 
 static int IsLinkedOutputUpToDate(
-    const char*               outExe,
-    const char*               wrapperObjPath,
-    const char*               builtinObjPath,
-    const char*               platformObjPath,
-    const HOPPackageArtifact* artifacts,
-    uint32_t                  artifactLen) {
+    const char*              outExe,
+    const char*              wrapperObjPath,
+    const char*              builtinObjPath,
+    const char*              platformObjPath,
+    const H2PackageArtifact* artifacts,
+    uint32_t                 artifactLen) {
     struct stat outSt;
     uint64_t    outMtimeNs;
     uint64_t    inputMtimeNs;
@@ -1646,15 +1643,15 @@ static int IsLinkedOutputUpToDate(
 }
 
 static int IsEvalPlatformTarget(const char* _Nullable platformTarget) {
-    return platformTarget != NULL && StrEq(platformTarget, HOP_EVAL_PLATFORM_TARGET);
+    return platformTarget != NULL && StrEq(platformTarget, H2_EVAL_PLATFORM_TARGET);
 }
 
 static int IsWasmMinPlatformTarget(const char* _Nullable platformTarget) {
-    return platformTarget != NULL && StrEq(platformTarget, HOP_WASM_MIN_PLATFORM_TARGET);
+    return platformTarget != NULL && StrEq(platformTarget, H2_WASM_MIN_PLATFORM_TARGET);
 }
 
 static int IsPlaybitPlatformTarget(const char* _Nullable platformTarget) {
-    return platformTarget != NULL && StrEq(platformTarget, HOP_PLAYBIT_PLATFORM_TARGET);
+    return platformTarget != NULL && StrEq(platformTarget, H2_PLAYBIT_PLATFORM_TARGET);
 }
 
 /* Embedded cli-libc platform source — compiled alongside the generated HopHop
@@ -1667,23 +1664,23 @@ int CompileProgram(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    HOPPackageLoader    loader = { 0 };
-    HOPPackage*         entryPkg = NULL;
-    int                 loaderReady = 0;
-    char*               libDir = NULL;
-    char*               platformPath = NULL;
-    char*               builtinPath = NULL;
-    char*               builtinHeaderPath = NULL;
-    char*               platformObjPath = NULL;
-    char*               builtinObjPath = NULL;
-    char*               wrapperObjPath = NULL;
-    char*               toolchainSignature = NULL;
-    HOPPackageArtifact* artifacts = NULL;
-    uint32_t            artifactLen = 0;
-    HOPPackageArtifact* entryArtifact;
-    const char**        ccLinkArgv = NULL;
-    uint32_t            i;
-    int                 rc = -1;
+    H2PackageLoader    loader = { 0 };
+    H2Package*         entryPkg = NULL;
+    int                loaderReady = 0;
+    char*              libDir = NULL;
+    char*              platformPath = NULL;
+    char*              builtinPath = NULL;
+    char*              builtinHeaderPath = NULL;
+    char*              platformObjPath = NULL;
+    char*              builtinObjPath = NULL;
+    char*              wrapperObjPath = NULL;
+    char*              toolchainSignature = NULL;
+    H2PackageArtifact* artifacts = NULL;
+    uint32_t           artifactLen = 0;
+    H2PackageArtifact* entryArtifact;
+    const char**       ccLinkArgv = NULL;
+    uint32_t           i;
+    int                rc = -1;
 
     if (IsWasmMinPlatformTarget(platformTarget) || IsPlaybitPlatformTarget(platformTarget)) {
         return ErrorSimple(
@@ -2001,4 +1998,4 @@ int RunProgram(
     return RunProgramC(entryPath, platformTarget, archTarget, testingBuild, cacheDirArg);
 }
 
-HOP_API_END
+H2_API_END

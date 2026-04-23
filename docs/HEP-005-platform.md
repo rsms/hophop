@@ -15,7 +15,7 @@ or custom operating-system kernels.
 
 ## Motivation
 
-Currently the HopHop runtime uses libc-like facilities directly (via `HOP_TRAP`, the C assert
+Currently the HopHop runtime uses libc-like facilities directly (via `H2_TRAP`, the C assert
 macros, and C-level `main`). This hard-codes a dependency on the host libc and makes
 targeting non-POSIX environments impossible without modifying the generated headers.
 
@@ -44,8 +44,8 @@ HopHop source
 
 The generated C header contains:
 - All type and function definitions for the package.
-- An `extern` declaration of `hop_platform_call` (used by `HOP_ASSERT_FAIL`, `hop_unwrap`, etc.).
-- Platform opcode constants (`HOPPlatformOp_*`).
+- An `extern` declaration of `hop_platform_call` (used by `H2_ASSERT_FAIL`, `hop_unwrap`, etc.).
+- Platform opcode constants (`H2PlatformOp_*`).
 
 The platform implementation is a separate C file that provides:
 - `int main(void)` (calls `hop_main()`).
@@ -83,12 +83,12 @@ higher-level libraries.
 
 ```c
 enum {
-    HOPPlatformOp_NONE        = 0,
-    HOPPlatformOp_PANIC       = 1,  /* fn(msg_ptr u64, msg_len u64, flags u64) — no return */
-    HOPPlatformOp_CONSOLE_LOG = 2,  /* fn(msg_ptr u64, msg_len u64, flags u64) */
-    HOPPlatformOp_MEM_ALLOC   = 3,  /* fn(size u64, align u64, flags u64) → addr u64 */
-    HOPPlatformOp_MEM_RESIZE  = 4,  /* fn(addr u64, oldSize u64, newSize u64, align u64, flags u64) → addr u64 */
-    HOPPlatformOp_MEM_FREE    = 5,  /* fn(addr u64, size u64, flags u64) */
+    H2PlatformOp_NONE        = 0,
+    H2PlatformOp_PANIC       = 1,  /* fn(msg_ptr u64, msg_len u64, flags u64) — no return */
+    H2PlatformOp_CONSOLE_LOG = 2,  /* fn(msg_ptr u64, msg_len u64, flags u64) */
+    H2PlatformOp_MEM_ALLOC   = 3,  /* fn(size u64, align u64, flags u64) → addr u64 */
+    H2PlatformOp_MEM_RESIZE  = 4,  /* fn(addr u64, oldSize u64, newSize u64, align u64, flags u64) → addr u64 */
+    H2PlatformOp_MEM_FREE    = 5,  /* fn(addr u64, size u64, flags u64) */
 };
 ```
 
@@ -121,7 +121,7 @@ The platform provides `main` (or `_start` for freestanding environments) and cal
 
 ## Opcode semantics
 
-### `HOPPlatformOp_PANIC` (1)
+### `H2PlatformOp_PANIC` (1)
 
 | Arg | Meaning |
 |-----|---------|
@@ -130,11 +130,11 @@ The platform provides `main` (or `_start` for freestanding environments) and cal
 | `c` | Flags (reserved, pass `0`) |
 
 The platform **must not return** from this call. If it does, the caller falls through to
-`HOP_TRAP()` as a safety net.
+`H2_TRAP()` as a safety net.
 
-Used by: `hop_unwrap`, `HOP_ASSERT_FAIL`, `HOP_ASSERTF_FAIL`.
+Used by: `hop_unwrap`, `H2_ASSERT_FAIL`, `H2_ASSERTF_FAIL`.
 
-### `HOPPlatformOp_CONSOLE_LOG` (2)
+### `H2PlatformOp_CONSOLE_LOG` (2)
 
 | Arg | Meaning |
 |-----|---------|
@@ -144,7 +144,7 @@ Used by: `hop_unwrap`, `HOP_ASSERT_FAIL`, `HOP_ASSERTF_FAIL`.
 
 Returns `0` on success, `-1` on failure.
 
-### `HOPPlatformOp_MEM_ALLOC` (3)
+### `H2PlatformOp_MEM_ALLOC` (3)
 
 | Arg | Meaning |
 |-----|---------|
@@ -154,7 +154,7 @@ Returns `0` on success, `-1` on failure.
 
 Returns the allocated address cast to `uint64_t`, or `0` on failure.
 
-### `HOPPlatformOp_MEM_RESIZE` (4)
+### `H2PlatformOp_MEM_RESIZE` (4)
 
 | Arg | Meaning |
 |-----|---------|
@@ -166,7 +166,7 @@ Returns the allocated address cast to `uint64_t`, or `0` on failure.
 
 Returns the new address (may differ from `a`), or `0` on failure.
 
-### `HOPPlatformOp_MEM_FREE` (5)
+### `H2PlatformOp_MEM_FREE` (5)
 
 | Arg | Meaning |
 |-----|---------|
@@ -187,27 +187,27 @@ whichever platform `.c` is compiled alongside.
 
 ```c
 /* emitted in every generated header */
-#ifndef HOPPlatformOp_NONE
+#ifndef H2PlatformOp_NONE
   enum {
-    HOPPlatformOp_NONE        = 0,
-    HOPPlatformOp_PANIC       = 1,
-    HOPPlatformOp_CONSOLE_LOG = 2,
-    HOPPlatformOp_MEM_ALLOC   = 3,
-    HOPPlatformOp_MEM_RESIZE  = 4,
-    HOPPlatformOp_MEM_FREE    = 5
+    H2PlatformOp_NONE        = 0,
+    H2PlatformOp_PANIC       = 1,
+    H2PlatformOp_CONSOLE_LOG = 2,
+    H2PlatformOp_MEM_ALLOC   = 3,
+    H2PlatformOp_MEM_RESIZE  = 4,
+    H2PlatformOp_MEM_FREE    = 5
   };
 #endif
 extern __hop_i64 hop_platform_call(__hop_u64 op, __hop_u64 a, __hop_u64 b, __hop_u64 c,
                                   __hop_u64 d, __hop_u64 e, __hop_u64 f, __hop_u64 g);
 
-#define HOP_ASSERT_FAIL(file,line,msg) \
-    do { hop_platform_call(HOPPlatformOp_PANIC,(uint64_t)(uintptr_t)(msg),0,0,0,0,0,0); \
-         HOP_TRAP(); } while(0)
+#define H2_ASSERT_FAIL(file,line,msg) \
+    do { hop_platform_call(H2PlatformOp_PANIC,(uint64_t)(uintptr_t)(msg),0,0,0,0,0,0); \
+         H2_TRAP(); } while(0)
 
 #define hop_unwrap(p) \
     ((p) != (void*)0 ? (p) : \
-     ((void)hop_platform_call(HOPPlatformOp_PANIC, \
-          (uint64_t)(uintptr_t)"unwrap: null value",18,0,0,0,0,0), HOP_TRAP(), (p)))
+     ((void)hop_platform_call(H2PlatformOp_PANIC, \
+          (uint64_t)(uintptr_t)"unwrap: null value",18,0,0,0,0,0), H2_TRAP(), (p)))
 ```
 
 ---
@@ -266,8 +266,8 @@ int64_t hop_platform_call(uint64_t op,
 
 ## `hophop/builtin/gpa`
 
-The general-purpose allocator package (`hophop/builtin/gpa`) wraps `HOPPlatformOp_MEM_ALLOC`,
-`HOPPlatformOp_MEM_RESIZE`, and `HOPPlatformOp_MEM_FREE` to provide a `MemAllocator`-compatible
+The general-purpose allocator package (`hophop/builtin/gpa`) wraps `H2PlatformOp_MEM_ALLOC`,
+`H2PlatformOp_MEM_RESIZE`, and `H2PlatformOp_MEM_FREE` to provide a `MemAllocator`-compatible
 interface. Application code that needs dynamic allocation imports `hophop/builtin/gpa`:
 
 ```hop
@@ -329,7 +329,7 @@ At link time all translation units must agree on the platform. The platform is c
 selected by which platform file is compiled alongside the generated code — no linker symbol
 table magic or per-translation-unit flags are used.
 
-Future HOPPs may introduce a `platform.toml` manifest or a `--platform=<name>` CLI flag
+Future H2Ps may introduce a `platform.toml` manifest or a `--platform=<name>` CLI flag
 backed by a platform registry directory.
 
 ---
@@ -337,7 +337,7 @@ backed by a platform registry directory.
 ## Open questions
 
 1. Should `hop_thread` be mandatory or optional (weak symbol)?
-2. Should `HOPPlatformOp_CONSOLE_LOG` pass an `hop_strhdr*` instead of a raw C string?
+2. Should `H2PlatformOp_CONSOLE_LOG` pass an `hop_strhdr*` instead of a raw C string?
 3. Should `hophop/builtin/gpa` be auto-imported for packages that use `new` without an explicit
    `MemAllocator`?
 4. Interaction with WASM: `hop_platform_call` maps naturally to a host import table; what

@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define HOP_IMPLEMENTATION
+#define H2_IMPLEMENTATION
 #include "libhop.h"
 
 typedef struct {
@@ -32,26 +32,26 @@ static void ArenaFree(void* ctx, void* block, uint32_t blockSize) {
 int main(void) {
     uint8_t    storage[32];
     ArenaStats stats = { 0 };
-    HOPArena    arena;
+    H2Arena    arena;
     void*      p0;
     void*      p1;
     void*      p2;
 
-    HOPArenaInitEx(&arena, storage, (uint32_t)sizeof(storage), &stats, ArenaGrow, ArenaFree);
+    H2ArenaInitEx(&arena, storage, (uint32_t)sizeof(storage), &stats, ArenaGrow, ArenaFree);
 
-    p0 = HOPArenaAlloc(&arena, 16u, 8u);
-    p1 = HOPArenaAlloc(&arena, 128u, 8u);
+    p0 = H2ArenaAlloc(&arena, 16u, 8u);
+    p1 = H2ArenaAlloc(&arena, 128u, 8u);
     if (p0 == NULL || p1 == NULL || stats.allocCount == 0) {
         return 1;
     }
 
-    HOPArenaReset(&arena);
-    p2 = HOPArenaAlloc(&arena, 64u, 8u);
+    H2ArenaReset(&arena);
+    p2 = H2ArenaAlloc(&arena, 64u, 8u);
     if (p2 == NULL) {
         return 2;
     }
 
-    HOPArenaDispose(&arena);
+    H2ArenaDispose(&arena);
     if (stats.freeCount != stats.allocCount) {
         return 3;
     }

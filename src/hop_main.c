@@ -23,12 +23,12 @@
 #include "mir_lower_stmt.h"
 #include "hop_internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 static const char* DefaultGenpkgBackendName(const char* _Nullable platformTarget) {
     if (platformTarget != NULL
-        && (StrEq(platformTarget, HOP_WASM_MIN_PLATFORM_TARGET)
-            || StrEq(platformTarget, HOP_PLAYBIT_PLATFORM_TARGET)))
+        && (StrEq(platformTarget, H2_WASM_MIN_PLATFORM_TARGET)
+            || StrEq(platformTarget, H2_PLAYBIT_PLATFORM_TARGET)))
     {
         return "wasm";
     }
@@ -292,9 +292,9 @@ static void PrintVersion(void) {
     fprintf(
         stdout,
         "HopHop compiler version %d (%s) eval%s\n",
-        HOP_VERSION,
-        HOP_SOURCE_HASH,
-        HOP_WITH_C_BACKEND ? " c11" : "");
+        H2_VERSION,
+        H2_SOURCE_HASH,
+        H2_WITH_C_BACKEND ? " c11" : "");
 }
 
 static int ParseSharedCommandOptions(
@@ -424,7 +424,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (StrEq(mode, "compile")) {
-        platformTarget = HOP_DEFAULT_PLATFORM_TARGET;
+        platformTarget = H2_DEFAULT_PLATFORM_TARGET;
         argi = ParseSharedCommandOptions(
             argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0) {
@@ -434,7 +434,7 @@ int main(int argc, char* argv[]) {
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
-        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : HOP_DEFAULT_ARCH_TARGET)
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : H2_DEFAULT_ARCH_TARGET)
             != 0)
         {
             return 2;
@@ -462,7 +462,7 @@ int main(int argc, char* argv[]) {
                  : 1;
     }
     if (StrEq(mode, "run")) {
-        platformTarget = HOP_EVAL_PLATFORM_TARGET;
+        platformTarget = H2_EVAL_PLATFORM_TARGET;
         argi = ParseSharedCommandOptions(
             argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0 || argc - argi != 1) {
@@ -472,7 +472,7 @@ int main(int argc, char* argv[]) {
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
-        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : HOP_DEFAULT_ARCH_TARGET)
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : H2_DEFAULT_ARCH_TARGET)
             != 0)
         {
             return 2;
@@ -506,12 +506,12 @@ int main(int argc, char* argv[]) {
             return 2;
         }
         if (platformTarget == NULL) {
-            platformTarget = HOP_DEFAULT_PLATFORM_TARGET;
+            platformTarget = H2_DEFAULT_PLATFORM_TARGET;
         }
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
-        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : HOP_DEFAULT_ARCH_TARGET)
+        if (ValidateArchTargetOrUsage(archTarget != NULL ? archTarget : H2_DEFAULT_ARCH_TARGET)
             != 0)
         {
             return 2;
@@ -564,7 +564,7 @@ int main(int argc, char* argv[]) {
     if (genpkgMode == 1) {
         const char* genpkgPlatformTarget = hasPlatformTarget ? platformTarget : NULL;
         if (!hasPlatformTarget && StrEq(backendName, "c")) {
-            genpkgPlatformTarget = HOP_DEFAULT_PLATFORM_TARGET;
+            genpkgPlatformTarget = H2_DEFAULT_PLATFORM_TARGET;
         }
         return GeneratePackage(
                    filename,
@@ -588,7 +588,7 @@ int main(int argc, char* argv[]) {
         }
         return CheckPackageDir(
                    filename,
-                   hasPlatformTarget ? platformTarget : HOP_DEFAULT_PLATFORM_TARGET,
+                   hasPlatformTarget ? platformTarget : H2_DEFAULT_PLATFORM_TARGET,
                    archTarget,
                    testingBuild)
                     == 0
@@ -602,7 +602,7 @@ int main(int argc, char* argv[]) {
         }
         return DumpMIR(
                    filename,
-                   hasPlatformTarget ? platformTarget : HOP_DEFAULT_PLATFORM_TARGET,
+                   hasPlatformTarget ? platformTarget : H2_DEFAULT_PLATFORM_TARGET,
                    archTarget,
                    testingBuild)
                     == 0
@@ -647,4 +647,4 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-HOP_API_END
+H2_API_END

@@ -7,11 +7,11 @@
     #define __has_builtin(...) 0
 #endif
 
-#ifndef HOP_LIBC
-    #define HOP_LIBC __STDC_HOSTED__
+#ifndef H2_LIBC
+    #define H2_LIBC __STDC_HOSTED__
 #endif
 
-#if HOP_LIBC
+#if H2_LIBC
     #include <string.h>
 #else
     #if !defined(memcpy) && __has_builtin(__builtin_memcpy)
@@ -29,144 +29,144 @@
 #endif
 
 typedef enum {
-    HOPStringLitErr_NONE = 0,
-    HOPStringLitErr_UNTERMINATED,
-    HOPStringLitErr_INVALID_ESCAPE,
-    HOPStringLitErr_INVALID_CODEPOINT,
-    HOPStringLitErr_INVALID_UTF8,
-    HOPStringLitErr_ARENA_OOM,
-} HOPStringLitErrKind;
+    H2StringLitErr_NONE = 0,
+    H2StringLitErr_UNTERMINATED,
+    H2StringLitErr_INVALID_ESCAPE,
+    H2StringLitErr_INVALID_CODEPOINT,
+    H2StringLitErr_INVALID_UTF8,
+    H2StringLitErr_ARENA_OOM,
+} H2StringLitErrKind;
 
 typedef struct {
-    HOPStringLitErrKind kind;
-    uint32_t            start;
-    uint32_t            end;
-} HOPStringLitErr;
+    H2StringLitErrKind kind;
+    uint32_t           start;
+    uint32_t           end;
+} H2StringLitErr;
 
 typedef enum {
-    HOPRuneLitErr_NONE = 0,
-    HOPRuneLitErr_UNTERMINATED,
-    HOPRuneLitErr_EMPTY,
-    HOPRuneLitErr_MULTIPLE_CODEPOINTS,
-    HOPRuneLitErr_INVALID_ESCAPE,
-    HOPRuneLitErr_INVALID_CODEPOINT,
-    HOPRuneLitErr_INVALID_UTF8,
-} HOPRuneLitErrKind;
+    H2RuneLitErr_NONE = 0,
+    H2RuneLitErr_UNTERMINATED,
+    H2RuneLitErr_EMPTY,
+    H2RuneLitErr_MULTIPLE_CODEPOINTS,
+    H2RuneLitErr_INVALID_ESCAPE,
+    H2RuneLitErr_INVALID_CODEPOINT,
+    H2RuneLitErr_INVALID_UTF8,
+} H2RuneLitErrKind;
 
 typedef struct {
-    HOPRuneLitErrKind kind;
-    uint32_t          start;
-    uint32_t          end;
-} HOPRuneLitErr;
+    H2RuneLitErrKind kind;
+    uint32_t         start;
+    uint32_t         end;
+} H2RuneLitErr;
 
-HOPDiagCode HOPStringLitErrDiagCode(HOPStringLitErrKind kind);
-HOPDiagCode HOPRuneLitErrDiagCode(HOPRuneLitErrKind kind);
-int         HOPDecodeStringLiteralValidate(
-    const char* _Nonnull src, uint32_t start, uint32_t end, HOPStringLitErr* _Nullable outErr);
-int HOPDecodeStringLiteralArena(
-    HOPArena* _Nonnull arena,
+H2DiagCode H2StringLitErrDiagCode(H2StringLitErrKind kind);
+H2DiagCode H2RuneLitErrDiagCode(H2RuneLitErrKind kind);
+int        H2DecodeStringLiteralValidate(
+    const char* _Nonnull src, uint32_t start, uint32_t end, H2StringLitErr* _Nullable outErr);
+int H2DecodeStringLiteralArena(
+    H2Arena* _Nonnull arena,
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint8_t* _Nullable* _Nonnull outBytes,
     uint32_t* _Nonnull outLen,
-    HOPStringLitErr* _Nullable outErr);
-int HOPDecodeStringLiteralMalloc(
+    H2StringLitErr* _Nullable outErr);
+int H2DecodeStringLiteralMalloc(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint8_t* _Nullable* _Nonnull outBytes,
     uint32_t* _Nonnull outLen,
-    HOPStringLitErr* _Nullable outErr);
-int HOPDecodeRuneLiteralValidate(
+    H2StringLitErr* _Nullable outErr);
+int H2DecodeRuneLiteralValidate(
     const char* _Nonnull src,
     uint32_t start,
     uint32_t end,
     uint32_t* _Nonnull outRune,
-    HOPRuneLitErr* _Nullable outErr);
-int HOPIsStringLiteralConcatChain(const HOPAst* _Nonnull ast, int32_t nodeId);
+    H2RuneLitErr* _Nullable outErr);
+int H2IsStringLiteralConcatChain(const H2Ast* _Nonnull ast, int32_t nodeId);
 
-typedef struct HOPConstEvalSession HOPConstEvalSession;
-
-typedef enum {
-    HOPConstEvalTypeKind_INVALID = 0,
-    HOPConstEvalTypeKind_BUILTIN,
-    HOPConstEvalTypeKind_NAMED,
-    HOPConstEvalTypeKind_ALIAS,
-    HOPConstEvalTypeKind_ANON_STRUCT,
-    HOPConstEvalTypeKind_ANON_UNION,
-    HOPConstEvalTypeKind_PTR,
-    HOPConstEvalTypeKind_REF,
-    HOPConstEvalTypeKind_ARRAY,
-    HOPConstEvalTypeKind_SLICE,
-    HOPConstEvalTypeKind_UNTYPED_INT,
-    HOPConstEvalTypeKind_UNTYPED_FLOAT,
-    HOPConstEvalTypeKind_FUNCTION,
-    HOPConstEvalTypeKind_TUPLE,
-    HOPConstEvalTypeKind_OPTIONAL,
-    HOPConstEvalTypeKind_NULL,
-} HOPConstEvalTypeKind;
+typedef struct H2ConstEvalSession H2ConstEvalSession;
 
 typedef enum {
-    HOPConstEvalBuiltinKind_INVALID = 0,
-    HOPConstEvalBuiltinKind_VOID,
-    HOPConstEvalBuiltinKind_BOOL,
-    HOPConstEvalBuiltinKind_STR,
-    HOPConstEvalBuiltinKind_TYPE,
-    HOPConstEvalBuiltinKind_U8,
-    HOPConstEvalBuiltinKind_U16,
-    HOPConstEvalBuiltinKind_U32,
-    HOPConstEvalBuiltinKind_U64,
-    HOPConstEvalBuiltinKind_I8,
-    HOPConstEvalBuiltinKind_I16,
-    HOPConstEvalBuiltinKind_I32,
-    HOPConstEvalBuiltinKind_I64,
-    HOPConstEvalBuiltinKind_USIZE,
-    HOPConstEvalBuiltinKind_ISIZE,
-    HOPConstEvalBuiltinKind_RAWPTR,
-    HOPConstEvalBuiltinKind_F32,
-    HOPConstEvalBuiltinKind_F64,
-} HOPConstEvalBuiltinKind;
+    H2ConstEvalTypeKind_INVALID = 0,
+    H2ConstEvalTypeKind_BUILTIN,
+    H2ConstEvalTypeKind_NAMED,
+    H2ConstEvalTypeKind_ALIAS,
+    H2ConstEvalTypeKind_ANON_STRUCT,
+    H2ConstEvalTypeKind_ANON_UNION,
+    H2ConstEvalTypeKind_PTR,
+    H2ConstEvalTypeKind_REF,
+    H2ConstEvalTypeKind_ARRAY,
+    H2ConstEvalTypeKind_SLICE,
+    H2ConstEvalTypeKind_UNTYPED_INT,
+    H2ConstEvalTypeKind_UNTYPED_FLOAT,
+    H2ConstEvalTypeKind_FUNCTION,
+    H2ConstEvalTypeKind_TUPLE,
+    H2ConstEvalTypeKind_OPTIONAL,
+    H2ConstEvalTypeKind_NULL,
+} H2ConstEvalTypeKind;
+
+typedef enum {
+    H2ConstEvalBuiltinKind_INVALID = 0,
+    H2ConstEvalBuiltinKind_VOID,
+    H2ConstEvalBuiltinKind_BOOL,
+    H2ConstEvalBuiltinKind_STR,
+    H2ConstEvalBuiltinKind_TYPE,
+    H2ConstEvalBuiltinKind_U8,
+    H2ConstEvalBuiltinKind_U16,
+    H2ConstEvalBuiltinKind_U32,
+    H2ConstEvalBuiltinKind_U64,
+    H2ConstEvalBuiltinKind_I8,
+    H2ConstEvalBuiltinKind_I16,
+    H2ConstEvalBuiltinKind_I32,
+    H2ConstEvalBuiltinKind_I64,
+    H2ConstEvalBuiltinKind_USIZE,
+    H2ConstEvalBuiltinKind_ISIZE,
+    H2ConstEvalBuiltinKind_RAWPTR,
+    H2ConstEvalBuiltinKind_F32,
+    H2ConstEvalBuiltinKind_F64,
+} H2ConstEvalBuiltinKind;
 
 enum {
-    HOPConstEvalTypeFlag_MUTABLE = 1u << 1,
+    H2ConstEvalTypeFlag_MUTABLE = 1u << 1,
 };
 
 typedef struct {
-    HOPConstEvalTypeKind    kind;
-    HOPConstEvalBuiltinKind builtin;
-    int32_t                 baseTypeId;
-    int32_t                 declNode;
-    uint32_t                arrayLen;
-    uint32_t                nameStart;
-    uint32_t                nameEnd;
-    uint16_t                flags;
-} HOPConstEvalTypeInfo;
+    H2ConstEvalTypeKind    kind;
+    H2ConstEvalBuiltinKind builtin;
+    int32_t                baseTypeId;
+    int32_t                declNode;
+    uint32_t               arrayLen;
+    uint32_t               nameStart;
+    uint32_t               nameEnd;
+    uint16_t               flags;
+} H2ConstEvalTypeInfo;
 
-int HOPConstEvalSessionInit(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    HOPConstEvalSession* _Nullable* _Nonnull outSession,
-    HOPDiag* _Nullable diag);
-int HOPConstEvalSessionEvalExpr(
-    HOPConstEvalSession* _Nonnull session,
+int H2ConstEvalSessionInit(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    H2ConstEvalSession* _Nullable* _Nonnull outSession,
+    H2Diag* _Nullable diag);
+int H2ConstEvalSessionEvalExpr(
+    H2ConstEvalSession* _Nonnull session,
     int32_t exprNode,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int HOPConstEvalSessionEvalIntExpr(
-    HOPConstEvalSession* _Nonnull session,
+int H2ConstEvalSessionEvalIntExpr(
+    H2ConstEvalSession* _Nonnull session,
     int32_t exprNode,
     int64_t* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int HOPConstEvalSessionEvalTopLevelConst(
-    HOPConstEvalSession* _Nonnull session,
+int H2ConstEvalSessionEvalTopLevelConst(
+    H2ConstEvalSession* _Nonnull session,
     int32_t constNode,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int HOPConstEvalSessionDecodeTypeTag(
-    HOPConstEvalSession* _Nonnull session, uint64_t typeTag, int32_t* _Nonnull outTypeId);
-int HOPConstEvalSessionGetTypeInfo(
-    HOPConstEvalSession* _Nonnull session,
+int H2ConstEvalSessionDecodeTypeTag(
+    H2ConstEvalSession* _Nonnull session, uint64_t typeTag, int32_t* _Nonnull outTypeId);
+int H2ConstEvalSessionGetTypeInfo(
+    H2ConstEvalSession* _Nonnull session,
     int32_t typeId,
-    HOPConstEvalTypeInfo* _Nonnull outTypeInfo);
+    H2ConstEvalTypeInfo* _Nonnull outTypeInfo);

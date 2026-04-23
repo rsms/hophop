@@ -3,76 +3,74 @@
 #include "mir.h"
 #include "mir_exec.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef struct {
-    const HOPMirInst*     ip;
-    uint32_t              len;
-    uint32_t              pc;
-    HOPMirExecValue*      stack;
-    uint32_t              stackLen;
-    uint32_t              stackCap;
-    HOPMirExecValue*      locals;
-    uint32_t              localCount;
-    HOPArena*             arena;
-    const HOPMirProgram*  program;
-    const HOPMirFunction* function;
-    HOPMirExecEnv         env;
-    uint32_t              backwardJumpCount;
-} HOPMirExecRun;
+    const H2MirInst*     ip;
+    uint32_t             len;
+    uint32_t             pc;
+    H2MirExecValue*      stack;
+    uint32_t             stackLen;
+    uint32_t             stackCap;
+    H2MirExecValue*      locals;
+    uint32_t             localCount;
+    H2Arena*             arena;
+    const H2MirProgram*  program;
+    const H2MirFunction* function;
+    H2MirExecEnv         env;
+    uint32_t             backwardJumpCount;
+} H2MirExecRun;
 
-#define HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
-#define HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
+#define H2MIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
+#define H2MIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
 
-static void HOPCTFESetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end);
-static void HOPCTFEValueInvalid(HOPCTFEValue* v);
-static int  HOPCTFEPush(HOPMirExecRun* r, const HOPMirExecValue* v);
-static int  HOPCTFEPop(HOPMirExecRun* r, HOPMirExecValue* out);
-static int  HOPCTFEParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, int64_t* out);
-static int  HOPCTFEParseFloatLiteral(
-    HOPArena* arena, HOPStrView src, uint32_t start, uint32_t end, double* out);
-static int HOPCTFEParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end, uint8_t* out);
-static int HOPCTFEOptionalPayload(const HOPCTFEValue* opt, const HOPCTFEValue** outPayload);
-static int HOPCTFEEvalUnary(HOPTokenKind op, const HOPCTFEValue* in, HOPCTFEValue* out);
-static int HOPCTFEEvalBinary(
-    HOPMirExecRun*      r,
-    HOPTokenKind        op,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    HOPCTFEValue*       out);
-static int HOPCTFEEvalCast(HOPMirCastTarget target, const HOPCTFEValue* in, HOPCTFEValue* out);
-static const HOPMirLocal* HOPMirGetLocalMeta(const HOPMirExecRun* run, uint32_t slot);
-static int                HOPMirCoerceValueForType(
-    const HOPMirExecRun* run, uint32_t typeRefIndex, HOPMirExecValue* inOutValue);
-static void HOPMirSetReason(
-    const HOPMirExecRun* _Nullable run,
-    const HOPMirInst* _Nullable ins,
-    const char* _Nonnull reason);
+static void H2CTFESetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end);
+static void H2CTFEValueInvalid(H2CTFEValue* v);
+static int  H2CTFEPush(H2MirExecRun* r, const H2MirExecValue* v);
+static int  H2CTFEPop(H2MirExecRun* r, H2MirExecValue* out);
+static int  H2CTFEParseIntLiteral(H2StrView src, uint32_t start, uint32_t end, int64_t* out);
+static int  H2CTFEParseFloatLiteral(
+    H2Arena* arena, H2StrView src, uint32_t start, uint32_t end, double* out);
+static int H2CTFEParseBoolLiteral(H2StrView src, uint32_t start, uint32_t end, uint8_t* out);
+static int H2CTFEOptionalPayload(const H2CTFEValue* opt, const H2CTFEValue** outPayload);
+static int H2CTFEEvalUnary(H2TokenKind op, const H2CTFEValue* in, H2CTFEValue* out);
+static int H2CTFEEvalBinary(
+    H2MirExecRun*      r,
+    H2TokenKind        op,
+    const H2CTFEValue* lhs,
+    const H2CTFEValue* rhs,
+    H2CTFEValue*       out);
+static int H2CTFEEvalCast(H2MirCastTarget target, const H2CTFEValue* in, H2CTFEValue* out);
+static const H2MirLocal* H2MirGetLocalMeta(const H2MirExecRun* run, uint32_t slot);
+static int               H2MirCoerceValueForType(
+    const H2MirExecRun* run, uint32_t typeRefIndex, H2MirExecValue* inOutValue);
+static void H2MirSetReason(
+    const H2MirExecRun* _Nullable run, const H2MirInst* _Nullable ins, const char* _Nonnull reason);
 
-static int HOPMirInitRun(
-    HOPMirExecRun* _Nonnull run,
-    HOPArena* _Nonnull arena,
-    HOPMirChunk chunk,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
+static int H2MirInitRun(
+    H2MirExecRun* _Nonnull run,
+    H2Arena* _Nonnull arena,
+    H2MirChunk chunk,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
     uint32_t localCount,
-    const HOPMirExecValue* _Nullable args,
+    const H2MirExecValue* _Nullable args,
     uint32_t argCount,
-    const HOPMirExecEnv* _Nullable env,
+    const H2MirExecEnv* _Nullable env,
     int clearDiag,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
     if (clearDiag && env != NULL && env->diag != NULL) {
-        *env->diag = (HOPDiag){ 0 };
+        *env->diag = (H2Diag){ 0 };
     }
     if (run == NULL || arena == NULL || outValue == NULL || outIsConst == NULL) {
         if (env != NULL) {
-            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+            H2CTFESetDiag(env->diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
 
-    HOPCTFEValueInvalid(outValue);
+    H2CTFEValueInvalid(outValue);
     *outIsConst = 0;
 
     memset(run, 0, sizeof(*run));
@@ -80,11 +78,11 @@ static int HOPMirInitRun(
     run->len = chunk.len;
     run->pc = 0;
     run->stackCap = chunk.len + argCount + 1u;
-    run->stack = (HOPMirExecValue*)HOPArenaAlloc(
-        arena, sizeof(HOPMirExecValue) * run->stackCap, (uint32_t)_Alignof(HOPMirExecValue));
+    run->stack = (H2MirExecValue*)H2ArenaAlloc(
+        arena, sizeof(H2MirExecValue) * run->stackCap, (uint32_t)_Alignof(H2MirExecValue));
     if (run->stack == NULL) {
         if (env != NULL) {
-            HOPCTFESetDiag(env->diag, HOPDiag_ARENA_OOM, 0, 0);
+            H2CTFESetDiag(env->diag, H2Diag_ARENA_OOM, 0, 0);
         }
         return -1;
     }
@@ -99,16 +97,16 @@ static int HOPMirInitRun(
     }
     if (localCount != 0u) {
         uint32_t i;
-        run->locals = (HOPMirExecValue*)HOPArenaAlloc(
-            arena, sizeof(HOPMirExecValue) * localCount, (uint32_t)_Alignof(HOPMirExecValue));
+        run->locals = (H2MirExecValue*)H2ArenaAlloc(
+            arena, sizeof(H2MirExecValue) * localCount, (uint32_t)_Alignof(H2MirExecValue));
         if (run->locals == NULL) {
             if (env != NULL) {
-                HOPCTFESetDiag(env->diag, HOPDiag_ARENA_OOM, 0, 0);
+                H2CTFESetDiag(env->diag, H2Diag_ARENA_OOM, 0, 0);
             }
             return -1;
         }
         for (i = 0; i < localCount; i++) {
-            HOPCTFEValueInvalid(&run->locals[i]);
+            H2CTFEValueInvalid(&run->locals[i]);
         }
         if (argCount > localCount) {
             return 0;
@@ -116,9 +114,9 @@ static int HOPMirInitRun(
         for (i = 0; i < argCount; i++) {
             run->locals[i] = args[i];
             if (program != NULL && function != NULL) {
-                const HOPMirLocal* local = HOPMirGetLocalMeta(run, i);
+                const H2MirLocal* local = H2MirGetLocalMeta(run, i);
                 if (local->typeRef != UINT32_MAX) {
-                    int coerceRc = HOPMirCoerceValueForType(run, local->typeRef, &run->locals[i]);
+                    int coerceRc = H2MirCoerceValueForType(run, local->typeRef, &run->locals[i]);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
@@ -131,8 +129,8 @@ static int HOPMirInitRun(
     return 0;
 }
 
-static const HOPMirLocal* HOPMirGetLocalMeta(const HOPMirExecRun* run, uint32_t slot) {
-    static const HOPMirLocal invalidLocal = { UINT32_MAX, HOPMirLocalFlag_NONE, 0u, 0u };
+static const H2MirLocal* H2MirGetLocalMeta(const H2MirExecRun* run, uint32_t slot) {
+    static const H2MirLocal invalidLocal = { UINT32_MAX, H2MirLocalFlag_NONE, 0u, 0u };
     if (run == NULL || run->program == NULL || run->function == NULL || slot >= run->localCount
         || run->function->localStart > run->program->localLen
         || slot >= run->program->localLen - run->function->localStart)
@@ -142,8 +140,8 @@ static const HOPMirLocal* HOPMirGetLocalMeta(const HOPMirExecRun* run, uint32_t 
     return &run->program->locals[run->function->localStart + slot];
 }
 
-static int HOPMirCoerceValueForType(
-    const HOPMirExecRun* run, uint32_t typeRefIndex, HOPMirExecValue* inOutValue) {
+static int H2MirCoerceValueForType(
+    const H2MirExecRun* run, uint32_t typeRefIndex, H2MirExecValue* inOutValue) {
     if (run == NULL || inOutValue == NULL || typeRefIndex == UINT32_MAX) {
         return 1;
     }
@@ -162,29 +160,29 @@ static int HOPMirCoerceValueForType(
     return 1;
 }
 
-static uint32_t HOPMirResolveHostId(const HOPMirExecRun* run, const HOPMirInst* ins) {
+static uint32_t H2MirResolveHostId(const H2MirExecRun* run, const H2MirInst* ins) {
     if (run == NULL || ins == NULL || run->program == NULL || run->program->hostLen == 0
         || ins->aux >= run->program->hostLen)
     {
-        return HOPMirHostTarget_INVALID;
+        return H2MirHostTarget_INVALID;
     }
     return run->program->hosts[ins->aux].target;
 }
 
-static uint32_t HOPMirResolvedCallArgCount(const HOPMirInst* ins) {
+static uint32_t H2MirResolvedCallArgCount(const H2MirInst* ins) {
     if (ins == NULL) {
         return 0;
     }
-    return HOPMirCallArgCountFromTok(ins->tok);
+    return H2MirCallArgCountFromTok(ins->tok);
 }
 
-static int HOPMirResolvedCallDropsReceiverArg0(const HOPMirInst* ins) {
-    return ins != NULL && HOPMirCallTokDropsReceiverArg0(ins->tok);
+static int H2MirResolvedCallDropsReceiverArg0(const H2MirInst* ins) {
+    return ins != NULL && H2MirCallTokDropsReceiverArg0(ins->tok);
 }
 
-static void HOPMirSetReason(
-    const HOPMirExecRun* _Nullable run,
-    const HOPMirInst* _Nullable ins,
+static void H2MirSetReason(
+    const H2MirExecRun* _Nullable run,
+    const H2MirInst* _Nullable ins,
     const char* _Nonnull reason) {
     uint32_t start = 0;
     uint32_t end = 0;
@@ -198,105 +196,105 @@ static void HOPMirSetReason(
     run->env.setReason(run->env.setReasonCtx, start, end, reason);
 }
 
-static HOPCTFEValue* _Nullable HOPMirReferenceTarget(HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_REFERENCE || value->s.bytes == NULL) {
+static H2CTFEValue* _Nullable H2MirReferenceTarget(H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_REFERENCE || value->s.bytes == NULL) {
         return NULL;
     }
-    return (HOPCTFEValue*)value->s.bytes;
+    return (H2CTFEValue*)value->s.bytes;
 }
 
-static int HOPMirEvalFunctionInternal(
-    HOPArena* _Nonnull arena,
-    const HOPMirProgram* _Nonnull program,
+static int H2MirEvalFunctionInternal(
+    H2Arena* _Nonnull arena,
+    const H2MirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const HOPMirExecValue* _Nullable args,
+    const H2MirExecValue* _Nullable args,
     uint32_t argCount,
     uint16_t callFlags,
-    const HOPMirExecEnv* _Nullable env,
+    const H2MirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
 
-static int HOPMirConstToValue(const HOPMirConst* _Nonnull in, HOPMirExecValue* _Nonnull out) {
+static int H2MirConstToValue(const H2MirConst* _Nonnull in, H2MirExecValue* _Nonnull out) {
     double f64 = 0.0;
     if (in == NULL || out == NULL) {
         return 0;
     }
-    HOPCTFEValueInvalid(out);
+    H2CTFEValueInvalid(out);
     switch (in->kind) {
-        case HOPMirConst_INT:
-            out->kind = HOPCTFEValue_INT;
+        case H2MirConst_INT:
+            out->kind = H2CTFEValue_INT;
             out->i64 = (int64_t)in->bits;
             return 1;
-        case HOPMirConst_FLOAT:
-            out->kind = HOPCTFEValue_FLOAT;
+        case H2MirConst_FLOAT:
+            out->kind = H2CTFEValue_FLOAT;
             memcpy(&f64, &in->bits, sizeof(f64));
             out->f64 = f64;
             return 1;
-        case HOPMirConst_BOOL:
-            out->kind = HOPCTFEValue_BOOL;
+        case H2MirConst_BOOL:
+            out->kind = H2CTFEValue_BOOL;
             out->b = in->bits != 0;
             return 1;
-        case HOPMirConst_STRING:
-            out->kind = HOPCTFEValue_STRING;
+        case H2MirConst_STRING:
+            out->kind = H2CTFEValue_STRING;
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case HOPMirConst_TYPE:
-            out->kind = HOPCTFEValue_TYPE;
+        case H2MirConst_TYPE:
+            out->kind = H2CTFEValue_TYPE;
             out->typeTag = in->bits;
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case HOPMirConst_FUNCTION: HOPMirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
-        case HOPMirConst_NULL:     out->kind = HOPCTFEValue_NULL; return 1;
-        default:                   return 0;
+        case H2MirConst_FUNCTION: H2MirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
+        case H2MirConst_NULL:     out->kind = H2CTFEValue_NULL; return 1;
+        default:                  return 0;
     }
 }
 
-void HOPMirValueSetFunctionRef(HOPMirExecValue* _Nonnull value, uint32_t functionIndex) {
+void H2MirValueSetFunctionRef(H2MirExecValue* _Nonnull value, uint32_t functionIndex) {
     if (value == NULL) {
         return;
     }
-    HOPCTFEValueInvalid(value);
-    value->kind = HOPCTFEValue_TYPE;
-    value->typeTag = HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
+    H2CTFEValueInvalid(value);
+    value->kind = H2CTFEValue_TYPE;
+    value->typeTag = H2MIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
 }
 
-static int HOPMirValueIsFunctionRef(const HOPMirExecValue* value, uint32_t* _Nullable outFnIndex) {
-    if (value == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
+static int H2MirValueIsFunctionRef(const H2MirExecValue* value, uint32_t* _Nullable outFnIndex) {
+    if (value == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2MIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
     {
         return 0;
     }
     if (outFnIndex != NULL) {
-        *outFnIndex = (uint32_t)(value->typeTag & ~HOPMIR_EXEC_FUNCTION_REF_TAG_FLAG);
+        *outFnIndex = (uint32_t)(value->typeTag & ~H2MIR_EXEC_FUNCTION_REF_TAG_FLAG);
     }
     return 1;
 }
 
-int HOPMirValueAsFunctionRef(
-    const HOPMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
-    return HOPMirValueIsFunctionRef(value, outFunctionIndex);
+int H2MirValueAsFunctionRef(
+    const H2MirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex) {
+    return H2MirValueIsFunctionRef(value, outFunctionIndex);
 }
 
-void HOPMirValueSetByteRefProxy(HOPMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte) {
+void H2MirValueSetByteRefProxy(H2MirExecValue* _Nonnull value, uint8_t* _Nullable targetByte) {
     if (value == NULL) {
         return;
     }
-    HOPCTFEValueInvalid(value);
-    value->kind = HOPCTFEValue_INT;
+    H2CTFEValueInvalid(value);
+    value->kind = H2CTFEValue_INT;
     value->i64 = targetByte != NULL ? (int64_t)(*targetByte) : 0;
-    value->typeTag = HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG;
+    value->typeTag = H2MIR_EXEC_BYTE_REF_PROXY_TAG_FLAG;
     value->s.bytes = targetByte;
     value->s.len = targetByte != NULL ? 1u : 0u;
 }
 
-int HOPMirValueAsByteRefProxy(
-    const HOPMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte) {
-    if (value == NULL || value->kind != HOPCTFEValue_INT
-        || (value->typeTag & HOPMIR_EXEC_BYTE_REF_PROXY_TAG_FLAG) == 0 || value->s.bytes == NULL)
+int H2MirValueAsByteRefProxy(
+    const H2MirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte) {
+    if (value == NULL || value->kind != H2CTFEValue_INT
+        || (value->typeTag & H2MIR_EXEC_BYTE_REF_PROXY_TAG_FLAG) == 0 || value->s.bytes == NULL)
     {
         return 0;
     }
@@ -306,7 +304,7 @@ int HOPMirValueAsByteRefProxy(
     return 1;
 }
 
-void HOPMirExecEnvDisableDynamicResolution(HOPMirExecEnv* env) {
+void H2MirExecEnvDisableDynamicResolution(H2MirExecEnv* env) {
     if (env == NULL) {
         return;
     }
@@ -315,10 +313,10 @@ void HOPMirExecEnvDisableDynamicResolution(HOPMirExecEnv* env) {
     env->resolveCtx = NULL;
 }
 
-static void HOPMirResolveSymbolName(
-    const HOPMirExecRun* _Nonnull run,
-    const HOPMirInst* _Nonnull ins,
-    HOPMirSymbolKind expectedKind,
+static void H2MirResolveSymbolName(
+    const H2MirExecRun* _Nonnull run,
+    const H2MirInst* _Nonnull ins,
+    H2MirSymbolKind expectedKind,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
     *outStart = 0;
@@ -335,9 +333,9 @@ static void HOPMirResolveSymbolName(
     *outEnd = run->program->symbols[ins->aux].nameEnd;
 }
 
-static void HOPMirResolveFieldName(
-    const HOPMirExecRun* _Nonnull run,
-    const HOPMirInst* _Nonnull ins,
+static void H2MirResolveFieldName(
+    const H2MirExecRun* _Nonnull run,
+    const H2MirInst* _Nonnull ins,
     uint32_t* _Nonnull outStart,
     uint32_t* _Nonnull outEnd) {
     *outStart = 0;
@@ -351,29 +349,29 @@ static void HOPMirResolveFieldName(
     *outEnd = run->program->fields[ins->aux].nameEnd;
 }
 
-static int HOPMirRunLoop(
-    HOPMirExecRun* _Nonnull run, HOPMirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
+static int H2MirRunLoop(
+    H2MirExecRun* _Nonnull run, H2MirExecValue* _Nonnull outValue, int* _Nonnull outIsConst) {
     while (run->pc < run->len) {
-        const HOPMirInst* ins = &run->ip[run->pc++];
+        const H2MirInst* ins = &run->ip[run->pc++];
         switch (ins->op) {
-            case HOPMirOp_PUSH_CONST: {
-                HOPMirExecValue v;
+            case H2MirOp_PUSH_CONST: {
+                H2MirExecValue v;
                 if (run->program == NULL || ins->aux >= run->program->constLen) {
                     return 0;
                 }
-                if (!HOPMirConstToValue(&run->program->consts[ins->aux], &v)) {
+                if (!H2MirConstToValue(&run->program->consts[ins->aux], &v)) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_PUSH_INT: {
-                HOPCTFEValue  v;
-                uint32_t      rune = 0;
-                HOPRuneLitErr runeErr = { 0 };
-                v.kind = HOPCTFEValue_INT;
+            case H2MirOp_PUSH_INT: {
+                H2CTFEValue  v;
+                uint32_t     rune = 0;
+                H2RuneLitErr runeErr = { 0 };
+                v.kind = H2CTFEValue_INT;
                 v.f64 = 0.0;
                 v.b = 0;
                 v.typeTag = 0;
@@ -385,34 +383,34 @@ static int HOPMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if ((HOPTokenKind)ins->tok == HOPTok_RUNE) {
-                    if (HOPDecodeRuneLiteralValidate(
+                if ((H2TokenKind)ins->tok == H2Tok_RUNE) {
+                    if (H2DecodeRuneLiteralValidate(
                             run->env.src.ptr, ins->start, ins->end, &rune, &runeErr)
                         != 0)
                     {
-                        HOPCTFESetDiag(
+                        H2CTFESetDiag(
                             run->env.diag,
-                            HOPRuneLitErrDiagCode(runeErr.kind),
+                            H2RuneLitErrDiagCode(runeErr.kind),
                             runeErr.start,
                             runeErr.end);
                         return -1;
                     }
                     v.i64 = (int64_t)rune;
-                } else if ((HOPTokenKind)ins->tok == HOPTok_INVALID) {
+                } else if ((H2TokenKind)ins->tok == H2Tok_INVALID) {
                     v.i64 = (int64_t)(int32_t)ins->aux;
                 } else {
-                    if (HOPCTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
+                    if (H2CTFEParseIntLiteral(run->env.src, ins->start, ins->end, &v.i64) != 0) {
                         return 0;
                     }
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_PUSH_FLOAT: {
-                HOPCTFEValue v;
-                v.kind = HOPCTFEValue_FLOAT;
+            case H2MirOp_PUSH_FLOAT: {
+                H2CTFEValue v;
+                v.kind = H2CTFEValue_FLOAT;
                 v.i64 = 0;
                 v.b = 0;
                 v.typeTag = 0;
@@ -424,23 +422,23 @@ static int HOPMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (HOPCTFEParseFloatLiteral(run->arena, run->env.src, ins->start, ins->end, &v.f64)
+                if (H2CTFEParseFloatLiteral(run->arena, run->env.src, ins->start, ins->end, &v.f64)
                     != 0)
                 {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_PUSH_BOOL: {
-                HOPCTFEValue v;
-                uint8_t      b = 0;
-                if (HOPCTFEParseBoolLiteral(run->env.src, ins->start, ins->end, &b) != 0) {
+            case H2MirOp_PUSH_BOOL: {
+                H2CTFEValue v;
+                uint8_t     b = 0;
+                if (H2CTFEParseBoolLiteral(run->env.src, ins->start, ins->end, &b) != 0) {
                     return 0;
                 }
-                v.kind = HOPCTFEValue_BOOL;
+                v.kind = H2CTFEValue_BOOL;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = b;
@@ -453,28 +451,28 @@ static int HOPMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_PUSH_STRING: {
-                HOPCTFEValue    v;
-                HOPStringLitErr litErr = { 0 };
-                uint8_t*        bytes = NULL;
-                uint32_t        len = 0;
-                if (HOPDecodeStringLiteralArena(
+            case H2MirOp_PUSH_STRING: {
+                H2CTFEValue    v;
+                H2StringLitErr litErr = { 0 };
+                uint8_t*       bytes = NULL;
+                uint32_t       len = 0;
+                if (H2DecodeStringLiteralArena(
                         run->arena, run->env.src.ptr, ins->start, ins->end, &bytes, &len, &litErr)
                     != 0)
                 {
-                    HOPCTFESetDiag(
+                    H2CTFESetDiag(
                         run->env.diag,
-                        HOPStringLitErrDiagCode(litErr.kind),
+                        H2StringLitErrDiagCode(litErr.kind),
                         litErr.start,
                         litErr.end);
                     return -1;
                 }
-                v.kind = HOPCTFEValue_STRING;
+                v.kind = H2CTFEValue_STRING;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
@@ -487,14 +485,14 @@ static int HOPMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_PUSH_NULL: {
-                HOPCTFEValue v;
-                v.kind = HOPCTFEValue_NULL;
+            case H2MirOp_PUSH_NULL: {
+                H2CTFEValue v;
+                v.kind = H2CTFEValue_NULL;
                 v.i64 = 0;
                 v.f64 = 0.0;
                 v.b = 0;
@@ -507,67 +505,67 @@ static int HOPMirRunLoop(
                 v.span.startColumn = 0;
                 v.span.endLine = 0;
                 v.span.endColumn = 0;
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_LOCAL_LOAD:
+            case H2MirOp_LOCAL_LOAD:
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &run->locals[ins->aux]) != 0) {
+                if (H2CTFEPush(run, &run->locals[ins->aux]) != 0) {
                     return -1;
                 }
                 break;
-            case HOPMirOp_LOCAL_ADDR: {
-                HOPMirExecValue v;
+            case H2MirOp_LOCAL_ADDR: {
+                H2MirExecValue v;
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&v);
-                v.kind = HOPCTFEValue_REFERENCE;
+                H2CTFEValueInvalid(&v);
+                v.kind = H2CTFEValue_REFERENCE;
                 v.s.bytes = (const uint8_t*)&run->locals[ins->aux];
                 v.s.len = 0;
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_ADDR_OF: {
-                HOPMirExecValue  value;
-                HOPMirExecValue* target;
-                if (HOPCTFEPop(run, &value) != 0) {
+            case H2MirOp_ADDR_OF: {
+                H2MirExecValue  value;
+                H2MirExecValue* target;
+                if (H2CTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                target = (HOPMirExecValue*)HOPArenaAlloc(
-                    run->arena, sizeof(*target), (uint32_t)_Alignof(HOPMirExecValue));
+                target = (H2MirExecValue*)H2ArenaAlloc(
+                    run->arena, sizeof(*target), (uint32_t)_Alignof(H2MirExecValue));
                 if (target == NULL) {
-                    HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                    H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                     return -1;
                 }
                 *target = value;
-                HOPCTFEValueInvalid(&value);
-                value.kind = HOPCTFEValue_REFERENCE;
+                H2CTFEValueInvalid(&value);
+                value.kind = H2CTFEValue_REFERENCE;
                 value.s.bytes = (const uint8_t*)target;
                 value.s.len = 0;
-                if (HOPCTFEPush(run, &value) != 0) {
+                if (H2CTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_LOCAL_ZERO: {
-                const HOPMirLocal* local;
-                HOPMirExecValue    v;
-                int                isConst = 0;
+            case H2MirOp_LOCAL_ZERO: {
+                const H2MirLocal* local;
+                H2MirExecValue    v;
+                int               isConst = 0;
                 if (ins->aux >= run->localCount || run->env.zeroInitLocal == NULL) {
                     return 0;
                 }
-                local = HOPMirGetLocalMeta(run, ins->aux);
+                local = H2MirGetLocalMeta(run, ins->aux);
                 if (local->typeRef == UINT32_MAX || local->typeRef >= run->program->typeLen) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&v);
+                H2CTFEValueInvalid(&v);
                 if (run->env.zeroInitLocal(
                         run->env.zeroInitCtx,
                         &run->program->types[local->typeRef],
@@ -584,20 +582,20 @@ static int HOPMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
-            case HOPMirOp_DEREF_LOAD: {
-                HOPMirExecValue ref;
-                HOPCTFEValue*   target;
-                if (HOPCTFEPop(run, &ref) != 0) {
+            case H2MirOp_DEREF_LOAD: {
+                H2MirExecValue ref;
+                H2CTFEValue*   target;
+                if (H2CTFEPop(run, &ref) != 0) {
                     return 0;
                 }
-                target = HOPMirReferenceTarget(&ref);
+                target = H2MirReferenceTarget(&ref);
                 if (target == NULL) {
                     return 0;
                 }
                 {
-                    uint8_t*        bytePtr = NULL;
-                    HOPMirExecValue out;
-                    if (HOPMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                    uint8_t*       bytePtr = NULL;
+                    H2MirExecValue out;
+                    if (H2MirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
                         out = *target;
                         out.i64 = (int64_t)(*bytePtr);
                         out.f64 = 0.0;
@@ -605,33 +603,33 @@ static int HOPMirRunLoop(
                         out.typeTag = 0;
                         out.s.bytes = NULL;
                         out.s.len = 0;
-                        if (HOPCTFEPush(run, &out) != 0) {
+                        if (H2CTFEPush(run, &out) != 0) {
                             return -1;
                         }
                         break;
                     }
                 }
-                if (HOPCTFEPush(run, target) != 0) {
+                if (H2CTFEPush(run, target) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_DEREF_STORE: {
-                HOPMirExecValue ref;
-                HOPMirExecValue v;
-                HOPCTFEValue*   target;
-                if (HOPCTFEPop(run, &ref) != 0 || HOPCTFEPop(run, &v) != 0) {
+            case H2MirOp_DEREF_STORE: {
+                H2MirExecValue ref;
+                H2MirExecValue v;
+                H2CTFEValue*   target;
+                if (H2CTFEPop(run, &ref) != 0 || H2CTFEPop(run, &v) != 0) {
                     return 0;
                 }
-                target = HOPMirReferenceTarget(&ref);
+                target = H2MirReferenceTarget(&ref);
                 if (target == NULL) {
                     return 0;
                 }
                 {
                     uint8_t* bytePtr = NULL;
                     int64_t  byteValue = 0;
-                    if (HOPMirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
-                        if (HOPCTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
+                    if (H2MirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                        if (H2CTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
                             || byteValue > 255)
                         {
                             return 0;
@@ -644,18 +642,18 @@ static int HOPMirRunLoop(
                 *target = v;
                 break;
             }
-            case HOPMirOp_LOCAL_STORE: {
-                const HOPMirLocal* local;
-                HOPMirExecValue    v;
+            case H2MirOp_LOCAL_STORE: {
+                const H2MirLocal* local;
+                H2MirExecValue    v;
                 if (ins->aux >= run->localCount) {
                     return 0;
                 }
-                if (HOPCTFEPop(run, &v) != 0) {
+                if (H2CTFEPop(run, &v) != 0) {
                     return 0;
                 }
-                local = HOPMirGetLocalMeta(run, ins->aux);
+                local = H2MirGetLocalMeta(run, ins->aux);
                 if (local->typeRef != UINT32_MAX) {
-                    int coerceRc = HOPMirCoerceValueForType(run, local->typeRef, &v);
+                    int coerceRc = H2MirCoerceValueForType(run, local->typeRef, &v);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
@@ -663,41 +661,41 @@ static int HOPMirRunLoop(
                 run->locals[ins->aux] = v;
                 break;
             }
-            case HOPMirOp_DROP: {
-                HOPMirExecValue v;
-                if (HOPCTFEPop(run, &v) != 0) {
+            case H2MirOp_DROP: {
+                H2MirExecValue v;
+                if (H2CTFEPop(run, &v) != 0) {
                     return 0;
                 }
                 break;
             }
-            case HOPMirOp_JUMP:
+            case H2MirOp_JUMP:
                 if (ins->aux >= run->len) {
                     return 0;
                 }
                 if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                     if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
-                        HOPMirSetReason(run, ins, "for-loop exceeded const-eval iteration limit");
+                        H2MirSetReason(run, ins, "for-loop exceeded const-eval iteration limit");
                         return 0;
                     }
                 }
                 run->pc = ins->aux;
                 break;
-            case HOPMirOp_JUMP_IF_FALSE: {
-                HOPMirExecValue cond;
-                HOPMirExecValue condBool;
+            case H2MirOp_JUMP_IF_FALSE: {
+                H2MirExecValue cond;
+                H2MirExecValue condBool;
                 if (ins->aux >= run->len) {
                     return 0;
                 }
-                if (HOPCTFEPop(run, &cond) != 0) {
+                if (H2CTFEPop(run, &cond) != 0) {
                     return 0;
                 }
-                if (!HOPCTFEEvalCast(HOPMirCastTarget_BOOL, &cond, &condBool)) {
+                if (!H2CTFEEvalCast(H2MirCastTarget_BOOL, &cond, &condBool)) {
                     return 0;
                 }
                 if (!condBool.b) {
                     if (run->env.backwardJumpLimit != 0 && ins->aux < run->pc) {
                         if (++run->backwardJumpCount > run->env.backwardJumpLimit) {
-                            HOPMirSetReason(
+                            H2MirSetReason(
                                 run, ins, "for-loop exceeded const-eval iteration limit");
                             return 0;
                         }
@@ -706,32 +704,32 @@ static int HOPMirRunLoop(
                 }
                 break;
             }
-            case HOPMirOp_ASSERT: {
-                HOPMirExecValue cond;
-                HOPMirExecValue condBool;
-                if (HOPCTFEPop(run, &cond) != 0) {
+            case H2MirOp_ASSERT: {
+                H2MirExecValue cond;
+                H2MirExecValue condBool;
+                if (H2CTFEPop(run, &cond) != 0) {
                     return 0;
                 }
-                if (!HOPCTFEEvalCast(HOPMirCastTarget_BOOL, &cond, &condBool)) {
+                if (!H2CTFEEvalCast(H2MirCastTarget_BOOL, &cond, &condBool)) {
                     return 0;
                 }
                 if (!condBool.b) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "assert condition evaluated to false during const evaluation");
                     return 0;
                 }
                 break;
             }
-            case HOPMirOp_LOAD_IDENT: {
-                HOPCTFEValue v;
-                int          idIsConst = 0;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
+            case H2MirOp_LOAD_IDENT: {
+                H2CTFEValue v;
+                int         idIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
                 if (run->env.resolveIdent == NULL) {
                     return 0;
                 }
-                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_IDENT, &nameStart, &nameEnd);
-                HOPCTFEValueInvalid(&v);
+                H2MirResolveSymbolName(run, ins, H2MirSymbol_IDENT, &nameStart, &nameEnd);
+                H2CTFEValueInvalid(&v);
                 if (run->env.resolveIdent(
                         run->env.resolveCtx, nameStart, nameEnd, &v, &idIsConst, run->env.diag)
                     != 0)
@@ -741,23 +739,23 @@ static int HOPMirRunLoop(
                 if (!idIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_STORE_IDENT: {
-                HOPCTFEValue value;
-                int          idIsConst = 0;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
-                if (HOPCTFEPop(run, &value) != 0) {
+            case H2MirOp_STORE_IDENT: {
+                H2CTFEValue value;
+                int         idIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (H2CTFEPop(run, &value) != 0) {
                     return 0;
                 }
                 if (run->env.assignIdent == NULL) {
                     return 0;
                 }
-                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_IDENT, &nameStart, &nameEnd);
+                H2MirResolveSymbolName(run, ins, H2MirSymbol_IDENT, &nameStart, &nameEnd);
                 if (run->env.assignIdent(
                         run->env.assignIdentCtx,
                         nameStart,
@@ -774,21 +772,21 @@ static int HOPMirRunLoop(
                 }
                 break;
             }
-            case HOPMirOp_CALL: {
-                HOPCTFEValue* args = NULL;
-                HOPCTFEValue  v;
-                int           callIsConst = 0;
-                uint32_t      argCount = HOPMirResolvedCallArgCount(ins);
-                uint32_t      i;
-                uint32_t      nameStart = ins->start;
-                uint32_t      nameEnd = ins->end;
+            case H2MirOp_CALL: {
+                H2CTFEValue* args = NULL;
+                H2CTFEValue  v;
+                int          callIsConst = 0;
+                uint32_t     argCount = H2MirResolvedCallArgCount(ins);
+                uint32_t     i;
+                uint32_t     nameStart = ins->start;
+                uint32_t     nameEnd = ins->end;
                 if (run->env.resolveCall == NULL && run->env.resolveCallPre == NULL) {
                     return 0;
                 }
-                HOPMirResolveSymbolName(run, ins, HOPMirSymbol_CALL, &nameStart, &nameEnd);
+                H2MirResolveSymbolName(run, ins, H2MirSymbol_CALL, &nameStart, &nameEnd);
                 if (run->env.resolveCallPre != NULL) {
                     int preRc;
-                    HOPCTFEValueInvalid(&v);
+                    H2CTFEValueInvalid(&v);
                     preRc = run->env.resolveCallPre(
                         run->env.resolveCtx,
                         run->program,
@@ -806,7 +804,7 @@ static int HOPMirRunLoop(
                         if (!callIsConst) {
                             return 0;
                         }
-                        if (HOPCTFEPush(run, &v) != 0) {
+                        if (H2CTFEPush(run, &v) != 0) {
                             return -1;
                         }
                         break;
@@ -819,21 +817,21 @@ static int HOPMirRunLoop(
                     return 0;
                 }
                 if (argCount > 0) {
-                    args = (HOPCTFEValue*)HOPArenaAlloc(
+                    args = (H2CTFEValue*)H2ArenaAlloc(
                         run->arena,
-                        sizeof(HOPCTFEValue) * argCount,
-                        (uint32_t)_Alignof(HOPCTFEValue));
+                        sizeof(H2CTFEValue) * argCount,
+                        (uint32_t)_Alignof(H2CTFEValue));
                     if (args == NULL) {
-                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
+                    if (H2CTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                HOPCTFEValueInvalid(&v);
+                H2CTFEValueInvalid(&v);
                 if (run->env.resolveCall(
                         run->env.resolveCtx,
                         run->program,
@@ -853,18 +851,18 @@ static int HOPMirRunLoop(
                 if (!callIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CALL_HOST: {
-                HOPMirExecValue* args = NULL;
-                HOPMirExecValue  v;
-                int              callOk = 0;
-                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
-                uint32_t         i;
-                uint32_t         callArgOffset = 0;
+            case H2MirOp_CALL_HOST: {
+                H2MirExecValue* args = NULL;
+                H2MirExecValue  v;
+                int             callOk = 0;
+                uint32_t        argCount = H2MirResolvedCallArgCount(ins);
+                uint32_t        i;
+                uint32_t        callArgOffset = 0;
                 if (run->env.hostCall == NULL) {
                     return 0;
                 }
@@ -872,22 +870,22 @@ static int HOPMirRunLoop(
                     return 0;
                 }
                 if (argCount > 0u) {
-                    args = (HOPMirExecValue*)HOPArenaAlloc(
+                    args = (H2MirExecValue*)H2ArenaAlloc(
                         run->arena,
-                        sizeof(HOPMirExecValue) * argCount,
-                        (uint32_t)_Alignof(HOPMirExecValue));
+                        sizeof(H2MirExecValue) * argCount,
+                        (uint32_t)_Alignof(H2MirExecValue));
                     if (args == NULL) {
-                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
+                    if (H2CTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                HOPCTFEValueInvalid(&v);
-                if (HOPMirResolvedCallDropsReceiverArg0(ins)) {
+                H2CTFEValueInvalid(&v);
+                if (H2MirResolvedCallDropsReceiverArg0(ins)) {
                     if (argCount == 0u) {
                         return 0;
                     }
@@ -895,7 +893,7 @@ static int HOPMirRunLoop(
                 }
                 if (run->env.hostCall(
                         run->env.hostCtx,
-                        HOPMirResolveHostId(run, ins),
+                        H2MirResolveHostId(run, ins),
                         args != NULL ? args + callArgOffset : NULL,
                         argCount - callArgOffset,
                         &v,
@@ -908,18 +906,18 @@ static int HOPMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CALL_FN: {
-                HOPMirExecValue  v;
-                HOPMirExecValue* args = NULL;
-                int              callOk = 0;
-                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
-                uint32_t         i;
-                uint32_t         callArgOffset = 0;
+            case H2MirOp_CALL_FN: {
+                H2MirExecValue  v;
+                H2MirExecValue* args = NULL;
+                int             callOk = 0;
+                uint32_t        argCount = H2MirResolvedCallArgCount(ins);
+                uint32_t        i;
+                uint32_t        callArgOffset = 0;
                 if (run->program == NULL || ins->aux >= run->program->funcLen) {
                     return 0;
                 }
@@ -927,21 +925,21 @@ static int HOPMirRunLoop(
                     return 0;
                 }
                 if (argCount != 0u) {
-                    args = (HOPMirExecValue*)HOPArenaAlloc(
+                    args = (H2MirExecValue*)H2ArenaAlloc(
                         run->arena,
-                        sizeof(HOPMirExecValue) * argCount,
-                        (uint32_t)_Alignof(HOPMirExecValue));
+                        sizeof(H2MirExecValue) * argCount,
+                        (uint32_t)_Alignof(H2MirExecValue));
                     if (args == NULL) {
-                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
+                    if (H2CTFEPop(run, &args[i - 1]) != 0) {
                         return 0;
                     }
                 }
-                if (HOPMirResolvedCallDropsReceiverArg0(ins)) {
+                if (H2MirResolvedCallDropsReceiverArg0(ins)) {
                     if (argCount == 0u) {
                         return 0;
                     }
@@ -964,7 +962,7 @@ static int HOPMirRunLoop(
                         return 0;
                     }
                 }
-                if (HOPMirEvalFunctionInternal(
+                if (H2MirEvalFunctionInternal(
                         run->arena,
                         run->program,
                         ins->aux,
@@ -983,52 +981,51 @@ static int HOPMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CALL_INDIRECT: {
-                HOPMirExecValue  callee;
-                HOPMirExecValue  v;
-                HOPMirExecValue* args = NULL;
-                int              callOk = 0;
-                uint32_t         fnIndex = 0;
-                uint32_t         argCount = HOPMirResolvedCallArgCount(ins);
-                uint32_t         i;
+            case H2MirOp_CALL_INDIRECT: {
+                H2MirExecValue  callee;
+                H2MirExecValue  v;
+                H2MirExecValue* args = NULL;
+                int             callOk = 0;
+                uint32_t        fnIndex = 0;
+                uint32_t        argCount = H2MirResolvedCallArgCount(ins);
+                uint32_t        i;
                 if (run->program == NULL || argCount + 1u > run->stackLen) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "indirect call stack is invalid during const evaluation");
                     return 0;
                 }
                 if (argCount != 0u) {
-                    args = (HOPMirExecValue*)HOPArenaAlloc(
+                    args = (H2MirExecValue*)H2ArenaAlloc(
                         run->arena,
-                        sizeof(HOPMirExecValue) * argCount,
-                        (uint32_t)_Alignof(HOPMirExecValue));
+                        sizeof(H2MirExecValue) * argCount,
+                        (uint32_t)_Alignof(H2MirExecValue));
                     if (args == NULL) {
-                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = argCount; i > 0; i--) {
-                    if (HOPCTFEPop(run, &args[i - 1]) != 0) {
-                        HOPMirSetReason(
+                    if (H2CTFEPop(run, &args[i - 1]) != 0) {
+                        H2MirSetReason(
                             run,
                             ins,
                             "indirect call arguments are not available during const evaluation");
                         return 0;
                     }
                 }
-                if (HOPCTFEPop(run, &callee) != 0) {
-                    HOPMirSetReason(
+                if (H2CTFEPop(run, &callee) != 0) {
+                    H2MirSetReason(
                         run, ins, "indirect call target is not available during const evaluation");
                     return 0;
                 }
-                if (!HOPMirValueIsFunctionRef(&callee, &fnIndex)
-                    || fnIndex >= run->program->funcLen)
+                if (!H2MirValueIsFunctionRef(&callee, &fnIndex) || fnIndex >= run->program->funcLen)
                 {
-                    HOPMirSetReason(run, ins, "indirect call target is not a function");
+                    H2MirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
                 }
                 if (run->env.adjustCallArgs != NULL) {
@@ -1048,7 +1045,7 @@ static int HOPMirRunLoop(
                         return 0;
                     }
                 }
-                if (HOPMirEvalFunctionInternal(
+                if (H2MirEvalFunctionInternal(
                         run->arena,
                         run->program,
                         fnIndex,
@@ -1067,66 +1064,66 @@ static int HOPMirRunLoop(
                 if (!callOk) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &v) != 0) {
+                if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_UNARY: {
-                HOPCTFEValue in;
-                HOPCTFEValue out;
-                if (HOPCTFEPop(run, &in) != 0) {
+            case H2MirOp_UNARY: {
+                H2CTFEValue in;
+                H2CTFEValue out;
+                if (H2CTFEPop(run, &in) != 0) {
                     return 0;
                 }
-                if (!HOPCTFEEvalUnary((HOPTokenKind)ins->tok, &in, &out)) {
+                if (!H2CTFEEvalUnary((H2TokenKind)ins->tok, &in, &out)) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_BINARY: {
-                HOPCTFEValue lhs;
-                HOPCTFEValue rhs;
-                HOPCTFEValue out;
-                int          binaryRc;
-                if (HOPCTFEPop(run, &rhs) != 0 || HOPCTFEPop(run, &lhs) != 0) {
+            case H2MirOp_BINARY: {
+                H2CTFEValue lhs;
+                H2CTFEValue rhs;
+                H2CTFEValue out;
+                int         binaryRc;
+                if (H2CTFEPop(run, &rhs) != 0 || H2CTFEPop(run, &lhs) != 0) {
                     return 0;
                 }
-                binaryRc = HOPCTFEEvalBinary(run, (HOPTokenKind)ins->tok, &lhs, &rhs, &out);
+                binaryRc = H2CTFEEvalBinary(run, (H2TokenKind)ins->tok, &lhs, &rhs, &out);
                 if (binaryRc < 0) {
                     return -1;
                 }
                 if (binaryRc == 0) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "binary operation is not supported during const evaluation");
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_INDEX: {
-                HOPCTFEValue base;
-                HOPCTFEValue idx;
-                HOPCTFEValue out;
-                int64_t      idxInt = 0;
-                int          indexIsConst = 0;
-                if (HOPCTFEPop(run, &idx) != 0 || HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_INDEX: {
+                H2CTFEValue base;
+                H2CTFEValue idx;
+                H2CTFEValue out;
+                int64_t     idxInt = 0;
+                int         indexIsConst = 0;
+                if (H2CTFEPop(run, &idx) != 0 || H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                if (base.kind == HOPCTFEValue_STRING && HOPCTFEValueToInt64(&idx, &idxInt) == 0) {
+                if (base.kind == H2CTFEValue_STRING && H2CTFEValueToInt64(&idx, &idxInt) == 0) {
                     if (idxInt < 0) {
-                        HOPMirSetReason(run, ins, "index is negative in const evaluation");
+                        H2MirSetReason(run, ins, "index is negative in const evaluation");
                         return 0;
                     }
                     if ((uint64_t)idxInt >= (uint64_t)base.s.len) {
-                        HOPMirSetReason(run, ins, "index is out of bounds in const evaluation");
+                        H2MirSetReason(run, ins, "index is out of bounds in const evaluation");
                         return 0;
                     }
-                    out.kind = HOPCTFEValue_INT;
+                    out.kind = H2CTFEValue_INT;
                     out.i64 = (int64_t)base.s.bytes[(uint32_t)idxInt];
                     out.f64 = 0.0;
                     out.b = 0;
@@ -1139,7 +1136,7 @@ static int HOPMirRunLoop(
                     out.span.startColumn = 0;
                     out.span.endLine = 0;
                     out.span.endColumn = 0;
-                    if (HOPCTFEPush(run, &out) != 0) {
+                    if (H2CTFEPush(run, &out) != 0) {
                         return -1;
                     }
                     break;
@@ -1147,7 +1144,7 @@ static int HOPMirRunLoop(
                 if (run->env.indexValue == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.indexValue(
                         run->env.indexValueCtx, &base, &idx, &out, &indexIsConst, run->env.diag)
                     != 0)
@@ -1157,22 +1154,22 @@ static int HOPMirRunLoop(
                 if (!indexIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_SEQ_LEN: {
-                HOPCTFEValue base;
-                HOPCTFEValue out;
-                int          lenIsConst = 0;
-                if (HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_SEQ_LEN: {
+                H2CTFEValue base;
+                H2CTFEValue out;
+                int         lenIsConst = 0;
+                if (H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                if (base.kind == HOPCTFEValue_STRING || base.kind == HOPCTFEValue_ARRAY
-                    || base.kind == HOPCTFEValue_NULL)
+                if (base.kind == H2CTFEValue_STRING || base.kind == H2CTFEValue_ARRAY
+                    || base.kind == H2CTFEValue_NULL)
                 {
-                    out.kind = HOPCTFEValue_INT;
+                    out.kind = H2CTFEValue_INT;
                     out.i64 = (int64_t)base.s.len;
                     out.f64 = 0.0;
                     out.b = 0;
@@ -1185,7 +1182,7 @@ static int HOPMirRunLoop(
                     out.span.startColumn = 0;
                     out.span.endLine = 0;
                     out.span.endColumn = 0;
-                    if (HOPCTFEPush(run, &out) != 0) {
+                    if (H2CTFEPush(run, &out) != 0) {
                         return -1;
                     }
                     break;
@@ -1193,7 +1190,7 @@ static int HOPMirRunLoop(
                 if (run->env.sequenceLen == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.sequenceLen(
                         run->env.sequenceLenCtx, &base, &out, &lenIsConst, run->env.diag)
                     != 0)
@@ -1203,41 +1200,41 @@ static int HOPMirRunLoop(
                 if (!lenIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_STR_CSTR: {
-                HOPCTFEValue  base;
-                HOPCTFEValue* target;
-                if (HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_STR_CSTR: {
+                H2CTFEValue  base;
+                H2CTFEValue* target;
+                if (H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                target = HOPMirReferenceTarget(&base);
+                target = H2MirReferenceTarget(&base);
                 if (target != NULL) {
                     base = *target;
                 }
-                if (base.kind != HOPCTFEValue_STRING) {
+                if (base.kind != H2CTFEValue_STRING) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &base) != 0) {
+                if (H2CTFEPush(run, &base) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_ARRAY_ADDR: {
-                HOPCTFEValue base;
-                HOPCTFEValue idx;
-                HOPCTFEValue out;
-                int          addrIsConst = 0;
-                if (HOPCTFEPop(run, &idx) != 0 || HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_ARRAY_ADDR: {
+                H2CTFEValue base;
+                H2CTFEValue idx;
+                H2CTFEValue out;
+                int         addrIsConst = 0;
+                if (H2CTFEPop(run, &idx) != 0 || H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.indexAddr == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.indexAddr(
                         run->env.indexAddrCtx, &base, &idx, &out, &addrIsConst, run->env.diag)
                     != 0)
@@ -1247,39 +1244,39 @@ static int HOPMirRunLoop(
                 if (!addrIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_SLICE_MAKE: {
-                HOPCTFEValue  base;
-                HOPCTFEValue  startValue;
-                HOPCTFEValue  endValue;
-                HOPCTFEValue  out;
-                HOPCTFEValue* startPtr = NULL;
-                HOPCTFEValue* endPtr = NULL;
-                int           sliceIsConst = 0;
-                uint16_t      sliceFlags = ins->tok;
+            case H2MirOp_SLICE_MAKE: {
+                H2CTFEValue  base;
+                H2CTFEValue  startValue;
+                H2CTFEValue  endValue;
+                H2CTFEValue  out;
+                H2CTFEValue* startPtr = NULL;
+                H2CTFEValue* endPtr = NULL;
+                int          sliceIsConst = 0;
+                uint16_t     sliceFlags = ins->tok;
                 if (run->env.sliceValue == NULL) {
                     return 0;
                 }
-                if ((sliceFlags & HOPAstFlag_INDEX_HAS_END) != 0u) {
-                    if (HOPCTFEPop(run, &endValue) != 0) {
+                if ((sliceFlags & H2AstFlag_INDEX_HAS_END) != 0u) {
+                    if (H2CTFEPop(run, &endValue) != 0) {
                         return 0;
                     }
                     endPtr = &endValue;
                 }
-                if ((sliceFlags & HOPAstFlag_INDEX_HAS_START) != 0u) {
-                    if (HOPCTFEPop(run, &startValue) != 0) {
+                if ((sliceFlags & H2AstFlag_INDEX_HAS_START) != 0u) {
+                    if (H2CTFEPop(run, &startValue) != 0) {
                         return 0;
                     }
                     startPtr = &startValue;
                 }
-                if (HOPCTFEPop(run, &base) != 0) {
+                if (H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.sliceValue(
                         run->env.sliceValueCtx,
                         &base,
@@ -1296,18 +1293,18 @@ static int HOPMirRunLoop(
                 if (!sliceIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_AGG_MAKE: {
-                HOPCTFEValue out;
-                int          aggIsConst = 0;
+            case H2MirOp_AGG_MAKE: {
+                H2CTFEValue out;
+                int         aggIsConst = 0;
                 if (run->env.makeAggregate == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.makeAggregate(
                         run->env.makeAggregateCtx,
                         ins->aux,
@@ -1322,20 +1319,20 @@ static int HOPMirRunLoop(
                 if (!aggIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_AGG_ZERO: {
-                HOPCTFEValue out;
-                int          aggIsConst = 0;
+            case H2MirOp_AGG_ZERO: {
+                H2CTFEValue out;
+                int         aggIsConst = 0;
                 if (run->program == NULL || run->env.zeroInitLocal == NULL
                     || ins->aux >= run->program->typeLen)
                 {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.zeroInitLocal(
                         run->env.zeroInitCtx,
                         &run->program->types[ins->aux],
@@ -1349,24 +1346,24 @@ static int HOPMirRunLoop(
                 if (!aggIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_AGG_SET: {
-                HOPCTFEValue value;
-                HOPCTFEValue base;
-                int          fieldIsConst = 0;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
-                if (HOPCTFEPop(run, &value) != 0 || HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_AGG_SET: {
+                H2CTFEValue value;
+                H2CTFEValue base;
+                int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (H2CTFEPop(run, &value) != 0 || H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggSetField == NULL) {
                     return 0;
                 }
-                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                H2MirResolveFieldName(run, ins, &nameStart, &nameEnd);
                 if (run->env.aggSetField(
                         run->env.aggSetFieldCtx,
                         &base,
@@ -1382,25 +1379,25 @@ static int HOPMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &base) != 0) {
+                if (H2CTFEPush(run, &base) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_AGG_GET: {
-                HOPCTFEValue base;
-                HOPCTFEValue out;
-                int          fieldIsConst = 0;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
-                if (HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_AGG_GET: {
+                H2CTFEValue base;
+                H2CTFEValue out;
+                int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggGetField == NULL) {
                     return 0;
                 }
-                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
-                HOPCTFEValueInvalid(&out);
+                H2MirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                H2CTFEValueInvalid(&out);
                 if (run->env.aggGetField(
                         run->env.aggGetFieldCtx,
                         &base,
@@ -1416,25 +1413,25 @@ static int HOPMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_AGG_ADDR: {
-                HOPCTFEValue base;
-                HOPCTFEValue out;
-                int          fieldIsConst = 0;
-                uint32_t     nameStart = ins->start;
-                uint32_t     nameEnd = ins->end;
-                if (HOPCTFEPop(run, &base) != 0) {
+            case H2MirOp_AGG_ADDR: {
+                H2CTFEValue base;
+                H2CTFEValue out;
+                int         fieldIsConst = 0;
+                uint32_t    nameStart = ins->start;
+                uint32_t    nameEnd = ins->end;
+                if (H2CTFEPop(run, &base) != 0) {
                     return 0;
                 }
                 if (run->env.aggAddrField == NULL) {
                     return 0;
                 }
-                HOPMirResolveFieldName(run, ins, &nameStart, &nameEnd);
-                HOPCTFEValueInvalid(&out);
+                H2MirResolveFieldName(run, ins, &nameStart, &nameEnd);
+                H2CTFEValueInvalid(&out);
                 if (run->env.aggAddrField(
                         run->env.aggAddrFieldCtx,
                         &base,
@@ -1450,36 +1447,36 @@ static int HOPMirRunLoop(
                 if (!fieldIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_TUPLE_MAKE: {
-                HOPMirExecValue* elems = NULL;
-                HOPMirExecValue  out;
-                int              tupleIsConst = 0;
-                uint32_t         elemCount = (uint32_t)ins->tok;
-                uint32_t         i;
+            case H2MirOp_TUPLE_MAKE: {
+                H2MirExecValue* elems = NULL;
+                H2MirExecValue  out;
+                int             tupleIsConst = 0;
+                uint32_t        elemCount = (uint32_t)ins->tok;
+                uint32_t        i;
                 if (run->env.makeTuple == NULL || elemCount > run->stackLen) {
                     return 0;
                 }
                 if (elemCount != 0u) {
-                    elems = (HOPMirExecValue*)HOPArenaAlloc(
+                    elems = (H2MirExecValue*)H2ArenaAlloc(
                         run->arena,
-                        sizeof(HOPMirExecValue) * elemCount,
-                        (uint32_t)_Alignof(HOPMirExecValue));
+                        sizeof(H2MirExecValue) * elemCount,
+                        (uint32_t)_Alignof(H2MirExecValue));
                     if (elems == NULL) {
-                        HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                         return -1;
                     }
                 }
                 for (i = elemCount; i > 0; i--) {
-                    if (HOPCTFEPop(run, &elems[i - 1u]) != 0) {
+                    if (H2CTFEPop(run, &elems[i - 1u]) != 0) {
                         return 0;
                     }
                 }
-                HOPCTFEValueInvalid(&out);
+                H2CTFEValueInvalid(&out);
                 if (run->env.makeTuple(
                         run->env.makeTupleCtx,
                         elems,
@@ -1495,22 +1492,22 @@ static int HOPMirRunLoop(
                 if (!tupleIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_ITER_INIT: {
-                HOPCTFEValue source;
-                HOPCTFEValue iter;
-                int          iterIsConst = 0;
-                if (HOPCTFEPop(run, &source) != 0) {
+            case H2MirOp_ITER_INIT: {
+                H2CTFEValue source;
+                H2CTFEValue iter;
+                int         iterIsConst = 0;
+                if (H2CTFEPop(run, &source) != 0) {
                     return 0;
                 }
                 if (run->env.iterInit == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&iter);
+                H2CTFEValueInvalid(&iter);
                 if (run->env.iterInit(
                         run->env.iterInitCtx,
                         ins->aux,
@@ -1526,27 +1523,27 @@ static int HOPMirRunLoop(
                 if (!iterIsConst) {
                     return 0;
                 }
-                if (HOPCTFEPush(run, &iter) != 0) {
+                if (H2CTFEPush(run, &iter) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_ITER_NEXT: {
-                HOPCTFEValue iter;
-                HOPCTFEValue key;
-                HOPCTFEValue value;
-                HOPCTFEValue hasItemValue;
-                int          hasItem = 0;
-                int          keyIsConst = 0;
-                int          valueIsConst = 0;
-                if (HOPCTFEPop(run, &iter) != 0) {
+            case H2MirOp_ITER_NEXT: {
+                H2CTFEValue iter;
+                H2CTFEValue key;
+                H2CTFEValue value;
+                H2CTFEValue hasItemValue;
+                int         hasItem = 0;
+                int         keyIsConst = 0;
+                int         valueIsConst = 0;
+                if (H2CTFEPop(run, &iter) != 0) {
                     return 0;
                 }
                 if (run->env.iterNext == NULL) {
                     return 0;
                 }
-                HOPCTFEValueInvalid(&key);
-                HOPCTFEValueInvalid(&value);
+                H2CTFEValueInvalid(&key);
+                H2CTFEValueInvalid(&value);
                 if (run->env.iterNext(
                         run->env.iterNextCtx,
                         &iter,
@@ -1562,149 +1559,149 @@ static int HOPMirRunLoop(
                     return -1;
                 }
                 if (hasItem) {
-                    if ((ins->tok & HOPMirIterFlag_HAS_KEY) != 0u && !keyIsConst) {
+                    if ((ins->tok & H2MirIterFlag_HAS_KEY) != 0u && !keyIsConst) {
                         return 0;
                     }
-                    if ((ins->tok & HOPMirIterFlag_VALUE_DISCARD) == 0u && !valueIsConst) {
+                    if ((ins->tok & H2MirIterFlag_VALUE_DISCARD) == 0u && !valueIsConst) {
                         return 0;
                     }
-                    if ((ins->tok & HOPMirIterFlag_HAS_KEY) != 0u) {
-                        if (HOPCTFEPush(run, &key) != 0) {
+                    if ((ins->tok & H2MirIterFlag_HAS_KEY) != 0u) {
+                        if (H2CTFEPush(run, &key) != 0) {
                             return -1;
                         }
                     }
-                    if ((ins->tok & HOPMirIterFlag_VALUE_DISCARD) == 0u) {
-                        if (HOPCTFEPush(run, &value) != 0) {
+                    if ((ins->tok & H2MirIterFlag_VALUE_DISCARD) == 0u) {
+                        if (H2CTFEPush(run, &value) != 0) {
                             return -1;
                         }
                     }
                 }
-                hasItemValue.kind = HOPCTFEValue_BOOL;
+                hasItemValue.kind = H2CTFEValue_BOOL;
                 hasItemValue.i64 = 0;
                 hasItemValue.f64 = 0.0;
                 hasItemValue.b = hasItem ? 1u : 0u;
                 hasItemValue.typeTag = 0;
                 hasItemValue.s.bytes = NULL;
                 hasItemValue.s.len = 0;
-                hasItemValue.span = (HOPCTFESpan){ 0 };
-                if (HOPCTFEPush(run, &hasItemValue) != 0) {
+                hasItemValue.span = (H2CTFESpan){ 0 };
+                if (H2CTFEPush(run, &hasItemValue) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CAST: {
-                HOPCTFEValue in;
-                HOPCTFEValue out;
-                if (HOPCTFEPop(run, &in) != 0) {
+            case H2MirOp_CAST: {
+                H2CTFEValue in;
+                H2CTFEValue out;
+                if (H2CTFEPop(run, &in) != 0) {
                     return 0;
                 }
-                if (!HOPCTFEEvalCast((HOPMirCastTarget)ins->tok, &in, &out)) {
+                if (!H2CTFEEvalCast((H2MirCastTarget)ins->tok, &in, &out)) {
                     return 0;
                 }
                 {
-                    int coerceRc = HOPMirCoerceValueForType(run, ins->aux, &out);
+                    int coerceRc = H2MirCoerceValueForType(run, ins->aux, &out);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_COERCE: {
-                HOPCTFEValue value;
-                int          coerceRc;
-                if (HOPCTFEPop(run, &value) != 0) {
+            case H2MirOp_COERCE: {
+                H2CTFEValue value;
+                int         coerceRc;
+                if (H2CTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (value.kind == HOPCTFEValue_AGGREGATE) {
-                    value.typeTag |= HOPCTFEValueTag_AGG_PARTIAL;
+                if (value.kind == H2CTFEValue_AGGREGATE) {
+                    value.typeTag |= H2CTFEValueTag_AGG_PARTIAL;
                 }
-                coerceRc = HOPMirCoerceValueForType(run, ins->aux, &value);
+                coerceRc = H2MirCoerceValueForType(run, ins->aux, &value);
                 if (coerceRc <= 0) {
                     return coerceRc < 0 ? -1 : 0;
                 }
-                if (HOPCTFEPush(run, &value) != 0) {
+                if (H2CTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_OPTIONAL_WRAP: {
-                HOPCTFEValue  value;
-                HOPCTFEValue* payloadCopy;
-                if (HOPCTFEPop(run, &value) != 0) {
+            case H2MirOp_OPTIONAL_WRAP: {
+                H2CTFEValue  value;
+                H2CTFEValue* payloadCopy;
+                if (H2CTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (value.kind == HOPCTFEValue_OPTIONAL) {
-                    if (HOPCTFEPush(run, &value) != 0) {
+                if (value.kind == H2CTFEValue_OPTIONAL) {
+                    if (H2CTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
-                if (value.kind == HOPCTFEValue_NULL) {
-                    value.kind = HOPCTFEValue_OPTIONAL;
+                if (value.kind == H2CTFEValue_NULL) {
+                    value.kind = H2CTFEValue_OPTIONAL;
                     value.i64 = 0;
                     value.f64 = 0.0;
                     value.b = 0u;
                     value.typeTag = 0;
                     value.s.bytes = NULL;
                     value.s.len = 0;
-                    if (HOPCTFEPush(run, &value) != 0) {
+                    if (H2CTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
-                payloadCopy = (HOPCTFEValue*)HOPArenaAlloc(
-                    run->arena, sizeof(*payloadCopy), (uint32_t)_Alignof(HOPCTFEValue));
+                payloadCopy = (H2CTFEValue*)H2ArenaAlloc(
+                    run->arena, sizeof(*payloadCopy), (uint32_t)_Alignof(H2CTFEValue));
                 if (payloadCopy == NULL) {
-                    HOPCTFESetDiag(run->env.diag, HOPDiag_ARENA_OOM, ins->start, ins->end);
+                    H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
                     return -1;
                 }
                 *payloadCopy = value;
-                value.kind = HOPCTFEValue_OPTIONAL;
+                value.kind = H2CTFEValue_OPTIONAL;
                 value.i64 = 0;
                 value.f64 = 0.0;
                 value.b = 1u;
                 value.typeTag = 0;
                 value.s.bytes = (const uint8_t*)payloadCopy;
                 value.s.len = 0;
-                if (HOPCTFEPush(run, &value) != 0) {
+                if (H2CTFEPush(run, &value) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_OPTIONAL_UNWRAP: {
-                HOPCTFEValue        value;
-                const HOPCTFEValue* payload = NULL;
-                if (HOPCTFEPop(run, &value) != 0) {
+            case H2MirOp_OPTIONAL_UNWRAP: {
+                H2CTFEValue        value;
+                const H2CTFEValue* payload = NULL;
+                if (H2CTFEPop(run, &value) != 0) {
                     return 0;
                 }
-                if (!HOPCTFEOptionalPayload(&value, &payload)) {
-                    if (value.kind == HOPCTFEValue_NULL) {
-                        HOPMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                if (!H2CTFEOptionalPayload(&value, &payload)) {
+                    if (value.kind == H2CTFEValue_NULL) {
+                        H2MirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
                         return 0;
                     }
-                    if (HOPCTFEPush(run, &value) != 0) {
+                    if (H2CTFEPush(run, &value) != 0) {
                         return -1;
                     }
                     break;
                 }
                 if (value.b == 0u || payload == NULL) {
-                    HOPMirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
+                    H2MirSetReason(run, ins, "unwrap of empty optional in evaluator backend");
                     return 0;
                 }
-                if (HOPCTFEPush(run, payload) != 0) {
+                if (H2CTFEPush(run, payload) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_ALLOC_NEW: {
-                HOPCTFEValue out;
-                int          allocRc;
-                int          allocIsConst = 0;
+            case H2MirOp_ALLOC_NEW: {
+                H2CTFEValue out;
+                int         allocRc;
+                int         allocIsConst = 0;
                 if (run->env.allocNew == NULL) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "new expression is not supported during const evaluation");
                     return 0;
                 }
@@ -1714,21 +1711,21 @@ static int HOPMirRunLoop(
                     return -1;
                 }
                 if (allocRc == 0 || !allocIsConst) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "new expression is not supported during const evaluation");
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CTX_GET: {
-                HOPCTFEValue out;
-                int          getRc;
-                int          isConst = 0;
+            case H2MirOp_CTX_GET: {
+                H2CTFEValue out;
+                int         getRc;
+                int         isConst = 0;
                 if (run->env.contextGet == NULL) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context access is not supported during const evaluation");
                     return 0;
                 }
@@ -1738,21 +1735,21 @@ static int HOPMirRunLoop(
                     return -1;
                 }
                 if (getRc == 0 || !isConst) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context access is not supported during const evaluation");
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CTX_ADDR: {
-                HOPCTFEValue out;
-                int          addrRc;
-                int          isConst = 0;
+            case H2MirOp_CTX_ADDR: {
+                H2CTFEValue out;
+                int         addrRc;
+                int         isConst = 0;
                 if (run->env.contextAddr == NULL) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context address is not supported during const evaluation");
                     return 0;
                 }
@@ -1762,21 +1759,21 @@ static int HOPMirRunLoop(
                     return -1;
                 }
                 if (addrRc == 0 || !isConst) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context address is not supported during const evaluation");
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_CTX_SET: {
-                HOPCTFEValue out;
-                int          evalRc;
-                int          isConst = 0;
+            case H2MirOp_CTX_SET: {
+                H2CTFEValue out;
+                int         evalRc;
+                int         isConst = 0;
                 if (run->env.evalWithContext == NULL) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context overlay is not supported during const evaluation");
                     return 0;
                 }
@@ -1786,31 +1783,31 @@ static int HOPMirRunLoop(
                     return -1;
                 }
                 if (evalRc == 0 || !isConst) {
-                    HOPMirSetReason(
+                    H2MirSetReason(
                         run, ins, "context overlay is not supported during const evaluation");
                     return 0;
                 }
-                if (HOPCTFEPush(run, &out) != 0) {
+                if (H2CTFEPush(run, &out) != 0) {
                     return -1;
                 }
                 break;
             }
-            case HOPMirOp_RETURN:
+            case H2MirOp_RETURN:
                 if (run->stackLen != 1) {
-                    HOPMirSetReason(run, ins, "return stack is invalid during const evaluation");
+                    H2MirSetReason(run, ins, "return stack is invalid during const evaluation");
                     return 0;
                 }
                 *outValue = run->stack[0];
                 if (run->function != NULL && run->function->typeRef != UINT32_MAX) {
-                    int coerceRc = HOPMirCoerceValueForType(run, run->function->typeRef, outValue);
+                    int coerceRc = H2MirCoerceValueForType(run, run->function->typeRef, outValue);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
                     }
                 }
                 *outIsConst = 1;
                 return 0;
-            case HOPMirOp_RETURN_VOID:
-                HOPCTFEValueInvalid(outValue);
+            case H2MirOp_RETURN_VOID:
+                H2CTFEValueInvalid(outValue);
                 *outIsConst = 1;
                 return 0;
             default: return 0;
@@ -1819,20 +1816,20 @@ static int HOPMirRunLoop(
     return 0;
 }
 
-static void HOPCTFESetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end) {
+static void H2CTFESetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = HOPDiagTypeOfCode(code);
+    diag->type = H2DiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
 }
 
-static void HOPCTFEValueInvalid(HOPCTFEValue* v) {
-    v->kind = HOPCTFEValue_INVALID;
+static void H2CTFEValueInvalid(H2CTFEValue* v) {
+    v->kind = H2CTFEValue_INVALID;
     v->i64 = 0;
     v->f64 = 0.0;
     v->b = 0;
@@ -1847,16 +1844,16 @@ static void HOPCTFEValueInvalid(HOPCTFEValue* v) {
     v->span.endColumn = 0;
 }
 
-static int HOPCTFEPush(HOPMirExecRun* r, const HOPMirExecValue* v) {
+static int H2CTFEPush(H2MirExecRun* r, const H2MirExecValue* v) {
     if (r->stackLen >= r->stackCap) {
-        HOPCTFESetDiag(r->env.diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2CTFESetDiag(r->env.diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
     r->stack[r->stackLen++] = *v;
     return 0;
 }
 
-static int HOPCTFEPop(HOPMirExecRun* r, HOPMirExecValue* out) {
+static int H2CTFEPop(H2MirExecRun* r, H2MirExecValue* out) {
     if (r->stackLen == 0) {
         return -1;
     }
@@ -1864,7 +1861,7 @@ static int HOPCTFEPop(HOPMirExecRun* r, HOPMirExecValue* out) {
     return 0;
 }
 
-static int HOPCTFEParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, int64_t* out) {
+static int H2CTFEParseIntLiteral(H2StrView src, uint32_t start, uint32_t end, int64_t* out) {
     uint64_t v = 0;
     uint32_t i;
     uint32_t base = 10;
@@ -1907,8 +1904,8 @@ static int HOPCTFEParseIntLiteral(HOPStrView src, uint32_t start, uint32_t end, 
     return 0;
 }
 
-static int HOPCTFEParseFloatLiteral(
-    HOPArena* arena, HOPStrView src, uint32_t start, uint32_t end, double* out) {
+static int H2CTFEParseFloatLiteral(
+    H2Arena* arena, H2StrView src, uint32_t start, uint32_t end, double* out) {
     uint32_t i;
     double   v = 0.0;
     int      sawDigit = 0;
@@ -1978,7 +1975,7 @@ static int HOPCTFEParseFloatLiteral(
     return 0;
 }
 
-static int HOPCTFEParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end, uint8_t* out) {
+static int H2CTFEParseBoolLiteral(H2StrView src, uint32_t start, uint32_t end, uint8_t* out) {
     uint32_t len = end > start ? end - start : 0;
     if (len == 4 && memcmp(src.ptr + start, "true", 4) == 0) {
         *out = 1;
@@ -1991,7 +1988,7 @@ static int HOPCTFEParseBoolLiteral(HOPStrView src, uint32_t start, uint32_t end,
     return -1;
 }
 
-static int HOPCTFEStringEq(const HOPCTFEString* a, const HOPCTFEString* b) {
+static int H2CTFEStringEq(const H2CTFEString* a, const H2CTFEString* b) {
     if (a->len != b->len) {
         return 0;
     }
@@ -2001,11 +1998,11 @@ static int HOPCTFEStringEq(const HOPCTFEString* a, const HOPCTFEString* b) {
     return memcmp(a->bytes, b->bytes, a->len) == 0;
 }
 
-static int HOPCTFEOptionalPayload(const HOPCTFEValue* opt, const HOPCTFEValue** outPayload) {
+static int H2CTFEOptionalPayload(const H2CTFEValue* opt, const H2CTFEValue** outPayload) {
     if (outPayload != NULL) {
         *outPayload = NULL;
     }
-    if (opt == NULL || opt->kind != HOPCTFEValue_OPTIONAL || outPayload == NULL) {
+    if (opt == NULL || opt->kind != H2CTFEValue_OPTIONAL || outPayload == NULL) {
         return 0;
     }
     if (opt->b == 0u) {
@@ -2014,23 +2011,23 @@ static int HOPCTFEOptionalPayload(const HOPCTFEValue* opt, const HOPCTFEValue** 
     if (opt->s.bytes == NULL) {
         return 0;
     }
-    *outPayload = (const HOPCTFEValue*)opt->s.bytes;
+    *outPayload = (const H2CTFEValue*)opt->s.bytes;
     return 1;
 }
 
-static int HOPCTFEValueEqRec(const HOPCTFEValue* a, const HOPCTFEValue* b, uint32_t depth) {
-    const HOPCTFEValue* aPayload = NULL;
-    const HOPCTFEValue* bPayload = NULL;
+static int H2CTFEValueEqRec(const H2CTFEValue* a, const H2CTFEValue* b, uint32_t depth) {
+    const H2CTFEValue* aPayload = NULL;
+    const H2CTFEValue* bPayload = NULL;
     if (a == NULL || b == NULL || a->kind != b->kind || depth > 32u) {
         return 0;
     }
     switch (a->kind) {
-        case HOPCTFEValue_INT:    return a->i64 == b->i64;
-        case HOPCTFEValue_FLOAT:  return a->f64 == b->f64;
-        case HOPCTFEValue_BOOL:   return a->b == b->b;
-        case HOPCTFEValue_STRING: return HOPCTFEStringEq(&a->s, &b->s);
-        case HOPCTFEValue_TYPE:   return a->typeTag == b->typeTag;
-        case HOPCTFEValue_SPAN:
+        case H2CTFEValue_INT:    return a->i64 == b->i64;
+        case H2CTFEValue_FLOAT:  return a->f64 == b->f64;
+        case H2CTFEValue_BOOL:   return a->b == b->b;
+        case H2CTFEValue_STRING: return H2CTFEStringEq(&a->s, &b->s);
+        case H2CTFEValue_TYPE:   return a->typeTag == b->typeTag;
+        case H2CTFEValue_SPAN:
             if (a->span.startLine != b->span.startLine || a->span.startColumn != b->span.startColumn
                 || a->span.endLine != b->span.endLine || a->span.endColumn != b->span.endColumn
                 || a->span.fileLen != b->span.fileLen)
@@ -2042,21 +2039,21 @@ static int HOPCTFEValueEqRec(const HOPCTFEValue* a, const HOPCTFEValue* b, uint3
             }
             return a->span.fileBytes != NULL && b->span.fileBytes != NULL
                 && memcmp(a->span.fileBytes, b->span.fileBytes, a->span.fileLen) == 0;
-        case HOPCTFEValue_NULL: return 1;
-        case HOPCTFEValue_OPTIONAL:
-            if (!HOPCTFEOptionalPayload(a, &aPayload) || !HOPCTFEOptionalPayload(b, &bPayload)) {
+        case H2CTFEValue_NULL: return 1;
+        case H2CTFEValue_OPTIONAL:
+            if (!H2CTFEOptionalPayload(a, &aPayload) || !H2CTFEOptionalPayload(b, &bPayload)) {
                 return 0;
             }
             if (a->b == 0u || b->b == 0u) {
                 return a->b == b->b;
             }
-            return HOPCTFEValueEqRec(aPayload, bPayload, depth + 1u);
+            return H2CTFEValueEqRec(aPayload, bPayload, depth + 1u);
         default: return 0;
     }
 }
 
-static int HOPCTFEStringConcat(
-    HOPMirExecRun* r, const HOPCTFEString* a, const HOPCTFEString* b, HOPCTFEString* out) {
+static int H2CTFEStringConcat(
+    H2MirExecRun* r, const H2CTFEString* a, const H2CTFEString* b, H2CTFEString* out) {
     uint64_t total64 = (uint64_t)a->len + (uint64_t)b->len;
     uint32_t totalLen;
     uint8_t* dst;
@@ -2069,9 +2066,9 @@ static int HOPCTFEStringConcat(
         out->len = 0;
         return 0;
     }
-    dst = (uint8_t*)HOPArenaAlloc(r->arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    dst = (uint8_t*)H2ArenaAlloc(r->arena, totalLen, (uint32_t)_Alignof(uint8_t));
     if (dst == NULL) {
-        HOPCTFESetDiag(r->env.diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2CTFESetDiag(r->env.diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
     if (a->len > 0) {
@@ -2085,53 +2082,53 @@ static int HOPCTFEStringConcat(
     return 0;
 }
 
-static int HOPCTFEEvalUnary(HOPTokenKind op, const HOPCTFEValue* in, HOPCTFEValue* out) {
-    HOPCTFEValueInvalid(out);
-    if (op == HOPTok_ADD && in->kind == HOPCTFEValue_INT) {
+static int H2CTFEEvalUnary(H2TokenKind op, const H2CTFEValue* in, H2CTFEValue* out) {
+    H2CTFEValueInvalid(out);
+    if (op == H2Tok_ADD && in->kind == H2CTFEValue_INT) {
         *out = *in;
         return 1;
     }
-    if (op == HOPTok_ADD && in->kind == HOPCTFEValue_FLOAT) {
+    if (op == H2Tok_ADD && in->kind == H2CTFEValue_FLOAT) {
         *out = *in;
         return 1;
     }
-    if (op == HOPTok_SUB && in->kind == HOPCTFEValue_INT) {
+    if (op == H2Tok_SUB && in->kind == H2CTFEValue_INT) {
         if (in->i64 == INT64_MIN) {
             return 0;
         }
-        out->kind = HOPCTFEValue_INT;
+        out->kind = H2CTFEValue_INT;
         out->i64 = -in->i64;
         return 1;
     }
-    if (op == HOPTok_SUB && in->kind == HOPCTFEValue_FLOAT) {
-        out->kind = HOPCTFEValue_FLOAT;
+    if (op == H2Tok_SUB && in->kind == H2CTFEValue_FLOAT) {
+        out->kind = H2CTFEValue_FLOAT;
         out->f64 = -in->f64;
         return 1;
     }
-    if (op == HOPTok_NOT && in->kind == HOPCTFEValue_BOOL) {
-        out->kind = HOPCTFEValue_BOOL;
+    if (op == H2Tok_NOT && in->kind == H2CTFEValue_BOOL) {
+        out->kind = H2CTFEValue_BOOL;
         out->b = in->b ? 0u : 1u;
         return 1;
     }
     return 0;
 }
 
-static int HOPCTFEValueToF64(const HOPCTFEValue* value, double* out) {
+static int H2CTFEValueToF64(const H2CTFEValue* value, double* out) {
     if (value == NULL || out == NULL) {
         return 0;
     }
-    if (value->kind == HOPCTFEValue_INT) {
+    if (value->kind == H2CTFEValue_INT) {
         *out = (double)value->i64;
         return 1;
     }
-    if (value->kind == HOPCTFEValue_FLOAT) {
+    if (value->kind == H2CTFEValue_FLOAT) {
         *out = value->f64;
         return 1;
     }
     return 0;
 }
 
-static int HOPCTFEAddI64(int64_t a, int64_t b, int64_t* out) {
+static int H2CTFEAddI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_add_overflow)
     if (__builtin_add_overflow(a, b, out)) {
         return -1;
@@ -2146,7 +2143,7 @@ static int HOPCTFEAddI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int HOPCTFESubI64(int64_t a, int64_t b, int64_t* out) {
+static int H2CTFESubI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_sub_overflow)
     if (__builtin_sub_overflow(a, b, out)) {
         return -1;
@@ -2161,7 +2158,7 @@ static int HOPCTFESubI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int HOPCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
+static int H2CTFEMulI64(int64_t a, int64_t b, int64_t* out) {
 #if __has_builtin(__builtin_mul_overflow)
     if (__builtin_mul_overflow(a, b, out)) {
         return -1;
@@ -2204,153 +2201,153 @@ static int HOPCTFEMulI64(int64_t a, int64_t b, int64_t* out) {
 #endif
 }
 
-static int HOPCTFEEvalBinary(
-    HOPMirExecRun*      r,
-    HOPTokenKind        op,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    HOPCTFEValue*       out) {
-    int64_t             i = 0;
-    double              lf = 0.0;
-    double              rf = 0.0;
-    const HOPCTFEValue* lhsPayload = NULL;
-    const HOPCTFEValue* rhsPayload = NULL;
-    HOPCTFEValueInvalid(out);
+static int H2CTFEEvalBinary(
+    H2MirExecRun*      r,
+    H2TokenKind        op,
+    const H2CTFEValue* lhs,
+    const H2CTFEValue* rhs,
+    H2CTFEValue*       out) {
+    int64_t            i = 0;
+    double             lf = 0.0;
+    double             rf = 0.0;
+    const H2CTFEValue* lhsPayload = NULL;
+    const H2CTFEValue* rhsPayload = NULL;
+    H2CTFEValueInvalid(out);
 
     if (lhs == NULL || rhs == NULL) {
         return 0;
     }
-    if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind != HOPCTFEValue_OPTIONAL
-        && rhs->kind != HOPCTFEValue_NULL)
+    if (lhs->kind == H2CTFEValue_OPTIONAL && rhs->kind != H2CTFEValue_OPTIONAL
+        && rhs->kind != H2CTFEValue_NULL)
     {
-        if (!HOPCTFEOptionalPayload(lhs, &lhsPayload) || lhs->b == 0u || lhsPayload == NULL) {
+        if (!H2CTFEOptionalPayload(lhs, &lhsPayload) || lhs->b == 0u || lhsPayload == NULL) {
             return 0;
         }
-        return HOPCTFEEvalBinary(r, op, lhsPayload, rhs, out);
+        return H2CTFEEvalBinary(r, op, lhsPayload, rhs, out);
     }
-    if (rhs->kind == HOPCTFEValue_OPTIONAL && lhs->kind != HOPCTFEValue_OPTIONAL
-        && lhs->kind != HOPCTFEValue_NULL)
+    if (rhs->kind == H2CTFEValue_OPTIONAL && lhs->kind != H2CTFEValue_OPTIONAL
+        && lhs->kind != H2CTFEValue_NULL)
     {
-        if (!HOPCTFEOptionalPayload(rhs, &rhsPayload) || rhs->b == 0u || rhsPayload == NULL) {
+        if (!H2CTFEOptionalPayload(rhs, &rhsPayload) || rhs->b == 0u || rhsPayload == NULL) {
             return 0;
         }
-        return HOPCTFEEvalBinary(r, op, lhs, rhsPayload, out);
+        return H2CTFEEvalBinary(r, op, lhs, rhsPayload, out);
     }
 
-    if (lhs->kind == HOPCTFEValue_INT && rhs->kind == HOPCTFEValue_INT) {
+    if (lhs->kind == H2CTFEValue_INT && rhs->kind == H2CTFEValue_INT) {
         switch (op) {
-            case HOPTok_ADD:
-                if (HOPCTFEAddI64(lhs->i64, rhs->i64, &i) != 0) {
+            case H2Tok_ADD:
+                if (H2CTFEAddI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case HOPTok_SUB:
-                if (HOPCTFESubI64(lhs->i64, rhs->i64, &i) != 0) {
+            case H2Tok_SUB:
+                if (H2CTFESubI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case HOPTok_MUL:
-                if (HOPCTFEMulI64(lhs->i64, rhs->i64, &i) != 0) {
+            case H2Tok_MUL:
+                if (H2CTFEMulI64(lhs->i64, rhs->i64, &i) != 0) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = i;
                 return 1;
-            case HOPTok_DIV:
+            case H2Tok_DIV:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = lhs->i64 / rhs->i64;
                 return 1;
-            case HOPTok_MOD:
+            case H2Tok_MOD:
                 if (rhs->i64 == 0 || (lhs->i64 == INT64_MIN && rhs->i64 == -1)) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = lhs->i64 % rhs->i64;
                 return 1;
-            case HOPTok_AND:
-                out->kind = HOPCTFEValue_INT;
+            case H2Tok_AND:
+                out->kind = H2CTFEValue_INT;
                 out->i64 = lhs->i64 & rhs->i64;
                 return 1;
-            case HOPTok_OR:
-                out->kind = HOPCTFEValue_INT;
+            case H2Tok_OR:
+                out->kind = H2CTFEValue_INT;
                 out->i64 = lhs->i64 | rhs->i64;
                 return 1;
-            case HOPTok_XOR:
-                out->kind = HOPCTFEValue_INT;
+            case H2Tok_XOR:
+                out->kind = H2CTFEValue_INT;
                 out->i64 = lhs->i64 ^ rhs->i64;
                 return 1;
-            case HOPTok_LSHIFT:
+            case H2Tok_LSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = (int64_t)((uint64_t)lhs->i64 << (uint32_t)rhs->i64);
                 return 1;
-            case HOPTok_RSHIFT:
+            case H2Tok_RSHIFT:
                 if (rhs->i64 < 0 || rhs->i64 > 63 || lhs->i64 < 0) {
                     return 0;
                 }
-                out->kind = HOPCTFEValue_INT;
+                out->kind = H2CTFEValue_INT;
                 out->i64 = (int64_t)((uint64_t)lhs->i64 >> (uint32_t)rhs->i64);
                 return 1;
-            case HOPTok_EQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_EQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 == rhs->i64;
                 return 1;
-            case HOPTok_NEQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_NEQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 != rhs->i64;
                 return 1;
-            case HOPTok_LT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 < rhs->i64;
                 return 1;
-            case HOPTok_GT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 > rhs->i64;
                 return 1;
-            case HOPTok_LTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 <= rhs->i64;
                 return 1;
-            case HOPTok_GTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->i64 >= rhs->i64;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == HOPCTFEValue_BOOL && rhs->kind == HOPCTFEValue_BOOL) {
+    if (lhs->kind == H2CTFEValue_BOOL && rhs->kind == H2CTFEValue_BOOL) {
         switch (op) {
-            case HOPTok_LOGICAL_AND:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LOGICAL_AND:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->b && rhs->b;
                 return 1;
-            case HOPTok_LOGICAL_OR:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LOGICAL_OR:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->b || rhs->b;
                 return 1;
-            case HOPTok_EQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_EQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->b == rhs->b;
                 return 1;
-            case HOPTok_NEQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_NEQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->b != rhs->b;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == HOPCTFEValue_STRING && rhs->kind == HOPCTFEValue_STRING) {
+    if (lhs->kind == H2CTFEValue_STRING && rhs->kind == H2CTFEValue_STRING) {
         int cmp = 0;
         if (lhs->s.len != rhs->s.len) {
             uint32_t minLen = lhs->s.len < rhs->s.len ? lhs->s.len : rhs->s.len;
@@ -2364,38 +2361,38 @@ static int HOPCTFEEvalBinary(
             cmp = memcmp(lhs->s.bytes, rhs->s.bytes, lhs->s.len);
         }
         switch (op) {
-            case HOPTok_ADD:
-                out->kind = HOPCTFEValue_STRING;
-                return HOPCTFEStringConcat(r, &lhs->s, &rhs->s, &out->s) == 0;
-            case HOPTok_EQ:
-                out->kind = HOPCTFEValue_BOOL;
-                out->b = HOPCTFEStringEq(&lhs->s, &rhs->s);
+            case H2Tok_ADD:
+                out->kind = H2CTFEValue_STRING;
+                return H2CTFEStringConcat(r, &lhs->s, &rhs->s, &out->s) == 0;
+            case H2Tok_EQ:
+                out->kind = H2CTFEValue_BOOL;
+                out->b = H2CTFEStringEq(&lhs->s, &rhs->s);
                 return 1;
-            case HOPTok_NEQ:
-                out->kind = HOPCTFEValue_BOOL;
-                out->b = !HOPCTFEStringEq(&lhs->s, &rhs->s);
+            case H2Tok_NEQ:
+                out->kind = H2CTFEValue_BOOL;
+                out->b = !H2CTFEStringEq(&lhs->s, &rhs->s);
                 return 1;
-            case HOPTok_LT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = cmp < 0;
                 return 1;
-            case HOPTok_GT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = cmp > 0;
                 return 1;
-            case HOPTok_LTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = cmp <= 0;
                 return 1;
-            case HOPTok_GTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = cmp >= 0;
                 return 1;
             default: return 0;
         }
     }
 
-    if (lhs->kind == HOPCTFEValue_TYPE && rhs->kind == HOPCTFEValue_TYPE && r != NULL
+    if (lhs->kind == H2CTFEValue_TYPE && rhs->kind == H2CTFEValue_TYPE && r != NULL
         && r->env.evalBinary != NULL)
     {
         int hookIsConst = 0;
@@ -2409,90 +2406,90 @@ static int HOPCTFEEvalBinary(
         }
     }
 
-    if (lhs->kind == HOPCTFEValue_TYPE && rhs->kind == HOPCTFEValue_TYPE) {
+    if (lhs->kind == H2CTFEValue_TYPE && rhs->kind == H2CTFEValue_TYPE) {
         switch (op) {
-            case HOPTok_EQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_EQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->typeTag == rhs->typeTag;
                 return 1;
-            case HOPTok_NEQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_NEQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lhs->typeTag != rhs->typeTag;
                 return 1;
             default: break;
         }
     }
 
-    if (HOPCTFEValueToF64(lhs, &lf) && HOPCTFEValueToF64(rhs, &rf)) {
+    if (H2CTFEValueToF64(lhs, &lf) && H2CTFEValueToF64(rhs, &rf)) {
         switch (op) {
-            case HOPTok_ADD:
-                out->kind = HOPCTFEValue_FLOAT;
+            case H2Tok_ADD:
+                out->kind = H2CTFEValue_FLOAT;
                 out->f64 = lf + rf;
                 return 1;
-            case HOPTok_SUB:
-                out->kind = HOPCTFEValue_FLOAT;
+            case H2Tok_SUB:
+                out->kind = H2CTFEValue_FLOAT;
                 out->f64 = lf - rf;
                 return 1;
-            case HOPTok_MUL:
-                out->kind = HOPCTFEValue_FLOAT;
+            case H2Tok_MUL:
+                out->kind = H2CTFEValue_FLOAT;
                 out->f64 = lf * rf;
                 return 1;
-            case HOPTok_DIV:
-                out->kind = HOPCTFEValue_FLOAT;
+            case H2Tok_DIV:
+                out->kind = H2CTFEValue_FLOAT;
                 out->f64 = lf / rf;
                 return 1;
-            case HOPTok_EQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_EQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf == rf;
                 return 1;
-            case HOPTok_NEQ:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_NEQ:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf != rf;
                 return 1;
-            case HOPTok_LT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf < rf;
                 return 1;
-            case HOPTok_GT:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GT:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf > rf;
                 return 1;
-            case HOPTok_LTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_LTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf <= rf;
                 return 1;
-            case HOPTok_GTE:
-                out->kind = HOPCTFEValue_BOOL;
+            case H2Tok_GTE:
+                out->kind = H2CTFEValue_BOOL;
                 out->b = lf >= rf;
                 return 1;
             default: return 0;
         }
     }
 
-    if (op == HOPTok_EQ || op == HOPTok_NEQ) {
+    if (op == H2Tok_EQ || op == H2Tok_NEQ) {
         int eq = 0;
-        if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_NULL) {
+        if (lhs->kind == H2CTFEValue_NULL && rhs->kind == H2CTFEValue_NULL) {
             eq = 1;
-        } else if (lhs->kind == HOPCTFEValue_REFERENCE && rhs->kind == HOPCTFEValue_NULL) {
+        } else if (lhs->kind == H2CTFEValue_REFERENCE && rhs->kind == H2CTFEValue_NULL) {
             eq = lhs->s.bytes == NULL;
-        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_REFERENCE) {
+        } else if (lhs->kind == H2CTFEValue_NULL && rhs->kind == H2CTFEValue_REFERENCE) {
             eq = rhs->s.bytes == NULL;
-        } else if (lhs->kind == HOPCTFEValue_STRING && rhs->kind == HOPCTFEValue_NULL) {
+        } else if (lhs->kind == H2CTFEValue_STRING && rhs->kind == H2CTFEValue_NULL) {
             eq = lhs->s.bytes == NULL;
-        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_STRING) {
+        } else if (lhs->kind == H2CTFEValue_NULL && rhs->kind == H2CTFEValue_STRING) {
             eq = rhs->s.bytes == NULL;
-        } else if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_NULL) {
+        } else if (lhs->kind == H2CTFEValue_OPTIONAL && rhs->kind == H2CTFEValue_NULL) {
             eq = lhs->b == 0u;
-        } else if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_OPTIONAL) {
+        } else if (lhs->kind == H2CTFEValue_NULL && rhs->kind == H2CTFEValue_OPTIONAL) {
             eq = rhs->b == 0u;
-        } else if (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_OPTIONAL) {
-            eq = HOPCTFEValueEqRec(lhs, rhs, 0);
+        } else if (lhs->kind == H2CTFEValue_OPTIONAL && rhs->kind == H2CTFEValue_OPTIONAL) {
+            eq = H2CTFEValueEqRec(lhs, rhs, 0);
         }
-        if (lhs->kind == HOPCTFEValue_NULL || rhs->kind == HOPCTFEValue_NULL
-            || (lhs->kind == HOPCTFEValue_OPTIONAL && rhs->kind == HOPCTFEValue_OPTIONAL))
+        if (lhs->kind == H2CTFEValue_NULL || rhs->kind == H2CTFEValue_NULL
+            || (lhs->kind == H2CTFEValue_OPTIONAL && rhs->kind == H2CTFEValue_OPTIONAL))
         {
-            out->kind = HOPCTFEValue_BOOL;
-            out->b = (op == HOPTok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
+            out->kind = H2CTFEValue_BOOL;
+            out->b = (op == H2Tok_EQ) ? (eq ? 1u : 0u) : (eq ? 0u : 1u);
             return 1;
         }
     }
@@ -2512,147 +2509,147 @@ static int HOPCTFEEvalBinary(
     return 0;
 }
 
-static int HOPCTFEEvalCast(HOPMirCastTarget target, const HOPCTFEValue* in, HOPCTFEValue* out) {
-    HOPCTFEValueInvalid(out);
+static int H2CTFEEvalCast(H2MirCastTarget target, const H2CTFEValue* in, H2CTFEValue* out) {
+    H2CTFEValueInvalid(out);
     switch (target) {
-        case HOPMirCastTarget_INT: {
+        case H2MirCastTarget_INT: {
             int64_t asInt = 0;
-            if (in->kind == HOPCTFEValue_INT) {
+            if (in->kind == H2CTFEValue_INT) {
                 asInt = in->i64;
-            } else if (in->kind == HOPCTFEValue_BOOL) {
+            } else if (in->kind == H2CTFEValue_BOOL) {
                 asInt = in->b ? 1 : 0;
-            } else if (in->kind == HOPCTFEValue_FLOAT) {
+            } else if (in->kind == H2CTFEValue_FLOAT) {
                 if (in->f64 != in->f64 || in->f64 > (double)INT64_MAX
                     || in->f64 < (double)INT64_MIN)
                 {
                     return 0;
                 }
                 asInt = (int64_t)in->f64;
-            } else if (in->kind == HOPCTFEValue_NULL) {
+            } else if (in->kind == H2CTFEValue_NULL) {
                 asInt = 0;
             } else {
                 return 0;
             }
-            out->kind = HOPCTFEValue_INT;
+            out->kind = H2CTFEValue_INT;
             out->i64 = asInt;
             return 1;
         }
-        case HOPMirCastTarget_FLOAT: {
+        case H2MirCastTarget_FLOAT: {
             double asFloat = 0.0;
-            if (in->kind == HOPCTFEValue_FLOAT) {
+            if (in->kind == H2CTFEValue_FLOAT) {
                 asFloat = in->f64;
-            } else if (in->kind == HOPCTFEValue_INT) {
+            } else if (in->kind == H2CTFEValue_INT) {
                 asFloat = (double)in->i64;
-            } else if (in->kind == HOPCTFEValue_BOOL) {
+            } else if (in->kind == H2CTFEValue_BOOL) {
                 asFloat = in->b ? 1.0 : 0.0;
-            } else if (in->kind == HOPCTFEValue_NULL) {
+            } else if (in->kind == H2CTFEValue_NULL) {
                 asFloat = 0.0;
             } else {
                 return 0;
             }
-            out->kind = HOPCTFEValue_FLOAT;
+            out->kind = H2CTFEValue_FLOAT;
             out->f64 = asFloat;
             return 1;
         }
-        case HOPMirCastTarget_BOOL: {
+        case H2MirCastTarget_BOOL: {
             uint8_t asBool = 0;
-            if (in->kind == HOPCTFEValue_BOOL) {
+            if (in->kind == H2CTFEValue_BOOL) {
                 asBool = in->b ? 1u : 0u;
-            } else if (in->kind == HOPCTFEValue_INT) {
+            } else if (in->kind == H2CTFEValue_INT) {
                 asBool = in->i64 != 0 ? 1u : 0u;
-            } else if (in->kind == HOPCTFEValue_FLOAT) {
+            } else if (in->kind == H2CTFEValue_FLOAT) {
                 asBool = in->f64 != 0.0 ? 1u : 0u;
-            } else if (in->kind == HOPCTFEValue_OPTIONAL) {
+            } else if (in->kind == H2CTFEValue_OPTIONAL) {
                 asBool = in->b != 0u ? 1u : 0u;
-            } else if (in->kind == HOPCTFEValue_STRING) {
+            } else if (in->kind == H2CTFEValue_STRING) {
                 asBool = 1u;
-            } else if (in->kind == HOPCTFEValue_NULL) {
+            } else if (in->kind == H2CTFEValue_NULL) {
                 asBool = 0u;
             } else {
                 return 0;
             }
-            out->kind = HOPCTFEValue_BOOL;
+            out->kind = H2CTFEValue_BOOL;
             out->b = asBool;
             return 1;
         }
-        case HOPMirCastTarget_PTR_LIKE:
-            if (in->kind == HOPCTFEValue_REFERENCE || in->kind == HOPCTFEValue_NULL
-                || in->kind == HOPCTFEValue_STRING)
+        case H2MirCastTarget_PTR_LIKE:
+            if (in->kind == H2CTFEValue_REFERENCE || in->kind == H2CTFEValue_NULL
+                || in->kind == H2CTFEValue_STRING)
             {
                 *out = *in;
                 return 1;
             }
             return 0;
-        case HOPMirCastTarget_STR_VIEW: *out = *in; return 1;
-        default:                        return 0;
+        case H2MirCastTarget_STR_VIEW: *out = *in; return 1;
+        default:                       return 0;
     }
 }
 
-int HOPMirEvalChunk(
-    HOPArena* _Nonnull arena,
-    HOPMirChunk chunk,
-    const HOPMirExecEnv* _Nullable env,
-    HOPMirExecValue* _Nonnull outValue,
+int H2MirEvalChunk(
+    H2Arena* _Nonnull arena,
+    H2MirChunk chunk,
+    const H2MirExecEnv* _Nullable env,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    HOPMirExecRun run;
-    if (HOPMirInitRun(&run, arena, chunk, NULL, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst)
+    H2MirExecRun run;
+    if (H2MirInitRun(&run, arena, chunk, NULL, NULL, 0u, NULL, 0u, env, 1, outValue, outIsConst)
         != 0)
     {
         return -1;
     }
-    return HOPMirRunLoop(&run, outValue, outIsConst);
+    return H2MirRunLoop(&run, outValue, outIsConst);
 }
 
-static int HOPMirEvalFunctionInternal(
-    HOPArena* _Nonnull arena,
-    const HOPMirProgram* _Nonnull program,
+static int H2MirEvalFunctionInternal(
+    H2Arena* _Nonnull arena,
+    const H2MirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const HOPMirExecValue* _Nullable args,
+    const H2MirExecValue* _Nullable args,
     uint32_t argCount,
     uint16_t callFlags,
-    const HOPMirExecEnv* _Nullable env,
+    const H2MirExecEnv* _Nullable env,
     int validateProgram,
     int clearDiag,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    const HOPMirFunction* fn;
-    HOPMirChunk           chunk;
-    HOPMirExecEnv         frameEnv;
-    HOPMirExecRun         run;
-    HOPMirExecValue       variadicPackValue;
-    int                   enteredFunction = 0;
-    int                   boundFrame = 0;
-    int                   rc = 0;
+    const H2MirFunction* fn;
+    H2MirChunk           chunk;
+    H2MirExecEnv         frameEnv;
+    H2MirExecRun         run;
+    H2MirExecValue       variadicPackValue;
+    int                  enteredFunction = 0;
+    int                  boundFrame = 0;
+    int                  rc = 0;
     if (program == NULL || functionIndex >= program->funcLen) {
         if (env != NULL) {
-            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+            H2CTFESetDiag(env->diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
-    if (validateProgram && HOPMirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
+    if (validateProgram && H2MirValidateProgram(program, env != NULL ? env->diag : NULL) != 0) {
         return -1;
     }
     fn = &program->funcs[functionIndex];
     if (fn->instStart > program->instLen || fn->instLen > program->instLen - fn->instStart) {
         if (env != NULL) {
-            HOPCTFESetDiag(env->diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+            H2CTFESetDiag(env->diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         }
         return -1;
     }
     if (fn->localCount < fn->paramCount) {
         return 0;
     }
-    if ((fn->flags & HOPMirFunctionFlag_VARIADIC) != 0u) {
-        uint32_t           fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;
-        const HOPMirLocal* variadicLocal = NULL;
-        int                packIsConst = 0;
+    if ((fn->flags & H2MirFunctionFlag_VARIADIC) != 0u) {
+        uint32_t          fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;
+        const H2MirLocal* variadicLocal = NULL;
+        int               packIsConst = 0;
         if (argCount < fixedCount || fn->paramCount == 0u || env == NULL
             || env->makeVariadicPack == NULL)
         {
             return 0;
         }
         variadicLocal = &program->locals[fn->localStart + fn->paramCount - 1u];
-        HOPCTFEValueInvalid(&variadicPackValue);
+        H2CTFEValueInvalid(&variadicPackValue);
         if (env->makeVariadicPack(
                 env->makeVariadicPackCtx,
                 program,
@@ -2695,7 +2692,7 @@ static int HOPMirEvalFunctionInternal(
     }
     chunk.v = program->insts + fn->instStart;
     chunk.len = fn->instLen;
-    if (HOPMirInitRun(
+    if (H2MirInitRun(
             &run,
             arena,
             chunk,
@@ -2713,7 +2710,7 @@ static int HOPMirEvalFunctionInternal(
         rc = -1;
         goto end;
     }
-    if ((fn->flags & HOPMirFunctionFlag_VARIADIC) != 0u) {
+    if ((fn->flags & H2MirFunctionFlag_VARIADIC) != 0u) {
         run.locals[fn->paramCount - 1u] = variadicPackValue;
     }
     if (frameEnv.bindFrame != NULL) {
@@ -2726,7 +2723,7 @@ static int HOPMirEvalFunctionInternal(
         }
         boundFrame = 1;
     }
-    rc = HOPMirRunLoop(&run, outValue, outIsConst);
+    rc = H2MirRunLoop(&run, outValue, outIsConst);
 end:
     if (boundFrame && frameEnv.unbindFrame != NULL) {
         frameEnv.unbindFrame(frameEnv.frameCtx);
@@ -2737,16 +2734,16 @@ end:
     return rc;
 }
 
-int HOPMirEvalFunction(
-    HOPArena* _Nonnull arena,
-    const HOPMirProgram* _Nonnull program,
+int H2MirEvalFunction(
+    H2Arena* _Nonnull arena,
+    const H2MirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const HOPMirExecValue* _Nullable args,
+    const H2MirExecValue* _Nullable args,
     uint32_t argCount,
-    const HOPMirExecEnv* _Nullable env,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirExecEnv* _Nullable env,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst) {
-    return HOPMirEvalFunctionInternal(
+    return H2MirEvalFunctionInternal(
         arena, program, functionIndex, args, argCount, 0u, env, 1, 1, outValue, outIsConst);
 }
-HOP_API_END
+H2_API_END

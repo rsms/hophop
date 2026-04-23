@@ -3,7 +3,7 @@
 #include "mir_lower.h"
 #include "mir_lower_stmt.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef struct {
     uint32_t nameStart;
@@ -13,7 +13,7 @@ typedef struct {
     int32_t  initExprNode;
     uint8_t  mutable;
     uint8_t  _reserved[2];
-} HOPMirLowerLocal;
+} H2MirLowerLocal;
 
 typedef struct {
     uint32_t breakJumpStart;
@@ -22,11 +22,11 @@ typedef struct {
     uint32_t blockDepth;
     uint8_t  hasContinue;
     uint8_t  _reserved[3];
-} HOPMirLowerControl;
+} H2MirLowerControl;
 
 typedef struct {
     uint32_t deferStart;
-} HOPMirLowerBlockScope;
+} H2MirLowerBlockScope;
 
 typedef struct {
     uint32_t atIndex;
@@ -34,52 +34,52 @@ typedef struct {
     uint32_t start;
     uint32_t end;
     uint32_t next;
-} HOPMirChunkInsert;
+} H2MirChunkInsert;
 
 typedef struct {
-    HOPArena*             arena;
-    const HOPAst*         ast;
-    HOPStrView            src;
-    HOPMirProgramBuilder  builder;
-    uint32_t              sourceIndex;
-    uint32_t              functionIndex;
-    int32_t               functionReturnTypeNode;
-    HOPMirLowerLocal*     locals;
-    uint32_t              localLen;
-    uint32_t              localCap;
-    uint32_t              breakJumps[256];
-    uint32_t              breakJumpLen;
-    uint32_t              continueJumps[256];
-    uint32_t              continueJumpLen;
-    HOPMirLowerControl    controls[32];
-    uint32_t              controlLen;
-    int32_t               deferredStmtNodes[256];
-    uint32_t              deferredStmtLen;
-    HOPMirLowerBlockScope blockScopes[64];
-    uint32_t              blockDepth;
-    uint8_t               loweringDeferred;
-    uint8_t               _reserved2[3];
-    int                   supported;
-    HOPDiag* _Nullable diag;
-    HOPMirLowerConstExprFn _Nullable lowerConstExpr;
+    H2Arena*             arena;
+    const H2Ast*         ast;
+    H2StrView            src;
+    H2MirProgramBuilder  builder;
+    uint32_t             sourceIndex;
+    uint32_t             functionIndex;
+    int32_t              functionReturnTypeNode;
+    H2MirLowerLocal*     locals;
+    uint32_t             localLen;
+    uint32_t             localCap;
+    uint32_t             breakJumps[256];
+    uint32_t             breakJumpLen;
+    uint32_t             continueJumps[256];
+    uint32_t             continueJumpLen;
+    H2MirLowerControl    controls[32];
+    uint32_t             controlLen;
+    int32_t              deferredStmtNodes[256];
+    uint32_t             deferredStmtLen;
+    H2MirLowerBlockScope blockScopes[64];
+    uint32_t             blockDepth;
+    uint8_t              loweringDeferred;
+    uint8_t              _reserved2[3];
+    int                  supported;
+    H2Diag* _Nullable diag;
+    H2MirLowerConstExprFn _Nullable lowerConstExpr;
     void* _Nullable lowerConstExprCtx;
-} HOPMirStmtLower;
+} H2MirStmtLower;
 
-static void HOPMirLowerStmtSetDiag(
-    HOPDiag* _Nullable diag, HOPDiagCode code, uint32_t start, uint32_t end) {
+static void H2MirLowerStmtSetDiag(
+    H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = HOPDiagTypeOfCode(code);
+    diag->type = H2DiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
 }
 
-static void HOPMirLowerStmtSetUnsupportedDetail(
-    HOPMirStmtLower* c, uint32_t start, uint32_t end, const char* reason) {
+static void H2MirLowerStmtSetUnsupportedDetail(
+    H2MirStmtLower* c, uint32_t start, uint32_t end, const char* reason) {
     if (c == NULL) {
         return;
     }
@@ -92,25 +92,25 @@ static void HOPMirLowerStmtSetUnsupportedDetail(
     c->diag->detail = reason;
 }
 
-static int HOPMirStmtLowerIsTypeNodeKind(HOPAstKind kind) {
-    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
-        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
-        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
-        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_TUPLE || kind == HOPAst_TYPE_ANON_STRUCT
-        || kind == HOPAst_TYPE_ANON_UNION;
+static int H2MirStmtLowerIsTypeNodeKind(H2AstKind kind) {
+    return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
+        || kind == H2Ast_TYPE_MUTREF || kind == H2Ast_TYPE_ARRAY || kind == H2Ast_TYPE_VARRAY
+        || kind == H2Ast_TYPE_SLICE || kind == H2Ast_TYPE_MUTSLICE || kind == H2Ast_TYPE_OPTIONAL
+        || kind == H2Ast_TYPE_FN || kind == H2Ast_TYPE_TUPLE || kind == H2Ast_TYPE_ANON_STRUCT
+        || kind == H2Ast_TYPE_ANON_UNION;
 }
 
-static int32_t HOPMirStmtLowerFunctionReturnTypeNode(const HOPAst* ast, int32_t fnNode) {
+static int32_t H2MirStmtLowerFunctionReturnTypeNode(const H2Ast* ast, int32_t fnNode) {
     int32_t child;
     if (ast == NULL || fnNode < 0 || (uint32_t)fnNode >= ast->len) {
         return -1;
     }
     child = ast->nodes[fnNode].firstChild;
     while (child >= 0) {
-        if (HOPMirStmtLowerIsTypeNodeKind(ast->nodes[child].kind)) {
+        if (H2MirStmtLowerIsTypeNodeKind(ast->nodes[child].kind)) {
             return child;
         }
-        if (ast->nodes[child].kind == HOPAst_BLOCK) {
+        if (ast->nodes[child].kind == H2Ast_BLOCK) {
             break;
         }
         child = ast->nodes[child].nextSibling;
@@ -118,7 +118,7 @@ static int32_t HOPMirStmtLowerFunctionReturnTypeNode(const HOPAst* ast, int32_t 
     return -1;
 }
 
-static uint32_t HOPMirStmtLowerAstListCount(const HOPAst* ast, int32_t listNode) {
+static uint32_t H2MirStmtLowerAstListCount(const H2Ast* ast, int32_t listNode) {
     uint32_t count = 0;
     int32_t  child;
     if (ast == NULL || listNode < 0 || (uint32_t)listNode >= ast->len) {
@@ -132,7 +132,7 @@ static uint32_t HOPMirStmtLowerAstListCount(const HOPAst* ast, int32_t listNode)
     return count;
 }
 
-static int32_t HOPMirStmtLowerAstListItemAt(const HOPAst* ast, int32_t listNode, uint32_t index) {
+static int32_t H2MirStmtLowerAstListItemAt(const H2Ast* ast, int32_t listNode, uint32_t index) {
     uint32_t i = 0;
     int32_t  child;
     if (ast == NULL || listNode < 0 || (uint32_t)listNode >= ast->len) {
@@ -149,13 +149,13 @@ static int32_t HOPMirStmtLowerAstListItemAt(const HOPAst* ast, int32_t listNode,
     return -1;
 }
 
-static uint32_t HOPMirStmtLowerFnPc(const HOPMirStmtLower* c) {
+static uint32_t H2MirStmtLowerFnPc(const H2MirStmtLower* c) {
     return c->builder.instLen - c->builder.funcs[c->functionIndex].instStart;
 }
 
-static int HOPMirStmtLowerEnsureLocalCap(HOPMirStmtLower* c, uint32_t needLen) {
-    uint32_t          newCap;
-    HOPMirLowerLocal* newLocals;
+static int H2MirStmtLowerEnsureLocalCap(H2MirStmtLower* c, uint32_t needLen) {
+    uint32_t         newCap;
+    H2MirLowerLocal* newLocals;
     if (needLen <= c->localCap) {
         return 0;
     }
@@ -167,58 +167,58 @@ static int HOPMirStmtLowerEnsureLocalCap(HOPMirStmtLower* c, uint32_t needLen) {
         }
         newCap *= 2u;
     }
-    newLocals = (HOPMirLowerLocal*)HOPArenaAlloc(
-        c->arena, sizeof(HOPMirLowerLocal) * newCap, (uint32_t)_Alignof(HOPMirLowerLocal));
+    newLocals = (H2MirLowerLocal*)H2ArenaAlloc(
+        c->arena, sizeof(H2MirLowerLocal) * newCap, (uint32_t)_Alignof(H2MirLowerLocal));
     if (newLocals == NULL) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
     if (c->locals != NULL && c->localLen > 0) {
-        memcpy(newLocals, c->locals, sizeof(HOPMirLowerLocal) * c->localLen);
+        memcpy(newLocals, c->locals, sizeof(H2MirLowerLocal) * c->localLen);
     }
     c->locals = newLocals;
     c->localCap = newCap;
     return 0;
 }
 
-static int HOPMirStmtLowerPushLocal(
-    HOPMirStmtLower* c,
-    uint32_t         nameStart,
-    uint32_t         nameEnd,
-    int              mutable,
-    int              isParam,
-    int              zeroInit,
-    int32_t          typeNode,
-    int32_t          initExprNode,
-    uint32_t*        outSlot) {
-    HOPMirLocal   local = { 0 };
-    HOPMirTypeRef typeRef = { 0 };
-    uint32_t      slot = 0;
-    if (HOPMirStmtLowerEnsureLocalCap(c, c->localLen + 1u) != 0) {
+static int H2MirStmtLowerPushLocal(
+    H2MirStmtLower* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int             mutable,
+    int             isParam,
+    int             zeroInit,
+    int32_t         typeNode,
+    int32_t         initExprNode,
+    uint32_t*       outSlot) {
+    H2MirLocal   local = { 0 };
+    H2MirTypeRef typeRef = { 0 };
+    uint32_t     slot = 0;
+    if (H2MirStmtLowerEnsureLocalCap(c, c->localLen + 1u) != 0) {
         return -1;
     }
     local.typeRef = UINT32_MAX;
-    local.flags = mutable ? HOPMirLocalFlag_MUTABLE : HOPMirLocalFlag_NONE;
+    local.flags = mutable ? H2MirLocalFlag_MUTABLE : H2MirLocalFlag_NONE;
     local.nameStart = nameStart;
     local.nameEnd = nameEnd;
     if (isParam) {
-        local.flags |= HOPMirLocalFlag_PARAM;
+        local.flags |= H2MirLocalFlag_PARAM;
     }
     if (zeroInit) {
-        local.flags |= HOPMirLocalFlag_ZERO_INIT;
+        local.flags |= H2MirLocalFlag_ZERO_INIT;
     }
     if (typeNode >= 0) {
         typeRef.astNode = (uint32_t)typeNode;
         typeRef.sourceRef = c->sourceIndex;
         typeRef.flags = 0;
         typeRef.aux = 0;
-        if (HOPMirProgramBuilderAddType(&c->builder, &typeRef, &local.typeRef) != 0) {
-            HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
+        if (H2MirProgramBuilderAddType(&c->builder, &typeRef, &local.typeRef) != 0) {
+            H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
             return -1;
         }
     }
-    if (HOPMirProgramBuilderAddLocal(&c->builder, &local, &slot) != 0) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
+    if (H2MirProgramBuilderAddLocal(&c->builder, &local, &slot) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     c->locals[c->localLen].nameStart = nameStart;
@@ -236,11 +236,11 @@ static int HOPMirStmtLowerPushLocal(
     return 0;
 }
 
-static int HOPMirStmtLowerFindLocal(
-    const HOPMirStmtLower* c,
-    uint32_t               nameStart,
-    uint32_t               nameEnd,
-    uint32_t*              outSlot,
+static int H2MirStmtLowerFindLocal(
+    const H2MirStmtLower* c,
+    uint32_t              nameStart,
+    uint32_t              nameEnd,
+    uint32_t*             outSlot,
     int* _Nullable outMutable) {
     uint32_t nameLen;
     uint32_t i = c->localLen;
@@ -249,7 +249,7 @@ static int HOPMirStmtLowerFindLocal(
     }
     nameLen = nameEnd - nameStart;
     while (i > 0) {
-        const HOPMirLowerLocal* local;
+        const H2MirLowerLocal* local;
         i--;
         local = &c->locals[i];
         if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
@@ -267,11 +267,11 @@ static int HOPMirStmtLowerFindLocal(
     return 0;
 }
 
-static int HOPMirStmtLowerNameEqLiteral(
-    const HOPMirStmtLower* c, uint32_t start, uint32_t end, const char* lit);
+static int H2MirStmtLowerNameEqLiteral(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end, const char* lit);
 
-static const HOPMirLowerLocal* _Nullable HOPMirStmtLowerFindLocalRef(
-    const HOPMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
+static const H2MirLowerLocal* _Nullable H2MirStmtLowerFindLocalRef(
+    const H2MirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t nameLen;
     uint32_t i;
     if (c == NULL || nameEnd < nameStart || nameEnd > c->src.len) {
@@ -280,7 +280,7 @@ static const HOPMirLowerLocal* _Nullable HOPMirStmtLowerFindLocalRef(
     nameLen = nameEnd - nameStart;
     i = c->localLen;
     while (i > 0) {
-        const HOPMirLowerLocal* local;
+        const H2MirLowerLocal* local;
         i--;
         local = &c->locals[i];
         if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
@@ -292,21 +292,21 @@ static const HOPMirLowerLocal* _Nullable HOPMirStmtLowerFindLocalRef(
     return NULL;
 }
 
-static int HOPMirStmtLowerBuiltinTypeSize(
-    const HOPMirStmtLower* c, int32_t typeNode, int64_t* outSize) {
-    const HOPAstNode* type;
+static int H2MirStmtLowerBuiltinTypeSize(
+    const H2MirStmtLower* c, int32_t typeNode, int64_t* outSize) {
+    const H2AstNode* type;
     if (c == NULL || outSize == NULL || typeNode < 0 || (uint32_t)typeNode >= c->ast->len) {
         return 0;
     }
     type = &c->ast->nodes[typeNode];
     switch (type->kind) {
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF:
-        case HOPAst_TYPE_FN:       *outSize = (int64_t)sizeof(void*); return 1;
-        case HOPAst_TYPE_SLICE:
-        case HOPAst_TYPE_MUTSLICE: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
-        case HOPAst_TYPE_NAME:     {
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF:
+        case H2Ast_TYPE_FN:       *outSize = (int64_t)sizeof(void*); return 1;
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case H2Ast_TYPE_NAME:     {
             uint32_t len = type->dataEnd >= type->dataStart ? type->dataEnd - type->dataStart : 0u;
             const char* name = c->src.ptr + type->dataStart;
             if ((len == 2u && memcmp(name, "u8", 2) == 0)
@@ -359,79 +359,79 @@ static int HOPMirStmtLowerBuiltinTypeSize(
     }
 }
 
-static int HOPMirStmtLowerCastNeedsCoerce(const HOPMirStmtLower* c, int32_t typeNode) {
-    const HOPAstNode* type;
-    int32_t           childNode;
+static int H2MirStmtLowerCastNeedsCoerce(const H2MirStmtLower* c, int32_t typeNode) {
+    const H2AstNode* type;
+    int32_t          childNode;
     if (c == NULL || typeNode < 0 || (uint32_t)typeNode >= c->ast->len) {
         return 0;
     }
     type = &c->ast->nodes[typeNode];
-    if ((type->kind == HOPAst_TYPE_REF || type->kind == HOPAst_TYPE_PTR) && type->firstChild >= 0
+    if ((type->kind == H2Ast_TYPE_REF || type->kind == H2Ast_TYPE_PTR) && type->firstChild >= 0
         && (uint32_t)type->firstChild < c->ast->len)
     {
         childNode = type->firstChild;
-        if (c->ast->nodes[childNode].kind == HOPAst_TYPE_NAME
-            && HOPMirStmtLowerNameEqLiteral(
+        if (c->ast->nodes[childNode].kind == H2Ast_TYPE_NAME
+            && H2MirStmtLowerNameEqLiteral(
                 c, c->ast->nodes[childNode].dataStart, c->ast->nodes[childNode].dataEnd, "str"))
         {
             return 0;
         }
     }
-    if (type->kind != HOPAst_TYPE_NAME) {
+    if (type->kind != H2Ast_TYPE_NAME) {
         return 1;
     }
-    if (HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "bool")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f32")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f64")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u8")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u16")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u32")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u64")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "uint")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i8")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i16")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i32")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i64")
-        || HOPMirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "int"))
+    if (H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "bool")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f32")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "f64")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u8")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u16")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u32")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "u64")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "uint")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i8")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i16")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i32")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "i64")
+        || H2MirStmtLowerNameEqLiteral(c, type->dataStart, type->dataEnd, "int"))
     {
         return 0;
     }
     return 1;
 }
 
-static int HOPMirStmtLowerInferInitExprSize(
-    const HOPMirStmtLower* c, int32_t exprNode, int64_t* outSize) {
-    const HOPAstNode* expr;
+static int H2MirStmtLowerInferInitExprSize(
+    const H2MirStmtLower* c, int32_t exprNode, int64_t* outSize) {
+    const H2AstNode* expr;
     if (c == NULL || outSize == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
     switch (expr->kind) {
-        case HOPAst_INT:    *outSize = (int64_t)sizeof(uintptr_t); return 1;
-        case HOPAst_FLOAT:  *outSize = 8; return 1;
-        case HOPAst_BOOL:   *outSize = 1; return 1;
-        case HOPAst_STRING: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
-        case HOPAst_CAST:   {
+        case H2Ast_INT:    *outSize = (int64_t)sizeof(uintptr_t); return 1;
+        case H2Ast_FLOAT:  *outSize = 8; return 1;
+        case H2Ast_BOOL:   *outSize = 1; return 1;
+        case H2Ast_STRING: *outSize = (int64_t)(sizeof(void*) * 2u); return 1;
+        case H2Ast_CAST:   {
             int32_t valueNode = expr->firstChild;
             int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
             if (valueNode < 0 || typeNode < 0 || c->ast->nodes[typeNode].nextSibling >= 0) {
                 return 0;
             }
-            return HOPMirStmtLowerBuiltinTypeSize(c, typeNode, outSize);
+            return H2MirStmtLowerBuiltinTypeSize(c, typeNode, outSize);
         }
         default: return 0;
     }
 }
 
-static int HOPMirStmtLowerTryConstSizeofExpr(
-    const HOPMirStmtLower* c, int32_t exprNode, int64_t* outSize) {
-    const HOPAstNode* expr;
-    int32_t           innerNode;
+static int H2MirStmtLowerTryConstSizeofExpr(
+    const H2MirStmtLower* c, int32_t exprNode, int64_t* outSize) {
+    const H2AstNode* expr;
+    int32_t          innerNode;
     if (c == NULL || outSize == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
-    if (expr->kind != HOPAst_SIZEOF) {
+    if (expr->kind != H2Ast_SIZEOF) {
         return 0;
     }
     innerNode = expr->firstChild;
@@ -439,22 +439,22 @@ static int HOPMirStmtLowerTryConstSizeofExpr(
         return 0;
     }
     if (expr->flags == 1u) {
-        if (HOPMirStmtLowerBuiltinTypeSize(c, innerNode, outSize)) {
+        if (H2MirStmtLowerBuiltinTypeSize(c, innerNode, outSize)) {
             return 1;
         }
-        if (c->ast->nodes[innerNode].kind == HOPAst_TYPE_NAME
-            || c->ast->nodes[innerNode].kind == HOPAst_IDENT)
+        if (c->ast->nodes[innerNode].kind == H2Ast_TYPE_NAME
+            || c->ast->nodes[innerNode].kind == H2Ast_IDENT)
         {
-            const HOPMirLowerLocal* local = HOPMirStmtLowerFindLocalRef(
+            const H2MirLowerLocal* local = H2MirStmtLowerFindLocalRef(
                 c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
             if (local != NULL) {
                 if (local->typeNode >= 0
-                    && HOPMirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize))
+                    && H2MirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize))
                 {
                     return 1;
                 }
                 if (local->initExprNode >= 0
-                    && HOPMirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
+                    && H2MirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
                 {
                     return 1;
                 }
@@ -462,42 +462,42 @@ static int HOPMirStmtLowerTryConstSizeofExpr(
         }
         return 0;
     }
-    if (c->ast->nodes[innerNode].kind == HOPAst_IDENT) {
-        const HOPMirLowerLocal* local = HOPMirStmtLowerFindLocalRef(
+    if (c->ast->nodes[innerNode].kind == H2Ast_IDENT) {
+        const H2MirLowerLocal* local = H2MirStmtLowerFindLocalRef(
             c, c->ast->nodes[innerNode].dataStart, c->ast->nodes[innerNode].dataEnd);
         if (local == NULL) {
             return 0;
         }
-        if (local->typeNode >= 0 && HOPMirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize)) {
+        if (local->typeNode >= 0 && H2MirStmtLowerBuiltinTypeSize(c, local->typeNode, outSize)) {
             return 1;
         }
         if (local->initExprNode >= 0
-            && HOPMirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
+            && H2MirStmtLowerInferInitExprSize(c, local->initExprNode, outSize))
         {
             return 1;
         }
         return 0;
     }
-    return HOPMirStmtLowerInferInitExprSize(c, innerNode, outSize);
+    return H2MirStmtLowerInferInitExprSize(c, innerNode, outSize);
 }
 
-static int HOPMirStmtLowerAppendInst(
-    HOPMirStmtLower* c,
-    HOPMirOp         op,
-    uint16_t         tok,
-    uint32_t         aux,
-    uint32_t         start,
-    uint32_t         end,
+static int H2MirStmtLowerAppendInst(
+    H2MirStmtLower* c,
+    H2MirOp         op,
+    uint16_t        tok,
+    uint32_t        aux,
+    uint32_t        start,
+    uint32_t        end,
     uint32_t* _Nullable outInstIndex) {
-    HOPMirInst inst;
+    H2MirInst inst;
     inst.op = op;
     inst.tok = tok;
     inst._reserved = 0;
     inst.aux = aux;
     inst.start = start;
     inst.end = end;
-    if (HOPMirProgramBuilderAppendInst(&c->builder, &inst) != 0) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, start, end);
+    if (H2MirProgramBuilderAppendInst(&c->builder, &inst) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, start, end);
         return -1;
     }
     if (outInstIndex != NULL) {
@@ -506,10 +506,10 @@ static int HOPMirStmtLowerAppendInst(
     return 0;
 }
 
-static int HOPMirStmtLowerAddFieldRef(
-    HOPMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t* outIndex) {
-    HOPMirField field = { 0 };
-    uint32_t    i;
+static int H2MirStmtLowerAddFieldRef(
+    H2MirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t* outIndex) {
+    H2MirField field = { 0 };
+    uint32_t   i;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
     }
@@ -517,7 +517,7 @@ static int HOPMirStmtLowerAddFieldRef(
         return -1;
     }
     for (i = 0; i < c->builder.fieldLen; i++) {
-        const HOPMirField* existing = &c->builder.fields[i];
+        const H2MirField* existing = &c->builder.fields[i];
         if (existing->nameStart == nameStart && existing->nameEnd == nameEnd
             && existing->sourceRef == c->sourceIndex && existing->ownerTypeRef == UINT32_MAX
             && existing->typeRef == UINT32_MAX)
@@ -531,49 +531,49 @@ static int HOPMirStmtLowerAddFieldRef(
     field.sourceRef = c->sourceIndex;
     field.ownerTypeRef = UINT32_MAX;
     field.typeRef = UINT32_MAX;
-    if (HOPMirProgramBuilderAddField(&c->builder, &field, outIndex) != 0) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, nameStart, nameEnd);
+    if (H2MirProgramBuilderAddField(&c->builder, &field, outIndex) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
         return -1;
     }
     return 0;
 }
 
-static int HOPMirStmtLowerAppendLoadValueBySlice(
-    HOPMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t start, uint32_t end) {
-    uint32_t   slot = 0;
-    HOPMirInst inst = { 0 };
+static int H2MirStmtLowerAppendLoadValueBySlice(
+    H2MirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t start, uint32_t end) {
+    uint32_t  slot = 0;
+    H2MirInst inst = { 0 };
     if (c == NULL) {
         return -1;
     }
-    if (HOPMirStmtLowerFindLocal(c, nameStart, nameEnd, &slot, NULL)) {
-        return HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_LOAD, 0, slot, start, end, NULL);
+    if (H2MirStmtLowerFindLocal(c, nameStart, nameEnd, &slot, NULL)) {
+        return H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, slot, start, end, NULL);
     }
-    inst.op = HOPMirOp_LOAD_IDENT;
-    inst.tok = HOPTok_IDENT;
+    inst.op = H2MirOp_LOAD_IDENT;
+    inst.tok = H2Tok_IDENT;
     inst.aux = 0u;
     inst.start = nameStart;
     inst.end = nameEnd;
-    return HOPMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+    return H2MirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
 }
 
-static int HOPMirStmtLowerAppendStoreValueBySlice(
-    HOPMirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
-    HOPMirInst inst = { 0 };
+static int H2MirStmtLowerAppendStoreValueBySlice(
+    H2MirStmtLower* c, uint32_t nameStart, uint32_t nameEnd) {
+    H2MirInst inst = { 0 };
     if (c == NULL) {
         return -1;
     }
-    inst.op = HOPMirOp_STORE_IDENT;
-    inst.tok = HOPTok_IDENT;
+    inst.op = H2MirOp_STORE_IDENT;
+    inst.tok = H2Tok_IDENT;
     inst.aux = 0u;
     inst.start = nameStart;
     inst.end = nameEnd;
-    return HOPMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+    return H2MirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
 }
 
-static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode);
+static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode);
 
-static int HOPMirStmtLowerNameEqLiteral(
-    const HOPMirStmtLower* c, uint32_t start, uint32_t end, const char* lit) {
+static int H2MirStmtLowerNameEqLiteral(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end, const char* lit) {
     size_t litLen = 0;
     if (c == NULL || lit == NULL || end < start || end > c->src.len) {
         return 0;
@@ -584,64 +584,60 @@ static int HOPMirStmtLowerNameEqLiteral(
     return (size_t)(end - start) == litLen && memcmp(c->src.ptr + start, lit, litLen) == 0;
 }
 
-static int HOPMirStmtLowerContextFieldFromSlice(
-    const HOPMirStmtLower* c, uint32_t start, uint32_t end, uint32_t* outField) {
+static int H2MirStmtLowerContextFieldFromSlice(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end, uint32_t* outField) {
     if (outField != NULL) {
-        *outField = HOPMirContextField_INVALID;
+        *outField = H2MirContextField_INVALID;
     }
     if (c == NULL || outField == NULL) {
         return 0;
     }
-    if (HOPMirStmtLowerNameEqLiteral(c, start, end, "allocator")) {
-        *outField = HOPMirContextField_ALLOCATOR;
+    if (H2MirStmtLowerNameEqLiteral(c, start, end, "allocator")) {
+        *outField = H2MirContextField_ALLOCATOR;
         return 1;
     }
-    if (HOPMirStmtLowerNameEqLiteral(c, start, end, "temp_allocator")) {
-        *outField = HOPMirContextField_TEMP_ALLOCATOR;
+    if (H2MirStmtLowerNameEqLiteral(c, start, end, "temp_allocator")) {
+        *outField = H2MirContextField_TEMP_ALLOCATOR;
         return 1;
     }
-    if (HOPMirStmtLowerNameEqLiteral(c, start, end, "logger")) {
-        *outField = HOPMirContextField_LOGGER;
+    if (H2MirStmtLowerNameEqLiteral(c, start, end, "logger")) {
+        *outField = H2MirContextField_LOGGER;
         return 1;
     }
     return 0;
 }
 
-static int HOPMirStmtLowerIsContextFieldExpr(
-    const HOPMirStmtLower* c, int32_t exprNode, uint32_t* outField) {
-    const HOPAstNode* expr;
-    int32_t           baseNode;
+static int H2MirStmtLowerIsContextFieldExpr(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outField) {
+    const H2AstNode* expr;
+    int32_t          baseNode;
     if (outField != NULL) {
-        *outField = HOPMirContextField_INVALID;
+        *outField = H2MirContextField_INVALID;
     }
     if (c == NULL || outField == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
-    if (expr->kind != HOPAst_FIELD_EXPR) {
+    if (expr->kind != H2Ast_FIELD_EXPR) {
         return 0;
     }
     baseNode = expr->firstChild;
     if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len
-        || c->ast->nodes[baseNode].kind != HOPAst_IDENT
-        || !HOPMirStmtLowerNameEqLiteral(
+        || c->ast->nodes[baseNode].kind != H2Ast_IDENT
+        || !H2MirStmtLowerNameEqLiteral(
             c, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd, "context"))
     {
         return 0;
     }
-    return HOPMirStmtLowerContextFieldFromSlice(c, expr->dataStart, expr->dataEnd, outField);
+    return H2MirStmtLowerContextFieldFromSlice(c, expr->dataStart, expr->dataEnd, outField);
 }
 
-static int HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
-    const HOPMirStmtLower* c,
-    uint32_t               start,
-    uint32_t               end,
-    const char*            lit,
-    const char*            pkgPrefix) {
+static int H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end, const char* lit, const char* pkgPrefix) {
     size_t litLen = 0;
     size_t pkgLen = 0;
     size_t i;
-    if (HOPMirStmtLowerNameEqLiteral(c, start, end, lit)) {
+    if (H2MirStmtLowerNameEqLiteral(c, start, end, lit)) {
         return 1;
     }
     if (c == NULL || lit == NULL || pkgPrefix == NULL || end < start || end > c->src.len) {
@@ -667,88 +663,87 @@ static int HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
     return memcmp(c->src.ptr + start + pkgLen + 2u, lit, litLen) == 0;
 }
 
-static int HOPMirStmtLowerNameIsCompilerDiagBuiltin(
-    const HOPMirStmtLower* c, uint32_t start, uint32_t end) {
-    return HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error", "compiler")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error_at", "compiler")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn", "compiler")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn_at", "compiler");
+static int H2MirStmtLowerNameIsCompilerDiagBuiltin(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end) {
+    return H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error", "compiler")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "error_at", "compiler")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn", "compiler")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "warn_at", "compiler");
 }
 
-static int HOPMirStmtLowerNameIsLazyTypeBuiltin(
-    const HOPMirStmtLower* c, uint32_t start, uint32_t end) {
-    return HOPMirStmtLowerNameEqLiteral(c, start, end, "typeof")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "kind", "reflect")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "base", "reflect")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_alias", "reflect")
-        || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "type_name", "reflect")
-        || HOPMirStmtLowerNameEqLiteral(c, start, end, "ptr")
-        || HOPMirStmtLowerNameEqLiteral(c, start, end, "slice")
-        || HOPMirStmtLowerNameEqLiteral(c, start, end, "array");
+static int H2MirStmtLowerNameIsLazyTypeBuiltin(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end) {
+    return H2MirStmtLowerNameEqLiteral(c, start, end, "typeof")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "kind", "reflect")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "base", "reflect")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_alias", "reflect")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "type_name", "reflect")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "ptr")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "slice")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "array");
 }
 
-static int HOPMirStmtLowerCallUsesLazyBuiltin(const HOPMirStmtLower* c, int32_t callNode) {
-    const HOPAstNode* call;
-    const HOPAstNode* callee;
-    int32_t           calleeNode;
-    int32_t           recvNode;
+static int H2MirStmtLowerCallUsesLazyBuiltin(const H2MirStmtLower* c, int32_t callNode) {
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
     if (c == NULL || c->ast == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len) {
         return 0;
     }
     call = &c->ast->nodes[callNode];
     calleeNode = call->firstChild;
     callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
-    if (call->kind != HOPAst_CALL || callee == NULL) {
+    if (call->kind != H2Ast_CALL || callee == NULL) {
         return 0;
     }
-    if (callee->kind == HOPAst_IDENT) {
-        return HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
+    if (callee->kind == H2Ast_IDENT) {
+        return H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                    c, callee->dataStart, callee->dataEnd, "source_location_of", "builtin")
-            || HOPMirStmtLowerNameIsLazyTypeBuiltin(c, callee->dataStart, callee->dataEnd)
-            || HOPMirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
+            || H2MirStmtLowerNameIsLazyTypeBuiltin(c, callee->dataStart, callee->dataEnd)
+            || H2MirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
     }
-    if (callee->kind != HOPAst_FIELD_EXPR) {
+    if (callee->kind != H2Ast_FIELD_EXPR) {
         return 0;
     }
     recvNode = callee->firstChild;
     if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len
-        || c->ast->nodes[recvNode].kind != HOPAst_IDENT)
+        || c->ast->nodes[recvNode].kind != H2Ast_IDENT)
     {
         return 0;
     }
-    if (HOPMirStmtLowerNameEqLiteral(
+    if (H2MirStmtLowerNameEqLiteral(
             c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "builtin")
-        && HOPMirStmtLowerNameEqLiteral(
-            c, callee->dataStart, callee->dataEnd, "source_location_of"))
+        && H2MirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "source_location_of"))
     {
         return 1;
     }
-    if (HOPMirStmtLowerNameEqLiteral(
+    if (H2MirStmtLowerNameEqLiteral(
             c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "reflect")
-        && (HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
+        && (H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "kind", "reflect")
-            || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
+            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "base", "reflect")
-            || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
+            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "is_alias", "reflect")
-            || HOPMirStmtLowerNameEqLiteralOrPkgBuiltin(
+            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "type_name", "reflect")))
     {
         return 1;
     }
-    if (!HOPMirStmtLowerNameEqLiteral(
+    if (!H2MirStmtLowerNameEqLiteral(
             c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "compiler"))
     {
         return 0;
     }
-    return HOPMirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
+    return H2MirStmtLowerNameIsCompilerDiagBuiltin(c, callee->dataStart, callee->dataEnd);
 }
 
-static int HOPMirStmtLowerCallCanUseManualLowering(HOPMirStmtLower* c, int32_t callNode) {
+static int H2MirStmtLowerCallCanUseManualLowering(H2MirStmtLower* c, int32_t callNode) {
     int32_t calleeNode;
     if (c == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len
-        || c->ast->nodes[callNode].kind != HOPAst_CALL
-        || HOPMirStmtLowerCallUsesLazyBuiltin(c, callNode))
+        || c->ast->nodes[callNode].kind != H2Ast_CALL
+        || H2MirStmtLowerCallUsesLazyBuiltin(c, callNode))
     {
         return 0;
     }
@@ -759,20 +754,20 @@ static int HOPMirStmtLowerCallCanUseManualLowering(HOPMirStmtLower* c, int32_t c
     return 1;
 }
 
-static int HOPMirStmtLowerCallExpr(HOPMirStmtLower* c, int32_t exprNode) {
-    const HOPAstNode* call;
-    int32_t           calleeNode;
-    int32_t           argNode;
-    uint32_t          argc = 0;
-    uint32_t          callFlags = 0;
-    uint16_t          callTokFlags = 0;
-    uint32_t          callStart = 0;
-    uint32_t          callEnd = 0;
-    uint32_t          localSlot = 0;
-    int               isBuiltinLen = 0;
-    int               isBuiltinCStr = 0;
-    int               isIndirectLocalCall = 0;
-    HOPMirInst        inst = { 0 };
+static int H2MirStmtLowerCallExpr(H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* call;
+    int32_t          calleeNode;
+    int32_t          argNode;
+    uint32_t         argc = 0;
+    uint32_t         callFlags = 0;
+    uint16_t         callTokFlags = 0;
+    uint32_t         callStart = 0;
+    uint32_t         callEnd = 0;
+    uint32_t         localSlot = 0;
+    int              isBuiltinLen = 0;
+    int              isBuiltinCStr = 0;
+    int              isIndirectLocalCall = 0;
+    H2MirInst        inst = { 0 };
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         if (c != NULL) {
             c->supported = 0;
@@ -781,21 +776,21 @@ static int HOPMirStmtLowerCallExpr(HOPMirStmtLower* c, int32_t exprNode) {
     }
     call = &c->ast->nodes[exprNode];
     calleeNode = call->firstChild;
-    if (call->kind != HOPAst_CALL || calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
+    if (call->kind != H2Ast_CALL || calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
-    if (c->ast->nodes[calleeNode].kind == HOPAst_IDENT) {
-        if (HOPMirStmtLowerFindLocal(
+    if (c->ast->nodes[calleeNode].kind == H2Ast_IDENT) {
+        if (H2MirStmtLowerFindLocal(
                 c,
                 c->ast->nodes[calleeNode].dataStart,
                 c->ast->nodes[calleeNode].dataEnd,
                 &localSlot,
                 NULL))
         {
-            if (HOPMirStmtLowerAppendInst(
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_LOCAL_LOAD,
+                    H2MirOp_LOCAL_LOAD,
                     0,
                     localSlot,
                     c->ast->nodes[calleeNode].dataStart,
@@ -810,23 +805,23 @@ static int HOPMirStmtLowerCallExpr(HOPMirStmtLower* c, int32_t exprNode) {
         callStart = c->ast->nodes[calleeNode].dataStart;
         callEnd = c->ast->nodes[calleeNode].dataEnd;
         if (!isIndirectLocalCall) {
-            isBuiltinLen = HOPMirStmtLowerNameEqLiteral(c, callStart, callEnd, "len");
-            isBuiltinCStr = HOPMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
+            isBuiltinLen = H2MirStmtLowerNameEqLiteral(c, callStart, callEnd, "len");
+            isBuiltinCStr = H2MirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
         }
-    } else if (c->ast->nodes[calleeNode].kind == HOPAst_FIELD_EXPR) {
+    } else if (c->ast->nodes[calleeNode].kind == H2Ast_FIELD_EXPR) {
         int32_t baseNode = c->ast->nodes[calleeNode].firstChild;
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
         argc = 1u;
-        callFlags = HOPMirSymbolFlag_CALL_RECEIVER_ARG0;
+        callFlags = H2MirSymbolFlag_CALL_RECEIVER_ARG0;
         callStart = c->ast->nodes[calleeNode].dataStart;
         callEnd = c->ast->nodes[calleeNode].dataEnd;
-        isBuiltinCStr = HOPMirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
+        isBuiltinCStr = H2MirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");
     } else {
         c->supported = 0;
         return 0;
@@ -835,24 +830,24 @@ static int HOPMirStmtLowerCallExpr(HOPMirStmtLower* c, int32_t exprNode) {
     while (argNode >= 0) {
         int32_t valueNode = argNode;
         int     isSpread = 0;
-        if (c->ast->nodes[argNode].kind == HOPAst_CALL_ARG) {
+        if (c->ast->nodes[argNode].kind == H2Ast_CALL_ARG) {
             valueNode = c->ast->nodes[argNode].firstChild;
             if (valueNode < 0) {
                 c->supported = 0;
                 return 0;
             }
-            isSpread = (c->ast->nodes[argNode].flags & HOPAstFlag_CALL_ARG_SPREAD) != 0u;
+            isSpread = (c->ast->nodes[argNode].flags & H2AstFlag_CALL_ARG_SPREAD) != 0u;
         }
         if (isSpread) {
             if (c->ast->nodes[argNode].nextSibling >= 0
-                || (callTokFlags & HOPMirCallArgFlag_SPREAD_LAST) != 0u)
+                || (callTokFlags & H2MirCallArgFlag_SPREAD_LAST) != 0u)
             {
                 c->supported = 0;
                 return 0;
             }
-            callTokFlags |= HOPMirCallArgFlag_SPREAD_LAST;
+            callTokFlags |= H2MirCallArgFlag_SPREAD_LAST;
         }
-        if (HOPMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
         if (argc == UINT16_MAX) {
@@ -863,52 +858,52 @@ static int HOPMirStmtLowerCallExpr(HOPMirStmtLower* c, int32_t exprNode) {
         argNode = c->ast->nodes[argNode].nextSibling;
     }
     if (isBuiltinLen && callFlags == 0u && argc == 1u) {
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_SEQ_LEN, HOPTok_INVALID, 0, callStart, callEnd, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_SEQ_LEN, H2Tok_INVALID, 0, callStart, callEnd, NULL);
     }
     if (isBuiltinCStr && argc == 1u) {
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_STR_CSTR, HOPTok_INVALID, 0, callStart, callEnd, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_STR_CSTR, H2Tok_INVALID, 0, callStart, callEnd, NULL);
     }
-    inst.op = isIndirectLocalCall ? HOPMirOp_CALL_INDIRECT : HOPMirOp_CALL;
+    inst.op = isIndirectLocalCall ? H2MirOp_CALL_INDIRECT : H2MirOp_CALL;
     inst.tok = (uint16_t)argc | callTokFlags;
-    inst.aux = isIndirectLocalCall ? 0u : HOPMirRawCallAuxPack((uint32_t)exprNode, callFlags);
+    inst.aux = isIndirectLocalCall ? 0u : H2MirRawCallAuxPack((uint32_t)exprNode, callFlags);
     inst.start = callStart;
     inst.end = callEnd;
-    return HOPMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
+    return H2MirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag);
 }
 
-static int HOPMirStmtLowerAppendIntConst(
-    HOPMirStmtLower* c, int64_t value, uint32_t start, uint32_t end) {
-    HOPMirConst valueConst = { 0 };
-    uint32_t    constIndex = 0;
+static int H2MirStmtLowerAppendIntConst(
+    H2MirStmtLower* c, int64_t value, uint32_t start, uint32_t end) {
+    H2MirConst valueConst = { 0 };
+    uint32_t   constIndex = 0;
     if (c == NULL) {
         return -1;
     }
-    valueConst.kind = HOPMirConst_INT;
+    valueConst.kind = H2MirConst_INT;
     valueConst.bits = (uint64_t)value;
-    if (HOPMirProgramBuilderAddConst(&c->builder, &valueConst, &constIndex) != 0) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, start, end);
+    if (H2MirProgramBuilderAddConst(&c->builder, &valueConst, &constIndex) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, start, end);
         return -1;
     }
-    return HOPMirStmtLowerAppendInst(c, HOPMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
+    return H2MirStmtLowerAppendInst(c, H2MirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
 }
 
-static int HOPMirStmtLowerAppendConstValue(
-    HOPMirStmtLower* c, const HOPMirConst* value, uint32_t start, uint32_t end) {
+static int H2MirStmtLowerAppendConstValue(
+    H2MirStmtLower* c, const H2MirConst* value, uint32_t start, uint32_t end) {
     uint32_t constIndex = 0;
     if (c == NULL || value == NULL) {
         return -1;
     }
-    if (HOPMirProgramBuilderAddConst(&c->builder, value, &constIndex) != 0) {
-        HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, start, end);
+    if (H2MirProgramBuilderAddConst(&c->builder, value, &constIndex) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, start, end);
         return -1;
     }
-    return HOPMirStmtLowerAppendInst(c, HOPMirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
+    return H2MirStmtLowerAppendInst(c, H2MirOp_PUSH_CONST, 0, constIndex, start, end, NULL);
 }
 
-static int HOPMirStmtLowerAppendTupleMake(
-    HOPMirStmtLower* c, uint32_t elemCount, int32_t typeNodeHint, uint32_t start, uint32_t end) {
+static int H2MirStmtLowerAppendTupleMake(
+    H2MirStmtLower* c, uint32_t elemCount, int32_t typeNodeHint, uint32_t start, uint32_t end) {
     uint32_t aux = UINT32_MAX;
     if (c == NULL || elemCount > UINT16_MAX) {
         if (c != NULL) {
@@ -919,11 +914,11 @@ static int HOPMirStmtLowerAppendTupleMake(
     if (typeNodeHint >= 0) {
         aux = (uint32_t)typeNodeHint;
     }
-    return HOPMirStmtLowerAppendInst(
-        c, HOPMirOp_TUPLE_MAKE, (uint16_t)elemCount, aux, start, end, NULL);
+    return H2MirStmtLowerAppendInst(
+        c, H2MirOp_TUPLE_MAKE, (uint16_t)elemCount, aux, start, end, NULL);
 }
 
-static int HOPMirStmtLowerRangeHasChar(HOPStrView src, uint32_t start, uint32_t end, char ch) {
+static int H2MirStmtLowerRangeHasChar(H2StrView src, uint32_t start, uint32_t end, char ch) {
     uint32_t i;
     if (end < start || end > src.len) {
         return 0;
@@ -936,8 +931,8 @@ static int HOPMirStmtLowerRangeHasChar(HOPStrView src, uint32_t start, uint32_t 
     return 0;
 }
 
-static int HOPMirStmtLowerFindCharForward(
-    HOPStrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
+static int H2MirStmtLowerFindCharForward(
+    H2StrView src, uint32_t start, uint32_t end, char ch, uint32_t* outPos) {
     uint32_t i;
     if (outPos != NULL) {
         *outPos = 0;
@@ -954,21 +949,21 @@ static int HOPMirStmtLowerFindCharForward(
     return 0;
 }
 
-static HOPMirLowerControl* _Nullable HOPMirStmtLowerCurrentBreakable(HOPMirStmtLower* c) {
+static H2MirLowerControl* _Nullable H2MirStmtLowerCurrentBreakable(H2MirStmtLower* c) {
     if (c == NULL || c->controlLen == 0) {
         return NULL;
     }
     return &c->controls[c->controlLen - 1u];
 }
 
-static HOPMirLowerControl* _Nullable HOPMirStmtLowerCurrentContinuable(HOPMirStmtLower* c) {
+static H2MirLowerControl* _Nullable H2MirStmtLowerCurrentContinuable(H2MirStmtLower* c) {
     uint32_t i;
     if (c == NULL || c->controlLen == 0) {
         return NULL;
     }
     i = c->controlLen;
     while (i > 0) {
-        HOPMirLowerControl* control;
+        H2MirLowerControl* control;
         i--;
         control = &c->controls[i];
         if (control->hasContinue) {
@@ -978,15 +973,15 @@ static HOPMirLowerControl* _Nullable HOPMirStmtLowerCurrentContinuable(HOPMirStm
     return NULL;
 }
 
-static int HOPMirStmtLowerPushControl(
-    HOPMirStmtLower* c, int hasContinue, uint32_t continueTargetPc) {
+static int H2MirStmtLowerPushControl(
+    H2MirStmtLower* c, int hasContinue, uint32_t continueTargetPc) {
     if (c == NULL || c->controlLen >= (uint32_t)(sizeof(c->controls) / sizeof(c->controls[0]))) {
         if (c != NULL) {
             c->supported = 0;
         }
         return 0;
     }
-    c->controls[c->controlLen++] = (HOPMirLowerControl){
+    c->controls[c->controlLen++] = (H2MirLowerControl){
         .breakJumpStart = c->breakJumpLen,
         .continueJumpStart = c->continueJumpLen,
         .continueTargetPc = continueTargetPc,
@@ -996,8 +991,7 @@ static int HOPMirStmtLowerPushControl(
     return 1;
 }
 
-static int HOPMirStmtLowerRecordControlJump(
-    HOPMirStmtLower* c, int isContinue, uint32_t instIndex) {
+static int H2MirStmtLowerRecordControlJump(H2MirStmtLower* c, int isContinue, uint32_t instIndex) {
     if (c == NULL || c->controlLen == 0) {
         if (c != NULL) {
             c->supported = 0;
@@ -1022,8 +1016,8 @@ static int HOPMirStmtLowerRecordControlJump(
     return 1;
 }
 
-static void HOPMirStmtLowerPatchJumpRange(
-    HOPMirStmtLower* c, const uint32_t* jumps, uint32_t start, uint32_t end, uint32_t targetPc) {
+static void H2MirStmtLowerPatchJumpRange(
+    H2MirStmtLower* c, const uint32_t* jumps, uint32_t start, uint32_t end, uint32_t targetPc) {
     uint32_t i;
     if (c == NULL || jumps == NULL) {
         return;
@@ -1033,51 +1027,51 @@ static void HOPMirStmtLowerPatchJumpRange(
     }
 }
 
-static void HOPMirStmtLowerFinishControl(
-    HOPMirStmtLower* c, uint32_t continueTargetPc, uint32_t breakTargetPc) {
-    HOPMirLowerControl control;
+static void H2MirStmtLowerFinishControl(
+    H2MirStmtLower* c, uint32_t continueTargetPc, uint32_t breakTargetPc) {
+    H2MirLowerControl control;
     if (c == NULL || c->controlLen == 0) {
         return;
     }
     control = c->controls[c->controlLen - 1u];
     if (control.hasContinue) {
-        HOPMirStmtLowerPatchJumpRange(
+        H2MirStmtLowerPatchJumpRange(
             c, c->continueJumps, control.continueJumpStart, c->continueJumpLen, continueTargetPc);
         c->continueJumpLen = control.continueJumpStart;
     }
-    HOPMirStmtLowerPatchJumpRange(
+    H2MirStmtLowerPatchJumpRange(
         c, c->breakJumps, control.breakJumpStart, c->breakJumpLen, breakTargetPc);
     c->breakJumpLen = control.breakJumpStart;
     c->controlLen--;
 }
 
-static int HOPMirStmtLowerExprInstStackDelta(const HOPMirInst* inst, int32_t* outDelta) {
+static int H2MirStmtLowerExprInstStackDelta(const H2MirInst* inst, int32_t* outDelta) {
     uint32_t elemCount = 0;
     if (inst == NULL || outDelta == NULL) {
         return 0;
     }
     switch (inst->op) {
-        case HOPMirOp_PUSH_CONST:
-        case HOPMirOp_PUSH_INT:
-        case HOPMirOp_PUSH_FLOAT:
-        case HOPMirOp_PUSH_BOOL:
-        case HOPMirOp_PUSH_STRING:
-        case HOPMirOp_PUSH_NULL:
-        case HOPMirOp_LOAD_IDENT:      *outDelta = 1; return 1;
-        case HOPMirOp_UNARY:
-        case HOPMirOp_CAST:
-        case HOPMirOp_SEQ_LEN:
-        case HOPMirOp_STR_CSTR:
-        case HOPMirOp_OPTIONAL_WRAP:
-        case HOPMirOp_OPTIONAL_UNWRAP: *outDelta = 0; return 1;
-        case HOPMirOp_BINARY:
-        case HOPMirOp_INDEX:           *outDelta = -1; return 1;
-        case HOPMirOp_SLICE_MAKE:
-            *outDelta = 0 - (((inst->tok & HOPAstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
-                      - (((inst->tok & HOPAstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
+        case H2MirOp_PUSH_CONST:
+        case H2MirOp_PUSH_INT:
+        case H2MirOp_PUSH_FLOAT:
+        case H2MirOp_PUSH_BOOL:
+        case H2MirOp_PUSH_STRING:
+        case H2MirOp_PUSH_NULL:
+        case H2MirOp_LOAD_IDENT:      *outDelta = 1; return 1;
+        case H2MirOp_UNARY:
+        case H2MirOp_CAST:
+        case H2MirOp_SEQ_LEN:
+        case H2MirOp_STR_CSTR:
+        case H2MirOp_OPTIONAL_WRAP:
+        case H2MirOp_OPTIONAL_UNWRAP: *outDelta = 0; return 1;
+        case H2MirOp_BINARY:
+        case H2MirOp_INDEX:           *outDelta = -1; return 1;
+        case H2MirOp_SLICE_MAKE:
+            *outDelta = 0 - (((inst->tok & H2AstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
+                      - (((inst->tok & H2AstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
             return 1;
-        case HOPMirOp_CALL: *outDelta = 1 - (int32_t)HOPMirCallArgCountFromTok(inst->tok); return 1;
-        case HOPMirOp_TUPLE_MAKE:
+        case H2MirOp_CALL: *outDelta = 1 - (int32_t)H2MirCallArgCountFromTok(inst->tok); return 1;
+        case H2MirOp_TUPLE_MAKE:
             elemCount = (uint32_t)inst->tok;
             *outDelta = 1 - (int32_t)elemCount;
             return 1;
@@ -1085,8 +1079,8 @@ static int HOPMirStmtLowerExprInstStackDelta(const HOPMirInst* inst, int32_t* ou
     }
 }
 
-static int HOPMirStmtLowerFindCallArgStart(
-    const HOPMirChunk* chunk, uint32_t callIndex, uint32_t argCount, uint32_t* outArgStart) {
+static int H2MirStmtLowerFindCallArgStart(
+    const H2MirChunk* chunk, uint32_t callIndex, uint32_t argCount, uint32_t* outArgStart) {
     int32_t  need = 0;
     uint32_t i;
     if (outArgStart != NULL) {
@@ -1100,7 +1094,7 @@ static int HOPMirStmtLowerFindCallArgStart(
     while (i > 0u) {
         int32_t delta = 0;
         i--;
-        if (!HOPMirStmtLowerExprInstStackDelta(&chunk->v[i], &delta)) {
+        if (!H2MirStmtLowerExprInstStackDelta(&chunk->v[i], &delta)) {
             return 0;
         }
         need -= delta;
@@ -1112,28 +1106,28 @@ static int HOPMirStmtLowerFindCallArgStart(
     return 0;
 }
 
-static int HOPMirStmtLowerRewriteExprChunk(HOPMirStmtLower* c, const HOPMirChunk* chunk) {
-    HOPMirChunkInsert* inserts = NULL;
-    uint32_t*          insertHeads = NULL;
-    uint32_t           insertLen = 0;
-    uint32_t           i;
-    uint32_t           chunkLen;
-    uint32_t           emitIndex;
-    uint32_t           insertIndex;
-    uint8_t*           callIndirect = NULL;
+static int H2MirStmtLowerRewriteExprChunk(H2MirStmtLower* c, const H2MirChunk* chunk) {
+    H2MirChunkInsert* inserts = NULL;
+    uint32_t*         insertHeads = NULL;
+    uint32_t          insertLen = 0;
+    uint32_t          i;
+    uint32_t          chunkLen;
+    uint32_t          emitIndex;
+    uint32_t          insertIndex;
+    uint8_t*          callIndirect = NULL;
     if (chunk == NULL) {
         return -1;
     }
     chunkLen = chunk->len;
     if (chunkLen != 0u) {
-        inserts = (HOPMirChunkInsert*)HOPArenaAlloc(
-            c->arena, sizeof(HOPMirChunkInsert) * chunkLen, (uint32_t)_Alignof(HOPMirChunkInsert));
-        insertHeads = (uint32_t*)HOPArenaAlloc(
+        inserts = (H2MirChunkInsert*)H2ArenaAlloc(
+            c->arena, sizeof(H2MirChunkInsert) * chunkLen, (uint32_t)_Alignof(H2MirChunkInsert));
+        insertHeads = (uint32_t*)H2ArenaAlloc(
             c->arena, sizeof(uint32_t) * chunkLen, (uint32_t)_Alignof(uint32_t));
-        callIndirect = (uint8_t*)HOPArenaAlloc(
+        callIndirect = (uint8_t*)H2ArenaAlloc(
             c->arena, chunkLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
         if (inserts == NULL || insertHeads == NULL || callIndirect == NULL) {
-            HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, 0, 0);
+            H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, 0, 0);
             return -1;
         }
         memset(callIndirect, 0, chunkLen * sizeof(uint8_t));
@@ -1141,18 +1135,18 @@ static int HOPMirStmtLowerRewriteExprChunk(HOPMirStmtLower* c, const HOPMirChunk
             insertHeads[i] = UINT32_MAX;
         }
         for (i = chunkLen; i > 0u; i--) {
-            HOPMirInst inst = chunk->v[i - 1u];
-            uint32_t   slot = 0;
-            uint32_t   argStart = UINT32_MAX;
-            if (inst.op != HOPMirOp_CALL || HOPMirCallTokDropsReceiverArg0(inst.tok)
-                || !HOPMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL))
+            H2MirInst inst = chunk->v[i - 1u];
+            uint32_t  slot = 0;
+            uint32_t  argStart = UINT32_MAX;
+            if (inst.op != H2MirOp_CALL || H2MirCallTokDropsReceiverArg0(inst.tok)
+                || !H2MirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL))
             {
                 continue;
             }
-            if (HOPMirCallArgCountFromTok(inst.tok) == 0u) {
+            if (H2MirCallArgCountFromTok(inst.tok) == 0u) {
                 argStart = i - 1u;
-            } else if (!HOPMirStmtLowerFindCallArgStart(
-                           chunk, i - 1u, HOPMirCallArgCountFromTok(inst.tok), &argStart))
+            } else if (!H2MirStmtLowerFindCallArgStart(
+                           chunk, i - 1u, H2MirCallArgCountFromTok(inst.tok), &argStart))
             {
                 c->supported = 0;
                 return 0;
@@ -1169,9 +1163,9 @@ static int HOPMirStmtLowerRewriteExprChunk(HOPMirStmtLower* c, const HOPMirChunk
     for (emitIndex = 0; emitIndex < chunkLen; emitIndex++) {
         insertIndex = insertHeads != NULL ? insertHeads[emitIndex] : UINT32_MAX;
         while (insertIndex != UINT32_MAX) {
-            if (HOPMirStmtLowerAppendInst(
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_LOCAL_LOAD,
+                    H2MirOp_LOCAL_LOAD,
                     0,
                     inserts[insertIndex].slot,
                     inserts[insertIndex].start,
@@ -1183,43 +1177,43 @@ static int HOPMirStmtLowerRewriteExprChunk(HOPMirStmtLower* c, const HOPMirChunk
             }
             insertIndex = inserts[insertIndex].next;
         }
-        HOPMirInst inst = chunk->v[emitIndex];
-        if (inst.op == HOPMirOp_LOAD_IDENT) {
+        H2MirInst inst = chunk->v[emitIndex];
+        if (inst.op == H2MirOp_LOAD_IDENT) {
             uint32_t slot = 0;
-            if (HOPMirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
-                inst.op = HOPMirOp_LOCAL_LOAD;
+            if (H2MirStmtLowerFindLocal(c, inst.start, inst.end, &slot, NULL)) {
+                inst.op = H2MirOp_LOCAL_LOAD;
                 inst.tok = 0;
                 inst.aux = slot;
             }
         }
-        if (inst.op == HOPMirOp_AGG_GET || inst.op == HOPMirOp_AGG_ADDR) {
+        if (inst.op == H2MirOp_AGG_GET || inst.op == H2MirOp_AGG_ADDR) {
             uint32_t fieldRef = UINT32_MAX;
-            if (HOPMirStmtLowerAddFieldRef(c, inst.start, inst.end, &fieldRef) != 0) {
+            if (H2MirStmtLowerAddFieldRef(c, inst.start, inst.end, &fieldRef) != 0) {
                 return -1;
             }
             inst.aux = fieldRef;
         }
         if (callIndirect != NULL && callIndirect[emitIndex] != 0u) {
-            inst.op = HOPMirOp_CALL_INDIRECT;
+            inst.op = H2MirOp_CALL_INDIRECT;
             inst.aux = 0u;
         }
-        if (HOPMirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag) != 0) {
+        if (H2MirLowerAppendInst(&c->builder, c->arena, c->src, &inst, c->diag) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int HOPMirStmtLowerIsReplayableExpr(const HOPMirStmtLower* c, int32_t exprNode);
+static int H2MirStmtLowerIsReplayableExpr(const H2MirStmtLower* c, int32_t exprNode);
 
-static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
-    const HOPAstNode* expr;
-    HOPMirChunk       chunk = { 0 };
-    int               supported = 0;
-    uint32_t          elemCount = 0;
-    uint32_t          i;
-    int32_t           lhsNode;
-    int32_t           rhsNode;
+static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* expr;
+    H2MirChunk       chunk = { 0 };
+    int              supported = 0;
+    uint32_t         elemCount = 0;
+    uint32_t         i;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         c->supported = 0;
         return 0;
@@ -1227,29 +1221,29 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
     expr = &c->ast->nodes[exprNode];
     {
         int64_t sizeValue = 0;
-        if (HOPMirStmtLowerTryConstSizeofExpr(c, exprNode, &sizeValue)) {
-            return HOPMirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
+        if (H2MirStmtLowerTryConstSizeofExpr(c, exprNode, &sizeValue)) {
+            return H2MirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
         }
-        if (expr->kind == HOPAst_CAST) {
+        if (expr->kind == H2Ast_CAST) {
             int32_t valueNode = expr->firstChild;
             int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
             if (valueNode >= 0 && typeNode >= 0 && c->ast->nodes[typeNode].nextSibling < 0
-                && HOPMirStmtLowerTryConstSizeofExpr(c, valueNode, &sizeValue))
+                && H2MirStmtLowerTryConstSizeofExpr(c, valueNode, &sizeValue))
             {
-                return HOPMirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
+                return H2MirStmtLowerAppendIntConst(c, sizeValue, expr->start, expr->end);
             }
         }
     }
-    if (c->lowerConstExpr != NULL && !HOPMirStmtLowerCallUsesLazyBuiltin(c, exprNode)) {
-        HOPMirConst loweredConst = { 0 };
+    if (c->lowerConstExpr != NULL && !H2MirStmtLowerCallUsesLazyBuiltin(c, exprNode)) {
+        H2MirConst loweredConst = { 0 };
         int lowerRc = c->lowerConstExpr(c->lowerConstExprCtx, exprNode, &loweredConst, c->diag);
         if (lowerRc < 0) {
             return -1;
         }
         if (lowerRc > 0) {
-            return HOPMirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
+            return H2MirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
         }
-        if (expr->kind == HOPAst_CAST) {
+        if (expr->kind == H2Ast_CAST) {
             int32_t valueNode = expr->firstChild;
             int32_t typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
             if (valueNode >= 0 && typeNode >= 0 && c->ast->nodes[typeNode].nextSibling < 0) {
@@ -1259,69 +1253,68 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
                     return -1;
                 }
                 if (lowerRc > 0) {
-                    return HOPMirStmtLowerAppendConstValue(
-                        c, &loweredConst, expr->start, expr->end);
+                    return H2MirStmtLowerAppendConstValue(c, &loweredConst, expr->start, expr->end);
                 }
             }
         }
     }
-    if (expr->kind == HOPAst_CAST) {
-        int32_t       valueNode = expr->firstChild;
-        int32_t       typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
-        int32_t       extraNode = typeNode >= 0 ? c->ast->nodes[typeNode].nextSibling : -1;
-        HOPMirTypeRef typeRef = { 0 };
-        uint32_t      typeRefIndex = UINT32_MAX;
+    if (expr->kind == H2Ast_CAST) {
+        int32_t      valueNode = expr->firstChild;
+        int32_t      typeNode = valueNode >= 0 ? c->ast->nodes[valueNode].nextSibling : -1;
+        int32_t      extraNode = typeNode >= 0 ? c->ast->nodes[typeNode].nextSibling : -1;
+        H2MirTypeRef typeRef = { 0 };
+        uint32_t     typeRefIndex = UINT32_MAX;
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
-            && HOPMirStmtLowerCastNeedsCoerce(c, typeNode))
+            && H2MirStmtLowerCastNeedsCoerce(c, typeNode))
         {
-            if (HOPMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
             typeRef.astNode = (uint32_t)typeNode;
             typeRef.sourceRef = c->sourceIndex;
             typeRef.flags = 0u;
             typeRef.aux = 0u;
-            if (HOPMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
-                HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, expr->start, expr->end);
+            if (H2MirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+                H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, expr->start, expr->end);
                 return -1;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
         }
     }
-    if (expr->kind == HOPAst_INDEX && (expr->flags & HOPAstFlag_INDEX_SLICE) != 0u) {
+    if (expr->kind == H2Ast_INDEX && (expr->flags & H2AstFlag_INDEX_SLICE) != 0u) {
         int32_t  baseNode = expr->firstChild;
         int32_t  extraNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
         int32_t  startNode = -1;
         int32_t  endNode = -1;
         uint16_t sliceFlags =
-            (uint16_t)(expr->flags & (HOPAstFlag_INDEX_HAS_START | HOPAstFlag_INDEX_HAS_END));
+            (uint16_t)(expr->flags & (H2AstFlag_INDEX_HAS_START | H2AstFlag_INDEX_HAS_END));
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if ((expr->flags & HOPAstFlag_INDEX_HAS_START) != 0u) {
+        if ((expr->flags & H2AstFlag_INDEX_HAS_START) != 0u) {
             startNode = extraNode;
             extraNode = startNode >= 0 ? c->ast->nodes[startNode].nextSibling : -1;
             if (startNode < 0 || (uint32_t)startNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, startNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, startNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
         }
-        if ((expr->flags & HOPAstFlag_INDEX_HAS_END) != 0u) {
+        if ((expr->flags & H2AstFlag_INDEX_HAS_END) != 0u) {
             endNode = extraNode;
             extraNode = endNode >= 0 ? c->ast->nodes[endNode].nextSibling : -1;
             if (endNode < 0 || (uint32_t)endNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, endNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, endNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
         }
@@ -1329,68 +1322,68 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
             c->supported = 0;
             return 0;
         }
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_SLICE_MAKE, sliceFlags, 0, expr->start, expr->end, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_SLICE_MAKE, sliceFlags, 0, expr->start, expr->end, NULL);
     }
-    if (expr->kind == HOPAst_INDEX) {
+    if (expr->kind == H2Ast_INDEX) {
         int32_t baseNode = expr->firstChild;
         int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
         if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        return HOPMirStmtLowerAppendInst(c, HOPMirOp_INDEX, 0, 0, expr->start, expr->end, NULL);
+        return H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, expr->start, expr->end, NULL);
     }
-    if (expr->kind == HOPAst_NEW) {
-        return HOPMirStmtLowerAppendInst(
+    if (expr->kind == H2Ast_NEW) {
+        return H2MirStmtLowerAppendInst(
             c,
-            HOPMirOp_ALLOC_NEW,
+            H2MirOp_ALLOC_NEW,
             (uint16_t)expr->flags,
             (uint32_t)exprNode,
             expr->start,
             expr->end,
             NULL);
     }
-    if (expr->kind == HOPAst_CALL_WITH_CONTEXT) {
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_CTX_SET, 0, (uint32_t)exprNode, expr->start, expr->end, NULL);
+    if (expr->kind == H2Ast_CALL_WITH_CONTEXT) {
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_CTX_SET, 0, (uint32_t)exprNode, expr->start, expr->end, NULL);
     }
-    if (expr->kind == HOPAst_TYPE_VALUE) {
-        int32_t           typeNode = expr->firstChild;
-        const HOPAstNode* type =
+    if (expr->kind == H2Ast_TYPE_VALUE) {
+        int32_t          typeNode = expr->firstChild;
+        const H2AstNode* type =
             typeNode >= 0 && (uint32_t)typeNode < c->ast->len ? &c->ast->nodes[typeNode] : NULL;
-        if (type == NULL || type->kind != HOPAst_TYPE_NAME) {
+        if (type == NULL || type->kind != H2Ast_TYPE_NAME) {
             c->supported = 0;
             return 0;
         }
-        return HOPMirStmtLowerAppendLoadValueBySlice(
+        return H2MirStmtLowerAppendLoadValueBySlice(
             c, type->dataStart, type->dataEnd, expr->start, expr->end);
     }
-    if (expr->kind == HOPAst_TUPLE_EXPR) {
-        elemCount = HOPMirStmtLowerAstListCount(c->ast, exprNode);
+    if (expr->kind == H2Ast_TUPLE_EXPR) {
+        elemCount = H2MirStmtLowerAstListCount(c->ast, exprNode);
         if (elemCount == 0u) {
             c->supported = 0;
             return 0;
         }
         for (i = 0; i < elemCount; i++) {
-            int32_t itemNode = HOPMirStmtLowerAstListItemAt(c->ast, exprNode, i);
+            int32_t itemNode = H2MirStmtLowerAstListItemAt(c->ast, exprNode, i);
             if (itemNode < 0) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
         }
-        return HOPMirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
+        return H2MirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
     }
-    if (expr->kind == HOPAst_UNWRAP) {
+    if (expr->kind == H2Ast_UNWRAP) {
         int32_t childNode = expr->firstChild;
         if (childNode < 0 || (uint32_t)childNode >= c->ast->len
             || c->ast->nodes[childNode].nextSibling >= 0)
@@ -1398,28 +1391,27 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, childNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, childNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_OPTIONAL_UNWRAP, 0, 0, expr->start, expr->end, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_OPTIONAL_UNWRAP, 0, 0, expr->start, expr->end, NULL);
     }
-    if (expr->kind == HOPAst_UNARY) {
+    if (expr->kind == H2Ast_UNARY) {
         int32_t child = expr->firstChild;
-        if (child >= 0 && (uint32_t)child < c->ast->len
-            && c->ast->nodes[child].kind == HOPAst_IDENT)
+        if (child >= 0 && (uint32_t)child < c->ast->len && c->ast->nodes[child].kind == H2Ast_IDENT)
         {
             uint32_t slot = 0;
-            if (HOPMirStmtLowerFindLocal(
+            if (H2MirStmtLowerFindLocal(
                     c, c->ast->nodes[child].dataStart, c->ast->nodes[child].dataEnd, &slot, NULL))
             {
-                if ((HOPTokenKind)expr->op == HOPTok_AND) {
-                    return HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_ADDR, 0, slot, expr->start, expr->end, NULL);
+                if ((H2TokenKind)expr->op == H2Tok_AND) {
+                    return H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_ADDR, 0, slot, expr->start, expr->end, NULL);
                 }
             }
-            if ((HOPTokenKind)expr->op == HOPTok_AND) {
-                if (HOPMirStmtLowerAppendLoadValueBySlice(
+            if ((H2TokenKind)expr->op == H2Tok_AND) {
+                if (H2MirStmtLowerAppendLoadValueBySlice(
                         c,
                         c->ast->nodes[child].dataStart,
                         c->ast->nodes[child].dataEnd,
@@ -1429,44 +1421,44 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
                 {
                     return -1;
                 }
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_ADDR_OF, 0, 0, expr->start, expr->end, NULL);
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_ADDR_OF, 0, 0, expr->start, expr->end, NULL);
             }
         }
-        if ((HOPTokenKind)expr->op == HOPTok_AND && child >= 0 && (uint32_t)child < c->ast->len
-            && c->ast->nodes[child].kind == HOPAst_FIELD_EXPR)
+        if ((H2TokenKind)expr->op == H2Tok_AND && child >= 0 && (uint32_t)child < c->ast->len
+            && c->ast->nodes[child].kind == H2Ast_FIELD_EXPR)
         {
             int32_t  baseNode = c->ast->nodes[child].firstChild;
             uint32_t fieldRef = UINT32_MAX;
-            uint32_t contextField = HOPMirContextField_INVALID;
-            if (HOPMirStmtLowerIsContextFieldExpr(c, child, &contextField)) {
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_CTX_ADDR, 0, contextField, expr->start, expr->end, NULL);
+            uint32_t contextField = H2MirContextField_INVALID;
+            if (H2MirStmtLowerIsContextFieldExpr(c, child, &contextField)) {
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_CTX_ADDR, 0, contextField, expr->start, expr->end, NULL);
             }
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerAddFieldRef(
+            if (H2MirStmtLowerAddFieldRef(
                     c, c->ast->nodes[child].dataStart, c->ast->nodes[child].dataEnd, &fieldRef)
                 != 0)
             {
                 return -1;
             }
-            return HOPMirStmtLowerAppendInst(
+            return H2MirStmtLowerAppendInst(
                 c,
-                HOPMirOp_AGG_ADDR,
+                H2MirOp_AGG_ADDR,
                 0,
                 fieldRef,
                 c->ast->nodes[child].dataStart,
                 c->ast->nodes[child].dataEnd,
                 NULL);
         }
-        if ((HOPTokenKind)expr->op == HOPTok_AND && child >= 0 && (uint32_t)child < c->ast->len
-            && c->ast->nodes[child].kind == HOPAst_INDEX
+        if ((H2TokenKind)expr->op == H2Tok_AND && child >= 0 && (uint32_t)child < c->ast->len
+            && c->ast->nodes[child].kind == H2Ast_INDEX
             && (c->ast->nodes[child].flags & 0x7u) == 0u)
         {
             int32_t baseNode = c->ast->nodes[child].firstChild;
@@ -1475,100 +1467,97 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_ARRAY_ADDR, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_ARRAY_ADDR, 0, 0, expr->start, expr->end, NULL);
         }
-        if ((HOPTokenKind)expr->op == HOPTok_AND && child >= 0 && (uint32_t)child < c->ast->len
-            && c->ast->nodes[child].kind == HOPAst_COMPOUND_LIT)
+        if ((H2TokenKind)expr->op == H2Tok_AND && child >= 0 && (uint32_t)child < c->ast->len
+            && c->ast->nodes[child].kind == H2Ast_COMPOUND_LIT)
         {
-            if (HOPMirStmtLowerExpr(c, child) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, child) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_ADDR_OF, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_ADDR_OF, 0, 0, expr->start, expr->end, NULL);
         }
-        if ((HOPTokenKind)expr->op == HOPTok_MUL && HOPMirStmtLowerIsReplayableExpr(c, child)) {
-            if (HOPMirStmtLowerExpr(c, child) != 0 || !c->supported) {
+        if ((H2TokenKind)expr->op == H2Tok_MUL && H2MirStmtLowerIsReplayableExpr(c, child)) {
+            if (H2MirStmtLowerExpr(c, child) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL);
         }
-        if ((HOPTokenKind)expr->op != HOPTok_AND && (HOPTokenKind)expr->op != HOPTok_MUL) {
+        if ((H2TokenKind)expr->op != H2Tok_AND && (H2TokenKind)expr->op != H2Tok_MUL) {
             if (child < 0 || (uint32_t)child >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, child) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, child) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_UNARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_UNARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
         }
     }
-    if (expr->kind == HOPAst_FIELD_EXPR) {
+    if (expr->kind == H2Ast_FIELD_EXPR) {
         int32_t  baseNode = expr->firstChild;
         uint32_t fieldRef = UINT32_MAX;
-        uint32_t contextField = HOPMirContextField_INVALID;
+        uint32_t contextField = H2MirContextField_INVALID;
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerIsContextFieldExpr(c, exprNode, &contextField)) {
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_CTX_GET, 0, contextField, expr->start, expr->end, NULL);
+        if (H2MirStmtLowerIsContextFieldExpr(c, exprNode, &contextField)) {
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_CTX_GET, 0, contextField, expr->start, expr->end, NULL);
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAddFieldRef(c, expr->dataStart, expr->dataEnd, &fieldRef) != 0) {
+        if (H2MirStmtLowerAddFieldRef(c, expr->dataStart, expr->dataEnd, &fieldRef) != 0) {
             return -1;
         }
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_AGG_GET, 0, fieldRef, expr->dataStart, expr->dataEnd, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_AGG_GET, 0, fieldRef, expr->dataStart, expr->dataEnd, NULL);
     }
-    if (expr->kind == HOPAst_BINARY) {
+    if (expr->kind == H2Ast_BINARY) {
         lhsNode = expr->firstChild;
         rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
         if (lhsNode < 0 || rhsNode < 0 || c->ast->nodes[rhsNode].nextSibling >= 0
-            || (HOPTokenKind)expr->op == HOPTok_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_ADD_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_SUB_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_MUL_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_DIV_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_MOD_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_AND_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_OR_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_XOR_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_LSHIFT_ASSIGN
-            || (HOPTokenKind)expr->op == HOPTok_RSHIFT_ASSIGN)
+            || (H2TokenKind)expr->op == H2Tok_ASSIGN || (H2TokenKind)expr->op == H2Tok_ADD_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_SUB_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_MUL_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_DIV_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_MOD_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_AND_ASSIGN || (H2TokenKind)expr->op == H2Tok_OR_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_XOR_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_LSHIFT_ASSIGN
+            || (H2TokenKind)expr->op == H2Tok_RSHIFT_ASSIGN)
         {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_BINARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
+        return H2MirStmtLowerAppendInst(
+            c, H2MirOp_BINARY, (uint16_t)expr->op, 0, expr->start, expr->end, NULL);
     }
-    if (expr->kind == HOPAst_COMPOUND_LIT) {
-        int32_t       child = expr->firstChild;
-        int32_t       typeNode = -1;
-        HOPMirTypeRef typeRef = { 0 };
-        uint32_t      typeRefIndex = UINT32_MAX;
-        uint32_t      fieldCount = 0;
+    if (expr->kind == H2Ast_COMPOUND_LIT) {
+        int32_t      child = expr->firstChild;
+        int32_t      typeNode = -1;
+        H2MirTypeRef typeRef = { 0 };
+        uint32_t     typeRefIndex = UINT32_MAX;
+        uint32_t     fieldCount = 0;
         if (child >= 0 && (uint32_t)child < c->ast->len
-            && HOPMirStmtLowerIsTypeNodeKind(c->ast->nodes[child].kind))
+            && H2MirStmtLowerIsTypeNodeKind(c->ast->nodes[child].kind))
         {
             typeNode = child;
             child = c->ast->nodes[child].nextSibling;
@@ -1576,7 +1565,7 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
         if (typeNode < 0) {
             int32_t scan = child;
             while (scan >= 0) {
-                if (c->ast->nodes[scan].kind != HOPAst_COMPOUND_FIELD) {
+                if (c->ast->nodes[scan].kind != H2Ast_COMPOUND_FIELD) {
                     c->supported = 0;
                     return 0;
                 }
@@ -1587,9 +1576,9 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerAppendInst(
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_AGG_MAKE,
+                    H2MirOp_AGG_MAKE,
                     (uint16_t)fieldCount,
                     (uint32_t)exprNode,
                     expr->start,
@@ -1604,31 +1593,31 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
             typeRef.sourceRef = c->sourceIndex;
             typeRef.flags = 0u;
             typeRef.aux = 0u;
-            if (HOPMirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
-                HOPMirLowerStmtSetDiag(c->diag, HOPDiag_ARENA_OOM, expr->start, expr->end);
+            if (H2MirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+                H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, expr->start, expr->end);
                 return -1;
             }
-            if (HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_AGG_ZERO, 0, typeRefIndex, expr->start, expr->end, NULL)
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_AGG_ZERO, 0, typeRefIndex, expr->start, expr->end, NULL)
                 != 0)
             {
                 return -1;
             }
         }
         while (child >= 0) {
-            const HOPAstNode* field = &c->ast->nodes[child];
-            int32_t           valueNode = c->ast->nodes[child].firstChild;
-            uint32_t          fieldRef = UINT32_MAX;
-            if (field->kind != HOPAst_COMPOUND_FIELD) {
+            const H2AstNode* field = &c->ast->nodes[child];
+            int32_t          valueNode = c->ast->nodes[child].firstChild;
+            uint32_t         fieldRef = UINT32_MAX;
+            if (field->kind != H2Ast_COMPOUND_FIELD) {
                 c->supported = 0;
                 return 0;
             }
             if (valueNode >= 0) {
-                if (HOPMirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-            } else if ((field->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
-                if (HOPMirStmtLowerAppendLoadValueBySlice(
+            } else if ((field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
+                if (H2MirStmtLowerAppendLoadValueBySlice(
                         c, field->dataStart, field->dataEnd, field->start, field->end)
                     != 0)
                 {
@@ -1638,11 +1627,11 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerAddFieldRef(c, field->dataStart, field->dataEnd, &fieldRef) != 0) {
+            if (H2MirStmtLowerAddFieldRef(c, field->dataStart, field->dataEnd, &fieldRef) != 0) {
                 return -1;
             }
-            if (HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_AGG_SET, 0, fieldRef, field->dataStart, field->dataEnd, NULL)
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_AGG_SET, 0, fieldRef, field->dataStart, field->dataEnd, NULL)
                 != 0)
             {
                 return -1;
@@ -1650,93 +1639,93 @@ static int HOPMirStmtLowerExpr(HOPMirStmtLower* c, int32_t exprNode) {
             child = c->ast->nodes[child].nextSibling;
         }
         if (typeNode >= 0) {
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
         }
         return 0;
     }
-    if (expr->kind == HOPAst_CALL && HOPMirStmtLowerCallCanUseManualLowering(c, exprNode)) {
-        return HOPMirStmtLowerCallExpr(c, exprNode);
+    if (expr->kind == H2Ast_CALL && H2MirStmtLowerCallCanUseManualLowering(c, exprNode)) {
+        return H2MirStmtLowerCallExpr(c, exprNode);
     }
-    if (HOPMirBuildExpr(c->arena, c->ast, c->src, exprNode, &chunk, &supported, c->diag) != 0) {
+    if (H2MirBuildExpr(c->arena, c->ast, c->src, exprNode, &chunk, &supported, c->diag) != 0) {
         return -1;
     }
-    if (!supported || chunk.len == 0 || chunk.v[chunk.len - 1].op != HOPMirOp_RETURN) {
+    if (!supported || chunk.len == 0 || chunk.v[chunk.len - 1].op != H2MirOp_RETURN) {
         c->supported = 0;
         return 0;
     }
     chunk.len--;
-    return HOPMirStmtLowerRewriteExprChunk(c, &chunk);
+    return H2MirStmtLowerRewriteExprChunk(c, &chunk);
 }
 
-static int HOPMirStmtLowerBinaryOpForAssign(HOPTokenKind tok, HOPTokenKind* outTok) {
+static int H2MirStmtLowerBinaryOpForAssign(H2TokenKind tok, H2TokenKind* outTok) {
     switch (tok) {
-        case HOPTok_ADD_ASSIGN:    *outTok = HOPTok_ADD; return 1;
-        case HOPTok_SUB_ASSIGN:    *outTok = HOPTok_SUB; return 1;
-        case HOPTok_MUL_ASSIGN:    *outTok = HOPTok_MUL; return 1;
-        case HOPTok_DIV_ASSIGN:    *outTok = HOPTok_DIV; return 1;
-        case HOPTok_MOD_ASSIGN:    *outTok = HOPTok_MOD; return 1;
-        case HOPTok_AND_ASSIGN:    *outTok = HOPTok_AND; return 1;
-        case HOPTok_OR_ASSIGN:     *outTok = HOPTok_OR; return 1;
-        case HOPTok_XOR_ASSIGN:    *outTok = HOPTok_XOR; return 1;
-        case HOPTok_LSHIFT_ASSIGN: *outTok = HOPTok_LSHIFT; return 1;
-        case HOPTok_RSHIFT_ASSIGN: *outTok = HOPTok_RSHIFT; return 1;
-        default:                   *outTok = HOPTok_INVALID; return 0;
+        case H2Tok_ADD_ASSIGN:    *outTok = H2Tok_ADD; return 1;
+        case H2Tok_SUB_ASSIGN:    *outTok = H2Tok_SUB; return 1;
+        case H2Tok_MUL_ASSIGN:    *outTok = H2Tok_MUL; return 1;
+        case H2Tok_DIV_ASSIGN:    *outTok = H2Tok_DIV; return 1;
+        case H2Tok_MOD_ASSIGN:    *outTok = H2Tok_MOD; return 1;
+        case H2Tok_AND_ASSIGN:    *outTok = H2Tok_AND; return 1;
+        case H2Tok_OR_ASSIGN:     *outTok = H2Tok_OR; return 1;
+        case H2Tok_XOR_ASSIGN:    *outTok = H2Tok_XOR; return 1;
+        case H2Tok_LSHIFT_ASSIGN: *outTok = H2Tok_LSHIFT; return 1;
+        case H2Tok_RSHIFT_ASSIGN: *outTok = H2Tok_RSHIFT; return 1;
+        default:                  *outTok = H2Tok_INVALID; return 0;
     }
 }
 
-static int HOPMirStmtLowerIsReplayableExpr(const HOPMirStmtLower* c, int32_t exprNode) {
-    const HOPAstNode* expr;
-    int32_t           lhsNode;
-    int32_t           rhsNode;
-    HOPTokenKind      binaryTok = HOPTok_INVALID;
+static int H2MirStmtLowerIsReplayableExpr(const H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* expr;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    H2TokenKind      binaryTok = H2Tok_INVALID;
     if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
     switch (expr->kind) {
-        case HOPAst_IDENT:
-        case HOPAst_INT:
-        case HOPAst_FLOAT:
-        case HOPAst_STRING:
-        case HOPAst_BOOL:
-        case HOPAst_NULL:   return 1;
-        case HOPAst_UNARY:
-            if ((HOPTokenKind)expr->op == HOPTok_AND) {
+        case H2Ast_IDENT:
+        case H2Ast_INT:
+        case H2Ast_FLOAT:
+        case H2Ast_STRING:
+        case H2Ast_BOOL:
+        case H2Ast_NULL:   return 1;
+        case H2Ast_UNARY:
+            if ((H2TokenKind)expr->op == H2Tok_AND) {
                 return 0;
             }
             lhsNode = expr->firstChild;
             return lhsNode >= 0 && c->ast->nodes[lhsNode].nextSibling < 0
-                && HOPMirStmtLowerIsReplayableExpr(c, lhsNode);
-        case HOPAst_BINARY:
+                && H2MirStmtLowerIsReplayableExpr(c, lhsNode);
+        case H2Ast_BINARY:
             lhsNode = expr->firstChild;
             rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
             if (lhsNode < 0 || rhsNode < 0 || c->ast->nodes[rhsNode].nextSibling >= 0
-                || (HOPTokenKind)expr->op == HOPTok_ASSIGN)
+                || (H2TokenKind)expr->op == H2Tok_ASSIGN)
             {
                 return 0;
             }
-            if (HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)) {
+            if (H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)) {
                 return 0;
             }
-            return HOPMirStmtLowerIsReplayableExpr(c, lhsNode)
-                && HOPMirStmtLowerIsReplayableExpr(c, rhsNode);
-        case HOPAst_INDEX:
+            return H2MirStmtLowerIsReplayableExpr(c, lhsNode)
+                && H2MirStmtLowerIsReplayableExpr(c, rhsNode);
+        case H2Ast_INDEX:
             lhsNode = expr->firstChild;
             rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
             return (expr->flags & 0x7u) == 0u && lhsNode >= 0 && rhsNode >= 0
                 && c->ast->nodes[rhsNode].nextSibling < 0
-                && HOPMirStmtLowerIsReplayableExpr(c, lhsNode)
-                && HOPMirStmtLowerIsReplayableExpr(c, rhsNode);
-        case HOPAst_FIELD_EXPR:
+                && H2MirStmtLowerIsReplayableExpr(c, lhsNode)
+                && H2MirStmtLowerIsReplayableExpr(c, rhsNode);
+        case H2Ast_FIELD_EXPR:
             lhsNode = expr->firstChild;
             return lhsNode >= 0 && c->ast->nodes[lhsNode].nextSibling < 0
-                && HOPMirStmtLowerIsReplayableExpr(c, lhsNode);
+                && H2MirStmtLowerIsReplayableExpr(c, lhsNode);
         default: return 0;
     }
 }
 
-static int32_t HOPMirStmtLowerVarInitExprNode(const HOPAst* ast, int32_t nodeId) {
+static int32_t H2MirStmtLowerVarInitExprNode(const H2Ast* ast, int32_t nodeId) {
     int32_t firstChild;
     int32_t nextNode;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -1746,20 +1735,20 @@ static int32_t HOPMirStmtLowerVarInitExprNode(const HOPAst* ast, int32_t nodeId)
     if (firstChild < 0) {
         return -1;
     }
-    if (ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+    if (ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
         nextNode = ast->nodes[firstChild].nextSibling;
-        if (nextNode >= 0 && HOPMirStmtLowerIsTypeNodeKind(ast->nodes[nextNode].kind)) {
+        if (nextNode >= 0 && H2MirStmtLowerIsTypeNodeKind(ast->nodes[nextNode].kind)) {
             nextNode = ast->nodes[nextNode].nextSibling;
         }
         return nextNode;
     }
-    if (HOPMirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
+    if (H2MirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
         return ast->nodes[firstChild].nextSibling;
     }
     return firstChild;
 }
 
-static int32_t HOPMirStmtLowerVarLikeDeclTypeNode(const HOPAst* ast, int32_t nodeId) {
+static int32_t H2MirStmtLowerVarLikeDeclTypeNode(const H2Ast* ast, int32_t nodeId) {
     int32_t firstChild;
     int32_t afterNames;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
@@ -1769,21 +1758,21 @@ static int32_t HOPMirStmtLowerVarLikeDeclTypeNode(const HOPAst* ast, int32_t nod
     if (firstChild < 0 || (uint32_t)firstChild >= ast->len) {
         return -1;
     }
-    if (ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+    if (ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
         afterNames = ast->nodes[firstChild].nextSibling;
-        if (afterNames >= 0 && HOPMirStmtLowerIsTypeNodeKind(ast->nodes[afterNames].kind)) {
+        if (afterNames >= 0 && H2MirStmtLowerIsTypeNodeKind(ast->nodes[afterNames].kind)) {
             return afterNames;
         }
         return -1;
     }
-    if (HOPMirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
+    if (H2MirStmtLowerIsTypeNodeKind(ast->nodes[firstChild].kind)) {
         return firstChild;
     }
     return -1;
 }
 
-static int32_t HOPMirStmtLowerVarLikeInitExprNodeAt(
-    const HOPAst* ast, int32_t nodeId, int32_t nameIndex) {
+static int32_t H2MirStmtLowerVarLikeInitExprNodeAt(
+    const H2Ast* ast, int32_t nodeId, int32_t nameIndex) {
     int32_t firstChild;
     int32_t initNode;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len || nameIndex < 0) {
@@ -1793,43 +1782,43 @@ static int32_t HOPMirStmtLowerVarLikeInitExprNodeAt(
     if (firstChild < 0 || (uint32_t)firstChild >= ast->len) {
         return -1;
     }
-    initNode = HOPMirStmtLowerVarInitExprNode(ast, nodeId);
+    initNode = H2MirStmtLowerVarInitExprNode(ast, nodeId);
     if (initNode < 0 || (uint32_t)initNode >= ast->len) {
         return -1;
     }
-    if (ast->nodes[firstChild].kind != HOPAst_NAME_LIST) {
+    if (ast->nodes[firstChild].kind != H2Ast_NAME_LIST) {
         return nameIndex == 0 ? initNode : -1;
     }
-    if (ast->nodes[initNode].kind != HOPAst_EXPR_LIST) {
+    if (ast->nodes[initNode].kind != H2Ast_EXPR_LIST) {
         return -1;
     }
     {
-        uint32_t nameCount = HOPMirStmtLowerAstListCount(ast, firstChild);
-        uint32_t initCount = HOPMirStmtLowerAstListCount(ast, initNode);
+        uint32_t nameCount = H2MirStmtLowerAstListCount(ast, firstChild);
+        uint32_t initCount = H2MirStmtLowerAstListCount(ast, initNode);
         if ((uint32_t)nameIndex >= nameCount) {
             return -1;
         }
         if (initCount == nameCount) {
-            return HOPMirStmtLowerAstListItemAt(ast, initNode, (uint32_t)nameIndex);
+            return H2MirStmtLowerAstListItemAt(ast, initNode, (uint32_t)nameIndex);
         }
         if (initCount != 1u) {
             return -1;
         }
         {
-            int32_t onlyInit = HOPMirStmtLowerAstListItemAt(ast, initNode, 0u);
+            int32_t onlyInit = H2MirStmtLowerAstListItemAt(ast, initNode, 0u);
             if (onlyInit < 0 || (uint32_t)onlyInit >= ast->len
-                || ast->nodes[onlyInit].kind != HOPAst_TUPLE_EXPR)
+                || ast->nodes[onlyInit].kind != H2Ast_TUPLE_EXPR)
             {
                 return -1;
             }
-            return HOPMirStmtLowerAstListItemAt(ast, onlyInit, (uint32_t)nameIndex);
+            return H2MirStmtLowerAstListItemAt(ast, onlyInit, (uint32_t)nameIndex);
         }
     }
 }
 
-static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode);
+static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode);
 
-static int HOPMirStmtLowerEmitDeferredRange(HOPMirStmtLower* c, uint32_t start) {
+static int H2MirStmtLowerEmitDeferredRange(H2MirStmtLower* c, uint32_t start) {
     uint32_t i;
     uint8_t  savedLoweringDeferred;
     if (c == NULL || start > c->deferredStmtLen) {
@@ -1838,7 +1827,7 @@ static int HOPMirStmtLowerEmitDeferredRange(HOPMirStmtLower* c, uint32_t start) 
     savedLoweringDeferred = c->loweringDeferred;
     c->loweringDeferred = 1u;
     for (i = c->deferredStmtLen; i > start; i--) {
-        if (HOPMirStmtLowerStmt(c, c->deferredStmtNodes[i - 1u]) != 0 || !c->supported) {
+        if (H2MirStmtLowerStmt(c, c->deferredStmtNodes[i - 1u]) != 0 || !c->supported) {
             c->loweringDeferred = savedLoweringDeferred;
             return c->supported ? -1 : 0;
         }
@@ -1847,8 +1836,8 @@ static int HOPMirStmtLowerEmitDeferredRange(HOPMirStmtLower* c, uint32_t start) 
     return 0;
 }
 
-static int HOPMirStmtLowerEmitDeferredForControl(
-    HOPMirStmtLower* c, const HOPMirLowerControl* control) {
+static int H2MirStmtLowerEmitDeferredForControl(
+    H2MirStmtLower* c, const H2MirLowerControl* control) {
     uint32_t targetDepth;
     uint32_t i;
     uint32_t originalDeferredLen;
@@ -1861,9 +1850,9 @@ static int HOPMirStmtLowerEmitDeferredForControl(
     deferLimit = c->deferredStmtLen;
     i = c->blockDepth;
     while (i > targetDepth) {
-        const HOPMirLowerBlockScope* scope = &c->blockScopes[i - 1u];
+        const H2MirLowerBlockScope* scope = &c->blockScopes[i - 1u];
         c->deferredStmtLen = deferLimit;
-        if (HOPMirStmtLowerEmitDeferredRange(c, scope->deferStart) != 0 || !c->supported) {
+        if (H2MirStmtLowerEmitDeferredRange(c, scope->deferStart) != 0 || !c->supported) {
             c->deferredStmtLen = originalDeferredLen;
             return c->supported ? -1 : 0;
         }
@@ -1874,13 +1863,13 @@ static int HOPMirStmtLowerEmitDeferredForControl(
     return 0;
 }
 
-static int HOPMirStmtLowerBlock(HOPMirStmtLower* c, int32_t blockNode) {
+static int H2MirStmtLowerBlock(H2MirStmtLower* c, int32_t blockNode) {
     uint32_t scopeMark = c->localLen;
     uint32_t blockDepth = c->blockDepth;
     uint32_t deferStart;
     int32_t  child;
     if (blockNode < 0 || (uint32_t)blockNode >= c->ast->len
-        || c->ast->nodes[blockNode].kind != HOPAst_BLOCK)
+        || c->ast->nodes[blockNode].kind != H2Ast_BLOCK)
     {
         c->supported = 0;
         return 0;
@@ -1894,7 +1883,7 @@ static int HOPMirStmtLowerBlock(HOPMirStmtLower* c, int32_t blockNode) {
     child = c->ast->nodes[blockNode].firstChild;
     while (child >= 0) {
         int32_t nextChild = c->ast->nodes[child].nextSibling;
-        if (c->ast->nodes[child].kind == HOPAst_DEFER) {
+        if (c->ast->nodes[child].kind == H2Ast_DEFER) {
             int32_t deferredStmtNode = c->ast->nodes[child].firstChild;
             if (c->loweringDeferred || deferredStmtNode < 0
                 || c->ast->nodes[deferredStmtNode].nextSibling >= 0
@@ -1911,7 +1900,7 @@ static int HOPMirStmtLowerBlock(HOPMirStmtLower* c, int32_t blockNode) {
             child = nextChild;
             continue;
         }
-        if (HOPMirStmtLowerStmt(c, child) != 0 || !c->supported) {
+        if (H2MirStmtLowerStmt(c, child) != 0 || !c->supported) {
             c->deferredStmtLen = deferStart;
             c->blockDepth = blockDepth;
             c->localLen = scopeMark;
@@ -1919,7 +1908,7 @@ static int HOPMirStmtLowerBlock(HOPMirStmtLower* c, int32_t blockNode) {
         }
         child = nextChild;
     }
-    if (HOPMirStmtLowerEmitDeferredRange(c, deferStart) != 0 || !c->supported) {
+    if (H2MirStmtLowerEmitDeferredRange(c, deferStart) != 0 || !c->supported) {
         c->deferredStmtLen = deferStart;
         c->blockDepth = blockDepth;
         c->localLen = scopeMark;
@@ -1931,7 +1920,7 @@ static int HOPMirStmtLowerBlock(HOPMirStmtLower* c, int32_t blockNode) {
     return 0;
 }
 
-static int HOPMirStmtLowerIf(HOPMirStmtLower* c, int32_t ifNode) {
+static int H2MirStmtLowerIf(H2MirStmtLower* c, int32_t ifNode) {
     int32_t  condNode = c->ast->nodes[ifNode].firstChild;
     int32_t  thenNode = condNode >= 0 ? c->ast->nodes[condNode].nextSibling : -1;
     int32_t  elseNode = thenNode >= 0 ? c->ast->nodes[thenNode].nextSibling : -1;
@@ -1941,12 +1930,12 @@ static int HOPMirStmtLowerIf(HOPMirStmtLower* c, int32_t ifNode) {
         c->supported = 0;
         return 0;
     }
-    if (HOPMirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
         return c->supported ? -1 : 0;
     }
-    if (HOPMirStmtLowerAppendInst(
+    if (H2MirStmtLowerAppendInst(
             c,
-            HOPMirOp_JUMP_IF_FALSE,
+            H2MirOp_JUMP_IF_FALSE,
             0,
             UINT32_MAX,
             c->ast->nodes[ifNode].start,
@@ -1956,12 +1945,12 @@ static int HOPMirStmtLowerIf(HOPMirStmtLower* c, int32_t ifNode) {
     {
         return -1;
     }
-    if (c->ast->nodes[thenNode].kind == HOPAst_BLOCK) {
-        if (HOPMirStmtLowerBlock(c, thenNode) != 0 || !c->supported) {
+    if (c->ast->nodes[thenNode].kind == H2Ast_BLOCK) {
+        if (H2MirStmtLowerBlock(c, thenNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-    } else if (c->ast->nodes[thenNode].kind == HOPAst_IF) {
-        if (HOPMirStmtLowerIf(c, thenNode) != 0 || !c->supported) {
+    } else if (c->ast->nodes[thenNode].kind == H2Ast_IF) {
+        if (H2MirStmtLowerIf(c, thenNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
     } else {
@@ -1969,9 +1958,9 @@ static int HOPMirStmtLowerIf(HOPMirStmtLower* c, int32_t ifNode) {
         return 0;
     }
     if (elseNode >= 0) {
-        if (HOPMirStmtLowerAppendInst(
+        if (H2MirStmtLowerAppendInst(
                 c,
-                HOPMirOp_JUMP,
+                H2MirOp_JUMP,
                 0,
                 UINT32_MAX,
                 c->ast->nodes[ifNode].start,
@@ -1982,83 +1971,82 @@ static int HOPMirStmtLowerIf(HOPMirStmtLower* c, int32_t ifNode) {
             return -1;
         }
     }
-    c->builder.insts[falseJumpInst].aux = HOPMirStmtLowerFnPc(c);
+    c->builder.insts[falseJumpInst].aux = H2MirStmtLowerFnPc(c);
     if (elseNode >= 0) {
-        if (c->ast->nodes[elseNode].kind == HOPAst_BLOCK) {
-            if (HOPMirStmtLowerBlock(c, elseNode) != 0 || !c->supported) {
+        if (c->ast->nodes[elseNode].kind == H2Ast_BLOCK) {
+            if (H2MirStmtLowerBlock(c, elseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-        } else if (c->ast->nodes[elseNode].kind == HOPAst_IF) {
-            if (HOPMirStmtLowerIf(c, elseNode) != 0 || !c->supported) {
+        } else if (c->ast->nodes[elseNode].kind == H2Ast_IF) {
+            if (H2MirStmtLowerIf(c, elseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
         } else {
             c->supported = 0;
             return 0;
         }
-        c->builder.insts[endJumpInst].aux = HOPMirStmtLowerFnPc(c);
+        c->builder.insts[endJumpInst].aux = H2MirStmtLowerFnPc(c);
     }
     return 0;
 }
 
-static int HOPMirStmtLowerStoreToLValueFromStack(
-    HOPMirStmtLower* c, int32_t lhsNode, uint32_t start, uint32_t end) {
+static int H2MirStmtLowerStoreToLValueFromStack(
+    H2MirStmtLower* c, int32_t lhsNode, uint32_t start, uint32_t end) {
     uint32_t slot = 0;
     int      mutable = 0;
     if (lhsNode < 0 || (uint32_t)lhsNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
-    if (c->ast->nodes[lhsNode].kind == HOPAst_IDENT
-        && HOPMirStmtLowerFindLocal(
+    if (c->ast->nodes[lhsNode].kind == H2Ast_IDENT
+        && H2MirStmtLowerFindLocal(
             c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &slot, &mutable))
     {
         if (!mutable) {
             c->supported = 0;
             return 0;
         }
-        return HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_STORE, 0, slot, start, end, NULL);
+        return H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, slot, start, end, NULL);
     }
-    if (c->ast->nodes[lhsNode].kind == HOPAst_UNARY
-        && (HOPTokenKind)c->ast->nodes[lhsNode].op == HOPTok_MUL)
+    if (c->ast->nodes[lhsNode].kind == H2Ast_UNARY
+        && (H2TokenKind)c->ast->nodes[lhsNode].op == H2Tok_MUL)
     {
         int32_t derefBase = c->ast->nodes[lhsNode].firstChild;
         if (derefBase >= 0 && (uint32_t)derefBase < c->ast->len
-            && HOPMirStmtLowerIsReplayableExpr(c, derefBase))
+            && H2MirStmtLowerIsReplayableExpr(c, derefBase))
         {
-            if (HOPMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(c, HOPMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_DEREF_STORE, 0, 0, start, end, NULL);
         }
     }
-    if (c->ast->nodes[lhsNode].kind == HOPAst_INDEX && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u)
-    {
+    if (c->ast->nodes[lhsNode].kind == H2Ast_INDEX && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u) {
         int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
         int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
         if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_ARRAY_ADDR, 0, 0, start, end, NULL) != 0) {
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_ARRAY_ADDR, 0, 0, start, end, NULL) != 0) {
             return -1;
         }
-        return HOPMirStmtLowerAppendInst(c, HOPMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+        return H2MirStmtLowerAppendInst(c, H2MirOp_DEREF_STORE, 0, 0, start, end, NULL);
     }
-    if (c->ast->nodes[lhsNode].kind == HOPAst_FIELD_EXPR) {
+    if (c->ast->nodes[lhsNode].kind == H2Ast_FIELD_EXPR) {
         int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
         uint32_t fieldRef = UINT32_MAX;
-        uint32_t contextField = HOPMirContextField_INVALID;
-        if (HOPMirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
-            if (HOPMirStmtLowerAppendInst(
+        uint32_t contextField = H2MirContextField_INVALID;
+        if (H2MirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_CTX_ADDR,
+                    H2MirOp_CTX_ADDR,
                     0,
                     contextField,
                     c->ast->nodes[lhsNode].start,
@@ -2068,24 +2056,24 @@ static int HOPMirStmtLowerStoreToLValueFromStack(
             {
                 return -1;
             }
-            return HOPMirStmtLowerAppendInst(c, HOPMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_DEREF_STORE, 0, 0, start, end, NULL);
         }
         if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAddFieldRef(
+        if (H2MirStmtLowerAddFieldRef(
                 c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &fieldRef)
             != 0)
         {
             return -1;
         }
-        if (HOPMirStmtLowerAppendInst(
+        if (H2MirStmtLowerAppendInst(
                 c,
-                HOPMirOp_AGG_ADDR,
+                H2MirOp_AGG_ADDR,
                 0,
                 fieldRef,
                 c->ast->nodes[lhsNode].dataStart,
@@ -2095,43 +2083,43 @@ static int HOPMirStmtLowerStoreToLValueFromStack(
         {
             return -1;
         }
-        return HOPMirStmtLowerAppendInst(c, HOPMirOp_DEREF_STORE, 0, 0, start, end, NULL);
+        return H2MirStmtLowerAppendInst(c, H2MirOp_DEREF_STORE, 0, 0, start, end, NULL);
     }
     c->supported = 0;
     return 0;
 }
 
-static int HOPMirStmtLowerExprNodeAsStmt(
-    HOPMirStmtLower* c, int32_t exprNode, uint32_t start, uint32_t end) {
+static int H2MirStmtLowerExprNodeAsStmt(
+    H2MirStmtLower* c, int32_t exprNode, uint32_t start, uint32_t end) {
     if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
-    if (c->ast->nodes[exprNode].kind == HOPAst_BINARY) {
-        const HOPAstNode* expr = &c->ast->nodes[exprNode];
-        int32_t           lhsNode = expr->firstChild;
-        int32_t           rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
-        uint32_t          slot = 0;
-        int               mutable = 0;
-        HOPTokenKind      binaryTok = HOPTok_INVALID;
+    if (c->ast->nodes[exprNode].kind == H2Ast_BINARY) {
+        const H2AstNode* expr = &c->ast->nodes[exprNode];
+        int32_t          lhsNode = expr->firstChild;
+        int32_t          rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+        uint32_t         slot = 0;
+        int              mutable = 0;
+        H2TokenKind      binaryTok = H2Tok_INVALID;
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_IDENT
+            && c->ast->nodes[lhsNode].kind == H2Ast_IDENT
             && c->ast->nodes[lhsNode].dataEnd == c->ast->nodes[lhsNode].dataStart + 1u
             && c->ast->nodes[lhsNode].dataEnd <= c->src.len
             && c->src.ptr[c->ast->nodes[lhsNode].dataStart] == '_')
         {
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(c, HOPMirOp_DROP, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_DROP, 0, 0, expr->start, expr->end, NULL);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_IDENT
-            && HOPMirStmtLowerFindLocal(
+            && c->ast->nodes[lhsNode].kind == H2Ast_IDENT
+            && H2MirStmtLowerFindLocal(
                 c,
                 c->ast->nodes[lhsNode].dataStart,
                 c->ast->nodes[lhsNode].dataEnd,
@@ -2142,14 +2130,14 @@ static int HOPMirStmtLowerExprNodeAsStmt(
                 c->supported = 0;
                 return 0;
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (!HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)) {
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (!H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)) {
                     c->supported = 0;
                     return 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
+                if (H2MirStmtLowerAppendInst(
                         c,
-                        HOPMirOp_LOCAL_LOAD,
+                        H2MirOp_LOCAL_LOAD,
                         0,
                         slot,
                         c->ast->nodes[lhsNode].start,
@@ -2160,82 +2148,82 @@ static int HOPMirStmtLowerExprNodeAsStmt(
                     return -1;
                 }
             }
-            if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_LOCAL_STORE, 0, slot, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_LOCAL_STORE, 0, slot, expr->start, expr->end, NULL);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_IDENT)
+            && c->ast->nodes[lhsNode].kind == H2Ast_IDENT)
         {
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendStoreValueBySlice(
+            return H2MirStmtLowerAppendStoreValueBySlice(
                 c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_UNARY
-            && (HOPTokenKind)c->ast->nodes[lhsNode].op == HOPTok_MUL)
+            && c->ast->nodes[lhsNode].kind == H2Ast_UNARY
+            && (H2TokenKind)c->ast->nodes[lhsNode].op == H2Tok_MUL)
         {
             int32_t derefBase = c->ast->nodes[lhsNode].firstChild;
             if (derefBase >= 0 && (uint32_t)derefBase < c->ast->len
-                && HOPMirStmtLowerIsReplayableExpr(c, derefBase))
+                && H2MirStmtLowerIsReplayableExpr(c, derefBase))
             {
-                if ((HOPTokenKind)expr->op == HOPTok_ASSIGN) {
-                    if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                if ((H2TokenKind)expr->op == H2Tok_ASSIGN) {
+                    if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (HOPMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                    if (H2MirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    return HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
+                    return H2MirStmtLowerAppendInst(
+                        c, H2MirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
                 }
-                if (!HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)) {
+                if (!H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)) {
                     c->supported = 0;
                     return 0;
                 }
-                if (HOPMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_DEREF_LOAD, 0, 0, expr->start, expr->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
-                if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
-                if (HOPMirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, derefBase) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
             }
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_INDEX
+            && c->ast->nodes[lhsNode].kind == H2Ast_INDEX
             && (c->ast->nodes[lhsNode].flags & 0x7u) == 0u)
         {
             int32_t baseNode = c->ast->nodes[lhsNode].firstChild;
@@ -2244,37 +2232,37 @@ static int HOPMirStmtLowerExprNodeAsStmt(
                 c->supported = 0;
                 return 0;
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (!HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)
-                    || !HOPMirStmtLowerIsReplayableExpr(c, lhsNode))
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (!H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)
+                    || !H2MirStmtLowerIsReplayableExpr(c, lhsNode))
                 {
                     c->supported = 0;
                     return 0;
                 }
-                if (HOPMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
             }
-            if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
             }
-            if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, indexNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerAppendInst(
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_ARRAY_ADDR,
+                    H2MirOp_ARRAY_ADDR,
                     0,
                     0,
                     c->ast->nodes[lhsNode].start,
@@ -2284,28 +2272,28 @@ static int HOPMirStmtLowerExprNodeAsStmt(
             {
                 return -1;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
         }
         if (lhsNode >= 0 && rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
-            && c->ast->nodes[lhsNode].kind == HOPAst_FIELD_EXPR)
+            && c->ast->nodes[lhsNode].kind == H2Ast_FIELD_EXPR)
         {
             int32_t  baseNode = c->ast->nodes[lhsNode].firstChild;
             uint32_t fieldRef = UINT32_MAX;
-            uint32_t contextField = HOPMirContextField_INVALID;
+            uint32_t contextField = H2MirContextField_INVALID;
             if (baseNode < 0 || (uint32_t)baseNode >= c->ast->len) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
-                if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                    if (!HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)) {
+            if (H2MirStmtLowerIsContextFieldExpr(c, lhsNode, &contextField)) {
+                if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                    if (!H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)) {
                         c->supported = 0;
                         return 0;
                     }
-                    if (HOPMirStmtLowerAppendInst(
+                    if (H2MirStmtLowerAppendInst(
                             c,
-                            HOPMirOp_CTX_GET,
+                            H2MirOp_CTX_GET,
                             0,
                             contextField,
                             c->ast->nodes[lhsNode].start,
@@ -2316,26 +2304,20 @@ static int HOPMirStmtLowerExprNodeAsStmt(
                         return -1;
                     }
                 }
-                if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                    if (HOPMirStmtLowerAppendInst(
-                            c,
-                            HOPMirOp_BINARY,
-                            (uint16_t)binaryTok,
-                            0,
-                            expr->start,
-                            expr->end,
-                            NULL)
+                if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 }
-                if (HOPMirStmtLowerAppendInst(
+                if (H2MirStmtLowerAppendInst(
                         c,
-                        HOPMirOp_CTX_ADDR,
+                        H2MirOp_CTX_ADDR,
                         0,
                         contextField,
                         c->ast->nodes[lhsNode].start,
@@ -2345,43 +2327,43 @@ static int HOPMirStmtLowerExprNodeAsStmt(
                 {
                     return -1;
                 }
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (!HOPMirStmtLowerBinaryOpForAssign((HOPTokenKind)expr->op, &binaryTok)
-                    || !HOPMirStmtLowerIsReplayableExpr(c, lhsNode))
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (!H2MirStmtLowerBinaryOpForAssign((H2TokenKind)expr->op, &binaryTok)
+                    || !H2MirStmtLowerIsReplayableExpr(c, lhsNode))
                 {
                     c->supported = 0;
                     return 0;
                 }
-                if (HOPMirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
             }
-            if (HOPMirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_BINARY, (uint16_t)binaryTok, 0, expr->start, expr->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
             }
-            if (HOPMirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerAddFieldRef(
+            if (H2MirStmtLowerAddFieldRef(
                     c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, &fieldRef)
                 != 0)
             {
                 return -1;
             }
-            if (HOPMirStmtLowerAppendInst(
+            if (H2MirStmtLowerAppendInst(
                     c,
-                    HOPMirOp_AGG_ADDR,
+                    H2MirOp_AGG_ADDR,
                     0,
                     fieldRef,
                     c->ast->nodes[lhsNode].dataStart,
@@ -2391,36 +2373,36 @@ static int HOPMirStmtLowerExprNodeAsStmt(
             {
                 return -1;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_DEREF_STORE, 0, 0, expr->start, expr->end, NULL);
         }
     }
-    if (HOPMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
         return c->supported ? -1 : 0;
     }
-    return HOPMirStmtLowerAppendInst(c, HOPMirOp_DROP, 0, 0, start, end, NULL);
+    return H2MirStmtLowerAppendInst(c, H2MirOp_DROP, 0, 0, start, end, NULL);
 }
 
-static int HOPMirStmtLowerExprStmt(HOPMirStmtLower* c, int32_t stmtNode) {
+static int H2MirStmtLowerExprStmt(H2MirStmtLower* c, int32_t stmtNode) {
     int32_t exprNode = c->ast->nodes[stmtNode].firstChild;
     if (exprNode < 0 || c->ast->nodes[exprNode].nextSibling >= 0) {
         c->supported = 0;
         return 0;
     }
-    return HOPMirStmtLowerExprNodeAsStmt(
+    return H2MirStmtLowerExprNodeAsStmt(
         c, exprNode, c->ast->nodes[stmtNode].start, c->ast->nodes[stmtNode].end);
 }
 
-static int HOPMirStmtLowerDel(HOPMirStmtLower* c, int32_t stmtNode) {
-    const HOPAstNode* s;
-    int32_t           exprNode;
-    int32_t           allocNode = -1;
+static int H2MirStmtLowerDel(H2MirStmtLower* c, int32_t stmtNode) {
+    const H2AstNode* s;
+    int32_t          exprNode;
+    int32_t          allocNode = -1;
     if (c == NULL || stmtNode < 0 || (uint32_t)stmtNode >= c->ast->len) {
         return -1;
     }
     s = &c->ast->nodes[stmtNode];
     exprNode = s->firstChild;
-    if ((s->flags & HOPAstFlag_DEL_HAS_ALLOC) != 0u) {
+    if ((s->flags & H2AstFlag_DEL_HAS_ALLOC) != 0u) {
         int32_t scan = exprNode;
         while (scan >= 0) {
             int32_t next = c->ast->nodes[scan].nextSibling;
@@ -2432,12 +2414,12 @@ static int HOPMirStmtLowerDel(HOPMirStmtLower* c, int32_t stmtNode) {
         }
     }
     while (exprNode >= 0 && exprNode != allocNode) {
-        if (HOPMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAppendInst(
+        if (H2MirStmtLowerAppendInst(
                 c,
-                HOPMirOp_DROP,
+                H2MirOp_DROP,
                 0,
                 0,
                 c->ast->nodes[exprNode].start,
@@ -2450,12 +2432,12 @@ static int HOPMirStmtLowerDel(HOPMirStmtLower* c, int32_t stmtNode) {
         exprNode = c->ast->nodes[exprNode].nextSibling;
     }
     if (allocNode >= 0) {
-        if (HOPMirStmtLowerExpr(c, allocNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, allocNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAppendInst(
+        if (H2MirStmtLowerAppendInst(
                 c,
-                HOPMirOp_DROP,
+                H2MirOp_DROP,
                 0,
                 0,
                 c->ast->nodes[allocNode].start,
@@ -2469,52 +2451,49 @@ static int HOPMirStmtLowerDel(HOPMirStmtLower* c, int32_t stmtNode) {
     return 0;
 }
 
-static int HOPMirStmtLowerSwitchTest(
-    HOPMirStmtLower* c,
-    uint32_t         subjectSlot,
-    int              hasSubject,
-    int32_t          labelExprNode,
-    uint32_t         start,
-    uint32_t         end) {
+static int H2MirStmtLowerSwitchTest(
+    H2MirStmtLower* c,
+    uint32_t        subjectSlot,
+    int             hasSubject,
+    int32_t         labelExprNode,
+    uint32_t        start,
+    uint32_t        end) {
     if (hasSubject) {
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_LOAD, 0, subjectSlot, start, end, NULL)
-            != 0)
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, subjectSlot, start, end, NULL) != 0)
         {
             return -1;
         }
     }
-    if (HOPMirStmtLowerExpr(c, labelExprNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerExpr(c, labelExprNode) != 0 || !c->supported) {
         return c->supported ? -1 : 0;
     }
     if (hasSubject) {
-        return HOPMirStmtLowerAppendInst(
-            c, HOPMirOp_BINARY, (uint16_t)HOPTok_EQ, 0, start, end, NULL);
+        return H2MirStmtLowerAppendInst(c, H2MirOp_BINARY, (uint16_t)H2Tok_EQ, 0, start, end, NULL);
     }
     return 0;
 }
 
-static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
-    const HOPAstNode* s = &c->ast->nodes[stmtNode];
-    int32_t           clauseNode = s->firstChild;
-    int32_t           defaultBodyNode = -1;
-    uint32_t          scopeMark = c->localLen;
-    uint32_t          subjectSlot = UINT32_MAX;
-    uint32_t          pendingNextClauseJump = UINT32_MAX;
-    int               hasSubject = s->flags == 1;
+static int H2MirStmtLowerSwitch(H2MirStmtLower* c, int32_t stmtNode) {
+    const H2AstNode* s = &c->ast->nodes[stmtNode];
+    int32_t          clauseNode = s->firstChild;
+    int32_t          defaultBodyNode = -1;
+    uint32_t         scopeMark = c->localLen;
+    uint32_t         subjectSlot = UINT32_MAX;
+    uint32_t         pendingNextClauseJump = UINT32_MAX;
+    int              hasSubject = s->flags == 1;
     if (hasSubject) {
         if (clauseNode < 0 || (uint32_t)clauseNode >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
-        if (HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &subjectSlot) != 0) {
+        if (H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &subjectSlot) != 0) {
             return -1;
         }
-        if (HOPMirStmtLowerExpr(c, clauseNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, clauseNode) != 0 || !c->supported) {
             c->localLen = scopeMark;
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_LOCAL_STORE, 0, subjectSlot, s->start, s->end, NULL)
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, subjectSlot, s->start, s->end, NULL)
             != 0)
         {
             c->localLen = scopeMark;
@@ -2522,17 +2501,17 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
         }
         clauseNode = c->ast->nodes[clauseNode].nextSibling;
     }
-    if (!HOPMirStmtLowerPushControl(c, 0, 0)) {
+    if (!H2MirStmtLowerPushControl(c, 0, 0)) {
         c->localLen = scopeMark;
         return 0;
     }
     while (clauseNode >= 0) {
-        const HOPAstNode* clause = &c->ast->nodes[clauseNode];
+        const H2AstNode* clause = &c->ast->nodes[clauseNode];
         if (pendingNextClauseJump != UINT32_MAX) {
-            c->builder.insts[pendingNextClauseJump].aux = HOPMirStmtLowerFnPc(c);
+            c->builder.insts[pendingNextClauseJump].aux = H2MirStmtLowerFnPc(c);
             pendingNextClauseJump = UINT32_MAX;
         }
-        if (clause->kind == HOPAst_CASE) {
+        if (clause->kind == H2Ast_CASE) {
             int32_t  caseChild = clause->firstChild;
             int32_t  bodyNode = -1;
             int32_t  aliasNode = -1;
@@ -2549,15 +2528,15 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     break;
                 }
                 if (pendingFalseJump != UINT32_MAX) {
-                    c->builder.insts[pendingFalseJump].aux = HOPMirStmtLowerFnPc(c);
+                    c->builder.insts[pendingFalseJump].aux = H2MirStmtLowerFnPc(c);
                 }
-                if (c->ast->nodes[caseChild].kind == HOPAst_CASE_PATTERN) {
+                if (c->ast->nodes[caseChild].kind == H2Ast_CASE_PATTERN) {
                     labelExprNode = c->ast->nodes[caseChild].firstChild;
                     aliasNode = labelExprNode >= 0 ? c->ast->nodes[labelExprNode].nextSibling : -1;
                     if (labelExprNode < 0
                         || (aliasNode >= 0 && c->ast->nodes[aliasNode].nextSibling >= 0)
                         || (!hasSubject && aliasNode >= 0)
-                        || (aliasNode >= 0 && c->ast->nodes[aliasNode].kind != HOPAst_IDENT))
+                        || (aliasNode >= 0 && c->ast->nodes[aliasNode].kind != H2Ast_IDENT))
                     {
                         c->supported = 0;
                         c->localLen = scopeMark;
@@ -2571,7 +2550,7 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     c->controlLen--;
                     return 0;
                 }
-                if (HOPMirStmtLowerSwitchTest(
+                if (H2MirStmtLowerSwitchTest(
                         c,
                         subjectSlot,
                         hasSubject,
@@ -2585,9 +2564,9 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     c->controlLen--;
                     return c->supported ? -1 : 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
+                if (H2MirStmtLowerAppendInst(
                         c,
-                        HOPMirOp_JUMP_IF_FALSE,
+                        H2MirOp_JUMP_IF_FALSE,
                         0,
                         UINT32_MAX,
                         c->ast->nodes[labelExprNode].start,
@@ -2599,9 +2578,9 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     c->controlLen--;
                     return -1;
                 }
-                if (HOPMirStmtLowerAppendInst(
+                if (H2MirStmtLowerAppendInst(
                         c,
-                        HOPMirOp_JUMP,
+                        H2MirOp_JUMP,
                         0,
                         UINT32_MAX,
                         c->ast->nodes[labelExprNode].start,
@@ -2624,7 +2603,7 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                 caseChild = next;
             }
             if (bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len
-                || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK)
+                || c->ast->nodes[bodyNode].kind != H2Ast_BLOCK)
             {
                 c->supported = 0;
                 c->localLen = scopeMark;
@@ -2632,7 +2611,7 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                 return 0;
             }
             {
-                uint32_t bodyPc = HOPMirStmtLowerFnPc(c);
+                uint32_t bodyPc = H2MirStmtLowerFnPc(c);
                 uint32_t i;
                 for (i = 0; i < bodyJumpLen; i++) {
                     c->builder.insts[bodyJumps[i]].aux = bodyPc;
@@ -2640,7 +2619,7 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             if (aliasNode >= 0) {
                 uint32_t aliasSlot = UINT32_MAX;
-                if (HOPMirStmtLowerPushLocal(
+                if (H2MirStmtLowerPushLocal(
                         c,
                         c->ast->nodes[aliasNode].dataStart,
                         c->ast->nodes[aliasNode].dataEnd,
@@ -2656,11 +2635,11 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     c->controlLen--;
                     return -1;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_LOAD, 0, subjectSlot, clause->start, clause->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_LOAD, 0, subjectSlot, clause->start, clause->end, NULL)
                         != 0
-                    || HOPMirStmtLowerAppendInst(
-                           c, HOPMirOp_LOCAL_STORE, 0, aliasSlot, clause->start, clause->end, NULL)
+                    || H2MirStmtLowerAppendInst(
+                           c, H2MirOp_LOCAL_STORE, 0, aliasSlot, clause->start, clause->end, NULL)
                            != 0)
                 {
                     c->localLen = scopeMark;
@@ -2668,7 +2647,7 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
                     return -1;
                 }
             }
-            if (HOPMirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
                 c->localLen = scopeMark;
                 c->controlLen--;
                 return c->supported ? -1 : 0;
@@ -2678,26 +2657,26 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             {
                 uint32_t endJump = UINT32_MAX;
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_JUMP, 0, UINT32_MAX, clause->start, clause->end, &endJump)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_JUMP, 0, UINT32_MAX, clause->start, clause->end, &endJump)
                     != 0)
                 {
                     c->localLen = scopeMark;
                     c->controlLen--;
                     return -1;
                 }
-                if (!HOPMirStmtLowerRecordControlJump(c, 0, endJump)) {
+                if (!H2MirStmtLowerRecordControlJump(c, 0, endJump)) {
                     c->localLen = scopeMark;
                     c->controlLen--;
                     return 0;
                 }
             }
             pendingNextClauseJump = pendingFalseJump;
-        } else if (clause->kind == HOPAst_DEFAULT) {
+        } else if (clause->kind == H2Ast_DEFAULT) {
             int32_t nextClause = c->ast->nodes[clauseNode].nextSibling;
             defaultBodyNode = clause->firstChild;
             if (defaultBodyNode < 0 || (uint32_t)defaultBodyNode >= c->ast->len
-                || c->ast->nodes[defaultBodyNode].kind != HOPAst_BLOCK || nextClause >= 0)
+                || c->ast->nodes[defaultBodyNode].kind != H2Ast_BLOCK || nextClause >= 0)
             {
                 c->supported = 0;
                 c->localLen = scopeMark;
@@ -2714,49 +2693,49 @@ static int HOPMirStmtLowerSwitch(HOPMirStmtLower* c, int32_t stmtNode) {
     }
     if (defaultBodyNode >= 0) {
         if (pendingNextClauseJump != UINT32_MAX) {
-            c->builder.insts[pendingNextClauseJump].aux = HOPMirStmtLowerFnPc(c);
+            c->builder.insts[pendingNextClauseJump].aux = H2MirStmtLowerFnPc(c);
             pendingNextClauseJump = UINT32_MAX;
         }
-        if (HOPMirStmtLowerBlock(c, defaultBodyNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerBlock(c, defaultBodyNode) != 0 || !c->supported) {
             c->localLen = scopeMark;
             c->controlLen--;
             return c->supported ? -1 : 0;
         }
     }
     {
-        uint32_t endPc = HOPMirStmtLowerFnPc(c);
+        uint32_t endPc = H2MirStmtLowerFnPc(c);
         if (pendingNextClauseJump != UINT32_MAX) {
             c->builder.insts[pendingNextClauseJump].aux = endPc;
         }
-        HOPMirStmtLowerFinishControl(c, 0, endPc);
+        H2MirStmtLowerFinishControl(c, 0, endPc);
     }
     c->localLen = scopeMark;
     return 0;
 }
 
-static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
-    const HOPAstNode* s = &c->ast->nodes[stmtNode];
-    int32_t           parts[4];
-    uint32_t          partLen = 0;
-    int32_t           cur = s->firstChild;
-    int               hasKey = (s->flags & HOPAstFlag_FOR_IN_HAS_KEY) != 0;
-    int               keyRef = (s->flags & HOPAstFlag_FOR_IN_KEY_REF) != 0;
-    int               valueRef = (s->flags & HOPAstFlag_FOR_IN_VALUE_REF) != 0;
-    int               valueDiscard = (s->flags & HOPAstFlag_FOR_IN_VALUE_DISCARD) != 0;
-    int32_t           keyNode = -1;
-    int32_t           valueNode = -1;
-    int32_t           sourceNode = -1;
-    int32_t           bodyNode = -1;
-    uint32_t          scopeMark = c->localLen;
-    uint32_t          sourceSlot = UINT32_MAX;
-    uint32_t          iterSlot = UINT32_MAX;
-    uint32_t          keySlot = UINT32_MAX;
-    uint32_t          valueSlot = UINT32_MAX;
-    uint32_t          loopStartPc;
-    uint32_t          continueTargetPc;
-    uint32_t          loopEndPc;
-    uint32_t          condFalseJump = UINT32_MAX;
-    uint16_t          iterFlags = 0;
+static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
+    const H2AstNode* s = &c->ast->nodes[stmtNode];
+    int32_t          parts[4];
+    uint32_t         partLen = 0;
+    int32_t          cur = s->firstChild;
+    int              hasKey = (s->flags & H2AstFlag_FOR_IN_HAS_KEY) != 0;
+    int              keyRef = (s->flags & H2AstFlag_FOR_IN_KEY_REF) != 0;
+    int              valueRef = (s->flags & H2AstFlag_FOR_IN_VALUE_REF) != 0;
+    int              valueDiscard = (s->flags & H2AstFlag_FOR_IN_VALUE_DISCARD) != 0;
+    int32_t          keyNode = -1;
+    int32_t          valueNode = -1;
+    int32_t          sourceNode = -1;
+    int32_t          bodyNode = -1;
+    uint32_t         scopeMark = c->localLen;
+    uint32_t         sourceSlot = UINT32_MAX;
+    uint32_t         iterSlot = UINT32_MAX;
+    uint32_t         keySlot = UINT32_MAX;
+    uint32_t         valueSlot = UINT32_MAX;
+    uint32_t         loopStartPc;
+    uint32_t         continueTargetPc;
+    uint32_t         loopEndPc;
+    uint32_t         condFalseJump = UINT32_MAX;
+    uint16_t         iterFlags = 0;
     if (keyRef) {
         c->supported = 0;
         return 0;
@@ -2780,7 +2759,7 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
         bodyNode = parts[2];
     }
     if (bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len
-        || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK || sourceNode < 0
+        || c->ast->nodes[bodyNode].kind != H2Ast_BLOCK || sourceNode < 0
         || (uint32_t)sourceNode >= c->ast->len)
     {
         c->supported = 0;
@@ -2788,47 +2767,46 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
     }
     if (hasKey
         && (keyNode < 0 || (uint32_t)keyNode >= c->ast->len
-            || c->ast->nodes[keyNode].kind != HOPAst_IDENT))
+            || c->ast->nodes[keyNode].kind != H2Ast_IDENT))
     {
         c->supported = 0;
         return 0;
     }
     if (!valueDiscard
         && (valueNode < 0 || (uint32_t)valueNode >= c->ast->len
-            || c->ast->nodes[valueNode].kind != HOPAst_IDENT))
+            || c->ast->nodes[valueNode].kind != H2Ast_IDENT))
     {
         c->supported = 0;
         return 0;
     }
-    if ((hasKey ? HOPMirIterFlag_HAS_KEY : 0u) != 0u) {
-        iterFlags |= HOPMirIterFlag_HAS_KEY;
+    if ((hasKey ? H2MirIterFlag_HAS_KEY : 0u) != 0u) {
+        iterFlags |= H2MirIterFlag_HAS_KEY;
     }
     if (keyRef) {
-        iterFlags |= HOPMirIterFlag_KEY_REF;
+        iterFlags |= H2MirIterFlag_KEY_REF;
     }
     if (valueRef) {
-        iterFlags |= HOPMirIterFlag_VALUE_REF;
+        iterFlags |= H2MirIterFlag_VALUE_REF;
     }
     if (valueDiscard) {
-        iterFlags |= HOPMirIterFlag_VALUE_DISCARD;
+        iterFlags |= H2MirIterFlag_VALUE_DISCARD;
     }
-    if (HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &sourceSlot) != 0
-        || HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &iterSlot) != 0)
+    if (H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &sourceSlot) != 0
+        || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &iterSlot) != 0)
     {
         return -1;
     }
-    if (HOPMirStmtLowerExpr(c, sourceNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerExpr(c, sourceNode) != 0 || !c->supported) {
         c->localLen = scopeMark;
         return c->supported ? -1 : 0;
     }
-    if (HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_STORE, 0, sourceSlot, s->start, s->end, NULL)
-            != 0
-        || HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_LOAD, 0, sourceSlot, s->start, s->end, NULL)
+    if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, sourceSlot, s->start, s->end, NULL) != 0
+        || H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, sourceSlot, s->start, s->end, NULL)
                != 0
-        || HOPMirStmtLowerAppendInst(
-               c, HOPMirOp_ITER_INIT, iterFlags, (uint32_t)sourceNode, s->start, s->end, NULL)
+        || H2MirStmtLowerAppendInst(
+               c, H2MirOp_ITER_INIT, iterFlags, (uint32_t)sourceNode, s->start, s->end, NULL)
                != 0
-        || HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_STORE, 0, iterSlot, s->start, s->end, NULL)
+        || H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, iterSlot, s->start, s->end, NULL)
                != 0)
     {
         c->localLen = scopeMark;
@@ -2838,7 +2816,7 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
         && !(
             c->ast->nodes[keyNode].dataEnd == c->ast->nodes[keyNode].dataStart + 1u
             && c->src.ptr[c->ast->nodes[keyNode].dataStart] == '_')
-        && HOPMirStmtLowerPushLocal(
+        && H2MirStmtLowerPushLocal(
                c,
                c->ast->nodes[keyNode].dataStart,
                c->ast->nodes[keyNode].dataEnd,
@@ -2857,7 +2835,7 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
         && !(
             c->ast->nodes[valueNode].dataEnd == c->ast->nodes[valueNode].dataStart + 1u
             && c->src.ptr[c->ast->nodes[valueNode].dataStart] == '_')
-        && HOPMirStmtLowerPushLocal(
+        && H2MirStmtLowerPushLocal(
                c,
                c->ast->nodes[valueNode].dataStart,
                c->ast->nodes[valueNode].dataEnd,
@@ -2872,16 +2850,15 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
         c->localLen = scopeMark;
         return -1;
     }
-    loopStartPc = HOPMirStmtLowerFnPc(c);
-    if (!HOPMirStmtLowerPushControl(c, 1, loopStartPc)) {
+    loopStartPc = H2MirStmtLowerFnPc(c);
+    if (!H2MirStmtLowerPushControl(c, 1, loopStartPc)) {
         c->localLen = scopeMark;
         return 0;
     }
-    if (HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_LOAD, 0, iterSlot, s->start, s->end, NULL) != 0
-        || HOPMirStmtLowerAppendInst(c, HOPMirOp_ITER_NEXT, iterFlags, 0, s->start, s->end, NULL)
-               != 0
-        || HOPMirStmtLowerAppendInst(
-               c, HOPMirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
+    if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, iterSlot, s->start, s->end, NULL) != 0
+        || H2MirStmtLowerAppendInst(c, H2MirOp_ITER_NEXT, iterFlags, 0, s->start, s->end, NULL) != 0
+        || H2MirStmtLowerAppendInst(
+               c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
                != 0)
     {
         c->localLen = scopeMark;
@@ -2889,7 +2866,7 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
         return -1;
     }
     if (!valueDiscard && valueSlot != UINT32_MAX) {
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
             != 0)
         {
             c->localLen = scopeMark;
@@ -2897,14 +2874,14 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
             return -1;
         }
     } else if (!valueDiscard) {
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
             c->localLen = scopeMark;
             c->controlLen--;
             return -1;
         }
     }
     if (hasKey && keySlot != UINT32_MAX) {
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_LOCAL_STORE, 0, keySlot, s->start, s->end, NULL)
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_STORE, 0, keySlot, s->start, s->end, NULL)
             != 0)
         {
             c->localLen = scopeMark;
@@ -2912,50 +2889,50 @@ static int HOPMirStmtLowerForIn(HOPMirStmtLower* c, int32_t stmtNode) {
             return -1;
         }
     } else if (hasKey) {
-        if (HOPMirStmtLowerAppendInst(c, HOPMirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
+        if (H2MirStmtLowerAppendInst(c, H2MirOp_DROP, 0, 0, s->start, s->end, NULL) != 0) {
             c->localLen = scopeMark;
             c->controlLen--;
             return -1;
         }
     }
-    if (HOPMirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
         c->localLen = scopeMark;
         c->controlLen--;
         return c->supported ? -1 : 0;
     }
-    continueTargetPc = HOPMirStmtLowerFnPc(c);
-    if (HOPMirStmtLowerAppendInst(c, HOPMirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
+    continueTargetPc = H2MirStmtLowerFnPc(c);
+    if (H2MirStmtLowerAppendInst(c, H2MirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
         c->localLen = scopeMark;
         c->controlLen--;
         return -1;
     }
-    loopEndPc = HOPMirStmtLowerFnPc(c);
+    loopEndPc = H2MirStmtLowerFnPc(c);
     c->builder.insts[condFalseJump].aux = loopEndPc;
-    HOPMirStmtLowerFinishControl(c, continueTargetPc, loopEndPc);
+    H2MirStmtLowerFinishControl(c, continueTargetPc, loopEndPc);
     c->localLen = scopeMark;
     return 0;
 }
 
-static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
-    const HOPAstNode* s = &c->ast->nodes[stmtNode];
-    int32_t           parts[4];
-    uint32_t          partLen = 0;
-    int32_t           cur = s->firstChild;
-    int32_t           initNode = -1;
-    int32_t           condNode = -1;
-    int32_t           postNode = -1;
-    int32_t           bodyNode = -1;
-    uint32_t          bodyStart;
-    uint32_t          scopeMark = c->localLen;
-    uint32_t          loopStartPc;
-    uint32_t          condFalseJump = UINT32_MAX;
-    uint32_t          continueTargetPc;
-    uint32_t          loopEndPc;
-    uint32_t          semi1 = 0;
-    uint32_t          semi2 = 0;
-    int               hasSemicolons;
-    if ((s->flags & HOPAstFlag_FOR_IN) != 0) {
-        return HOPMirStmtLowerForIn(c, stmtNode);
+static int H2MirStmtLowerFor(H2MirStmtLower* c, int32_t stmtNode) {
+    const H2AstNode* s = &c->ast->nodes[stmtNode];
+    int32_t          parts[4];
+    uint32_t         partLen = 0;
+    int32_t          cur = s->firstChild;
+    int32_t          initNode = -1;
+    int32_t          condNode = -1;
+    int32_t          postNode = -1;
+    int32_t          bodyNode = -1;
+    uint32_t         bodyStart;
+    uint32_t         scopeMark = c->localLen;
+    uint32_t         loopStartPc;
+    uint32_t         condFalseJump = UINT32_MAX;
+    uint32_t         continueTargetPc;
+    uint32_t         loopEndPc;
+    uint32_t         semi1 = 0;
+    uint32_t         semi2 = 0;
+    int              hasSemicolons;
+    if ((s->flags & H2AstFlag_FOR_IN) != 0) {
+        return H2MirStmtLowerForIn(c, stmtNode);
     }
     while (cur >= 0 && partLen < 4u) {
         parts[partLen++] = cur;
@@ -2966,12 +2943,12 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
         return 0;
     }
     bodyNode = parts[partLen - 1u];
-    if ((uint32_t)bodyNode >= c->ast->len || c->ast->nodes[bodyNode].kind != HOPAst_BLOCK) {
+    if ((uint32_t)bodyNode >= c->ast->len || c->ast->nodes[bodyNode].kind != H2Ast_BLOCK) {
         c->supported = 0;
         return 0;
     }
     bodyStart = c->ast->nodes[bodyNode].start;
-    hasSemicolons = HOPMirStmtLowerRangeHasChar(c->src, s->start, bodyStart, ';');
+    hasSemicolons = H2MirStmtLowerRangeHasChar(c->src, s->start, bodyStart, ';');
     if (!hasSemicolons) {
         if (partLen == 2u) {
             condNode = parts[0];
@@ -2981,14 +2958,14 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
         }
     } else {
         uint32_t i;
-        if (!HOPMirStmtLowerFindCharForward(c->src, s->start, bodyStart, ';', &semi1)
-            || !HOPMirStmtLowerFindCharForward(c->src, semi1 + 1u, bodyStart, ';', &semi2))
+        if (!H2MirStmtLowerFindCharForward(c->src, s->start, bodyStart, ';', &semi1)
+            || !H2MirStmtLowerFindCharForward(c->src, semi1 + 1u, bodyStart, ';', &semi2))
         {
             c->supported = 0;
             return 0;
         }
         for (i = 0; i + 1u < partLen; i++) {
-            const HOPAstNode* part = &c->ast->nodes[parts[i]];
+            const H2AstNode* part = &c->ast->nodes[parts[i]];
             if (part->end <= semi1) {
                 if (initNode >= 0) {
                     c->supported = 0;
@@ -3014,16 +2991,15 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
         }
     }
     if (initNode >= 0) {
-        if (c->ast->nodes[initNode].kind == HOPAst_VAR
-            || c->ast->nodes[initNode].kind == HOPAst_CONST
-            || c->ast->nodes[initNode].kind == HOPAst_SHORT_ASSIGN)
+        if (c->ast->nodes[initNode].kind == H2Ast_VAR || c->ast->nodes[initNode].kind == H2Ast_CONST
+            || c->ast->nodes[initNode].kind == H2Ast_SHORT_ASSIGN)
         {
-            if (HOPMirStmtLowerStmt(c, initNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerStmt(c, initNode) != 0 || !c->supported) {
                 c->localLen = scopeMark;
                 return c->supported ? -1 : 0;
             }
         } else if (
-            HOPMirStmtLowerExprNodeAsStmt(
+            H2MirStmtLowerExprNodeAsStmt(
                 c, initNode, c->ast->nodes[initNode].start, c->ast->nodes[initNode].end)
                 != 0
             || !c->supported)
@@ -3032,19 +3008,19 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
             return c->supported ? -1 : 0;
         }
     }
-    loopStartPc = HOPMirStmtLowerFnPc(c);
-    if (!HOPMirStmtLowerPushControl(c, 1, loopStartPc)) {
+    loopStartPc = H2MirStmtLowerFnPc(c);
+    if (!H2MirStmtLowerPushControl(c, 1, loopStartPc)) {
         c->localLen = scopeMark;
         return 0;
     }
     if (condNode >= 0) {
-        if (HOPMirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
+        if (H2MirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
             c->localLen = scopeMark;
             c->controlLen--;
             return c->supported ? -1 : 0;
         }
-        if (HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
+        if (H2MirStmtLowerAppendInst(
+                c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
             != 0)
         {
             c->localLen = scopeMark;
@@ -3052,14 +3028,14 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
             return -1;
         }
     }
-    if (HOPMirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+    if (H2MirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
         c->localLen = scopeMark;
         c->controlLen--;
         return c->supported ? -1 : 0;
     }
-    continueTargetPc = postNode >= 0 ? HOPMirStmtLowerFnPc(c) : loopStartPc;
+    continueTargetPc = postNode >= 0 ? H2MirStmtLowerFnPc(c) : loopStartPc;
     if (postNode >= 0
-        && (HOPMirStmtLowerExprNodeAsStmt(
+        && (H2MirStmtLowerExprNodeAsStmt(
                 c, postNode, c->ast->nodes[postNode].start, c->ast->nodes[postNode].end)
                 != 0
             || !c->supported))
@@ -3068,38 +3044,38 @@ static int HOPMirStmtLowerFor(HOPMirStmtLower* c, int32_t stmtNode) {
         c->controlLen--;
         return c->supported ? -1 : 0;
     }
-    if (HOPMirStmtLowerAppendInst(c, HOPMirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
+    if (H2MirStmtLowerAppendInst(c, H2MirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL) != 0) {
         c->localLen = scopeMark;
         c->controlLen--;
         return -1;
     }
-    loopEndPc = HOPMirStmtLowerFnPc(c);
+    loopEndPc = H2MirStmtLowerFnPc(c);
     if (condFalseJump != UINT32_MAX) {
         c->builder.insts[condFalseJump].aux = loopEndPc;
     }
-    HOPMirStmtLowerFinishControl(c, continueTargetPc, loopEndPc);
+    H2MirStmtLowerFinishControl(c, continueTargetPc, loopEndPc);
     c->localLen = scopeMark;
     return 0;
 }
 
-static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
-    const HOPAstNode* s;
+static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
+    const H2AstNode* s;
     if (stmtNode < 0 || (uint32_t)stmtNode >= c->ast->len) {
         c->supported = 0;
         return 0;
     }
     s = &c->ast->nodes[stmtNode];
     switch (s->kind) {
-        case HOPAst_BLOCK:  return HOPMirStmtLowerBlock(c, stmtNode);
-        case HOPAst_IF:     return HOPMirStmtLowerIf(c, stmtNode);
-        case HOPAst_SWITCH: return HOPMirStmtLowerSwitch(c, stmtNode);
-        case HOPAst_FOR:    return HOPMirStmtLowerFor(c, stmtNode);
-        case HOPAst_BREAK:  {
-            uint32_t            jumpInst = UINT32_MAX;
-            HOPMirLowerControl* control = HOPMirStmtLowerCurrentBreakable(c);
+        case H2Ast_BLOCK:  return H2MirStmtLowerBlock(c, stmtNode);
+        case H2Ast_IF:     return H2MirStmtLowerIf(c, stmtNode);
+        case H2Ast_SWITCH: return H2MirStmtLowerSwitch(c, stmtNode);
+        case H2Ast_FOR:    return H2MirStmtLowerFor(c, stmtNode);
+        case H2Ast_BREAK:  {
+            uint32_t           jumpInst = UINT32_MAX;
+            H2MirLowerControl* control = H2MirStmtLowerCurrentBreakable(c);
             if (c->loweringDeferred || control == NULL) {
                 if (c->loweringDeferred) {
-                    HOPMirLowerStmtSetUnsupportedDetail(
+                    H2MirLowerStmtSetUnsupportedDetail(
                         c,
                         s->start,
                         s->end,
@@ -3110,27 +3086,27 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 return 0;
             }
             if (c->deferredStmtLen > 0
-                && (HOPMirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
+                && (H2MirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
             {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_JUMP, 0, UINT32_MAX, s->start, s->end, &jumpInst)
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_JUMP, 0, UINT32_MAX, s->start, s->end, &jumpInst)
                 != 0)
             {
                 return -1;
             }
-            if (!HOPMirStmtLowerRecordControlJump(c, 0, jumpInst)) {
+            if (!H2MirStmtLowerRecordControlJump(c, 0, jumpInst)) {
                 return 0;
             }
             return 0;
         }
-        case HOPAst_CONTINUE: {
-            uint32_t            jumpInst = UINT32_MAX;
-            HOPMirLowerControl* control = HOPMirStmtLowerCurrentContinuable(c);
+        case H2Ast_CONTINUE: {
+            uint32_t           jumpInst = UINT32_MAX;
+            H2MirLowerControl* control = H2MirStmtLowerCurrentContinuable(c);
             if (c->loweringDeferred || control == NULL) {
                 if (c->loweringDeferred) {
-                    HOPMirLowerStmtSetUnsupportedDetail(
+                    H2MirLowerStmtSetUnsupportedDetail(
                         c,
                         s->start,
                         s->end,
@@ -3141,26 +3117,26 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 return 0;
             }
             if (c->deferredStmtLen > 0
-                && (HOPMirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
+                && (H2MirStmtLowerEmitDeferredForControl(c, control) != 0 || !c->supported))
             {
                 return c->supported ? -1 : 0;
             }
-            if (HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_JUMP, 0, control->continueTargetPc, s->start, s->end, &jumpInst)
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_JUMP, 0, control->continueTargetPc, s->start, s->end, &jumpInst)
                 != 0)
             {
                 return -1;
             }
-            if (!HOPMirStmtLowerRecordControlJump(c, 1, jumpInst)) {
+            if (!H2MirStmtLowerRecordControlJump(c, 1, jumpInst)) {
                 return 0;
             }
             return 0;
         }
-        case HOPAst_RETURN: {
+        case H2Ast_RETURN: {
             int32_t  exprNode = s->firstChild;
             uint32_t exprCount = 0;
             if (c->loweringDeferred) {
-                HOPMirLowerStmtSetUnsupportedDetail(
+                H2MirLowerStmtSetUnsupportedDetail(
                     c,
                     s->start,
                     s->end,
@@ -3169,20 +3145,20 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             if (exprNode < 0) {
                 if (c->deferredStmtLen > 0
-                    && (HOPMirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
+                    && (H2MirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
                 {
                     return c->supported ? -1 : 0;
                 }
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_RETURN_VOID, 0, 0, s->start, s->end, NULL);
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_RETURN_VOID, 0, 0, s->start, s->end, NULL);
             }
             if (c->deferredStmtLen > 0
-                && (HOPMirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
+                && (H2MirStmtLowerEmitDeferredRange(c, 0) != 0 || !c->supported))
             {
                 return c->supported ? -1 : 0;
             }
-            if (c->ast->nodes[exprNode].kind == HOPAst_EXPR_LIST) {
-                exprCount = HOPMirStmtLowerAstListCount(c->ast, exprNode);
+            if (c->ast->nodes[exprNode].kind == H2Ast_EXPR_LIST) {
+                exprCount = H2MirStmtLowerAstListCount(c->ast, exprNode);
             } else {
                 while (exprNode >= 0) {
                     exprCount++;
@@ -3191,41 +3167,41 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 exprNode = s->firstChild;
             }
             if (exprCount == 1u) {
-                if (c->ast->nodes[exprNode].kind == HOPAst_EXPR_LIST) {
-                    exprNode = HOPMirStmtLowerAstListItemAt(c->ast, exprNode, 0u);
+                if (c->ast->nodes[exprNode].kind == H2Ast_EXPR_LIST) {
+                    exprNode = H2MirStmtLowerAstListItemAt(c->ast, exprNode, 0u);
                     if (exprNode < 0) {
                         c->supported = 0;
                         return 0;
                     }
                 }
-                if (HOPMirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, exprNode) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
             } else {
                 int32_t returnTypeNode = c->functionReturnTypeNode;
                 int32_t tupleReturnTypeNode = returnTypeNode;
                 if (tupleReturnTypeNode >= 0 && (uint32_t)tupleReturnTypeNode < c->ast->len
-                    && c->ast->nodes[tupleReturnTypeNode].kind == HOPAst_TYPE_OPTIONAL)
+                    && c->ast->nodes[tupleReturnTypeNode].kind == H2Ast_TYPE_OPTIONAL)
                 {
                     tupleReturnTypeNode = c->ast->nodes[tupleReturnTypeNode].firstChild;
                 }
                 if (exprCount > UINT16_MAX || returnTypeNode < 0 || tupleReturnTypeNode < 0
                     || (uint32_t)tupleReturnTypeNode >= c->ast->len
-                    || c->ast->nodes[tupleReturnTypeNode].kind != HOPAst_TYPE_TUPLE
-                    || HOPMirStmtLowerAstListCount(c->ast, tupleReturnTypeNode) != exprCount)
+                    || c->ast->nodes[tupleReturnTypeNode].kind != H2Ast_TYPE_TUPLE
+                    || H2MirStmtLowerAstListCount(c->ast, tupleReturnTypeNode) != exprCount)
                 {
                     c->supported = 0;
                     return 0;
                 }
-                if (c->ast->nodes[exprNode].kind == HOPAst_EXPR_LIST) {
+                if (c->ast->nodes[exprNode].kind == H2Ast_EXPR_LIST) {
                     uint32_t i;
                     for (i = 0; i < exprCount; i++) {
-                        int32_t itemNode = HOPMirStmtLowerAstListItemAt(c->ast, exprNode, i);
+                        int32_t itemNode = H2MirStmtLowerAstListItemAt(c->ast, exprNode, i);
                         if (itemNode < 0) {
                             c->supported = 0;
                             return 0;
                         }
-                        if (HOPMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                        if (H2MirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
                             return c->supported ? -1 : 0;
                         }
                     }
@@ -3234,32 +3210,32 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                     while (returnExprNode >= 0) {
                         int32_t itemNode = returnExprNode;
                         returnExprNode = c->ast->nodes[returnExprNode].nextSibling;
-                        if (HOPMirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                        if (H2MirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
                             return c->supported ? -1 : 0;
                         }
                     }
                 }
-                if (HOPMirStmtLowerAppendTupleMake(
+                if (H2MirStmtLowerAppendTupleMake(
                         c, exprCount, tupleReturnTypeNode, s->start, s->end)
                     != 0)
                 {
                     return -1;
                 }
             }
-            return HOPMirStmtLowerAppendInst(c, HOPMirOp_RETURN, 0, 0, s->start, s->end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_RETURN, 0, 0, s->start, s->end, NULL);
         }
-        case HOPAst_ASSERT: {
+        case H2Ast_ASSERT: {
             int32_t condNode = s->firstChild;
             if (condNode < 0) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, condNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(c, HOPMirOp_ASSERT, 0, 0, s->start, s->end, NULL);
+            return H2MirStmtLowerAppendInst(c, H2MirOp_ASSERT, 0, 0, s->start, s->end, NULL);
         }
-        case HOPAst_MULTI_ASSIGN: {
+        case H2Ast_MULTI_ASSIGN: {
             int32_t  lhsList = s->firstChild;
             int32_t  rhsList = lhsList >= 0 ? c->ast->nodes[lhsList].nextSibling : -1;
             uint32_t lhsCount;
@@ -3267,83 +3243,83 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             uint32_t i;
             uint32_t tempSlots[256];
             uint32_t tupleTempSlot = UINT32_MAX;
-            if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != HOPAst_EXPR_LIST
-                || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
+            if (lhsList < 0 || rhsList < 0 || c->ast->nodes[lhsList].kind != H2Ast_EXPR_LIST
+                || c->ast->nodes[rhsList].kind != H2Ast_EXPR_LIST)
             {
                 c->supported = 0;
                 return 0;
             }
-            lhsCount = HOPMirStmtLowerAstListCount(c->ast, lhsList);
-            rhsCount = HOPMirStmtLowerAstListCount(c->ast, rhsList);
+            lhsCount = H2MirStmtLowerAstListCount(c->ast, lhsList);
+            rhsCount = H2MirStmtLowerAstListCount(c->ast, rhsList);
             if (lhsCount == 0u || lhsCount > 256u || (rhsCount != lhsCount && rhsCount != 1u)) {
                 c->supported = 0;
                 return 0;
             }
             if (rhsCount == lhsCount) {
                 for (i = 0; i < rhsCount; i++) {
-                    int32_t rhsExpr = HOPMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    int32_t rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
                     if (rhsExpr < 0
-                        || HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
+                        || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
                     {
                         return rhsExpr < 0 ? 0 : -1;
                     }
-                    if (HOPMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                    if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 }
             } else {
-                int32_t rhsExpr = HOPMirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
+                int32_t rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
                 if (rhsExpr < 0
-                    || HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
+                    || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
                 {
                     return rhsExpr < 0 ? 0 : -1;
                 }
-                if (HOPMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
             }
             for (i = 0; i < lhsCount; i++) {
-                int32_t lhsExpr = HOPMirStmtLowerAstListItemAt(c->ast, lhsList, i);
+                int32_t lhsExpr = H2MirStmtLowerAstListItemAt(c->ast, lhsList, i);
                 if (lhsExpr < 0) {
                     c->supported = 0;
                     return 0;
                 }
                 if (rhsCount == lhsCount) {
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 } else {
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
-                    if (HOPMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0) {
+                    if (H2MirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0) {
                         return -1;
                     }
-                    if (HOPMirStmtLowerAppendInst(c, HOPMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 }
-                if (HOPMirStmtLowerStoreToLValueFromStack(c, lhsExpr, s->start, s->end) != 0
+                if (H2MirStmtLowerStoreToLValueFromStack(c, lhsExpr, s->start, s->end) != 0
                     || !c->supported)
                 {
                     return c->supported ? -1 : 0;
@@ -3351,7 +3327,7 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             return 0;
         }
-        case HOPAst_SHORT_ASSIGN: {
+        case H2Ast_SHORT_ASSIGN: {
             int32_t  nameList = s->firstChild;
             int32_t  rhsList = nameList >= 0 ? c->ast->nodes[nameList].nextSibling : -1;
             uint32_t lhsCount;
@@ -3363,34 +3339,34 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             uint8_t  isExisting[256];
             uint8_t  isBlank[256];
             uint32_t tupleTempSlot = UINT32_MAX;
-            if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != HOPAst_NAME_LIST
-                || c->ast->nodes[rhsList].kind != HOPAst_EXPR_LIST)
+            if (nameList < 0 || rhsList < 0 || c->ast->nodes[nameList].kind != H2Ast_NAME_LIST
+                || c->ast->nodes[rhsList].kind != H2Ast_EXPR_LIST)
             {
                 c->supported = 0;
                 return 0;
             }
-            lhsCount = HOPMirStmtLowerAstListCount(c->ast, nameList);
-            rhsCount = HOPMirStmtLowerAstListCount(c->ast, rhsList);
+            lhsCount = H2MirStmtLowerAstListCount(c->ast, nameList);
+            rhsCount = H2MirStmtLowerAstListCount(c->ast, rhsList);
             if (lhsCount == 0u || lhsCount > 256u || (rhsCount != lhsCount && rhsCount != 1u)) {
                 c->supported = 0;
                 return 0;
             }
             for (i = 0; i < lhsCount; i++) {
-                int32_t           nameNode = HOPMirStmtLowerAstListItemAt(c->ast, nameList, i);
-                const HOPAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
-                int               mutable = 0;
-                uint32_t          slot = 0;
-                if (name == NULL || name->kind != HOPAst_IDENT) {
+                int32_t          nameNode = H2MirStmtLowerAstListItemAt(c->ast, nameList, i);
+                const H2AstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
+                int              mutable = 0;
+                uint32_t         slot = 0;
+                if (name == NULL || name->kind != H2Ast_IDENT) {
                     c->supported = 0;
                     return 0;
                 }
-                isBlank[i] = (uint8_t)HOPMirStmtLowerNameEqLiteral(
+                isBlank[i] = (uint8_t)H2MirStmtLowerNameEqLiteral(
                     c, name->dataStart, name->dataEnd, "_");
                 isExisting[i] = 0;
                 existingSlots[i] = UINT32_MAX;
                 existingMutable[i] = 0;
                 if (!isBlank[i]
-                    && HOPMirStmtLowerFindLocal(c, name->dataStart, name->dataEnd, &slot, &mutable))
+                    && H2MirStmtLowerFindLocal(c, name->dataStart, name->dataEnd, &slot, &mutable))
                 {
                     isExisting[i] = 1;
                     existingSlots[i] = slot;
@@ -3399,51 +3375,50 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             if (rhsCount == lhsCount) {
                 for (i = 0; i < rhsCount; i++) {
-                    int32_t rhsExpr = HOPMirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    int32_t rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
                     if (rhsExpr < 0
-                        || HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
+                        || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
                     {
                         return rhsExpr < 0 ? 0 : -1;
                     }
-                    if (HOPMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                    if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 }
             } else {
-                int32_t rhsExpr = HOPMirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
+                int32_t rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, 0u);
                 if (rhsExpr < 0
-                    || HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
+                    || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0)
                 {
                     return rhsExpr < 0 ? 0 : -1;
                 }
-                if (HOPMirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
                     return c->supported ? -1 : 0;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
                     != 0)
                 {
                     return -1;
                 }
                 for (i = 0; i < lhsCount; i++) {
-                    if (HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0) {
+                    if (H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0) {
                         return -1;
                     }
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
                             != 0
-                        || HOPMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0
-                        || HOPMirStmtLowerAppendInst(
-                               c, HOPMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                        || H2MirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0
+                        || H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, s->start, s->end, NULL)
                                != 0
-                        || HOPMirStmtLowerAppendInst(
-                               c, HOPMirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
+                        || H2MirStmtLowerAppendInst(
+                               c, H2MirOp_LOCAL_STORE, 0, tempSlots[i], s->start, s->end, NULL)
                                != 0)
                     {
                         return -1;
@@ -3451,9 +3426,9 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 }
             }
             for (i = 0; i < lhsCount; i++) {
-                int32_t           nameNode = HOPMirStmtLowerAstListItemAt(c->ast, nameList, i);
-                const HOPAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
-                uint32_t          targetSlot = UINT32_MAX;
+                int32_t          nameNode = H2MirStmtLowerAstListItemAt(c->ast, nameList, i);
+                const H2AstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
+                uint32_t         targetSlot = UINT32_MAX;
                 if (name == NULL) {
                     c->supported = 0;
                     return 0;
@@ -3461,8 +3436,8 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 if (isBlank[i]) {
                     continue;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_LOAD, 0, tempSlots[i], s->start, s->end, NULL)
                     != 0)
                 {
                     return -1;
@@ -3474,7 +3449,7 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                     }
                     targetSlot = existingSlots[i];
                 } else if (
-                    HOPMirStmtLowerPushLocal(
+                    H2MirStmtLowerPushLocal(
                         c,
                         name->dataStart,
                         name->dataEnd,
@@ -3482,15 +3457,15 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                         0,
                         0,
                         -1,
-                        rhsCount == lhsCount ? HOPMirStmtLowerAstListItemAt(c->ast, rhsList, i)
-                                             : HOPMirStmtLowerAstListItemAt(c->ast, rhsList, 0u),
+                        rhsCount == lhsCount ? H2MirStmtLowerAstListItemAt(c->ast, rhsList, i)
+                                             : H2MirStmtLowerAstListItemAt(c->ast, rhsList, 0u),
                         &targetSlot)
                     != 0)
                 {
                     return -1;
                 }
-                if (HOPMirStmtLowerAppendInst(
-                        c, HOPMirOp_LOCAL_STORE, 0, targetSlot, s->start, s->end, NULL)
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_LOCAL_STORE, 0, targetSlot, s->start, s->end, NULL)
                     != 0)
                 {
                     return -1;
@@ -3498,66 +3473,66 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
             }
             return 0;
         }
-        case HOPAst_EXPR_STMT: return HOPMirStmtLowerExprStmt(c, stmtNode);
-        case HOPAst_DEL:       return HOPMirStmtLowerDel(c, stmtNode);
-        case HOPAst_CONST_BLOCK:
+        case H2Ast_EXPR_STMT: return H2MirStmtLowerExprStmt(c, stmtNode);
+        case H2Ast_DEL:       return H2MirStmtLowerDel(c, stmtNode);
+        case H2Ast_CONST_BLOCK:
             /* Consteval blocks are compile-time-only and do not execute at runtime. */
             return 0;
-        case HOPAst_VAR:
-        case HOPAst_CONST: {
+        case H2Ast_VAR:
+        case H2Ast_CONST: {
             int32_t  firstChild = s->firstChild;
             int32_t  typeNode = -1;
-            int32_t  initNode = HOPMirStmtLowerVarInitExprNode(c->ast, stmtNode);
+            int32_t  initNode = H2MirStmtLowerVarInitExprNode(c->ast, stmtNode);
             int32_t  tupleInitNode = -1;
             uint32_t slot = 0;
             if (firstChild < 0) {
                 c->supported = 0;
                 return 0;
             }
-            if (c->ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
-                uint32_t nameCount = HOPMirStmtLowerAstListCount(c->ast, firstChild);
+            if (c->ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
+                uint32_t nameCount = H2MirStmtLowerAstListCount(c->ast, firstChild);
                 uint32_t initCount = 0;
                 uint32_t tupleTempSlot = UINT32_MAX;
                 uint32_t nameLocalStart = c->localLen;
                 int      useTupleInitTemp = 0;
                 uint32_t i;
-                typeNode = HOPMirStmtLowerVarLikeDeclTypeNode(c->ast, stmtNode);
+                typeNode = H2MirStmtLowerVarLikeDeclTypeNode(c->ast, stmtNode);
                 if (nameCount == 0u || (initNode < 0 && typeNode < 0)) {
                     c->supported = 0;
                     return 0;
                 }
                 if (initNode >= 0) {
-                    if (c->ast->nodes[initNode].kind != HOPAst_EXPR_LIST) {
+                    if (c->ast->nodes[initNode].kind != H2Ast_EXPR_LIST) {
                         c->supported = 0;
                         return 0;
                     }
-                    initCount = HOPMirStmtLowerAstListCount(c->ast, initNode);
+                    initCount = H2MirStmtLowerAstListCount(c->ast, initNode);
                     if (initCount == 1u && nameCount > 1u) {
-                        tupleInitNode = HOPMirStmtLowerAstListItemAt(c->ast, initNode, 0u);
+                        tupleInitNode = H2MirStmtLowerAstListItemAt(c->ast, initNode, 0u);
                         if (tupleInitNode < 0) {
                             c->supported = 0;
                             return 0;
                         }
-                        useTupleInitTemp = c->ast->nodes[tupleInitNode].kind != HOPAst_TUPLE_EXPR;
+                        useTupleInitTemp = c->ast->nodes[tupleInitNode].kind != H2Ast_TUPLE_EXPR;
                     }
                 }
                 for (i = 0; i < nameCount; i++) {
-                    uint32_t localSlot = UINT32_MAX;
-                    int32_t  nameNode = HOPMirStmtLowerAstListItemAt(c->ast, firstChild, i);
-                    const HOPAstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
-                    if (name == NULL || name->kind != HOPAst_IDENT) {
+                    uint32_t         localSlot = UINT32_MAX;
+                    int32_t          nameNode = H2MirStmtLowerAstListItemAt(c->ast, firstChild, i);
+                    const H2AstNode* name = nameNode >= 0 ? &c->ast->nodes[nameNode] : NULL;
+                    if (name == NULL || name->kind != H2Ast_IDENT) {
                         c->supported = 0;
                         return 0;
                     }
-                    if (HOPMirStmtLowerPushLocal(
+                    if (H2MirStmtLowerPushLocal(
                             c,
                             name->dataStart,
                             name->dataEnd,
-                            s->kind == HOPAst_VAR,
+                            s->kind == H2Ast_VAR,
                             0,
                             initNode < 0,
                             typeNode,
-                            HOPMirStmtLowerVarLikeInitExprNodeAt(c->ast, stmtNode, (int32_t)i),
+                            H2MirStmtLowerVarLikeInitExprNodeAt(c->ast, stmtNode, (int32_t)i),
                             &localSlot)
                         != 0)
                     {
@@ -3565,68 +3540,62 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                     }
                 }
                 if (useTupleInitTemp) {
-                    if (HOPMirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0) {
+                    if (H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tupleTempSlot) != 0) {
                         return -1;
                     }
-                    if (HOPMirStmtLowerExpr(c, tupleInitNode) != 0 || !c->supported) {
+                    if (H2MirStmtLowerExpr(c, tupleInitNode) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_STORE, 0, tupleTempSlot, s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
                     }
                 }
                 for (i = 0; i < nameCount; i++) {
-                    int32_t itemInitNode = HOPMirStmtLowerVarLikeInitExprNodeAt(
+                    int32_t itemInitNode = H2MirStmtLowerVarLikeInitExprNodeAt(
                         c->ast, stmtNode, (int32_t)i);
                     slot = c->locals[nameLocalStart + i].slot;
                     if (itemInitNode < 0) {
                         if (useTupleInitTemp) {
-                            if (HOPMirStmtLowerAppendInst(
-                                    c,
-                                    HOPMirOp_LOCAL_LOAD,
-                                    0,
-                                    tupleTempSlot,
-                                    s->start,
-                                    s->end,
-                                    NULL)
+                            if (H2MirStmtLowerAppendInst(
+                                    c, H2MirOp_LOCAL_LOAD, 0, tupleTempSlot, s->start, s->end, NULL)
                                 != 0)
                             {
                                 return -1;
                             }
-                            if (HOPMirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0)
+                            if (H2MirStmtLowerAppendIntConst(c, (int64_t)i, s->start, s->end) != 0)
                             {
                                 return -1;
                             }
-                            if (HOPMirStmtLowerAppendInst(
-                                    c, HOPMirOp_INDEX, 0, 0, s->start, s->end, NULL)
+                            if (H2MirStmtLowerAppendInst(
+                                    c, H2MirOp_INDEX, 0, 0, s->start, s->end, NULL)
                                 != 0)
                             {
                                 return -1;
                             }
-                            if (HOPMirStmtLowerAppendInst(
-                                    c, HOPMirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL)
+                            if (H2MirStmtLowerAppendInst(
+                                    c, H2MirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL)
                                 != 0)
                             {
                                 return -1;
                             }
                             continue;
                         }
-                        if (HOPMirStmtLowerAppendInst(
-                                c, HOPMirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL)
+                        if (H2MirStmtLowerAppendInst(
+                                c, H2MirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL)
                             != 0)
                         {
                             return -1;
                         }
                         continue;
                     }
-                    if (HOPMirStmtLowerExpr(c, itemInitNode) != 0 || !c->supported) {
+                    if (H2MirStmtLowerExpr(c, itemInitNode) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
-                    if (HOPMirStmtLowerAppendInst(
-                            c, HOPMirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL)
+                    if (H2MirStmtLowerAppendInst(
+                            c, H2MirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL)
                         != 0)
                     {
                         return -1;
@@ -3634,18 +3603,18 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 }
                 return 0;
             }
-            if (HOPMirStmtLowerIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
+            if (H2MirStmtLowerIsTypeNodeKind(c->ast->nodes[firstChild].kind)) {
                 typeNode = firstChild;
             }
             if (initNode < 0 && typeNode < 0) {
                 c->supported = 0;
                 return 0;
             }
-            if (HOPMirStmtLowerPushLocal(
+            if (H2MirStmtLowerPushLocal(
                     c,
                     s->dataStart,
                     s->dataEnd,
-                    s->kind == HOPAst_VAR,
+                    s->kind == H2Ast_VAR,
                     0,
                     initNode < 0,
                     typeNode,
@@ -3656,49 +3625,49 @@ static int HOPMirStmtLowerStmt(HOPMirStmtLower* c, int32_t stmtNode) {
                 return -1;
             }
             if (initNode < 0) {
-                return HOPMirStmtLowerAppendInst(
-                    c, HOPMirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL);
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_LOCAL_ZERO, 0, slot, s->start, s->end, NULL);
             }
-            if (HOPMirStmtLowerExpr(c, initNode) != 0 || !c->supported) {
+            if (H2MirStmtLowerExpr(c, initNode) != 0 || !c->supported) {
                 return c->supported ? -1 : 0;
             }
-            return HOPMirStmtLowerAppendInst(
-                c, HOPMirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL);
+            return H2MirStmtLowerAppendInst(
+                c, H2MirOp_LOCAL_STORE, 0, slot, s->start, s->end, NULL);
         }
         default: c->supported = 0; return 0;
     }
 }
 
-int HOPMirLowerAppendSimpleFunctionWithOptions(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    const HOPMirLowerOptions* _Nullable options,
+int H2MirLowerAppendSimpleFunctionWithOptions(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    const H2MirLowerOptions* _Nullable options,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag) {
-    HOPMirStmtLower c;
-    HOPMirFunction  fn = { 0 };
-    HOPMirSourceRef sourceRef = { 0 };
-    HOPMirTypeRef   typeRef = { 0 };
-    uint32_t        sourceIndex = 0;
-    int32_t         returnTypeNode = -1;
-    int32_t         child;
+    H2Diag* _Nullable diag) {
+    H2MirStmtLower c;
+    H2MirFunction  fn = { 0 };
+    H2MirSourceRef sourceRef = { 0 };
+    H2MirTypeRef   typeRef = { 0 };
+    uint32_t       sourceIndex = 0;
+    int32_t        returnTypeNode = -1;
+    int32_t        child;
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     if (builder == NULL || outFunctionIndex == NULL || outSupported == NULL || arena == NULL
         || ast == NULL)
     {
-        HOPMirLowerStmtSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+        H2MirLowerStmtSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
     *outFunctionIndex = UINT32_MAX;
     *outSupported = 0;
-    if (bodyNode < 0 || (uint32_t)bodyNode >= ast->len || ast->nodes[bodyNode].kind != HOPAst_BLOCK)
+    if (bodyNode < 0 || (uint32_t)bodyNode >= ast->len || ast->nodes[bodyNode].kind != H2Ast_BLOCK)
     {
         return 0;
     }
@@ -3713,8 +3682,8 @@ int HOPMirLowerAppendSimpleFunctionWithOptions(
     c.builder = *builder;
     c.functionReturnTypeNode = -1;
     sourceRef.src = src;
-    if (HOPMirProgramBuilderAddSource(&c.builder, &sourceRef, &sourceIndex) != 0) {
-        HOPMirLowerStmtSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
+    if (H2MirProgramBuilderAddSource(&c.builder, &sourceRef, &sourceIndex) != 0) {
+        H2MirLowerStmtSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
     c.sourceIndex = sourceIndex;
@@ -3723,34 +3692,34 @@ int HOPMirLowerAppendSimpleFunctionWithOptions(
     fn.nameEnd = fnNode >= 0 && (uint32_t)fnNode < ast->len ? ast->nodes[fnNode].dataEnd : 0;
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
-    returnTypeNode = HOPMirStmtLowerFunctionReturnTypeNode(ast, fnNode);
+    returnTypeNode = H2MirStmtLowerFunctionReturnTypeNode(ast, fnNode);
     c.functionReturnTypeNode = returnTypeNode;
     if (returnTypeNode >= 0) {
         typeRef.astNode = (uint32_t)returnTypeNode;
         typeRef.sourceRef = sourceIndex;
         typeRef.flags = 0;
         typeRef.aux = 0;
-        if (HOPMirProgramBuilderAddType(&c.builder, &typeRef, &fn.typeRef) != 0) {
-            HOPMirLowerStmtSetDiag(
+        if (H2MirProgramBuilderAddType(&c.builder, &typeRef, &fn.typeRef) != 0) {
+            H2MirLowerStmtSetDiag(
                 diag,
-                HOPDiag_ARENA_OOM,
+                H2Diag_ARENA_OOM,
                 ast->nodes[returnTypeNode].start,
                 ast->nodes[returnTypeNode].end);
             return -1;
         }
     }
-    if (HOPMirProgramBuilderBeginFunction(&c.builder, &fn, &c.functionIndex) != 0) {
-        HOPMirLowerStmtSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
+    if (H2MirProgramBuilderBeginFunction(&c.builder, &fn, &c.functionIndex) != 0) {
+        H2MirLowerStmtSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
 
     if (fnNode >= 0 && (uint32_t)fnNode < ast->len) {
         child = ast->nodes[fnNode].firstChild;
         while (child >= 0) {
-            if (ast->nodes[child].kind == HOPAst_PARAM) {
+            if (ast->nodes[child].kind == H2Ast_PARAM) {
                 int32_t  paramTypeNode = ast->nodes[child].firstChild;
                 uint32_t slot = 0;
-                if (HOPMirStmtLowerPushLocal(
+                if (H2MirStmtLowerPushLocal(
                         &c,
                         ast->nodes[child].dataStart,
                         ast->nodes[child].dataEnd,
@@ -3765,23 +3734,23 @@ int HOPMirLowerAppendSimpleFunctionWithOptions(
                     return -1;
                 }
                 c.builder.funcs[c.functionIndex].paramCount++;
-                if ((ast->nodes[child].flags & HOPAstFlag_PARAM_VARIADIC) != 0u) {
-                    c.builder.funcs[c.functionIndex].flags |= HOPMirFunctionFlag_VARIADIC;
+                if ((ast->nodes[child].flags & H2AstFlag_PARAM_VARIADIC) != 0u) {
+                    c.builder.funcs[c.functionIndex].flags |= H2MirFunctionFlag_VARIADIC;
                 }
             }
             child = ast->nodes[child].nextSibling;
         }
     }
 
-    if (HOPMirStmtLowerBlock(&c, bodyNode) != 0) {
+    if (H2MirStmtLowerBlock(&c, bodyNode) != 0) {
         return -1;
     }
     if (!c.supported) {
         return 0;
     }
-    if (HOPMirStmtLowerAppendInst(
+    if (H2MirStmtLowerAppendInst(
             &c,
-            HOPMirOp_RETURN_VOID,
+            H2MirOp_RETURN_VOID,
             0,
             0,
             ast->nodes[bodyNode].start,
@@ -3791,8 +3760,8 @@ int HOPMirLowerAppendSimpleFunctionWithOptions(
     {
         return -1;
     }
-    if (HOPMirProgramBuilderEndFunction(&c.builder) != 0) {
-        HOPMirLowerStmtSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+    if (H2MirProgramBuilderEndFunction(&c.builder) != 0) {
+        H2MirLowerStmtSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
     *builder = c.builder;
@@ -3801,42 +3770,42 @@ int HOPMirLowerAppendSimpleFunctionWithOptions(
     return 0;
 }
 
-int HOPMirLowerAppendSimpleFunction(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
+int H2MirLowerAppendSimpleFunction(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag) {
-    return HOPMirLowerAppendSimpleFunctionWithOptions(
+    H2Diag* _Nullable diag) {
+    return H2MirLowerAppendSimpleFunctionWithOptions(
         builder, arena, ast, src, fnNode, bodyNode, NULL, outFunctionIndex, outSupported, diag);
 }
 
-int HOPMirLowerSimpleFunctionWithOptions(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    const HOPMirLowerOptions* _Nullable options,
-    HOPMirProgram* _Nonnull outProgram,
+int H2MirLowerSimpleFunctionWithOptions(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    const H2MirLowerOptions* _Nullable options,
+    H2MirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag) {
-    HOPMirProgramBuilder builder;
-    uint32_t             functionIndex = UINT32_MAX;
+    H2Diag* _Nullable diag) {
+    H2MirProgramBuilder builder;
+    uint32_t            functionIndex = UINT32_MAX;
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     if (outProgram == NULL || outSupported == NULL || arena == NULL || ast == NULL) {
-        HOPMirLowerStmtSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+        H2MirLowerStmtSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    *outProgram = (HOPMirProgram){ 0 };
-    HOPMirProgramBuilderInit(&builder, arena);
-    if (HOPMirLowerAppendSimpleFunctionWithOptions(
+    *outProgram = (H2MirProgram){ 0 };
+    H2MirProgramBuilderInit(&builder, arena);
+    if (H2MirLowerAppendSimpleFunctionWithOptions(
             &builder,
             arena,
             ast,
@@ -3854,21 +3823,21 @@ int HOPMirLowerSimpleFunctionWithOptions(
     if (!*outSupported) {
         return 0;
     }
-    HOPMirProgramBuilderFinish(&builder, outProgram);
+    H2MirProgramBuilderFinish(&builder, outProgram);
     return 0;
 }
 
-int HOPMirLowerSimpleFunction(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    fnNode,
-    int32_t    bodyNode,
-    HOPMirProgram* _Nonnull outProgram,
+int H2MirLowerSimpleFunction(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   fnNode,
+    int32_t   bodyNode,
+    H2MirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag) {
-    return HOPMirLowerSimpleFunctionWithOptions(
+    H2Diag* _Nullable diag) {
+    return H2MirLowerSimpleFunctionWithOptions(
         arena, ast, src, fnNode, bodyNode, NULL, outProgram, outSupported, diag);
 }
 
-HOP_API_END
+H2_API_END

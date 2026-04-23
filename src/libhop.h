@@ -3,8 +3,8 @@
 ${license}
 ////////////////////////////////////////////////////////////////////////////////
 */
-#ifndef HOP_LIBHOP_H
-#define HOP_LIBHOP_H
+#ifndef H2_LIBHOP_H
+#define H2_LIBHOP_H
 
 #pragma once
 
@@ -13,10 +13,10 @@ ${license}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// HOP_VERSION is incremented for every release
-#define HOP_VERSION 1
-#ifndef HOP_SOURCE_HASH
-    #define HOP_SOURCE_HASH "src"
+// H2_VERSION is incremented for every release
+#define H2_VERSION 1
+#ifndef H2_SOURCE_HASH
+    #define H2_SOURCE_HASH "src"
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -39,27 +39,27 @@ ${license}
 #endif
 
 #if defined(__clang__)
-    #define HOP_ASSUME_NONNULL_BEGIN                                                   \
+    #define H2_ASSUME_NONNULL_BEGIN                                                    \
         _Pragma("clang diagnostic push");                                              \
         _Pragma("clang diagnostic ignored \"-Wnullability-completeness\"");            \
         _Pragma("clang diagnostic ignored \"-Wnullability-inferred-on-nested-type\""); \
         _Pragma("clang assume_nonnull begin"); // assume T* means "T* _Nonnull"
-    #define HOP_ASSUME_NONNULL_END       \
+    #define H2_ASSUME_NONNULL_END        \
         _Pragma("clang diagnostic pop"); \
         _Pragma("clang assume_nonnull end");
 #else
-    #define HOP_ASSUME_NONNULL_BEGIN
-    #define HOP_ASSUME_NONNULL_END
+    #define H2_ASSUME_NONNULL_BEGIN
+    #define H2_ASSUME_NONNULL_END
 #endif
 
 #ifdef __cplusplus
-    #define HOP_API_BEGIN HOP_ASSUME_NONNULL_BEGIN extern "C" {
-    #define HOP_API_END \
-        }               \
-        HOP_ASSUME_NONNULL_END
+    #define H2_API_BEGIN H2_ASSUME_NONNULL_BEGIN extern "C" {
+    #define H2_API_END \
+        }              \
+        H2_ASSUME_NONNULL_END
 #else
-    #define HOP_API_BEGIN HOP_ASSUME_NONNULL_BEGIN
-    #define HOP_API_END   HOP_ASSUME_NONNULL_END
+    #define H2_API_BEGIN H2_ASSUME_NONNULL_BEGIN
+    #define H2_API_END   H2_ASSUME_NONNULL_END
 #endif
 
 #if !__has_feature(nullability)
@@ -71,270 +71,270 @@ ${license}
 
 typedef enum {
 #include "diagnostics_enum.inc"
-    HOPDiag__COUNT,
-} HOPDiagCode;
+    H2Diag__COUNT,
+} H2DiagCode;
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef enum {
-    HOPDiagType_ERROR = 0,
-    HOPDiagType_WARNING = 1,
-} HOPDiagType;
+    H2DiagType_ERROR = 0,
+    H2DiagType_WARNING = 1,
+} H2DiagType;
 
 typedef struct {
     const char* _Nullable ptr;
     uint32_t len;
-} HOPStrView;
+} H2StrView;
 
 typedef struct {
     void* _Nullable ctx;
     void (*write)(void* _Nullable ctx, const char* data, uint32_t len);
-} HOPWriter;
+} H2Writer;
 
-typedef void* _Nullable (*HOPArenaGrowFn)(
+typedef void* _Nullable (*H2ArenaGrowFn)(
     void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
-typedef void (*HOPArenaFreeFn)(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
+typedef void (*H2ArenaFreeFn)(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
 
-typedef struct HOPArenaBlock HOPArenaBlock;
-struct HOPArenaBlock {
+typedef struct H2ArenaBlock H2ArenaBlock;
+struct H2ArenaBlock {
     uint8_t* _Nullable mem;
     uint32_t cap;
     uint32_t len;
     uint32_t allocSize;
-    HOPArenaBlock* _Nullable next;
+    H2ArenaBlock* _Nullable next;
     uint8_t owned;
 };
 
 typedef struct {
     void* _Nullable allocatorCtx;
-    HOPArenaGrowFn _Nullable grow;
-    HOPArenaFreeFn _Nullable free;
-    HOPArenaBlock inlineBlock;
-    HOPArenaBlock* _Nullable first;
-    HOPArenaBlock* _Nullable current;
-} HOPArena;
+    H2ArenaGrowFn _Nullable grow;
+    H2ArenaFreeFn _Nullable free;
+    H2ArenaBlock inlineBlock;
+    H2ArenaBlock* _Nullable first;
+    H2ArenaBlock* _Nullable current;
+} H2Arena;
 
-void HOPArenaInit(HOPArena* arena, void* storage, uint32_t storageSize);
-void HOPArenaInitEx(
-    HOPArena* arena,
+void H2ArenaInit(H2Arena* arena, void* storage, uint32_t storageSize);
+void H2ArenaInitEx(
+    H2Arena* arena,
     void* _Nullable storage,
     uint32_t storageSize,
     void* _Nullable allocatorCtx,
-    HOPArenaGrowFn _Nullable growFn,
-    HOPArenaFreeFn _Nullable freeFn);
-void HOPArenaSetAllocator(
-    HOPArena* arena,
+    H2ArenaGrowFn _Nullable growFn,
+    H2ArenaFreeFn _Nullable freeFn);
+void H2ArenaSetAllocator(
+    H2Arena* arena,
     void* _Nullable allocatorCtx,
-    HOPArenaGrowFn _Nullable growFn,
-    HOPArenaFreeFn _Nullable freeFn);
-void HOPArenaReset(HOPArena* arena);
-void HOPArenaDispose(HOPArena* arena);
-void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align);
+    H2ArenaGrowFn _Nullable growFn,
+    H2ArenaFreeFn _Nullable freeFn);
+void H2ArenaReset(H2Arena* arena);
+void H2ArenaDispose(H2Arena* arena);
+void* _Nullable H2ArenaAlloc(H2Arena* arena, uint32_t size, uint32_t align);
 
 typedef struct {
-    HOPDiagCode code;
-    HOPDiagType type;
-    uint32_t    start;
-    uint32_t    end;
-    uint32_t    argStart;
-    uint32_t    argEnd;
-    uint32_t    relatedStart;
-    uint32_t    relatedEnd;
+    H2DiagCode code;
+    H2DiagType type;
+    uint32_t   start;
+    uint32_t   end;
+    uint32_t   argStart;
+    uint32_t   argEnd;
+    uint32_t   relatedStart;
+    uint32_t   relatedEnd;
     const char* _Nullable detail;
     const char* _Nullable hintOverride;
-} HOPDiag;
+} H2Diag;
 
-typedef void (*HOPDiagSinkFn)(void* _Nullable ctx, const HOPDiag* _Nonnull diag);
+typedef void (*H2DiagSinkFn)(void* _Nullable ctx, const H2Diag* _Nonnull diag);
 
 typedef struct {
     void* _Nullable ctx;
-    HOPDiagSinkFn _Nullable onDiag;
+    H2DiagSinkFn _Nullable onDiag;
     uint32_t flags;
-} HOPTypeCheckOptions;
+} H2TypeCheckOptions;
 
-void        HOPDiagClear(HOPDiag* _Nullable diag);
-const char* HOPDiagId(HOPDiagCode code);
-const char* HOPDiagMessage(HOPDiagCode code);
-const char* _Nullable HOPDiagHint(HOPDiagCode code);
-HOPDiagType HOPDiagTypeOfCode(HOPDiagCode code);
-uint8_t     HOPDiagArgCount(HOPDiagCode code);
+void        H2DiagClear(H2Diag* _Nullable diag);
+const char* H2DiagId(H2DiagCode code);
+const char* H2DiagMessage(H2DiagCode code);
+const char* _Nullable H2DiagHint(H2DiagCode code);
+H2DiagType H2DiagTypeOfCode(H2DiagCode code);
+uint8_t    H2DiagArgCount(H2DiagCode code);
 
 typedef enum {
-    HOPTok_INVALID = 0,
-    HOPTok_EOF,
-    HOPTok_IDENT,
-    HOPTok_INT,
-    HOPTok_FLOAT,
-    HOPTok_STRING,
-    HOPTok_RUNE,
+    H2Tok_INVALID = 0,
+    H2Tok_EOF,
+    H2Tok_IDENT,
+    H2Tok_INT,
+    H2Tok_FLOAT,
+    H2Tok_STRING,
+    H2Tok_RUNE,
 
-    HOPTok_IMPORT,
-    HOPTok_PUB,
-    HOPTok_STRUCT,
-    HOPTok_UNION,
-    HOPTok_ENUM,
-    HOPTok_FN,
-    HOPTok_VAR,
-    HOPTok_CONST,
-    HOPTok_TYPE,
-    HOPTok_MUT,
-    HOPTok_IF,
-    HOPTok_ELSE,
-    HOPTok_FOR,
-    HOPTok_SWITCH,
-    HOPTok_CASE,
-    HOPTok_DEFAULT,
-    HOPTok_BREAK,
-    HOPTok_CONTINUE,
-    HOPTok_RETURN,
-    HOPTok_DEFER,
-    HOPTok_ASSERT,
-    HOPTok_SIZEOF,
-    HOPTok_NEW,
-    HOPTok_DEL,
-    HOPTok_TRUE,
-    HOPTok_FALSE,
-    HOPTok_IN,
-    HOPTok_AS,
-    HOPTok_CONTEXT,
-    HOPTok_ANYTYPE,
+    H2Tok_IMPORT,
+    H2Tok_PUB,
+    H2Tok_STRUCT,
+    H2Tok_UNION,
+    H2Tok_ENUM,
+    H2Tok_FN,
+    H2Tok_VAR,
+    H2Tok_CONST,
+    H2Tok_TYPE,
+    H2Tok_MUT,
+    H2Tok_IF,
+    H2Tok_ELSE,
+    H2Tok_FOR,
+    H2Tok_SWITCH,
+    H2Tok_CASE,
+    H2Tok_DEFAULT,
+    H2Tok_BREAK,
+    H2Tok_CONTINUE,
+    H2Tok_RETURN,
+    H2Tok_DEFER,
+    H2Tok_ASSERT,
+    H2Tok_SIZEOF,
+    H2Tok_NEW,
+    H2Tok_DEL,
+    H2Tok_TRUE,
+    H2Tok_FALSE,
+    H2Tok_IN,
+    H2Tok_AS,
+    H2Tok_CONTEXT,
+    H2Tok_ANYTYPE,
 
-    HOPTok_LPAREN,
-    HOPTok_RPAREN,
-    HOPTok_LBRACE,
-    HOPTok_RBRACE,
-    HOPTok_LBRACK,
-    HOPTok_RBRACK,
-    HOPTok_COMMA,
-    HOPTok_DOT,
-    HOPTok_ELLIPSIS,
-    HOPTok_SEMICOLON,
-    HOPTok_COLON,
-    HOPTok_AT,
+    H2Tok_LPAREN,
+    H2Tok_RPAREN,
+    H2Tok_LBRACE,
+    H2Tok_RBRACE,
+    H2Tok_LBRACK,
+    H2Tok_RBRACK,
+    H2Tok_COMMA,
+    H2Tok_DOT,
+    H2Tok_ELLIPSIS,
+    H2Tok_SEMICOLON,
+    H2Tok_COLON,
+    H2Tok_AT,
 
-    HOPTok_SHORT_ASSIGN,
-    HOPTok_ASSIGN,
-    HOPTok_ADD,
-    HOPTok_SUB,
-    HOPTok_MUL,
-    HOPTok_DIV,
-    HOPTok_MOD,
-    HOPTok_AND,
-    HOPTok_OR,
-    HOPTok_XOR,
-    HOPTok_NOT,
-    HOPTok_LSHIFT,
-    HOPTok_RSHIFT,
+    H2Tok_SHORT_ASSIGN,
+    H2Tok_ASSIGN,
+    H2Tok_ADD,
+    H2Tok_SUB,
+    H2Tok_MUL,
+    H2Tok_DIV,
+    H2Tok_MOD,
+    H2Tok_AND,
+    H2Tok_OR,
+    H2Tok_XOR,
+    H2Tok_NOT,
+    H2Tok_LSHIFT,
+    H2Tok_RSHIFT,
 
-    HOPTok_EQ,
-    HOPTok_NEQ,
-    HOPTok_LT,
-    HOPTok_GT,
-    HOPTok_LTE,
-    HOPTok_GTE,
-    HOPTok_LOGICAL_AND,
-    HOPTok_LOGICAL_OR,
+    H2Tok_EQ,
+    H2Tok_NEQ,
+    H2Tok_LT,
+    H2Tok_GT,
+    H2Tok_LTE,
+    H2Tok_GTE,
+    H2Tok_LOGICAL_AND,
+    H2Tok_LOGICAL_OR,
 
-    HOPTok_ADD_ASSIGN,
-    HOPTok_SUB_ASSIGN,
-    HOPTok_MUL_ASSIGN,
-    HOPTok_DIV_ASSIGN,
-    HOPTok_MOD_ASSIGN,
-    HOPTok_AND_ASSIGN,
-    HOPTok_OR_ASSIGN,
-    HOPTok_XOR_ASSIGN,
-    HOPTok_LSHIFT_ASSIGN,
-    HOPTok_RSHIFT_ASSIGN,
+    H2Tok_ADD_ASSIGN,
+    H2Tok_SUB_ASSIGN,
+    H2Tok_MUL_ASSIGN,
+    H2Tok_DIV_ASSIGN,
+    H2Tok_MOD_ASSIGN,
+    H2Tok_AND_ASSIGN,
+    H2Tok_OR_ASSIGN,
+    H2Tok_XOR_ASSIGN,
+    H2Tok_LSHIFT_ASSIGN,
+    H2Tok_RSHIFT_ASSIGN,
 
-    HOPTok_QUESTION,
-    HOPTok_NULL,
-} HOPTokenKind;
-
-typedef struct {
-    HOPTokenKind kind;
-    uint32_t     start;
-    uint32_t     end;
-} HOPToken;
+    H2Tok_QUESTION,
+    H2Tok_NULL,
+} H2TokenKind;
 
 typedef struct {
-    const HOPToken* _Nullable v;
+    H2TokenKind kind;
+    uint32_t    start;
+    uint32_t    end;
+} H2Token;
+
+typedef struct {
+    const H2Token* _Nullable v;
     uint32_t len;
-} HOPTokenStream;
+} H2TokenStream;
 
 typedef enum {
-    HOPAst_FILE = 0,
-    HOPAst_IMPORT,
-    HOPAst_IMPORT_SYMBOL,
-    HOPAst_DIRECTIVE,
-    HOPAst_PUB,
-    HOPAst_FN,
-    HOPAst_PARAM,
-    HOPAst_TYPE_PARAM,
-    HOPAst_CONTEXT_CLAUSE,
-    HOPAst_TYPE_NAME,
-    HOPAst_TYPE_PTR,
-    HOPAst_TYPE_REF,
-    HOPAst_TYPE_MUTREF,
-    HOPAst_TYPE_ARRAY,
-    HOPAst_TYPE_VARRAY,
-    HOPAst_TYPE_SLICE,
-    HOPAst_TYPE_MUTSLICE,
-    HOPAst_TYPE_OPTIONAL,
-    HOPAst_TYPE_FN,
-    HOPAst_TYPE_ALIAS,
-    HOPAst_TYPE_ANON_STRUCT,
-    HOPAst_TYPE_ANON_UNION,
-    HOPAst_TYPE_TUPLE,
-    HOPAst_STRUCT,
-    HOPAst_UNION,
-    HOPAst_ENUM,
-    HOPAst_FIELD,
-    HOPAst_BLOCK,
-    HOPAst_VAR,
-    HOPAst_CONST,
-    HOPAst_CONST_BLOCK,
-    HOPAst_IF,
-    HOPAst_FOR,
-    HOPAst_SWITCH,
-    HOPAst_CASE,
-    HOPAst_CASE_PATTERN,
-    HOPAst_DEFAULT,
-    HOPAst_RETURN,
-    HOPAst_BREAK,
-    HOPAst_CONTINUE,
-    HOPAst_DEFER,
-    HOPAst_ASSERT,
-    HOPAst_DEL,
-    HOPAst_EXPR_STMT,
-    HOPAst_MULTI_ASSIGN,
-    HOPAst_SHORT_ASSIGN,
-    HOPAst_NAME_LIST,
-    HOPAst_EXPR_LIST,
-    HOPAst_TUPLE_EXPR,
-    HOPAst_TYPE_VALUE,
-    HOPAst_IDENT,
-    HOPAst_INT,
-    HOPAst_FLOAT,
-    HOPAst_STRING,
-    HOPAst_RUNE,
-    HOPAst_BOOL,
-    HOPAst_UNARY,
-    HOPAst_BINARY,
-    HOPAst_CALL,
-    HOPAst_CALL_ARG,
-    HOPAst_CALL_WITH_CONTEXT,
-    HOPAst_CONTEXT_OVERLAY,
-    HOPAst_CONTEXT_BIND,
-    HOPAst_COMPOUND_LIT,
-    HOPAst_COMPOUND_FIELD,
-    HOPAst_INDEX,
-    HOPAst_FIELD_EXPR,
-    HOPAst_CAST,
-    HOPAst_SIZEOF,
-    HOPAst_NEW,
-    HOPAst_NULL,
-    HOPAst_UNWRAP,
-} HOPAstKind;
+    H2Ast_FILE = 0,
+    H2Ast_IMPORT,
+    H2Ast_IMPORT_SYMBOL,
+    H2Ast_DIRECTIVE,
+    H2Ast_PUB,
+    H2Ast_FN,
+    H2Ast_PARAM,
+    H2Ast_TYPE_PARAM,
+    H2Ast_CONTEXT_CLAUSE,
+    H2Ast_TYPE_NAME,
+    H2Ast_TYPE_PTR,
+    H2Ast_TYPE_REF,
+    H2Ast_TYPE_MUTREF,
+    H2Ast_TYPE_ARRAY,
+    H2Ast_TYPE_VARRAY,
+    H2Ast_TYPE_SLICE,
+    H2Ast_TYPE_MUTSLICE,
+    H2Ast_TYPE_OPTIONAL,
+    H2Ast_TYPE_FN,
+    H2Ast_TYPE_ALIAS,
+    H2Ast_TYPE_ANON_STRUCT,
+    H2Ast_TYPE_ANON_UNION,
+    H2Ast_TYPE_TUPLE,
+    H2Ast_STRUCT,
+    H2Ast_UNION,
+    H2Ast_ENUM,
+    H2Ast_FIELD,
+    H2Ast_BLOCK,
+    H2Ast_VAR,
+    H2Ast_CONST,
+    H2Ast_CONST_BLOCK,
+    H2Ast_IF,
+    H2Ast_FOR,
+    H2Ast_SWITCH,
+    H2Ast_CASE,
+    H2Ast_CASE_PATTERN,
+    H2Ast_DEFAULT,
+    H2Ast_RETURN,
+    H2Ast_BREAK,
+    H2Ast_CONTINUE,
+    H2Ast_DEFER,
+    H2Ast_ASSERT,
+    H2Ast_DEL,
+    H2Ast_EXPR_STMT,
+    H2Ast_MULTI_ASSIGN,
+    H2Ast_SHORT_ASSIGN,
+    H2Ast_NAME_LIST,
+    H2Ast_EXPR_LIST,
+    H2Ast_TUPLE_EXPR,
+    H2Ast_TYPE_VALUE,
+    H2Ast_IDENT,
+    H2Ast_INT,
+    H2Ast_FLOAT,
+    H2Ast_STRING,
+    H2Ast_RUNE,
+    H2Ast_BOOL,
+    H2Ast_UNARY,
+    H2Ast_BINARY,
+    H2Ast_CALL,
+    H2Ast_CALL_ARG,
+    H2Ast_CALL_WITH_CONTEXT,
+    H2Ast_CONTEXT_OVERLAY,
+    H2Ast_CONTEXT_BIND,
+    H2Ast_COMPOUND_LIT,
+    H2Ast_COMPOUND_FIELD,
+    H2Ast_INDEX,
+    H2Ast_FIELD_EXPR,
+    H2Ast_CAST,
+    H2Ast_SIZEOF,
+    H2Ast_NEW,
+    H2Ast_NULL,
+    H2Ast_UNWRAP,
+} H2AstKind;
 
 typedef struct {
     uint32_t start;
@@ -346,93 +346,93 @@ typedef struct {
     uint16_t op;
     uint16_t kind;
     uint32_t flags;
-} HOPAstNode;
+} H2AstNode;
 
 enum {
-    HOPAstFlag_PUB = 0x8000u,
-    HOPAstFlag_INDEX_SLICE = 0x0001u,
-    HOPAstFlag_INDEX_HAS_START = 0x0002u,
-    HOPAstFlag_INDEX_HAS_END = 0x0004u,
-    HOPAstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
-    HOPAstFlag_FIELD_EMBEDDED = 0x0010u,
-    HOPAstFlag_CALL_WITH_CONTEXT_PASSTHROUGH = 0x0020u,
-    HOPAstFlag_NEW_HAS_COUNT = 0x0040u,
-    HOPAstFlag_NEW_HAS_ALLOC = 0x0080u,
-    HOPAstFlag_NEW_HAS_INIT = 0x0100u,
-    HOPAstFlag_PAREN = 0x0200u,
-    HOPAstFlag_COMPOUND_FIELD_SHORTHAND = 0x0400u,
-    HOPAstFlag_CONTEXT_BIND_SHORTHAND = 0x0800u,
-    HOPAstFlag_PARAM_VARIADIC = 0x1000u,
-    HOPAstFlag_CALL_ARG_SPREAD = 0x2000u,
-    HOPAstFlag_PARAM_CONST = 0x4000u,
-    HOPAstFlag_FOR_IN = 0x00010000u,
-    HOPAstFlag_FOR_IN_HAS_KEY = 0x00020000u,
-    HOPAstFlag_FOR_IN_KEY_REF = 0x00040000u,
-    HOPAstFlag_FOR_IN_VALUE_REF = 0x00080000u,
-    HOPAstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
-    HOPAstFlag_DEL_HAS_ALLOC = 0x00400000u,
+    H2AstFlag_PUB = 0x8000u,
+    H2AstFlag_INDEX_SLICE = 0x0001u,
+    H2AstFlag_INDEX_HAS_START = 0x0002u,
+    H2AstFlag_INDEX_HAS_END = 0x0004u,
+    H2AstFlag_INDEX_RUNTIME_BOUNDS = 0x0008u,
+    H2AstFlag_FIELD_EMBEDDED = 0x0010u,
+    H2AstFlag_CALL_WITH_CONTEXT_PASSTHROUGH = 0x0020u,
+    H2AstFlag_NEW_HAS_COUNT = 0x0040u,
+    H2AstFlag_NEW_HAS_ALLOC = 0x0080u,
+    H2AstFlag_NEW_HAS_INIT = 0x0100u,
+    H2AstFlag_PAREN = 0x0200u,
+    H2AstFlag_COMPOUND_FIELD_SHORTHAND = 0x0400u,
+    H2AstFlag_CONTEXT_BIND_SHORTHAND = 0x0800u,
+    H2AstFlag_PARAM_VARIADIC = 0x1000u,
+    H2AstFlag_CALL_ARG_SPREAD = 0x2000u,
+    H2AstFlag_PARAM_CONST = 0x4000u,
+    H2AstFlag_FOR_IN = 0x00010000u,
+    H2AstFlag_FOR_IN_HAS_KEY = 0x00020000u,
+    H2AstFlag_FOR_IN_KEY_REF = 0x00040000u,
+    H2AstFlag_FOR_IN_VALUE_REF = 0x00080000u,
+    H2AstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
+    H2AstFlag_DEL_HAS_ALLOC = 0x00400000u,
 };
 
-typedef uint32_t HOPFeatures;
-#define HOPFeature_NONE     ((HOPFeatures)0)
-#define HOPFeature_OPTIONAL ((HOPFeatures)(1u << 0))
+typedef uint32_t H2Features;
+#define H2Feature_NONE     ((H2Features)0)
+#define H2Feature_OPTIONAL ((H2Features)(1u << 0))
 
 typedef enum {
-    HOPCommentAttachment_FLOATING = 0,
-    HOPCommentAttachment_LEADING = 1,
-    HOPCommentAttachment_TRAILING = 2,
-} HOPCommentAttachment;
+    H2CommentAttachment_FLOATING = 0,
+    H2CommentAttachment_LEADING = 1,
+    H2CommentAttachment_TRAILING = 2,
+} H2CommentAttachment;
 
 typedef struct {
-    uint32_t             start;
-    uint32_t             end;
-    uint32_t             textStart;
-    uint32_t             textEnd;
-    int32_t              anchorNode;
-    int32_t              containerNode;
-    HOPCommentAttachment attachment;
-    uint8_t              _reserved[3];
-} HOPComment;
+    uint32_t            start;
+    uint32_t            end;
+    uint32_t            textStart;
+    uint32_t            textEnd;
+    int32_t             anchorNode;
+    int32_t             containerNode;
+    H2CommentAttachment attachment;
+    uint8_t             _reserved[3];
+} H2Comment;
 
 typedef struct {
-    const HOPAstNode* _Nullable nodes;
-    uint32_t    len;
-    int32_t     root;
-    HOPFeatures features;
-} HOPAst;
+    const H2AstNode* _Nullable nodes;
+    uint32_t   len;
+    int32_t    root;
+    H2Features features;
+} H2Ast;
 
 typedef enum {
-    HOPParseFlag_NONE = 0,
-    HOPParseFlag_COLLECT_FORMATTING = 1u << 0,
-} HOPParseFlag;
+    H2ParseFlag_NONE = 0,
+    H2ParseFlag_COLLECT_FORMATTING = 1u << 0,
+} H2ParseFlag;
 
 typedef struct {
     uint32_t flags;
-} HOPParseOptions;
+} H2ParseOptions;
 
 typedef struct {
-    const HOPComment* _Nullable comments;
+    const H2Comment* _Nullable comments;
     uint32_t commentLen;
-} HOPParseExtras;
+} H2ParseExtras;
 
-typedef int (*HOPFormatCanDropLiteralCastFn)(
-    void* _Nullable ctx, const HOPAst* ast, HOPStrView src, int32_t castNodeId);
+typedef int (*H2FormatCanDropLiteralCastFn)(
+    void* _Nullable ctx, const H2Ast* ast, H2StrView src, int32_t castNodeId);
 
 typedef struct {
     void* _Nullable ctx;
-    HOPFormatCanDropLiteralCastFn _Nullable canDropLiteralCast;
+    H2FormatCanDropLiteralCastFn _Nullable canDropLiteralCast;
     uint32_t flags;
     uint32_t indentWidth;
-} HOPFormatOptions;
+} H2FormatOptions;
 
-const char* HOPTokenKindName(HOPTokenKind kind);
-const char* HOPAstKindName(HOPAstKind kind);
+const char* H2TokenKindName(H2TokenKind kind);
+const char* H2AstKindName(H2AstKind kind);
 
 // Normalize an import path.
 // Returns 0 on success and writes the normalized path to `out` (NUL-terminated).
 // Returns -1 on failure and sets `*outErrReason` when provided.
 // Example reasons: "empty path", "absolute path", "invalid character".
-int HOPNormalizeImportPath(
+int H2NormalizeImportPath(
     const char* importPath,
     char*       out,
     uint32_t    outCap,
@@ -440,29 +440,29 @@ int HOPNormalizeImportPath(
 
 // Tokenize src into arena memory and return a view over tokens.
 // Returns 0 on success, -1 on failure. On failure, diag is set.
-int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nullable diag);
-int HOPParse(
-    HOPArena*  arena,
-    HOPStrView src,
-    const HOPParseOptions* _Nullable options,
-    HOPAst* out,
-    HOPParseExtras* _Nullable outExtras,
-    HOPDiag* _Nullable diag);
-int HOPFormat(
-    HOPArena*  arena,
-    HOPStrView src,
-    const HOPFormatOptions* _Nullable options,
-    HOPStrView* out,
-    HOPDiag* _Nullable diag);
-int HOPTypeCheckEx(
-    HOPArena*     arena,
-    const HOPAst* ast,
-    HOPStrView    src,
-    const HOPTypeCheckOptions* _Nullable options,
-    HOPDiag* _Nullable diag);
-int HOPTypeCheck(HOPArena* arena, const HOPAst* ast, HOPStrView src, HOPDiag* _Nullable diag);
-int HOPAstDump(const HOPAst* ast, HOPStrView src, HOPWriter* w, HOPDiag* _Nullable diag);
+int H2Lex(H2Arena* arena, H2StrView src, H2TokenStream* out, H2Diag* _Nullable diag);
+int H2Parse(
+    H2Arena*  arena,
+    H2StrView src,
+    const H2ParseOptions* _Nullable options,
+    H2Ast* out,
+    H2ParseExtras* _Nullable outExtras,
+    H2Diag* _Nullable diag);
+int H2Format(
+    H2Arena*  arena,
+    H2StrView src,
+    const H2FormatOptions* _Nullable options,
+    H2StrView* out,
+    H2Diag* _Nullable diag);
+int H2TypeCheckEx(
+    H2Arena*     arena,
+    const H2Ast* ast,
+    H2StrView    src,
+    const H2TypeCheckOptions* _Nullable options,
+    H2Diag* _Nullable diag);
+int H2TypeCheck(H2Arena* arena, const H2Ast* ast, H2StrView src, H2Diag* _Nullable diag);
+int H2AstDump(const H2Ast* ast, H2StrView src, H2Writer* w, H2Diag* _Nullable diag);
 
-HOP_API_END
+H2_API_END
 
-#endif /* HOP_LIBHOP_H */
+#endif /* H2_LIBHOP_H */

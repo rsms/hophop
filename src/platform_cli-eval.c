@@ -2,6 +2,6 @@
 #define HOP_PLATFORM_NO_MAIN 1
 #include "../lib/platform/cli-libc/platform.c"
 
-const __hop_Context* HOPPlatformCliEvalMainContext(void) {
+const __hop_Context* H2PlatformCliEvalMainContext(void) {
     return &gMainContext;
 }

@@ -1,27 +1,27 @@
 #pragma once
 #include "libhop.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef enum {
-    HOPCTFEValue_INVALID = 0,
-    HOPCTFEValue_INT,
-    HOPCTFEValue_FLOAT,
-    HOPCTFEValue_BOOL,
-    HOPCTFEValue_STRING,
-    HOPCTFEValue_TYPE,
-    HOPCTFEValue_SPAN,
-    HOPCTFEValue_NULL,
-    HOPCTFEValue_OPTIONAL,
-    HOPCTFEValue_AGGREGATE,
-    HOPCTFEValue_ARRAY,
-    HOPCTFEValue_REFERENCE,
-} HOPCTFEValueKind;
+    H2CTFEValue_INVALID = 0,
+    H2CTFEValue_INT,
+    H2CTFEValue_FLOAT,
+    H2CTFEValue_BOOL,
+    H2CTFEValue_STRING,
+    H2CTFEValue_TYPE,
+    H2CTFEValue_SPAN,
+    H2CTFEValue_NULL,
+    H2CTFEValue_OPTIONAL,
+    H2CTFEValue_AGGREGATE,
+    H2CTFEValue_ARRAY,
+    H2CTFEValue_REFERENCE,
+} H2CTFEValueKind;
 
 typedef struct {
     const uint8_t* _Nullable bytes;
     uint32_t len;
-} HOPCTFEString;
+} H2CTFEString;
 
 typedef struct {
     const uint8_t* _Nullable fileBytes;
@@ -30,101 +30,101 @@ typedef struct {
     uint32_t startColumn;
     uint32_t endLine;
     uint32_t endColumn;
-} HOPCTFESpan;
+} H2CTFESpan;
 
 typedef struct {
-    HOPCTFEValueKind kind;
-    int64_t          i64;
-    double           f64;
-    uint8_t          b;
-    uint64_t         typeTag;
-    HOPCTFEString    s;
-    HOPCTFESpan      span;
-} HOPCTFEValue;
+    H2CTFEValueKind kind;
+    int64_t         i64;
+    double          f64;
+    uint8_t         b;
+    uint64_t        typeTag;
+    H2CTFEString    s;
+    H2CTFESpan      span;
+} H2CTFEValue;
 
-static const uint64_t HOPCTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57;
+static const uint64_t H2CTFEValueTag_AGG_PARTIAL = UINT64_C(1) << 57;
 
-typedef int (*HOPCTFEResolveIdentFn)(
+typedef int (*H2CTFEResolveIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-typedef int (*HOPCTFEResolveCallFn)(
+typedef int (*H2CTFEResolveCallFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nonnull args,
+    const H2CTFEValue* _Nonnull args,
     uint32_t argCount,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPCTFEMakeTupleFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2CTFEMakeTupleFn)(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull elems,
+    const H2CTFEValue* _Nonnull elems,
     uint32_t elemCount,
     uint32_t typeNodeHint,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPCTFEIndexValueFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2CTFEIndexValueFn)(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull base,
-    const HOPCTFEValue* _Nonnull index,
-    HOPCTFEValue* _Nonnull outValue,
+    const H2CTFEValue* _Nonnull base,
+    const H2CTFEValue* _Nonnull index,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPCTFEAggGetFieldFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2CTFEAggGetFieldFn)(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull base,
+    const H2CTFEValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPCTFEAggAddrFieldFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2CTFEAggAddrFieldFn)(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull base,
+    const H2CTFEValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-int HOPCTFEEvalExprEx(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    nodeId,
-    HOPCTFEResolveIdentFn _Nullable resolveIdent,
-    HOPCTFEResolveCallFn _Nullable resolveCall,
+int H2CTFEEvalExprEx(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   nodeId,
+    H2CTFEResolveIdentFn _Nullable resolveIdent,
+    H2CTFEResolveCallFn _Nullable resolveCall,
     void* _Nullable resolveCtx,
-    HOPCTFEMakeTupleFn _Nullable makeTuple,
+    H2CTFEMakeTupleFn _Nullable makeTuple,
     void* _Nullable makeTupleCtx,
-    HOPCTFEIndexValueFn _Nullable indexValue,
+    H2CTFEIndexValueFn _Nullable indexValue,
     void* _Nullable indexValueCtx,
-    HOPCTFEAggGetFieldFn _Nullable aggGetField,
+    H2CTFEAggGetFieldFn _Nullable aggGetField,
     void* _Nullable aggGetFieldCtx,
-    HOPCTFEAggAddrFieldFn _Nullable aggAddrField,
+    H2CTFEAggAddrFieldFn _Nullable aggAddrField,
     void* _Nullable aggAddrFieldCtx,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-int HOPCTFEEvalExpr(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    nodeId,
-    HOPCTFEResolveIdentFn _Nullable resolveIdent,
-    HOPCTFEResolveCallFn _Nullable resolveCall,
+int H2CTFEEvalExpr(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   nodeId,
+    H2CTFEResolveIdentFn _Nullable resolveIdent,
+    H2CTFEResolveCallFn _Nullable resolveCall,
     void* _Nullable resolveCtx,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-int HOPCTFEValueToInt64(const HOPCTFEValue* _Nonnull value, int64_t* _Nonnull out);
+int H2CTFEValueToInt64(const H2CTFEValue* _Nonnull value, int64_t* _Nonnull out);
 
-HOP_API_END
+H2_API_END

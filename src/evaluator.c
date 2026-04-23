@@ -13,26 +13,26 @@
 #include "mir_lower_stmt.h"
 #include "hop_internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 enum {
-    HOP_EVAL_MIR_HOST_INVALID = HOPMirHostTarget_INVALID,
-    HOP_EVAL_MIR_HOST_PRINT = HOPMirHostTarget_PRINT,
-    HOP_EVAL_MIR_HOST_PLATFORM_EXIT = HOPMirHostTarget_PLATFORM_EXIT,
-    HOP_EVAL_MIR_HOST_FREE = HOPMirHostTarget_FREE,
-    HOP_EVAL_MIR_HOST_CONCAT = HOPMirHostTarget_CONCAT,
-    HOP_EVAL_MIR_HOST_COPY = HOPMirHostTarget_COPY,
-    HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = HOPMirHostTarget_PLATFORM_CONSOLE_LOG,
+    H2_EVAL_MIR_HOST_INVALID = H2MirHostTarget_INVALID,
+    H2_EVAL_MIR_HOST_PRINT = H2MirHostTarget_PRINT,
+    H2_EVAL_MIR_HOST_PLATFORM_EXIT = H2MirHostTarget_PLATFORM_EXIT,
+    H2_EVAL_MIR_HOST_FREE = H2MirHostTarget_FREE,
+    H2_EVAL_MIR_HOST_CONCAT = H2MirHostTarget_CONCAT,
+    H2_EVAL_MIR_HOST_COPY = H2MirHostTarget_COPY,
+    H2_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = H2MirHostTarget_PLATFORM_CONSOLE_LOG,
 };
 
 enum {
-    HOP_EVAL_MIR_ITER_KIND_INVALID = 0,
-    HOP_EVAL_MIR_ITER_KIND_SEQUENCE = 1,
-    HOP_EVAL_MIR_ITER_KIND_PROTOCOL = 2,
-    HOP_EVAL_MIR_ITER_MAGIC = 0x534c4954u,
+    H2_EVAL_MIR_ITER_KIND_INVALID = 0,
+    H2_EVAL_MIR_ITER_KIND_SEQUENCE = 1,
+    H2_EVAL_MIR_ITER_KIND_PROTOCOL = 2,
+    H2_EVAL_MIR_ITER_MAGIC = 0x534c4954u,
 };
 
-static int HOPEvalNameEqLiteralOrPkgBuiltin(
+static int H2EvalNameEqLiteralOrPkgBuiltin(
     const char* _Nullable src,
     uint32_t start,
     uint32_t end,
@@ -67,40 +67,40 @@ static int HOPEvalNameEqLiteralOrPkgBuiltin(
     return memcmp(src + start + pkgLen + 2u, lit, litLen) == 0;
 }
 
-static int HOPEvalNameIsCompilerDiagBuiltin(
+static int H2EvalNameIsCompilerDiagBuiltin(
     const char* _Nullable src, uint32_t start, uint32_t end) {
-    return HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "error", "compiler")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "error_at", "compiler")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn", "compiler")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn_at", "compiler");
+    return H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "error", "compiler")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "error_at", "compiler")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn", "compiler")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "warn_at", "compiler");
 }
 
-static int HOPEvalNameIsLazyTypeBuiltin(const char* _Nullable src, uint32_t start, uint32_t end) {
+static int H2EvalNameIsLazyTypeBuiltin(const char* _Nullable src, uint32_t start, uint32_t end) {
     return SliceEqCStr(src, start, end, "typeof")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
+        || H2EvalNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
         || SliceEqCStr(src, start, end, "ptr") || SliceEqCStr(src, start, end, "slice")
         || SliceEqCStr(src, start, end, "array");
 }
 
 typedef struct {
-    uint32_t     magic;
-    uint32_t     sourceNode;
-    uint32_t     index;
-    int32_t      iteratorFn;
-    uint16_t     flags;
-    uint8_t      kind;
-    uint8_t      _reserved[1];
-    HOPCTFEValue sourceValue;
-    HOPCTFEValue iteratorValue;
-} HOPEvalMirIteratorState;
-static int HOPEvalStringValueFromArrayBytes(
-    HOPArena* arena, const HOPCTFEValue* inValue, int32_t targetTypeCode, HOPCTFEValue* outValue);
+    uint32_t    magic;
+    uint32_t    sourceNode;
+    uint32_t    index;
+    int32_t     iteratorFn;
+    uint16_t    flags;
+    uint8_t     kind;
+    uint8_t     _reserved[1];
+    H2CTFEValue sourceValue;
+    H2CTFEValue iteratorValue;
+} H2EvalMirIteratorState;
+static int H2EvalStringValueFromArrayBytes(
+    H2Arena* arena, const H2CTFEValue* inValue, int32_t targetTypeCode, H2CTFEValue* outValue);
 
-static int HOPEvalTypeNodeIsAnytype(const HOPParsedFile* file, int32_t typeNode);
-static int HOPEvalTypeNodeIsTemplateParamName(const HOPParsedFile* file, int32_t typeNode);
+static int H2EvalTypeNodeIsAnytype(const H2ParsedFile* file, int32_t typeNode);
+static int H2EvalTypeNodeIsTemplateParamName(const H2ParsedFile* file, int32_t typeNode);
 
 static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* outValue) {
     uint64_t v = 0;
@@ -126,74 +126,74 @@ static int ParseSliceU64(const char* s, uint32_t start, uint32_t end, uint64_t* 
 }
 
 enum {
-    HOPEvalTypeCode_INVALID = 0,
-    HOPEvalTypeCode_BOOL = 1,
-    HOPEvalTypeCode_U8,
-    HOPEvalTypeCode_U16,
-    HOPEvalTypeCode_U32,
-    HOPEvalTypeCode_U64,
-    HOPEvalTypeCode_UINT,
-    HOPEvalTypeCode_I8,
-    HOPEvalTypeCode_I16,
-    HOPEvalTypeCode_I32,
-    HOPEvalTypeCode_I64,
-    HOPEvalTypeCode_INT,
-    HOPEvalTypeCode_F32,
-    HOPEvalTypeCode_F64,
-    HOPEvalTypeCode_TYPE,
-    HOPEvalTypeCode_STR_REF,
-    HOPEvalTypeCode_STR_PTR,
-    HOPEvalTypeCode_RAWPTR,
-    HOPEvalTypeCode_ANYTYPE,
+    H2EvalTypeCode_INVALID = 0,
+    H2EvalTypeCode_BOOL = 1,
+    H2EvalTypeCode_U8,
+    H2EvalTypeCode_U16,
+    H2EvalTypeCode_U32,
+    H2EvalTypeCode_U64,
+    H2EvalTypeCode_UINT,
+    H2EvalTypeCode_I8,
+    H2EvalTypeCode_I16,
+    H2EvalTypeCode_I32,
+    H2EvalTypeCode_I64,
+    H2EvalTypeCode_INT,
+    H2EvalTypeCode_F32,
+    H2EvalTypeCode_F64,
+    H2EvalTypeCode_TYPE,
+    H2EvalTypeCode_STR_REF,
+    H2EvalTypeCode_STR_PTR,
+    H2EvalTypeCode_RAWPTR,
+    H2EvalTypeCode_ANYTYPE,
 };
 
-typedef struct HOPEvalProgram HOPEvalProgram;
-typedef struct HOPEvalContext HOPEvalContext;
+typedef struct H2EvalProgram H2EvalProgram;
+typedef struct H2EvalContext H2EvalContext;
 
-static void    HOPEvalValueSetRuntimeTypeCode(HOPCTFEValue* value, int32_t typeCode);
-static int     HOPEvalValueGetRuntimeTypeCode(const HOPCTFEValue* value, int32_t* outTypeCode);
-static int32_t HOPEvalFindTopConstBySlice(
-    const HOPEvalProgram* p, const HOPParsedFile* file, uint32_t nameStart, uint32_t nameEnd);
-static int32_t HOPEvalFindTopConstBySliceInPackage(
-    const HOPEvalProgram* p,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd);
-static int HOPEvalEvalTopConst(
-    HOPEvalProgram* p, uint32_t topConstIndex, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalInvokeFunction(
-    HOPEvalProgram* p,
-    int32_t         fnIndex,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t              argCount,
-    const HOPEvalContext* callContext,
-    HOPCTFEValue*         outValue,
-    int*                  outDidReturn);
-static int HOPEvalInvokeFunctionRef(
-    HOPEvalProgram*     p,
-    const HOPCTFEValue* calleeValue,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst);
-static int HOPEvalValueNeedsDefaultFieldEval(const HOPCTFEValue* value);
-static int HOPEvalMirLookupLocalTypeNode(
-    HOPEvalProgram*       p,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPParsedFile** outFile,
-    int32_t*              outTypeNode);
-static int HOPEvalMirLookupLocalValue(
-    HOPEvalProgram* p, uint32_t nameStart, uint32_t nameEnd, HOPCTFEValue* outValue);
-static int HOPEvalFindVisibleLocalTypeNodeByName(
-    const HOPParsedFile* file,
-    uint32_t             beforePos,
+static void    H2EvalValueSetRuntimeTypeCode(H2CTFEValue* value, int32_t typeCode);
+static int     H2EvalValueGetRuntimeTypeCode(const H2CTFEValue* value, int32_t* outTypeCode);
+static int32_t H2EvalFindTopConstBySlice(
+    const H2EvalProgram* p, const H2ParsedFile* file, uint32_t nameStart, uint32_t nameEnd);
+static int32_t H2EvalFindTopConstBySliceInPackage(
+    const H2EvalProgram* p,
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd);
+static int H2EvalEvalTopConst(
+    H2EvalProgram* p, uint32_t topConstIndex, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalInvokeFunction(
+    H2EvalProgram* p,
+    int32_t        fnIndex,
+    const H2CTFEValue* _Nullable args,
+    uint32_t             argCount,
+    const H2EvalContext* callContext,
+    H2CTFEValue*         outValue,
+    int*                 outDidReturn);
+static int H2EvalInvokeFunctionRef(
+    H2EvalProgram*     p,
+    const H2CTFEValue* calleeValue,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
+static int H2EvalValueNeedsDefaultFieldEval(const H2CTFEValue* value);
+static int H2EvalMirLookupLocalTypeNode(
+    H2EvalProgram*       p,
     uint32_t             nameStart,
     uint32_t             nameEnd,
+    const H2ParsedFile** outFile,
     int32_t*             outTypeNode);
+static int H2EvalMirLookupLocalValue(
+    H2EvalProgram* p, uint32_t nameStart, uint32_t nameEnd, H2CTFEValue* outValue);
+static int H2EvalFindVisibleLocalTypeNodeByName(
+    const H2ParsedFile* file,
+    uint32_t            beforePos,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outTypeNode);
 
-static int HOPEvalBuiltinTypeSize(
+static int H2EvalBuiltinTypeSize(
     const char* source, uint32_t nameStart, uint32_t nameEnd, uint64_t* outSize) {
     if (outSize != NULL) {
         *outSize = 0;
@@ -244,116 +244,115 @@ static int HOPEvalBuiltinTypeSize(
     return 0;
 }
 
-static int HOPEvalBuiltinTypeCode(
+static int H2EvalBuiltinTypeCode(
     const char* source, uint32_t nameStart, uint32_t nameEnd, int32_t* outTypeCode) {
     if (outTypeCode != NULL) {
-        *outTypeCode = HOPEvalTypeCode_INVALID;
+        *outTypeCode = H2EvalTypeCode_INVALID;
     }
     if (source == NULL || outTypeCode == NULL) {
         return 0;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "bool")) {
-        *outTypeCode = HOPEvalTypeCode_BOOL;
+        *outTypeCode = H2EvalTypeCode_BOOL;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "u8")) {
-        *outTypeCode = HOPEvalTypeCode_U8;
+        *outTypeCode = H2EvalTypeCode_U8;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "u16")) {
-        *outTypeCode = HOPEvalTypeCode_U16;
+        *outTypeCode = H2EvalTypeCode_U16;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "u32")) {
-        *outTypeCode = HOPEvalTypeCode_U32;
+        *outTypeCode = H2EvalTypeCode_U32;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "u64")) {
-        *outTypeCode = HOPEvalTypeCode_U64;
+        *outTypeCode = H2EvalTypeCode_U64;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "uint")) {
-        *outTypeCode = HOPEvalTypeCode_UINT;
+        *outTypeCode = H2EvalTypeCode_UINT;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "i8")) {
-        *outTypeCode = HOPEvalTypeCode_I8;
+        *outTypeCode = H2EvalTypeCode_I8;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "i16")) {
-        *outTypeCode = HOPEvalTypeCode_I16;
+        *outTypeCode = H2EvalTypeCode_I16;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "i32")) {
-        *outTypeCode = HOPEvalTypeCode_I32;
+        *outTypeCode = H2EvalTypeCode_I32;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "i64")) {
-        *outTypeCode = HOPEvalTypeCode_I64;
+        *outTypeCode = H2EvalTypeCode_I64;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "int")) {
-        *outTypeCode = HOPEvalTypeCode_INT;
+        *outTypeCode = H2EvalTypeCode_INT;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "f32")) {
-        *outTypeCode = HOPEvalTypeCode_F32;
+        *outTypeCode = H2EvalTypeCode_F32;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "f64")) {
-        *outTypeCode = HOPEvalTypeCode_F64;
+        *outTypeCode = H2EvalTypeCode_F64;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "rawptr")) {
-        *outTypeCode = HOPEvalTypeCode_RAWPTR;
+        *outTypeCode = H2EvalTypeCode_RAWPTR;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "type")) {
-        *outTypeCode = HOPEvalTypeCode_TYPE;
+        *outTypeCode = H2EvalTypeCode_TYPE;
         return 1;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "anytype")) {
-        *outTypeCode = HOPEvalTypeCode_ANYTYPE;
+        *outTypeCode = H2EvalTypeCode_ANYTYPE;
         return 1;
     }
     return 0;
 }
 
-static int HOPEvalTypeCodeFromTypeNode(
-    const HOPParsedFile* file, int32_t typeNode, int32_t* outTypeCode) {
-    const HOPAstNode* n;
+static int H2EvalTypeCodeFromTypeNode(
+    const H2ParsedFile* file, int32_t typeNode, int32_t* outTypeCode) {
+    const H2AstNode* n;
     if (outTypeCode != NULL) {
-        *outTypeCode = HOPEvalTypeCode_INVALID;
+        *outTypeCode = H2EvalTypeCode_INVALID;
     }
     if (file == NULL || outTypeCode == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len)
     {
         return 0;
     }
     n = &file->ast.nodes[typeNode];
-    if (n->kind == HOPAst_TYPE_NAME) {
-        return HOPEvalBuiltinTypeCode(file->source, n->dataStart, n->dataEnd, outTypeCode);
+    if (n->kind == H2Ast_TYPE_NAME) {
+        return H2EvalBuiltinTypeCode(file->source, n->dataStart, n->dataEnd, outTypeCode);
     }
-    if ((n->kind == HOPAst_TYPE_REF || n->kind == HOPAst_TYPE_PTR) && n->firstChild >= 0
+    if ((n->kind == H2Ast_TYPE_REF || n->kind == H2Ast_TYPE_PTR) && n->firstChild >= 0
         && (uint32_t)n->firstChild < file->ast.len
-        && file->ast.nodes[n->firstChild].kind == HOPAst_TYPE_NAME
+        && file->ast.nodes[n->firstChild].kind == H2Ast_TYPE_NAME
         && SliceEqCStr(
             file->source,
             file->ast.nodes[n->firstChild].dataStart,
             file->ast.nodes[n->firstChild].dataEnd,
             "str"))
     {
-        *outTypeCode =
-            n->kind == HOPAst_TYPE_REF ? HOPEvalTypeCode_STR_REF : HOPEvalTypeCode_STR_PTR;
+        *outTypeCode = n->kind == H2Ast_TYPE_REF ? H2EvalTypeCode_STR_REF : H2EvalTypeCode_STR_PTR;
         return 1;
     }
     return 0;
 }
 
-static int HOPEvalIsU8ElementTypeNode(const HOPParsedFile* file, int32_t typeNode) {
+static int H2EvalIsU8ElementTypeNode(const H2ParsedFile* file, int32_t typeNode) {
     if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
         return 0;
     }
-    return file->ast.nodes[typeNode].kind == HOPAst_TYPE_NAME
+    return file->ast.nodes[typeNode].kind == H2Ast_TYPE_NAME
         && SliceEqCStr(
                file->source,
                file->ast.nodes[typeNode].dataStart,
@@ -361,171 +360,169 @@ static int HOPEvalIsU8ElementTypeNode(const HOPParsedFile* file, int32_t typeNod
                "u8");
 }
 
-static int HOPEvalStringViewTypeCodeFromTypeNode(
-    const HOPParsedFile* file, int32_t typeNode, int32_t* outTypeCode) {
-    const HOPAstNode* n;
-    int32_t           childNode;
+static int H2EvalStringViewTypeCodeFromTypeNode(
+    const H2ParsedFile* file, int32_t typeNode, int32_t* outTypeCode) {
+    const H2AstNode* n;
+    int32_t          childNode;
     if (outTypeCode != NULL) {
-        *outTypeCode = HOPEvalTypeCode_INVALID;
+        *outTypeCode = H2EvalTypeCode_INVALID;
     }
     if (file == NULL || outTypeCode == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len)
     {
         return 0;
     }
-    if (HOPEvalTypeCodeFromTypeNode(file, typeNode, outTypeCode)) {
-        return *outTypeCode == HOPEvalTypeCode_STR_REF || *outTypeCode == HOPEvalTypeCode_STR_PTR;
+    if (H2EvalTypeCodeFromTypeNode(file, typeNode, outTypeCode)) {
+        return *outTypeCode == H2EvalTypeCode_STR_REF || *outTypeCode == H2EvalTypeCode_STR_PTR;
     }
     n = &file->ast.nodes[typeNode];
-    if ((n->kind != HOPAst_TYPE_PTR && n->kind != HOPAst_TYPE_REF) || n->firstChild < 0
+    if ((n->kind != H2Ast_TYPE_PTR && n->kind != H2Ast_TYPE_REF) || n->firstChild < 0
         || (uint32_t)n->firstChild >= file->ast.len)
     {
         return 0;
     }
     childNode = n->firstChild;
-    if ((file->ast.nodes[childNode].kind == HOPAst_TYPE_VARRAY
-         || file->ast.nodes[childNode].kind == HOPAst_TYPE_ARRAY)
+    if ((file->ast.nodes[childNode].kind == H2Ast_TYPE_VARRAY
+         || file->ast.nodes[childNode].kind == H2Ast_TYPE_ARRAY)
         && file->ast.nodes[childNode].firstChild >= 0
-        && HOPEvalIsU8ElementTypeNode(file, file->ast.nodes[childNode].firstChild))
+        && H2EvalIsU8ElementTypeNode(file, file->ast.nodes[childNode].firstChild))
     {
-        *outTypeCode =
-            n->kind == HOPAst_TYPE_REF ? HOPEvalTypeCode_STR_REF : HOPEvalTypeCode_STR_PTR;
+        *outTypeCode = n->kind == H2Ast_TYPE_REF ? H2EvalTypeCode_STR_REF : H2EvalTypeCode_STR_PTR;
         return 1;
     }
     return 0;
 }
 
-static int HOPEvalCloneStringValue(
-    HOPArena* arena, const HOPCTFEValue* inValue, HOPCTFEValue* outValue, int32_t typeCode) {
+static int H2EvalCloneStringValue(
+    H2Arena* arena, const H2CTFEValue* inValue, H2CTFEValue* outValue, int32_t typeCode) {
     uint8_t* copyBytes = NULL;
-    if (arena == NULL || inValue == NULL || outValue == NULL
-        || inValue->kind != HOPCTFEValue_STRING)
+    if (arena == NULL || inValue == NULL || outValue == NULL || inValue->kind != H2CTFEValue_STRING)
     {
         return 0;
     }
     *outValue = *inValue;
     if (inValue->s.len > 0) {
-        copyBytes = (uint8_t*)HOPArenaAlloc(arena, inValue->s.len, (uint32_t)_Alignof(uint8_t));
+        copyBytes = (uint8_t*)H2ArenaAlloc(arena, inValue->s.len, (uint32_t)_Alignof(uint8_t));
         if (copyBytes == NULL) {
             return -1;
         }
         memcpy(copyBytes, inValue->s.bytes, inValue->s.len);
         outValue->s.bytes = copyBytes;
     }
-    HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+    H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
     return 1;
 }
 
-static int HOPEvalAdaptStringValueForType(
-    HOPArena*            arena,
-    const HOPParsedFile* typeFile,
-    int32_t              typeNode,
-    const HOPCTFEValue*  inValue,
-    HOPCTFEValue*        outValue) {
-    int32_t targetTypeCode = HOPEvalTypeCode_INVALID;
-    int32_t currentTypeCode = HOPEvalTypeCode_INVALID;
+static int H2EvalAdaptStringValueForType(
+    H2Arena*            arena,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    const H2CTFEValue*  inValue,
+    H2CTFEValue*        outValue) {
+    int32_t targetTypeCode = H2EvalTypeCode_INVALID;
+    int32_t currentTypeCode = H2EvalTypeCode_INVALID;
     if (arena == NULL || typeFile == NULL || inValue == NULL || outValue == NULL
-        || inValue->kind != HOPCTFEValue_STRING)
+        || inValue->kind != H2CTFEValue_STRING)
     {
         return 0;
     }
-    if (!HOPEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
+    if (!H2EvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
         return 0;
     }
-    if (targetTypeCode == HOPEvalTypeCode_STR_PTR) {
-        if (HOPEvalValueGetRuntimeTypeCode(inValue, &currentTypeCode)
-            && currentTypeCode == HOPEvalTypeCode_STR_PTR)
+    if (targetTypeCode == H2EvalTypeCode_STR_PTR) {
+        if (H2EvalValueGetRuntimeTypeCode(inValue, &currentTypeCode)
+            && currentTypeCode == H2EvalTypeCode_STR_PTR)
         {
             *outValue = *inValue;
             return 1;
         }
-        return HOPEvalCloneStringValue(arena, inValue, outValue, targetTypeCode);
+        return H2EvalCloneStringValue(arena, inValue, outValue, targetTypeCode);
     }
     *outValue = *inValue;
-    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
     return 1;
 }
 
-static int HOPEvalTypeCodeFromValue(const HOPCTFEValue* value, int32_t* outTypeCode) {
+static int H2EvalTypeCodeFromValue(const H2CTFEValue* value, int32_t* outTypeCode) {
     if (outTypeCode != NULL) {
-        *outTypeCode = HOPEvalTypeCode_INVALID;
+        *outTypeCode = H2EvalTypeCode_INVALID;
     }
     if (value == NULL || outTypeCode == NULL) {
         return 0;
     }
-    if (HOPEvalValueGetRuntimeTypeCode(value, outTypeCode)) {
+    if (H2EvalValueGetRuntimeTypeCode(value, outTypeCode)) {
         return 1;
     }
-    if (value->kind == HOPCTFEValue_BOOL) {
-        *outTypeCode = HOPEvalTypeCode_BOOL;
+    if (value->kind == H2CTFEValue_BOOL) {
+        *outTypeCode = H2EvalTypeCode_BOOL;
         return 1;
     }
-    if (value->kind == HOPCTFEValue_INT) {
-        *outTypeCode = HOPEvalTypeCode_INT;
+    if (value->kind == H2CTFEValue_INT) {
+        *outTypeCode = H2EvalTypeCode_INT;
         return 1;
     }
-    if (value->kind == HOPCTFEValue_FLOAT) {
-        *outTypeCode = HOPEvalTypeCode_F64;
+    if (value->kind == H2CTFEValue_FLOAT) {
+        *outTypeCode = H2EvalTypeCode_F64;
         return 1;
     }
-    if (value->kind == HOPCTFEValue_STRING) {
-        *outTypeCode = HOPEvalTypeCode_STR_REF;
+    if (value->kind == H2CTFEValue_STRING) {
+        *outTypeCode = H2EvalTypeCode_STR_REF;
         return 1;
     }
-    if (value->kind == HOPCTFEValue_TYPE) {
-        *outTypeCode = HOPEvalTypeCode_TYPE;
+    if (value->kind == H2CTFEValue_TYPE) {
+        *outTypeCode = H2EvalTypeCode_TYPE;
         return 1;
     }
     return 0;
 }
 
-static void HOPEvalAnnotateValueTypeFromExpr(
-    const HOPParsedFile* file, const HOPAst* ast, int32_t exprNode, HOPCTFEValue* value) {
-    int32_t           typeCode = HOPEvalTypeCode_INVALID;
-    const HOPAstNode* n;
+static void H2EvalAnnotateValueTypeFromExpr(
+    const H2ParsedFile* file, const H2Ast* ast, int32_t exprNode, H2CTFEValue* value) {
+    int32_t          typeCode = H2EvalTypeCode_INVALID;
+    const H2AstNode* n;
     if (file == NULL || ast == NULL || value == NULL || exprNode < 0
         || (uint32_t)exprNode >= ast->len)
     {
         return;
     }
-    if (HOPEvalValueGetRuntimeTypeCode(value, &typeCode)) {
+    if (H2EvalValueGetRuntimeTypeCode(value, &typeCode)) {
         return;
     }
     n = &ast->nodes[exprNode];
-    while (n->kind == HOPAst_CALL_ARG) {
+    while (n->kind == H2Ast_CALL_ARG) {
         exprNode = n->firstChild;
         if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
             return;
         }
         n = &ast->nodes[exprNode];
     }
-    if (n->kind == HOPAst_CAST) {
+    if (n->kind == H2Ast_CAST) {
         int32_t typeNode = ASTNextSibling(ast, n->firstChild);
-        if (typeNode >= 0 && HOPEvalTypeCodeFromTypeNode(file, typeNode, &typeCode)) {
-            HOPEvalValueSetRuntimeTypeCode(value, typeCode);
+        if (typeNode >= 0 && H2EvalTypeCodeFromTypeNode(file, typeNode, &typeCode)) {
+            H2EvalValueSetRuntimeTypeCode(value, typeCode);
             return;
         }
     }
-    if (n->kind == HOPAst_STRING) {
-        HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_STR_REF);
+    if (n->kind == H2Ast_STRING) {
+        H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_STR_REF);
         return;
     }
-    if (n->kind == HOPAst_BOOL) {
-        HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_BOOL);
+    if (n->kind == H2Ast_BOOL) {
+        H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_BOOL);
         return;
     }
-    if (n->kind == HOPAst_FLOAT) {
-        HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_F64);
+    if (n->kind == H2Ast_FLOAT) {
+        H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_F64);
         return;
     }
-    if (n->kind == HOPAst_INT) {
-        HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_INT);
+    if (n->kind == H2Ast_INT) {
+        H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_INT);
         return;
     }
 }
 
-static int HOPEvalTypeNodeSize(
-    const HOPParsedFile* file, int32_t typeNode, uint64_t* outSize, uint32_t depth) {
-    const HOPAstNode* n;
+static int H2EvalTypeNodeSize(
+    const H2ParsedFile* file, int32_t typeNode, uint64_t* outSize, uint32_t depth) {
+    const H2AstNode* n;
     if (outSize != NULL) {
         *outSize = 0;
     }
@@ -536,23 +533,23 @@ static int HOPEvalTypeNodeSize(
     }
     n = &file->ast.nodes[typeNode];
     switch (n->kind) {
-        case HOPAst_TYPE_NAME:
-            return HOPEvalBuiltinTypeSize(file->source, n->dataStart, n->dataEnd, outSize);
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF:
-        case HOPAst_TYPE_FN:       *outSize = (uint64_t)sizeof(void*); return 1;
-        case HOPAst_TYPE_SLICE:
-        case HOPAst_TYPE_MUTSLICE: *outSize = (uint64_t)(sizeof(void*) * 2u); return 1;
-        case HOPAst_TYPE_OPTIONAL: {
+        case H2Ast_TYPE_NAME:
+            return H2EvalBuiltinTypeSize(file->source, n->dataStart, n->dataEnd, outSize);
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF:
+        case H2Ast_TYPE_FN:       *outSize = (uint64_t)sizeof(void*); return 1;
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE: *outSize = (uint64_t)(sizeof(void*) * 2u); return 1;
+        case H2Ast_TYPE_OPTIONAL: {
             int32_t child = file->ast.nodes[typeNode].firstChild;
-            return child >= 0 ? HOPEvalTypeNodeSize(file, child, outSize, depth + 1u) : 0;
+            return child >= 0 ? H2EvalTypeNodeSize(file, child, outSize, depth + 1u) : 0;
         }
-        case HOPAst_TYPE_ARRAY: {
+        case H2Ast_TYPE_ARRAY: {
             int32_t  elemTypeNode = file->ast.nodes[typeNode].firstChild;
             uint64_t elemSize = 0;
             uint64_t count = 0;
-            if (elemTypeNode < 0 || !HOPEvalTypeNodeSize(file, elemTypeNode, &elemSize, depth + 1u)
+            if (elemTypeNode < 0 || !H2EvalTypeNodeSize(file, elemTypeNode, &elemSize, depth + 1u)
                 || !ParseSliceU64(file->source, n->dataStart, n->dataEnd, &count))
             {
                 return 0;
@@ -585,13 +582,13 @@ static void DiagOffsetToLineCol(
     *outCol = col;
 }
 
-static int32_t VarLikeInitNode(const HOPParsedFile* file, int32_t varLikeNodeId) {
+static int32_t VarLikeInitNode(const H2ParsedFile* file, int32_t varLikeNodeId) {
     int32_t firstChild = ASTFirstChild(&file->ast, varLikeNodeId);
     int32_t afterNames;
     if (firstChild < 0) {
         return -1;
     }
-    if (file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST) {
+    if (file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST) {
         afterNames = ASTNextSibling(&file->ast, firstChild);
         if (afterNames >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[afterNames].kind)) {
             return ASTNextSibling(&file->ast, afterNames);
@@ -605,220 +602,220 @@ static int32_t VarLikeInitNode(const HOPParsedFile* file, int32_t varLikeNodeId)
 }
 
 typedef struct {
-    const HOPPackage*    pkg;
-    const HOPParsedFile* file;
-    int32_t              fnNode;
-    int32_t              bodyNode;
-    uint32_t             nameStart;
-    uint32_t             nameEnd;
-    uint32_t             paramCount;
-    uint8_t              hasReturnType;
-    uint8_t              hasContextClause;
-    uint8_t              isBuiltinPackageFn;
-    uint8_t              isVariadic;
-} HOPEvalFunction;
+    const H2Package*    pkg;
+    const H2ParsedFile* file;
+    int32_t             fnNode;
+    int32_t             bodyNode;
+    uint32_t            nameStart;
+    uint32_t            nameEnd;
+    uint32_t            paramCount;
+    uint8_t             hasReturnType;
+    uint8_t             hasContextClause;
+    uint8_t             isBuiltinPackageFn;
+    uint8_t             isVariadic;
+} H2EvalFunction;
 
 enum {
-    HOPEvalTopConstState_UNSEEN = 0,
-    HOPEvalTopConstState_VISITING = 1,
-    HOPEvalTopConstState_READY = 2,
-    HOPEvalTopConstState_FAILED = 3,
+    H2EvalTopConstState_UNSEEN = 0,
+    H2EvalTopConstState_VISITING = 1,
+    H2EvalTopConstState_READY = 2,
+    H2EvalTopConstState_FAILED = 3,
 };
 
 typedef struct {
-    const HOPParsedFile* file;
-    int32_t              nodeId;
-    int32_t              initExprNode;
-    uint32_t             nameStart;
-    uint32_t             nameEnd;
-    uint8_t              state;
-    uint8_t              _reserved[3];
-    HOPCTFEValue         value;
-} HOPEvalTopConst;
+    const H2ParsedFile* file;
+    int32_t             nodeId;
+    int32_t             initExprNode;
+    uint32_t            nameStart;
+    uint32_t            nameEnd;
+    uint8_t             state;
+    uint8_t             _reserved[3];
+    H2CTFEValue         value;
+} H2EvalTopConst;
 
 typedef struct {
-    const HOPParsedFile* file;
-    int32_t              nodeId;
-    int32_t              initExprNode;
-    int32_t              declTypeNode;
-    uint32_t             nameStart;
-    uint32_t             nameEnd;
-    uint8_t              state;
-    uint8_t              _reserved[3];
-    HOPCTFEValue         value;
-} HOPEvalTopVar;
+    const H2ParsedFile* file;
+    int32_t             nodeId;
+    int32_t             initExprNode;
+    int32_t             declTypeNode;
+    uint32_t            nameStart;
+    uint32_t            nameEnd;
+    uint8_t             state;
+    uint8_t             _reserved[3];
+    H2CTFEValue         value;
+} H2EvalTopVar;
 
 typedef struct {
-    uint32_t     nameStart;
-    uint32_t     nameEnd;
-    uint16_t     flags;
-    uint16_t     _reserved;
-    int32_t      typeNode;
-    int32_t      defaultExprNode;
-    HOPCTFEValue value;
-} HOPEvalAggregateField;
+    uint32_t    nameStart;
+    uint32_t    nameEnd;
+    uint16_t    flags;
+    uint16_t    _reserved;
+    int32_t     typeNode;
+    int32_t     defaultExprNode;
+    H2CTFEValue value;
+} H2EvalAggregateField;
 
 typedef struct {
-    const HOPParsedFile*   file;
-    int32_t                nodeId;
-    HOPEvalAggregateField* fields;
-    uint32_t               fieldLen;
-} HOPEvalAggregate;
+    const H2ParsedFile*   file;
+    int32_t               nodeId;
+    H2EvalAggregateField* fields;
+    uint32_t              fieldLen;
+} H2EvalAggregate;
 
 typedef struct {
-    const HOPParsedFile* file;
-    int32_t              typeNode;
-    int32_t              elemTypeNode;
-    HOPCTFEValue* _Nullable elems;
+    const H2ParsedFile* file;
+    int32_t             typeNode;
+    int32_t             elemTypeNode;
+    H2CTFEValue* _Nullable elems;
     uint32_t len;
-} HOPEvalArray;
+} H2EvalArray;
 
-struct HOPEvalContext {
-    HOPCTFEValue allocator;
-    HOPCTFEValue tempAllocator;
-    HOPCTFEValue logger;
+struct H2EvalContext {
+    H2CTFEValue allocator;
+    H2CTFEValue tempAllocator;
+    H2CTFEValue logger;
 };
 
 typedef struct {
-    const HOPParsedFile* file;
-    int32_t              enumNode;
-    uint32_t             variantNameStart;
-    uint32_t             variantNameEnd;
-    uint32_t             tagIndex;
-    HOPEvalAggregate* _Nullable payload;
-} HOPEvalTaggedEnum;
+    const H2ParsedFile* file;
+    int32_t             enumNode;
+    uint32_t            variantNameStart;
+    uint32_t            variantNameEnd;
+    uint32_t            tagIndex;
+    H2EvalAggregate* _Nullable payload;
+} H2EvalTaggedEnum;
 
 typedef struct {
-    const HOPParsedFile* activeTemplateParamFile;
-    uint32_t             activeTemplateParamNameStart;
-    uint32_t             activeTemplateParamNameEnd;
-    const HOPParsedFile* activeTemplateTypeFile;
-    int32_t              activeTemplateTypeNode;
-    HOPCTFEValue         activeTemplateTypeValue;
-    uint8_t              hasActiveTemplateTypeValue;
-} HOPEvalTemplateBindingState;
+    const H2ParsedFile* activeTemplateParamFile;
+    uint32_t            activeTemplateParamNameStart;
+    uint32_t            activeTemplateParamNameEnd;
+    const H2ParsedFile* activeTemplateTypeFile;
+    int32_t             activeTemplateTypeNode;
+    H2CTFEValue         activeTemplateTypeValue;
+    uint8_t             hasActiveTemplateTypeValue;
+} H2EvalTemplateBindingState;
 
-typedef struct HOPEvalReflectedType HOPEvalReflectedType;
-struct HOPEvalReflectedType {
-    uint8_t              kind;
-    uint8_t              namedKind;
-    uint16_t             _reserved;
-    const HOPParsedFile* file;
-    int32_t              nodeId;
-    uint32_t             arrayLen;
-    HOPCTFEValue         elemType;
+typedef struct H2EvalReflectedType H2EvalReflectedType;
+struct H2EvalReflectedType {
+    uint8_t             kind;
+    uint8_t             namedKind;
+    uint16_t            _reserved;
+    const H2ParsedFile* file;
+    int32_t             nodeId;
+    uint32_t            arrayLen;
+    H2CTFEValue         elemType;
 };
 
-#define HOP_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
-#define HOP_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
-#define HOP_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
-#define HOP_EVAL_TAGGED_ENUM_TAG_FLAG  (UINT64_C(1) << 60)
-#define HOP_EVAL_SIMPLE_TYPE_TAG_FLAG  (UINT64_C(1) << 59)
-#define HOP_EVAL_REFLECT_TYPE_TAG_FLAG (UINT64_C(1) << 58)
-#define HOP_EVAL_RUNTIME_TYPE_MAGIC    0x534c4556u
+#define H2_EVAL_PACKAGE_REF_TAG_FLAG  (UINT64_C(1) << 63)
+#define H2_EVAL_NULL_FIXED_LEN_TAG    (UINT64_C(1) << 62)
+#define H2_EVAL_FUNCTION_REF_TAG_FLAG (UINT64_C(1) << 61)
+#define H2_EVAL_TAGGED_ENUM_TAG_FLAG  (UINT64_C(1) << 60)
+#define H2_EVAL_SIMPLE_TYPE_TAG_FLAG  (UINT64_C(1) << 59)
+#define H2_EVAL_REFLECT_TYPE_TAG_FLAG (UINT64_C(1) << 58)
+#define H2_EVAL_RUNTIME_TYPE_MAGIC    0x534c4556u
 
 enum {
-    HOPEvalReflectType_NAMED = 1,
-    HOPEvalReflectType_PTR = 2,
-    HOPEvalReflectType_SLICE = 3,
-    HOPEvalReflectType_ARRAY = 4,
+    H2EvalReflectType_NAMED = 1,
+    H2EvalReflectType_PTR = 2,
+    H2EvalReflectType_SLICE = 3,
+    H2EvalReflectType_ARRAY = 4,
 };
 
 enum {
-    HOPEvalTypeKind_PRIMITIVE = 1,
-    HOPEvalTypeKind_ALIAS = 2,
-    HOPEvalTypeKind_STRUCT = 3,
-    HOPEvalTypeKind_UNION = 4,
-    HOPEvalTypeKind_ENUM = 5,
-    HOPEvalTypeKind_POINTER = 6,
-    HOPEvalTypeKind_REFERENCE = 7,
-    HOPEvalTypeKind_SLICE = 8,
-    HOPEvalTypeKind_ARRAY = 9,
-    HOPEvalTypeKind_OPTIONAL = 10,
-    HOPEvalTypeKind_FUNCTION = 11,
+    H2EvalTypeKind_PRIMITIVE = 1,
+    H2EvalTypeKind_ALIAS = 2,
+    H2EvalTypeKind_STRUCT = 3,
+    H2EvalTypeKind_UNION = 4,
+    H2EvalTypeKind_ENUM = 5,
+    H2EvalTypeKind_POINTER = 6,
+    H2EvalTypeKind_REFERENCE = 7,
+    H2EvalTypeKind_SLICE = 8,
+    H2EvalTypeKind_ARRAY = 9,
+    H2EvalTypeKind_OPTIONAL = 10,
+    H2EvalTypeKind_FUNCTION = 11,
 };
 
-struct HOPEvalProgram {
-    HOPArena* _Nonnull arena;
-    const HOPPackageLoader* loader;
-    const HOPPackage*       entryPkg;
-    const HOPParsedFile*    currentFile;
-    HOPCTFEExecCtx*         currentExecCtx;
-    struct HOPEvalMirExecCtx* _Nullable currentMirExecCtx;
-    HOPEvalFunction* funcs;
-    uint32_t         funcLen;
-    uint32_t         funcCap;
-    HOPEvalTopConst* topConsts;
-    uint32_t         topConstLen;
-    uint32_t         topConstCap;
-    HOPEvalTopVar*   topVars;
-    uint32_t         topVarLen;
-    uint32_t         topVarCap;
-    uint32_t         callDepth;
-    uint32_t         callStack[HOP_EVAL_CALL_MAX_DEPTH];
-    HOPEvalContext   rootContext;
-    const HOPEvalContext* _Nullable currentContext;
-    HOPCTFEValue         loggerPrefix;
-    const HOPParsedFile* activeTemplateParamFile;
-    uint32_t             activeTemplateParamNameStart;
-    uint32_t             activeTemplateParamNameEnd;
-    const HOPParsedFile* activeTemplateTypeFile;
-    int32_t              activeTemplateTypeNode;
-    HOPCTFEValue         activeTemplateTypeValue;
-    uint8_t              hasActiveTemplateTypeValue;
-    const HOPParsedFile* expectedCallExprFile;
-    int32_t              expectedCallExprNode;
-    const HOPParsedFile* expectedCallTypeFile;
-    int32_t              expectedCallTypeNode;
-    const HOPParsedFile* activeCallExpectedTypeFile;
-    int32_t              activeCallExpectedTypeNode;
-    int                  exitCalled;
-    int                  exitCode;
+struct H2EvalProgram {
+    H2Arena* _Nonnull arena;
+    const H2PackageLoader* loader;
+    const H2Package*       entryPkg;
+    const H2ParsedFile*    currentFile;
+    H2CTFEExecCtx*         currentExecCtx;
+    struct H2EvalMirExecCtx* _Nullable currentMirExecCtx;
+    H2EvalFunction* funcs;
+    uint32_t        funcLen;
+    uint32_t        funcCap;
+    H2EvalTopConst* topConsts;
+    uint32_t        topConstLen;
+    uint32_t        topConstCap;
+    H2EvalTopVar*   topVars;
+    uint32_t        topVarLen;
+    uint32_t        topVarCap;
+    uint32_t        callDepth;
+    uint32_t        callStack[H2_EVAL_CALL_MAX_DEPTH];
+    H2EvalContext   rootContext;
+    const H2EvalContext* _Nullable currentContext;
+    H2CTFEValue         loggerPrefix;
+    const H2ParsedFile* activeTemplateParamFile;
+    uint32_t            activeTemplateParamNameStart;
+    uint32_t            activeTemplateParamNameEnd;
+    const H2ParsedFile* activeTemplateTypeFile;
+    int32_t             activeTemplateTypeNode;
+    H2CTFEValue         activeTemplateTypeValue;
+    uint8_t             hasActiveTemplateTypeValue;
+    const H2ParsedFile* expectedCallExprFile;
+    int32_t             expectedCallExprNode;
+    const H2ParsedFile* expectedCallTypeFile;
+    int32_t             expectedCallTypeNode;
+    const H2ParsedFile* activeCallExpectedTypeFile;
+    int32_t             activeCallExpectedTypeNode;
+    int                 exitCalled;
+    int                 exitCode;
 };
 
-typedef struct HOPEvalMirExecCtx {
-    HOPEvalProgram*             p;
-    uint32_t*                   evalToMir;
-    uint32_t                    evalToMirLen;
-    uint32_t*                   mirToEval;
-    uint32_t                    mirToEvalLen;
-    const HOPParsedFile**       sourceFiles;
-    uint32_t                    sourceFileCap;
-    const HOPParsedFile*        savedFiles[HOP_EVAL_CALL_MAX_DEPTH];
-    uint8_t                     pushedFrames[HOP_EVAL_CALL_MAX_DEPTH];
-    struct HOPEvalMirExecCtx*   savedMirExecCtxs[HOP_EVAL_CALL_MAX_DEPTH];
-    uint32_t                    savedFileLen;
-    uint32_t                    rootMirFnIndex;
-    const HOPMirProgram*        mirProgram;
-    const HOPMirFunction*       mirFunction;
-    const HOPCTFEValue*         mirLocals;
-    uint32_t                    mirLocalCount;
-    const HOPMirProgram*        savedMirPrograms[HOP_EVAL_CALL_MAX_DEPTH];
-    const HOPMirFunction*       savedMirFunctions[HOP_EVAL_CALL_MAX_DEPTH];
-    const HOPCTFEValue*         savedMirLocals[HOP_EVAL_CALL_MAX_DEPTH];
-    uint32_t                    savedMirLocalCounts[HOP_EVAL_CALL_MAX_DEPTH];
-    uint32_t                    mirFrameDepth;
-    HOPEvalTemplateBindingState savedTemplateBindings[HOP_EVAL_CALL_MAX_DEPTH];
-    uint8_t                     restoresTemplateBinding[HOP_EVAL_CALL_MAX_DEPTH];
-    HOPEvalTemplateBindingState pendingTemplateBinding;
-    uint8_t                     hasPendingTemplateBinding;
-} HOPEvalMirExecCtx;
+typedef struct H2EvalMirExecCtx {
+    H2EvalProgram*             p;
+    uint32_t*                  evalToMir;
+    uint32_t                   evalToMirLen;
+    uint32_t*                  mirToEval;
+    uint32_t                   mirToEvalLen;
+    const H2ParsedFile**       sourceFiles;
+    uint32_t                   sourceFileCap;
+    const H2ParsedFile*        savedFiles[H2_EVAL_CALL_MAX_DEPTH];
+    uint8_t                    pushedFrames[H2_EVAL_CALL_MAX_DEPTH];
+    struct H2EvalMirExecCtx*   savedMirExecCtxs[H2_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   savedFileLen;
+    uint32_t                   rootMirFnIndex;
+    const H2MirProgram*        mirProgram;
+    const H2MirFunction*       mirFunction;
+    const H2CTFEValue*         mirLocals;
+    uint32_t                   mirLocalCount;
+    const H2MirProgram*        savedMirPrograms[H2_EVAL_CALL_MAX_DEPTH];
+    const H2MirFunction*       savedMirFunctions[H2_EVAL_CALL_MAX_DEPTH];
+    const H2CTFEValue*         savedMirLocals[H2_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   savedMirLocalCounts[H2_EVAL_CALL_MAX_DEPTH];
+    uint32_t                   mirFrameDepth;
+    H2EvalTemplateBindingState savedTemplateBindings[H2_EVAL_CALL_MAX_DEPTH];
+    uint8_t                    restoresTemplateBinding[H2_EVAL_CALL_MAX_DEPTH];
+    H2EvalTemplateBindingState pendingTemplateBinding;
+    uint8_t                    hasPendingTemplateBinding;
+} H2EvalMirExecCtx;
 
-static uint32_t HOPEvalAggregateFieldBindingCount(const HOPEvalAggregate* agg);
-static int      HOPEvalAppendAggregateFieldBindings(
-    HOPCTFEExecBinding*    fieldBindings,
-    uint32_t               bindingCap,
-    HOPCTFEExecEnv*        fieldFrame,
-    HOPEvalAggregateField* field);
-static int HOPEvalAggregateHasReservedFields(const HOPEvalAggregate* agg);
-static int HOPEvalReplayReservedAggregateFields(
-    HOPCTFEValue* target, const HOPEvalAggregate* sourceAgg);
+static uint32_t H2EvalAggregateFieldBindingCount(const H2EvalAggregate* agg);
+static int      H2EvalAppendAggregateFieldBindings(
+    H2CTFEExecBinding*    fieldBindings,
+    uint32_t              bindingCap,
+    H2CTFEExecEnv*        fieldFrame,
+    H2EvalAggregateField* field);
+static int H2EvalAggregateHasReservedFields(const H2EvalAggregate* agg);
+static int H2EvalReplayReservedAggregateFields(
+    H2CTFEValue* target, const H2EvalAggregate* sourceAgg);
 
-static void HOPEvalValueSetNull(HOPCTFEValue* value) {
+static void H2EvalValueSetNull(H2CTFEValue* value) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_NULL;
+    value->kind = H2CTFEValue_NULL;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
@@ -827,11 +824,11 @@ static void HOPEvalValueSetNull(HOPCTFEValue* value) {
     value->s.len = 0;
 }
 
-static void HOPEvalValueSetInt(HOPCTFEValue* value, int64_t n) {
+static void H2EvalValueSetInt(H2CTFEValue* value, int64_t n) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_INT;
+    value->kind = H2CTFEValue_INT;
     value->i64 = n;
     value->f64 = 0.0;
     value->b = 0;
@@ -840,20 +837,20 @@ static void HOPEvalValueSetInt(HOPCTFEValue* value, int64_t n) {
     value->s.len = 0;
 }
 
-static void HOPEvalValueSetRuntimeTypeCode(HOPCTFEValue* value, int32_t typeCode) {
+static void H2EvalValueSetRuntimeTypeCode(H2CTFEValue* value, int32_t typeCode) {
     if (value == NULL) {
         return;
     }
     value->span.fileLen = 0;
     value->span.startLine = (uint32_t)typeCode;
-    value->span.startColumn = HOP_EVAL_RUNTIME_TYPE_MAGIC;
+    value->span.startColumn = H2_EVAL_RUNTIME_TYPE_MAGIC;
     value->span.endLine = 0;
     value->span.endColumn = 0;
 }
 
-static int HOPEvalValueGetRuntimeTypeCode(const HOPCTFEValue* value, int32_t* outTypeCode) {
-    if (value == NULL || outTypeCode == NULL || value->kind == HOPCTFEValue_SPAN
-        || value->span.startColumn != HOP_EVAL_RUNTIME_TYPE_MAGIC)
+static int H2EvalValueGetRuntimeTypeCode(const H2CTFEValue* value, int32_t* outTypeCode) {
+    if (value == NULL || outTypeCode == NULL || value->kind == H2CTFEValue_SPAN
+        || value->span.startColumn != H2_EVAL_RUNTIME_TYPE_MAGIC)
     {
         return 0;
     }
@@ -861,15 +858,15 @@ static int HOPEvalValueGetRuntimeTypeCode(const HOPCTFEValue* value, int32_t* ou
     return 1;
 }
 
-static void HOPEvalValueSetSimpleTypeValue(HOPCTFEValue* value, int32_t typeCode) {
+static void H2EvalValueSetSimpleTypeValue(H2CTFEValue* value, int32_t typeCode) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_TYPE;
+    value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOP_EVAL_SIMPLE_TYPE_TAG_FLAG | (uint64_t)(uint32_t)typeCode;
+    value->typeTag = H2_EVAL_SIMPLE_TYPE_TAG_FLAG | (uint64_t)(uint32_t)typeCode;
     value->s.bytes = NULL;
     value->s.len = 0;
     value->span.fileBytes = NULL;
@@ -880,33 +877,33 @@ static void HOPEvalValueSetSimpleTypeValue(HOPCTFEValue* value, int32_t typeCode
     value->span.endColumn = 0;
 }
 
-static int HOPEvalValueGetSimpleTypeCode(const HOPCTFEValue* value, int32_t* outTypeCode) {
-    if (value == NULL || outTypeCode == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOP_EVAL_SIMPLE_TYPE_TAG_FLAG) == 0)
+static int H2EvalValueGetSimpleTypeCode(const H2CTFEValue* value, int32_t* outTypeCode) {
+    if (value == NULL || outTypeCode == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2_EVAL_SIMPLE_TYPE_TAG_FLAG) == 0)
     {
         return 0;
     }
-    *outTypeCode = (int32_t)(uint32_t)(value->typeTag & ~HOP_EVAL_SIMPLE_TYPE_TAG_FLAG);
+    *outTypeCode = (int32_t)(uint32_t)(value->typeTag & ~H2_EVAL_SIMPLE_TYPE_TAG_FLAG);
     return 1;
 }
 
-static void HOPEvalAnnotateUntypedLiteralValue(HOPCTFEValue* value) {
-    int32_t typeCode = HOPEvalTypeCode_INVALID;
-    if (value == NULL || HOPEvalValueGetRuntimeTypeCode(value, &typeCode)) {
+static void H2EvalAnnotateUntypedLiteralValue(H2CTFEValue* value) {
+    int32_t typeCode = H2EvalTypeCode_INVALID;
+    if (value == NULL || H2EvalValueGetRuntimeTypeCode(value, &typeCode)) {
         return;
     }
     switch (value->kind) {
-        case HOPCTFEValue_BOOL:  HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_BOOL); break;
-        case HOPCTFEValue_INT:   HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_INT); break;
-        case HOPCTFEValue_FLOAT: HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_F64); break;
-        case HOPCTFEValue_STRING:
-            HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_STR_REF);
+        case H2CTFEValue_BOOL:  H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_BOOL); break;
+        case H2CTFEValue_INT:   H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_INT); break;
+        case H2CTFEValue_FLOAT: H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_F64); break;
+        case H2CTFEValue_STRING:
+            H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_STR_REF);
             break;
         default: break;
     }
 }
 
-static uint64_t HOPEvalHashMix64(uint64_t x) {
+static uint64_t H2EvalHashMix64(uint64_t x) {
     x ^= x >> 21;
     x ^= x << 13;
     x ^= x >> 7;
@@ -914,34 +911,34 @@ static uint64_t HOPEvalHashMix64(uint64_t x) {
     return x;
 }
 
-static uint64_t HOPEvalReflectTypeTagBody(const HOPEvalReflectedType* rt) {
+static uint64_t H2EvalReflectTypeTagBody(const H2EvalReflectedType* rt) {
     uint64_t tag = 0;
     if (rt == NULL) {
         return 0;
     }
     tag = ((uint64_t)rt->kind << 52) ^ ((uint64_t)rt->namedKind << 44);
-    if (rt->kind == HOPEvalReflectType_NAMED) {
-        tag ^= HOPEvalHashMix64((uint64_t)(uintptr_t)rt->file);
-        tag ^= HOPEvalHashMix64((uint64_t)(uint32_t)(rt->nodeId + 1));
+    if (rt->kind == H2EvalReflectType_NAMED) {
+        tag ^= H2EvalHashMix64((uint64_t)(uintptr_t)rt->file);
+        tag ^= H2EvalHashMix64((uint64_t)(uint32_t)(rt->nodeId + 1));
     } else {
-        tag ^= HOPEvalHashMix64(rt->elemType.typeTag);
-        tag ^= HOPEvalHashMix64((uint64_t)rt->arrayLen);
+        tag ^= H2EvalHashMix64(rt->elemType.typeTag);
+        tag ^= H2EvalHashMix64((uint64_t)rt->arrayLen);
     }
     return tag
-         & ~(HOP_EVAL_PACKAGE_REF_TAG_FLAG | HOP_EVAL_NULL_FIXED_LEN_TAG
-             | HOP_EVAL_FUNCTION_REF_TAG_FLAG | HOP_EVAL_TAGGED_ENUM_TAG_FLAG
-             | HOP_EVAL_SIMPLE_TYPE_TAG_FLAG | HOP_EVAL_REFLECT_TYPE_TAG_FLAG);
+         & ~(H2_EVAL_PACKAGE_REF_TAG_FLAG | H2_EVAL_NULL_FIXED_LEN_TAG
+             | H2_EVAL_FUNCTION_REF_TAG_FLAG | H2_EVAL_TAGGED_ENUM_TAG_FLAG
+             | H2_EVAL_SIMPLE_TYPE_TAG_FLAG | H2_EVAL_REFLECT_TYPE_TAG_FLAG);
 }
 
-static void HOPEvalValueSetReflectedTypeValue(HOPCTFEValue* value, HOPEvalReflectedType* rt) {
+static void H2EvalValueSetReflectedTypeValue(H2CTFEValue* value, H2EvalReflectedType* rt) {
     if (value == NULL || rt == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_TYPE;
+    value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOP_EVAL_REFLECT_TYPE_TAG_FLAG | HOPEvalReflectTypeTagBody(rt);
+    value->typeTag = H2_EVAL_REFLECT_TYPE_TAG_FLAG | H2EvalReflectTypeTagBody(rt);
     value->s.bytes = (const uint8_t*)rt;
     value->s.len = 0;
     value->span.fileBytes = NULL;
@@ -952,86 +949,86 @@ static void HOPEvalValueSetReflectedTypeValue(HOPCTFEValue* value, HOPEvalReflec
     value->span.endColumn = 0;
 }
 
-static HOPEvalReflectedType* _Nullable HOPEvalValueAsReflectedType(const HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOP_EVAL_REFLECT_TYPE_TAG_FLAG) == 0 || value->s.bytes == NULL)
+static H2EvalReflectedType* _Nullable H2EvalValueAsReflectedType(const H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2_EVAL_REFLECT_TYPE_TAG_FLAG) == 0 || value->s.bytes == NULL)
     {
         return NULL;
     }
-    return (HOPEvalReflectedType*)value->s.bytes;
+    return (H2EvalReflectedType*)value->s.bytes;
 }
 
-static void HOPEvalValueSetPackageRef(HOPCTFEValue* value, uint32_t pkgIndex) {
+static void H2EvalValueSetPackageRef(H2CTFEValue* value, uint32_t pkgIndex) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_TYPE;
+    value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOP_EVAL_PACKAGE_REF_TAG_FLAG | (uint64_t)pkgIndex;
+    value->typeTag = H2_EVAL_PACKAGE_REF_TAG_FLAG | (uint64_t)pkgIndex;
     value->s.bytes = NULL;
     value->s.len = 0;
 }
 
-static void HOPEvalValueSetFunctionRef(HOPCTFEValue* value, uint32_t fnIndex) {
+static void H2EvalValueSetFunctionRef(H2CTFEValue* value, uint32_t fnIndex) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_TYPE;
+    value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOP_EVAL_FUNCTION_REF_TAG_FLAG | (uint64_t)fnIndex;
+    value->typeTag = H2_EVAL_FUNCTION_REF_TAG_FLAG | (uint64_t)fnIndex;
     value->s.bytes = NULL;
     value->s.len = 0;
 }
 
-static int HOPEvalValueIsPackageRef(const HOPCTFEValue* value, uint32_t* outPkgIndex) {
-    if (value == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOP_EVAL_PACKAGE_REF_TAG_FLAG) == 0)
+static int H2EvalValueIsPackageRef(const H2CTFEValue* value, uint32_t* outPkgIndex) {
+    if (value == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2_EVAL_PACKAGE_REF_TAG_FLAG) == 0)
     {
         return 0;
     }
     if (outPkgIndex != NULL) {
-        *outPkgIndex = (uint32_t)(value->typeTag & ~HOP_EVAL_PACKAGE_REF_TAG_FLAG);
+        *outPkgIndex = (uint32_t)(value->typeTag & ~H2_EVAL_PACKAGE_REF_TAG_FLAG);
     }
     return 1;
 }
 
-static int HOPEvalValueIsFunctionRef(const HOPCTFEValue* value, uint32_t* _Nullable outFnIndex) {
-    if (value == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOP_EVAL_FUNCTION_REF_TAG_FLAG) == 0)
+static int H2EvalValueIsFunctionRef(const H2CTFEValue* value, uint32_t* _Nullable outFnIndex) {
+    if (value == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2_EVAL_FUNCTION_REF_TAG_FLAG) == 0)
     {
         return 0;
     }
     if (outFnIndex != NULL) {
-        *outFnIndex = (uint32_t)(value->typeTag & ~HOP_EVAL_FUNCTION_REF_TAG_FLAG);
+        *outFnIndex = (uint32_t)(value->typeTag & ~H2_EVAL_FUNCTION_REF_TAG_FLAG);
     }
     return 1;
 }
 
-static int HOPEvalValueIsInvokableFunctionRef(const HOPCTFEValue* value) {
-    return HOPEvalValueIsFunctionRef(value, NULL) || HOPMirValueAsFunctionRef(value, NULL);
+static int H2EvalValueIsInvokableFunctionRef(const H2CTFEValue* value) {
+    return H2EvalValueIsFunctionRef(value, NULL) || H2MirValueAsFunctionRef(value, NULL);
 }
 
-static void HOPEvalValueSetTaggedEnum(
-    HOPEvalProgram*      p,
-    HOPCTFEValue*        value,
-    const HOPParsedFile* file,
-    int32_t              enumNode,
-    uint32_t             variantNameStart,
-    uint32_t             variantNameEnd,
-    uint32_t             tagIndex,
-    HOPEvalAggregate* _Nullable payload) {
-    HOPEvalTaggedEnum* tagged;
+static void H2EvalValueSetTaggedEnum(
+    H2EvalProgram*      p,
+    H2CTFEValue*        value,
+    const H2ParsedFile* file,
+    int32_t             enumNode,
+    uint32_t            variantNameStart,
+    uint32_t            variantNameEnd,
+    uint32_t            tagIndex,
+    H2EvalAggregate* _Nullable payload) {
+    H2EvalTaggedEnum* tagged;
     if (p == NULL || value == NULL || file == NULL) {
         return;
     }
-    tagged = (HOPEvalTaggedEnum*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalTaggedEnum), (uint32_t)_Alignof(HOPEvalTaggedEnum));
+    tagged = (H2EvalTaggedEnum*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalTaggedEnum), (uint32_t)_Alignof(H2EvalTaggedEnum));
     if (tagged == NULL) {
-        HOPEvalValueSetNull(value);
+        H2EvalValueSetNull(value);
         return;
     }
     memset(tagged, 0, sizeof(*tagged));
@@ -1041,53 +1038,53 @@ static void HOPEvalValueSetTaggedEnum(
     tagged->variantNameEnd = variantNameEnd;
     tagged->tagIndex = tagIndex;
     tagged->payload = payload;
-    value->kind = HOPCTFEValue_TYPE;
+    value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOP_EVAL_TAGGED_ENUM_TAG_FLAG
-                   | (((uint64_t)(uintptr_t)file) & ~HOP_EVAL_TAGGED_ENUM_TAG_FLAG);
+    value->typeTag = H2_EVAL_TAGGED_ENUM_TAG_FLAG
+                   | (((uint64_t)(uintptr_t)file) & ~H2_EVAL_TAGGED_ENUM_TAG_FLAG);
     value->typeTag ^= (uint64_t)(uint32_t)(enumNode + 1) << 3;
     value->typeTag ^= (uint64_t)tagIndex;
     value->s.bytes = (const uint8_t*)tagged;
     value->s.len = 0;
 }
 
-static HOPEvalTaggedEnum* _Nullable HOPEvalValueAsTaggedEnum(const HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_TYPE
-        || (value->typeTag & HOP_EVAL_TAGGED_ENUM_TAG_FLAG) == 0 || value->s.bytes == NULL)
+static H2EvalTaggedEnum* _Nullable H2EvalValueAsTaggedEnum(const H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_TYPE
+        || (value->typeTag & H2_EVAL_TAGGED_ENUM_TAG_FLAG) == 0 || value->s.bytes == NULL)
     {
         return NULL;
     }
-    return (HOPEvalTaggedEnum*)value->s.bytes;
+    return (H2EvalTaggedEnum*)value->s.bytes;
 }
 
-static uint64_t HOPEvalMakeAliasTag(const HOPParsedFile* file, int32_t nodeId) {
+static uint64_t H2EvalMakeAliasTag(const H2ParsedFile* file, int32_t nodeId) {
     uint64_t tag = 0;
     if (file != NULL) {
         tag = (uint64_t)(uintptr_t)file;
     }
     tag ^= (uint64_t)(uint32_t)(nodeId + 1) << 1;
-    return tag & ~HOP_EVAL_PACKAGE_REF_TAG_FLAG;
+    return tag & ~H2_EVAL_PACKAGE_REF_TAG_FLAG;
 }
 
-static uint64_t HOPEvalMakeNullFixedLenTag(uint32_t len) {
-    return HOP_EVAL_NULL_FIXED_LEN_TAG | (uint64_t)len;
+static uint64_t H2EvalMakeNullFixedLenTag(uint32_t len) {
+    return H2_EVAL_NULL_FIXED_LEN_TAG | (uint64_t)len;
 }
 
-static int HOPEvalValueGetNullFixedLen(const HOPCTFEValue* value, uint32_t* outLen) {
-    if (value == NULL || value->kind != HOPCTFEValue_NULL
-        || (value->typeTag & HOP_EVAL_NULL_FIXED_LEN_TAG) == 0)
+static int H2EvalValueGetNullFixedLen(const H2CTFEValue* value, uint32_t* outLen) {
+    if (value == NULL || value->kind != H2CTFEValue_NULL
+        || (value->typeTag & H2_EVAL_NULL_FIXED_LEN_TAG) == 0)
     {
         return 0;
     }
     if (outLen != NULL) {
-        *outLen = (uint32_t)(value->typeTag & ~HOP_EVAL_NULL_FIXED_LEN_TAG);
+        *outLen = (uint32_t)(value->typeTag & ~H2_EVAL_NULL_FIXED_LEN_TAG);
     }
     return 1;
 }
 
-static int HOPEvalParseUintSlice(
+static int H2EvalParseUintSlice(
     const char* source, uint32_t start, uint32_t end, uint32_t* _Nullable outValue) {
     uint64_t value = 0;
     uint32_t i;
@@ -1110,11 +1107,11 @@ static int HOPEvalParseUintSlice(
     return 1;
 }
 
-static int HOPEvalResolveNullCastTypeTag(
-    const HOPParsedFile* file, int32_t typeNode, uint64_t* _Nullable outTypeTag) {
-    const HOPAstNode* n;
-    int32_t           childNode;
-    uint32_t          fixedLen = 0;
+static int H2EvalResolveNullCastTypeTag(
+    const H2ParsedFile* file, int32_t typeNode, uint64_t* _Nullable outTypeTag) {
+    const H2AstNode* n;
+    int32_t          childNode;
+    uint32_t         fixedLen = 0;
     if (outTypeTag != NULL) {
         *outTypeTag = 0;
     }
@@ -1122,39 +1119,38 @@ static int HOPEvalResolveNullCastTypeTag(
         return 0;
     }
     n = &file->ast.nodes[typeNode];
-    if (n->kind == HOPAst_TYPE_NAME
-        && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "rawptr"))
+    if (n->kind == H2Ast_TYPE_NAME && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "rawptr"))
     {
         return 1;
     }
-    if (n->kind != HOPAst_TYPE_PTR && n->kind != HOPAst_TYPE_REF && n->kind != HOPAst_TYPE_MUTREF) {
+    if (n->kind != H2Ast_TYPE_PTR && n->kind != H2Ast_TYPE_REF && n->kind != H2Ast_TYPE_MUTREF) {
         return 0;
     }
     childNode = n->firstChild;
     if (childNode >= 0 && (uint32_t)childNode < file->ast.len
-        && file->ast.nodes[childNode].kind == HOPAst_TYPE_ARRAY
-        && HOPEvalParseUintSlice(
+        && file->ast.nodes[childNode].kind == H2Ast_TYPE_ARRAY
+        && H2EvalParseUintSlice(
             file->source,
             file->ast.nodes[childNode].dataStart,
             file->ast.nodes[childNode].dataEnd,
             &fixedLen))
     {
         if (outTypeTag != NULL) {
-            *outTypeTag = HOPEvalMakeNullFixedLenTag(fixedLen);
+            *outTypeTag = H2EvalMakeNullFixedLenTag(fixedLen);
         }
     }
     return 1;
 }
 
-static const HOPPackage* _Nullable HOPEvalFindPackageByFile(
-    const HOPEvalProgram* p, const HOPParsedFile* file) {
+static const H2Package* _Nullable H2EvalFindPackageByFile(
+    const H2EvalProgram* p, const H2ParsedFile* file) {
     uint32_t pkgIndex;
     if (p == NULL || p->loader == NULL || file == NULL) {
         return NULL;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
             if (&pkg->files[fileIndex] == file) {
                 return pkg;
@@ -1164,12 +1160,12 @@ static const HOPPackage* _Nullable HOPEvalFindPackageByFile(
     return NULL;
 }
 
-static void HOPEvalValueSetStringSlice(
-    HOPCTFEValue* value, const char* source, uint32_t start, uint32_t end) {
+static void H2EvalValueSetStringSlice(
+    H2CTFEValue* value, const char* source, uint32_t start, uint32_t end) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_STRING;
+    value->kind = H2CTFEValue_STRING;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
@@ -1178,13 +1174,13 @@ static void HOPEvalValueSetStringSlice(
     value->s.len = end >= start ? end - start : 0;
 }
 
-static int32_t HOPEvalResolveNamedTypeDeclInPackage(
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPParsedFile** outFile,
-    uint8_t*              outNamedKind) {
+static int32_t H2EvalResolveNamedTypeDeclInPackage(
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const H2ParsedFile** outFile,
+    uint8_t*             outNamedKind) {
     uint32_t fileIndex;
     if (outFile != NULL) {
         *outFile = NULL;
@@ -1196,19 +1192,19 @@ static int32_t HOPEvalResolveNamedTypeDeclInPackage(
         return -1;
     }
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* pkgFile = &pkg->files[fileIndex];
-        int32_t              nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        const H2ParsedFile* pkgFile = &pkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
         while (nodeId >= 0) {
-            const HOPAstNode* n = &pkgFile->ast.nodes[nodeId];
-            uint8_t           namedKind = 0;
-            if (n->kind == HOPAst_TYPE_ALIAS) {
-                namedKind = HOPEvalTypeKind_ALIAS;
-            } else if (n->kind == HOPAst_STRUCT) {
-                namedKind = HOPEvalTypeKind_STRUCT;
-            } else if (n->kind == HOPAst_UNION) {
-                namedKind = HOPEvalTypeKind_UNION;
-            } else if (n->kind == HOPAst_ENUM) {
-                namedKind = HOPEvalTypeKind_ENUM;
+            const H2AstNode* n = &pkgFile->ast.nodes[nodeId];
+            uint8_t          namedKind = 0;
+            if (n->kind == H2Ast_TYPE_ALIAS) {
+                namedKind = H2EvalTypeKind_ALIAS;
+            } else if (n->kind == H2Ast_STRUCT) {
+                namedKind = H2EvalTypeKind_STRUCT;
+            } else if (n->kind == H2Ast_UNION) {
+                namedKind = H2EvalTypeKind_UNION;
+            } else if (n->kind == H2Ast_ENUM) {
+                namedKind = H2EvalTypeKind_ENUM;
             }
             if (namedKind != 0
                 && SliceEqSlice(
@@ -1233,16 +1229,16 @@ static int32_t HOPEvalResolveNamedTypeDeclInPackage(
     return -1;
 }
 
-static int HOPEvalResolveTypePackageAndName(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPPackage**    outPkg,
-    uint32_t*             outLookupStart,
-    uint32_t*             outLookupEnd) {
-    const HOPPackage* currentPkg;
-    uint32_t          dot = nameStart;
+static int H2EvalResolveTypePackageAndName(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const H2Package**    outPkg,
+    uint32_t*            outLookupStart,
+    uint32_t*            outLookupEnd) {
+    const H2Package* currentPkg;
+    uint32_t         dot = nameStart;
     if (outPkg != NULL) {
         *outPkg = NULL;
     }
@@ -1255,7 +1251,7 @@ static int HOPEvalResolveTypePackageAndName(
     if (p == NULL || callerFile == NULL) {
         return 0;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, callerFile);
+    currentPkg = H2EvalFindPackageByFile(p, callerFile);
     while (dot < nameEnd) {
         if (callerFile->source[dot] == '.') {
             break;
@@ -1265,7 +1261,7 @@ static int HOPEvalResolveTypePackageAndName(
     if (dot < nameEnd && currentPkg != NULL) {
         uint32_t i;
         for (i = 0; i < currentPkg->importLen; i++) {
-            const HOPImportRef* imp = &currentPkg->imports[i];
+            const H2ImportRef* imp = &currentPkg->imports[i];
             if (imp->bindName == NULL || imp->target == NULL) {
                 continue;
             }
@@ -1289,68 +1285,68 @@ static int HOPEvalResolveTypePackageAndName(
     return currentPkg != NULL;
 }
 
-static int HOPEvalMakeNamedTypeValue(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* declFile,
-    int32_t              declNode,
-    uint8_t              namedKind,
-    HOPCTFEValue*        outValue) {
-    HOPEvalReflectedType* rt;
+static int H2EvalMakeNamedTypeValue(
+    H2EvalProgram*      p,
+    const H2ParsedFile* declFile,
+    int32_t             declNode,
+    uint8_t             namedKind,
+    H2CTFEValue*        outValue) {
+    H2EvalReflectedType* rt;
     if (p == NULL || declFile == NULL || outValue == NULL || declNode < 0) {
         return 0;
     }
-    rt = (HOPEvalReflectedType*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+    rt = (H2EvalReflectedType*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalReflectedType), (uint32_t)_Alignof(H2EvalReflectedType));
     if (rt == NULL) {
         return -1;
     }
     memset(rt, 0, sizeof(*rt));
-    rt->kind = HOPEvalReflectType_NAMED;
+    rt->kind = H2EvalReflectType_NAMED;
     rt->namedKind = namedKind;
     rt->file = declFile;
     rt->nodeId = declNode;
-    HOPEvalValueSetReflectedTypeValue(outValue, rt);
+    H2EvalValueSetReflectedTypeValue(outValue, rt);
     return 1;
 }
 
-static int HOPEvalResolveTypeValueName(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* callerFile,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    HOPCTFEValue*        outValue) {
-    const HOPPackage*    targetPkg = NULL;
-    const HOPParsedFile* declFile = NULL;
-    uint32_t             lookupStart = nameStart;
-    uint32_t             lookupEnd = nameEnd;
-    uint8_t              namedKind = 0;
-    int32_t              typeCode = HOPEvalTypeCode_INVALID;
-    int32_t              declNode = -1;
-    uint32_t             pkgIndex;
+static int H2EvalResolveTypeValueName(
+    H2EvalProgram*      p,
+    const H2ParsedFile* callerFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    H2CTFEValue*        outValue) {
+    const H2Package*    targetPkg = NULL;
+    const H2ParsedFile* declFile = NULL;
+    uint32_t            lookupStart = nameStart;
+    uint32_t            lookupEnd = nameEnd;
+    uint8_t             namedKind = 0;
+    int32_t             typeCode = H2EvalTypeCode_INVALID;
+    int32_t             declNode = -1;
+    uint32_t            pkgIndex;
     if (p == NULL || callerFile == NULL || outValue == NULL) {
         return 0;
     }
-    if (HOPEvalBuiltinTypeCode(callerFile->source, nameStart, nameEnd, &typeCode)) {
-        HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+    if (H2EvalBuiltinTypeCode(callerFile->source, nameStart, nameEnd, &typeCode)) {
+        H2EvalValueSetSimpleTypeValue(outValue, typeCode);
         return 1;
     }
-    if (HOPEvalResolveTypePackageAndName(
+    if (H2EvalResolveTypePackageAndName(
             p, callerFile, nameStart, nameEnd, &targetPkg, &lookupStart, &lookupEnd))
     {
-        declNode = HOPEvalResolveNamedTypeDeclInPackage(
+        declNode = H2EvalResolveNamedTypeDeclInPackage(
             targetPkg, callerFile, lookupStart, lookupEnd, &declFile, &namedKind);
         if (declNode >= 0 && declFile != NULL) {
-            return HOPEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
+            return H2EvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
         }
         {
-            int32_t topConstIndex = HOPEvalFindTopConstBySliceInPackage(
+            int32_t topConstIndex = H2EvalFindTopConstBySliceInPackage(
                 p, targetPkg, callerFile, lookupStart, lookupEnd);
             if (topConstIndex >= 0) {
                 int isConst = 0;
-                if (HOPEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+                if (H2EvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
                     return -1;
                 }
-                if (isConst && outValue->kind == HOPCTFEValue_TYPE) {
+                if (isConst && outValue->kind == H2CTFEValue_TYPE) {
                     return 1;
                 }
             }
@@ -1360,24 +1356,24 @@ static int HOPEvalResolveTypeValueName(
         return 0;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
-        int32_t           topConstIndex;
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
+        int32_t          topConstIndex;
         if (pkg == targetPkg) {
             continue;
         }
-        declNode = HOPEvalResolveNamedTypeDeclInPackage(
+        declNode = H2EvalResolveNamedTypeDeclInPackage(
             pkg, callerFile, lookupStart, lookupEnd, &declFile, &namedKind);
         if (declNode >= 0 && declFile != NULL) {
-            return HOPEvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
+            return H2EvalMakeNamedTypeValue(p, declFile, declNode, namedKind, outValue);
         }
-        topConstIndex = HOPEvalFindTopConstBySliceInPackage(
+        topConstIndex = H2EvalFindTopConstBySliceInPackage(
             p, pkg, callerFile, lookupStart, lookupEnd);
         if (topConstIndex >= 0) {
             int isConst = 0;
-            if (HOPEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+            if (H2EvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
                 return -1;
             }
-            if (isConst && outValue->kind == HOPCTFEValue_TYPE) {
+            if (isConst && outValue->kind == H2CTFEValue_TYPE) {
                 return 1;
             }
         }
@@ -1385,142 +1381,142 @@ static int HOPEvalResolveTypeValueName(
     return 0;
 }
 
-static uint64_t HOPEvalMakeAggregateTag(const HOPParsedFile* file, int32_t nodeId) {
+static uint64_t H2EvalMakeAggregateTag(const H2ParsedFile* file, int32_t nodeId) {
     uint64_t tag = 0;
     if (file != NULL) {
         tag = (uint64_t)(uintptr_t)file;
     }
     tag ^= (uint64_t)(uint32_t)(nodeId + 1) << 2;
     return tag
-         & ~(HOP_EVAL_PACKAGE_REF_TAG_FLAG | HOP_EVAL_NULL_FIXED_LEN_TAG
-             | HOPCTFEValueTag_AGG_PARTIAL);
+         & ~(H2_EVAL_PACKAGE_REF_TAG_FLAG | H2_EVAL_NULL_FIXED_LEN_TAG
+             | H2CTFEValueTag_AGG_PARTIAL);
 }
 
-static void HOPEvalValueSetAggregate(
-    HOPCTFEValue* value, const HOPParsedFile* file, int32_t nodeId, HOPEvalAggregate* aggregate) {
+static void H2EvalValueSetAggregate(
+    H2CTFEValue* value, const H2ParsedFile* file, int32_t nodeId, H2EvalAggregate* aggregate) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_AGGREGATE;
+    value->kind = H2CTFEValue_AGGREGATE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOPEvalMakeAggregateTag(file, nodeId);
+    value->typeTag = H2EvalMakeAggregateTag(file, nodeId);
     value->s.bytes = (const uint8_t*)aggregate;
     value->s.len = aggregate != NULL ? aggregate->fieldLen : 0;
 }
 
-static HOPEvalAggregate* _Nullable HOPEvalValueAsAggregate(const HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_AGGREGATE || value->s.bytes == NULL) {
+static H2EvalAggregate* _Nullable H2EvalValueAsAggregate(const H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_AGGREGATE || value->s.bytes == NULL) {
         return NULL;
     }
-    return (HOPEvalAggregate*)value->s.bytes;
+    return (H2EvalAggregate*)value->s.bytes;
 }
 
-static HOPCTFEValue* _Nullable HOPEvalValueReferenceTarget(const HOPCTFEValue* value);
-static void HOPEvalValueSetReference(HOPCTFEValue* value, HOPCTFEValue* target);
-static int  HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
-static int  HOPEvalZeroInitTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    HOPCTFEValue*         outValue,
-    int*                  outIsConst);
-static int HOPEvalResolveAliasCastTargetNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    const HOPParsedFile** outAliasFile,
-    int32_t*              outAliasNode,
-    int32_t*              outTargetNode);
-static int HOPEvalResolveAggregateDeclFromValue(
-    const HOPEvalProgram* p,
-    const HOPCTFEValue*   value,
-    const HOPParsedFile** outFile,
-    int32_t*              outNode);
-static int HOPEvalAggregateSetFieldValue(
-    HOPEvalAggregate*   agg,
-    const char*         source,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    const HOPCTFEValue* inValue,
-    HOPCTFEValue* _Nullable outValue);
-static int HOPEvalExecExprInFileWithType(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    HOPCTFEExecEnv*      env,
-    int32_t              exprNode,
-    const HOPParsedFile* typeFile,
+static H2CTFEValue* _Nullable H2EvalValueReferenceTarget(const H2CTFEValue* value);
+static void H2EvalValueSetReference(H2CTFEValue* value, H2CTFEValue* target);
+static int  H2EvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
+static int  H2EvalZeroInitTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
     int32_t              typeNode,
-    HOPCTFEValue*        outValue,
+    H2CTFEValue*         outValue,
     int*                 outIsConst);
-static HOPEvalAggregateField* _Nullable HOPEvalAggregateFindDirectField(
-    HOPEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd);
-static int HOPEvalValueSetFieldPath(
-    HOPCTFEValue*       value,
-    const char*         source,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    const HOPCTFEValue* inValue);
-static int HOPEvalFinalizeAggregateVarArrays(HOPEvalProgram* p, HOPEvalAggregate* agg);
-static int HOPEvalForInIndexCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    const HOPCTFEValue* sourceValue,
-    uint32_t            index,
-    int                 byRef,
-    HOPCTFEValue*       outValue,
+static int H2EvalResolveAliasCastTargetNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    const H2ParsedFile** outAliasFile,
+    int32_t*             outAliasNode,
+    int32_t*             outTargetNode);
+static int H2EvalResolveAggregateDeclFromValue(
+    const H2EvalProgram* p,
+    const H2CTFEValue*   value,
+    const H2ParsedFile** outFile,
+    int32_t*             outNode);
+static int H2EvalAggregateSetFieldValue(
+    H2EvalAggregate*   agg,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue,
+    H2CTFEValue* _Nullable outValue);
+static int H2EvalExecExprInFileWithType(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    H2CTFEExecEnv*      env,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
     int*                outIsConst);
-static int HOPEvalForInIterCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    int32_t             sourceNode,
-    const HOPCTFEValue* sourceValue,
-    uint32_t            index,
-    int                 hasKey,
-    int                 keyRef,
-    int                 valueRef,
-    int                 valueDiscard,
-    int*                outHasItem,
-    HOPCTFEValue*       outKey,
-    int*                outKeyIsConst,
-    HOPCTFEValue*       outValue,
-    int*                outValueIsConst);
+static H2EvalAggregateField* _Nullable H2EvalAggregateFindDirectField(
+    H2EvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd);
+static int H2EvalValueSetFieldPath(
+    H2CTFEValue*       value,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue);
+static int H2EvalFinalizeAggregateVarArrays(H2EvalProgram* p, H2EvalAggregate* agg);
+static int H2EvalForInIndexCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    const H2CTFEValue* sourceValue,
+    uint32_t           index,
+    int                byRef,
+    H2CTFEValue*       outValue,
+    int*               outIsConst);
+static int H2EvalForInIterCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    int32_t            sourceNode,
+    const H2CTFEValue* sourceValue,
+    uint32_t           index,
+    int                hasKey,
+    int                keyRef,
+    int                valueRef,
+    int                valueDiscard,
+    int*               outHasItem,
+    H2CTFEValue*       outKey,
+    int*               outKeyIsConst,
+    H2CTFEValue*       outValue,
+    int*               outValueIsConst);
 
-static void HOPEvalValueSetArray(
-    HOPCTFEValue* value, const HOPParsedFile* file, int32_t typeNode, HOPEvalArray* array) {
+static void H2EvalValueSetArray(
+    H2CTFEValue* value, const H2ParsedFile* file, int32_t typeNode, H2EvalArray* array) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_ARRAY;
+    value->kind = H2CTFEValue_ARRAY;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
-    value->typeTag = HOPEvalMakeAggregateTag(file, typeNode);
+    value->typeTag = H2EvalMakeAggregateTag(file, typeNode);
     value->s.bytes = (const uint8_t*)array;
     value->s.len = array != NULL ? array->len : 0;
 }
 
-static HOPEvalArray* _Nullable HOPEvalValueAsArray(const HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_ARRAY || value->s.bytes == NULL) {
+static H2EvalArray* _Nullable H2EvalValueAsArray(const H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_ARRAY || value->s.bytes == NULL) {
         return NULL;
     }
-    return (HOPEvalArray*)value->s.bytes;
+    return (H2EvalArray*)value->s.bytes;
 }
 
-static HOPEvalArray* _Nullable HOPEvalAllocArrayView(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    int32_t               elemTypeNode,
-    HOPCTFEValue* _Nullable elems,
+static H2EvalArray* _Nullable H2EvalAllocArrayView(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    int32_t              elemTypeNode,
+    H2CTFEValue* _Nullable elems,
     uint32_t len) {
-    HOPEvalArray* array;
+    H2EvalArray* array;
     if (p == NULL) {
         return NULL;
     }
-    array = (HOPEvalArray*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+    array = (H2EvalArray*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
     if (array == NULL) {
         return NULL;
     }
@@ -1533,48 +1529,48 @@ static HOPEvalArray* _Nullable HOPEvalAllocArrayView(
     return array;
 }
 
-static int HOPEvalAllocTupleValue(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              typeNode,
-    const HOPCTFEValue*  elems,
-    uint32_t             len,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    HOPEvalArray* array;
+static int H2EvalAllocTupleValue(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             typeNode,
+    const H2CTFEValue*  elems,
+    uint32_t            len,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    H2EvalArray* array;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    array = HOPEvalAllocArrayView(p, file, typeNode, -1, NULL, len);
+    array = H2EvalAllocArrayView(p, file, typeNode, -1, NULL, len);
     if (array == NULL) {
         return ErrorSimple("out of memory");
     }
     if (len > 0) {
-        array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-            p->arena, sizeof(HOPCTFEValue) * len, (uint32_t)_Alignof(HOPCTFEValue));
+        array->elems = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue) * len, (uint32_t)_Alignof(H2CTFEValue));
         if (array->elems == NULL) {
             return ErrorSimple("out of memory");
         }
-        memcpy(array->elems, elems, sizeof(HOPCTFEValue) * len);
+        memcpy(array->elems, elems, sizeof(H2CTFEValue) * len);
     }
-    HOPEvalValueSetArray(outValue, file, typeNode, array);
+    H2EvalValueSetArray(outValue, file, typeNode, array);
     *outIsConst = 1;
     return 0;
 }
 
-static const HOPCTFEValue* HOPEvalValueTargetOrSelf(const HOPCTFEValue* value) {
-    const HOPCTFEValue* target = HOPEvalValueReferenceTarget(value);
+static const H2CTFEValue* H2EvalValueTargetOrSelf(const H2CTFEValue* value) {
+    const H2CTFEValue* target = H2EvalValueReferenceTarget(value);
     return target != NULL ? target : value;
 }
 
-static int HOPEvalOptionalPayload(const HOPCTFEValue* value, const HOPCTFEValue** outPayload) {
+static int H2EvalOptionalPayload(const H2CTFEValue* value, const H2CTFEValue** outPayload) {
     if (outPayload != NULL) {
         *outPayload = NULL;
     }
-    if (value == NULL || value->kind != HOPCTFEValue_OPTIONAL || outPayload == NULL) {
+    if (value == NULL || value->kind != H2CTFEValue_OPTIONAL || outPayload == NULL) {
         return 0;
     }
     if (value->b == 0u) {
@@ -1583,47 +1579,47 @@ static int HOPEvalOptionalPayload(const HOPCTFEValue* value, const HOPCTFEValue*
     if (value->s.bytes == NULL) {
         return 0;
     }
-    *outPayload = (const HOPCTFEValue*)value->s.bytes;
+    *outPayload = (const H2CTFEValue*)value->s.bytes;
     return 1;
 }
 
-static int HOPEvalResolveSimpleAliasCastTarget(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    char*                 outTargetKind,
+static int H2EvalResolveSimpleAliasCastTarget(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    char*                outTargetKind,
     uint64_t* _Nullable outAliasTag);
 
-static int HOPEvalCoerceValueToTypeNode(
-    HOPEvalProgram* p, const HOPParsedFile* typeFile, int32_t typeNode, HOPCTFEValue* inOutValue) {
-    const HOPAstNode*   type;
-    const HOPCTFEValue* sourceValue;
-    HOPEvalAggregate*   sourceAgg;
-    const HOPCTFEValue* optionalPayload = NULL;
-    int32_t             targetTypeCode = HOPEvalTypeCode_INVALID;
-    uint32_t            i;
+static int H2EvalCoerceValueToTypeNode(
+    H2EvalProgram* p, const H2ParsedFile* typeFile, int32_t typeNode, H2CTFEValue* inOutValue) {
+    const H2AstNode*   type;
+    const H2CTFEValue* sourceValue;
+    H2EvalAggregate*   sourceAgg;
+    const H2CTFEValue* optionalPayload = NULL;
+    int32_t            targetTypeCode = H2EvalTypeCode_INVALID;
+    uint32_t           i;
     if (p == NULL || typeFile == NULL || typeNode < 0 || inOutValue == NULL
         || (uint32_t)typeNode >= typeFile->ast.len)
     {
         return -1;
     }
-    if (HOPEvalTypeNodeIsAnytype(typeFile, typeNode)) {
-        HOPEvalAnnotateUntypedLiteralValue(inOutValue);
+    if (H2EvalTypeNodeIsAnytype(typeFile, typeNode)) {
+        H2EvalAnnotateUntypedLiteralValue(inOutValue);
         return 0;
     }
-    if (HOPEvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
-        HOPEvalAnnotateUntypedLiteralValue(inOutValue);
+    if (H2EvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
+        H2EvalAnnotateUntypedLiteralValue(inOutValue);
         return 0;
     }
     type = &typeFile->ast.nodes[typeNode];
-    sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
-    if (type->kind == HOPAst_TYPE_OPTIONAL) {
+    sourceValue = H2EvalValueTargetOrSelf(inOutValue);
+    if (type->kind == H2Ast_TYPE_OPTIONAL) {
         int32_t payloadTypeNode = type->firstChild;
-        if (sourceValue->kind == HOPCTFEValue_OPTIONAL) {
+        if (sourceValue->kind == H2CTFEValue_OPTIONAL) {
             return 0;
         }
-        if (sourceValue->kind == HOPCTFEValue_NULL) {
-            inOutValue->kind = HOPCTFEValue_OPTIONAL;
+        if (sourceValue->kind == H2CTFEValue_NULL) {
+            inOutValue->kind = H2CTFEValue_OPTIONAL;
             inOutValue->i64 = 0;
             inOutValue->f64 = 0.0;
             inOutValue->b = 0u;
@@ -1633,20 +1629,20 @@ static int HOPEvalCoerceValueToTypeNode(
             return 0;
         }
         {
-            HOPCTFEValue  payloadValue = *inOutValue;
-            HOPCTFEValue* payloadCopy;
+            H2CTFEValue  payloadValue = *inOutValue;
+            H2CTFEValue* payloadCopy;
             if (payloadTypeNode >= 0
-                && HOPEvalCoerceValueToTypeNode(p, typeFile, payloadTypeNode, &payloadValue) != 0)
+                && H2EvalCoerceValueToTypeNode(p, typeFile, payloadTypeNode, &payloadValue) != 0)
             {
                 return -1;
             }
-            payloadCopy = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue), (uint32_t)_Alignof(HOPCTFEValue));
+            payloadCopy = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
             if (payloadCopy == NULL) {
                 return ErrorSimple("out of memory");
             }
             *payloadCopy = payloadValue;
-            inOutValue->kind = HOPCTFEValue_OPTIONAL;
+            inOutValue->kind = H2CTFEValue_OPTIONAL;
             inOutValue->i64 = 0;
             inOutValue->f64 = 0.0;
             inOutValue->b = 1u;
@@ -1656,8 +1652,8 @@ static int HOPEvalCoerceValueToTypeNode(
             return 0;
         }
     }
-    if (type->kind != HOPAst_TYPE_OPTIONAL && sourceValue->kind == HOPCTFEValue_OPTIONAL
-        && HOPEvalOptionalPayload(sourceValue, &optionalPayload))
+    if (type->kind != H2Ast_TYPE_OPTIONAL && sourceValue->kind == H2CTFEValue_OPTIONAL
+        && H2EvalOptionalPayload(sourceValue, &optionalPayload))
     {
         if (sourceValue->b == 0u || optionalPayload == NULL) {
             return 0;
@@ -1665,15 +1661,15 @@ static int HOPEvalCoerceValueToTypeNode(
         *inOutValue = *optionalPayload;
         sourceValue = inOutValue;
     }
-    if (type->kind == HOPAst_TYPE_NAME) {
+    if (type->kind == H2Ast_TYPE_NAME) {
         char     aliasTargetKind = '\0';
         uint64_t aliasTag = 0;
-        if (HOPEvalResolveSimpleAliasCastTarget(p, typeFile, typeNode, &aliasTargetKind, &aliasTag))
+        if (H2EvalResolveSimpleAliasCastTarget(p, typeFile, typeNode, &aliasTargetKind, &aliasTag))
         {
-            if ((aliasTargetKind == 'i' && sourceValue->kind == HOPCTFEValue_INT)
-                || (aliasTargetKind == 'f' && sourceValue->kind == HOPCTFEValue_FLOAT)
-                || (aliasTargetKind == 'b' && sourceValue->kind == HOPCTFEValue_BOOL)
-                || (aliasTargetKind == 's' && sourceValue->kind == HOPCTFEValue_STRING))
+            if ((aliasTargetKind == 'i' && sourceValue->kind == H2CTFEValue_INT)
+                || (aliasTargetKind == 'f' && sourceValue->kind == H2CTFEValue_FLOAT)
+                || (aliasTargetKind == 'b' && sourceValue->kind == H2CTFEValue_BOOL)
+                || (aliasTargetKind == 's' && sourceValue->kind == H2CTFEValue_STRING))
             {
                 *inOutValue = *sourceValue;
                 inOutValue->typeTag = aliasTag;
@@ -1681,51 +1677,51 @@ static int HOPEvalCoerceValueToTypeNode(
             }
         }
     }
-    sourceAgg = HOPEvalValueAsAggregate(sourceValue);
-    if ((type->kind == HOPAst_TYPE_NAME || type->kind == HOPAst_TYPE_ANON_STRUCT
-         || type->kind == HOPAst_TYPE_ANON_UNION)
+    sourceAgg = H2EvalValueAsAggregate(sourceValue);
+    if ((type->kind == H2Ast_TYPE_NAME || type->kind == H2Ast_TYPE_ANON_STRUCT
+         || type->kind == H2Ast_TYPE_ANON_UNION)
         && sourceAgg != NULL)
     {
-        HOPCTFEValue        targetValue;
-        int                 targetIsConst = 0;
-        HOPEvalAggregate*   targetAgg;
-        uint8_t*            explicitSet = NULL;
-        HOPCTFEExecBinding* fieldBindings = NULL;
-        HOPCTFEExecEnv      fieldFrame;
-        uint32_t            fieldBindingCap = 0;
-        int                 finalizeRc = 0;
-        int sourcePartial = (sourceValue->typeTag & HOPCTFEValueTag_AGG_PARTIAL) != 0u;
-        if (HOPEvalZeroInitTypeNode(p, typeFile, typeNode, &targetValue, &targetIsConst) != 0) {
+        H2CTFEValue        targetValue;
+        int                targetIsConst = 0;
+        H2EvalAggregate*   targetAgg;
+        uint8_t*           explicitSet = NULL;
+        H2CTFEExecBinding* fieldBindings = NULL;
+        H2CTFEExecEnv      fieldFrame;
+        uint32_t           fieldBindingCap = 0;
+        int                finalizeRc = 0;
+        int sourcePartial = (sourceValue->typeTag & H2CTFEValueTag_AGG_PARTIAL) != 0u;
+        if (H2EvalZeroInitTypeNode(p, typeFile, typeNode, &targetValue, &targetIsConst) != 0) {
             return -1;
         }
         if (!targetIsConst) {
             return 0;
         }
-        targetAgg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(&targetValue));
+        targetAgg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&targetValue));
         if (targetAgg == NULL) {
             return 0;
         }
         if (targetAgg->fieldLen > 0) {
-            fieldBindingCap = HOPEvalAggregateFieldBindingCount(targetAgg);
-            explicitSet = (uint8_t*)HOPArenaAlloc(
+            fieldBindingCap = H2EvalAggregateFieldBindingCount(targetAgg);
+            explicitSet = (uint8_t*)H2ArenaAlloc(
                 p->arena, targetAgg->fieldLen, (uint32_t)_Alignof(uint8_t));
-            fieldBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+            fieldBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
                 p->arena,
-                sizeof(HOPCTFEExecBinding) * fieldBindingCap,
-                (uint32_t)_Alignof(HOPCTFEExecBinding));
+                sizeof(H2CTFEExecBinding) * fieldBindingCap,
+                (uint32_t)_Alignof(H2CTFEExecBinding));
             if (explicitSet == NULL || fieldBindings == NULL) {
                 return ErrorSimple("out of memory");
             }
             memset(explicitSet, 0, targetAgg->fieldLen);
-            memset(fieldBindings, 0, sizeof(HOPCTFEExecBinding) * fieldBindingCap);
+            memset(fieldBindings, 0, sizeof(H2CTFEExecBinding) * fieldBindingCap);
         }
         for (i = 0; i < sourceAgg->fieldLen; i++) {
-            const HOPEvalAggregateField* field = &sourceAgg->fields[i];
-            HOPCTFEValue                 fieldValue = field->value;
-            HOPEvalAggregate*            embeddedFieldAgg = HOPEvalValueAsAggregate(&field->value);
-            int                          nestedReserved =
-                (field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0
-                && HOPEvalAggregateHasReservedFields(embeddedFieldAgg);
+            const H2EvalAggregateField* field = &sourceAgg->fields[i];
+            H2CTFEValue                 fieldValue = field->value;
+            H2EvalAggregate*            embeddedFieldAgg = H2EvalValueAsAggregate(&field->value);
+            int                         nestedReserved =
+                (field->flags & H2AstFlag_FIELD_EMBEDDED) != 0
+                && H2EvalAggregateHasReservedFields(embeddedFieldAgg);
             if (sourcePartial && field->typeNode >= 0 && (field->_reserved & 1u) == 0u
                 && !nestedReserved)
             {
@@ -1734,7 +1730,7 @@ static int HOPEvalCoerceValueToTypeNode(
             if (explicitSet != NULL) {
                 uint32_t j;
                 for (j = 0; j < targetAgg->fieldLen; j++) {
-                    HOPEvalAggregateField* targetField = &targetAgg->fields[j];
+                    H2EvalAggregateField* targetField = &targetAgg->fields[j];
                     if (SliceEqSlice(
                             sourceAgg->file->source,
                             field->nameStart,
@@ -1750,7 +1746,7 @@ static int HOPEvalCoerceValueToTypeNode(
                             explicitSet[j] = 1u;
                         }
                         if (targetField->typeNode >= 0
-                            && HOPEvalCoerceValueToTypeNode(
+                            && H2EvalCoerceValueToTypeNode(
                                    p, targetAgg->file, targetField->typeNode, &fieldValue)
                                    != 0)
                         {
@@ -1763,7 +1759,7 @@ static int HOPEvalCoerceValueToTypeNode(
             if (nestedReserved && sourcePartial && (field->_reserved & 1u) == 0u) {
                 continue;
             }
-            if (!HOPEvalValueSetFieldPath(
+            if (!H2EvalValueSetFieldPath(
                     &targetValue,
                     sourceAgg->file->source,
                     field->nameStart,
@@ -1777,11 +1773,11 @@ static int HOPEvalCoerceValueToTypeNode(
         fieldFrame.bindings = fieldBindings;
         fieldFrame.bindingLen = 0;
         for (i = 0; i < targetAgg->fieldLen; i++) {
-            HOPEvalAggregateField* field = &targetAgg->fields[i];
+            H2EvalAggregateField* field = &targetAgg->fields[i];
             if ((explicitSet == NULL || explicitSet[i] == 0u) && field->defaultExprNode >= 0) {
-                HOPCTFEValue defaultValue;
-                int          defaultIsConst = 0;
-                if (HOPEvalExecExprInFileWithType(
+                H2CTFEValue defaultValue;
+                int         defaultIsConst = 0;
+                if (H2EvalExecExprInFileWithType(
                         p,
                         targetAgg->file,
                         &fieldFrame,
@@ -1799,18 +1795,18 @@ static int HOPEvalCoerceValueToTypeNode(
                 }
                 field->value = defaultValue;
             }
-            if (sourcePartial && (field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
-                HOPEvalAggregateField* sourceField = HOPEvalAggregateFindDirectField(
+            if (sourcePartial && (field->flags & H2AstFlag_FIELD_EMBEDDED) != 0) {
+                H2EvalAggregateField* sourceField = H2EvalAggregateFindDirectField(
                     sourceAgg, targetAgg->file->source, field->nameStart, field->nameEnd);
                 if (sourceField != NULL
-                    && !HOPEvalReplayReservedAggregateFields(
-                        &targetValue, HOPEvalValueAsAggregate(&sourceField->value)))
+                    && !H2EvalReplayReservedAggregateFields(
+                        &targetValue, H2EvalValueAsAggregate(&sourceField->value)))
                 {
                     return 0;
                 }
             }
             if (fieldBindings != NULL
-                && HOPEvalAppendAggregateFieldBindings(
+                && H2EvalAppendAggregateFieldBindings(
                        fieldBindings, fieldBindingCap, &fieldFrame, field)
                        != 0)
             {
@@ -1818,17 +1814,17 @@ static int HOPEvalCoerceValueToTypeNode(
             }
             field->_reserved = 0;
         }
-        finalizeRc = HOPEvalFinalizeAggregateVarArrays(p, targetAgg);
+        finalizeRc = H2EvalFinalizeAggregateVarArrays(p, targetAgg);
         if (finalizeRc != 1) {
             return finalizeRc < 0 ? -1 : 0;
         }
         *inOutValue = targetValue;
     }
-    if (HOPEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)
-        && sourceValue->kind != HOPCTFEValue_STRING)
+    if (H2EvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)
+        && sourceValue->kind != H2CTFEValue_STRING)
     {
-        HOPCTFEValue stringValue;
-        int          stringRc = HOPEvalStringValueFromArrayBytes(
+        H2CTFEValue stringValue;
+        int         stringRc = H2EvalStringValueFromArrayBytes(
             p->arena, sourceValue, targetTypeCode, &stringValue);
         if (stringRc < 0) {
             return -1;
@@ -1837,55 +1833,54 @@ static int HOPEvalCoerceValueToTypeNode(
             *inOutValue = stringValue;
         }
     }
-    if (HOPEvalAdaptStringValueForType(p->arena, typeFile, typeNode, inOutValue, inOutValue) < 0) {
+    if (H2EvalAdaptStringValueForType(p->arena, typeFile, typeNode, inOutValue, inOutValue) < 0) {
         return -1;
     }
-    sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
-    if (HOPEvalTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
-        if (sourceValue->kind == HOPCTFEValue_BOOL && targetTypeCode == HOPEvalTypeCode_BOOL) {
-            HOPEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+    sourceValue = H2EvalValueTargetOrSelf(inOutValue);
+    if (H2EvalTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
+        if (sourceValue->kind == H2CTFEValue_BOOL && targetTypeCode == H2EvalTypeCode_BOOL) {
+            H2EvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         } else if (
-            sourceValue->kind == HOPCTFEValue_FLOAT
-            && (targetTypeCode == HOPEvalTypeCode_F32 || targetTypeCode == HOPEvalTypeCode_F64))
+            sourceValue->kind == H2CTFEValue_FLOAT
+            && (targetTypeCode == H2EvalTypeCode_F32 || targetTypeCode == H2EvalTypeCode_F64))
         {
-            HOPEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+            H2EvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         } else if (
-            sourceValue->kind == HOPCTFEValue_INT
-            && (targetTypeCode == HOPEvalTypeCode_U8 || targetTypeCode == HOPEvalTypeCode_U16
-                || targetTypeCode == HOPEvalTypeCode_U32 || targetTypeCode == HOPEvalTypeCode_U64
-                || targetTypeCode == HOPEvalTypeCode_UINT || targetTypeCode == HOPEvalTypeCode_I8
-                || targetTypeCode == HOPEvalTypeCode_I16 || targetTypeCode == HOPEvalTypeCode_I32
-                || targetTypeCode == HOPEvalTypeCode_I64 || targetTypeCode == HOPEvalTypeCode_INT))
+            sourceValue->kind == H2CTFEValue_INT
+            && (targetTypeCode == H2EvalTypeCode_U8 || targetTypeCode == H2EvalTypeCode_U16
+                || targetTypeCode == H2EvalTypeCode_U32 || targetTypeCode == H2EvalTypeCode_U64
+                || targetTypeCode == H2EvalTypeCode_UINT || targetTypeCode == H2EvalTypeCode_I8
+                || targetTypeCode == H2EvalTypeCode_I16 || targetTypeCode == H2EvalTypeCode_I32
+                || targetTypeCode == H2EvalTypeCode_I64 || targetTypeCode == H2EvalTypeCode_INT))
         {
-            HOPEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+            H2EvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         } else if (
-            targetTypeCode == HOPEvalTypeCode_RAWPTR
-            && (sourceValue->kind == HOPCTFEValue_REFERENCE
-                || sourceValue->kind == HOPCTFEValue_NULL
-                || sourceValue->kind == HOPCTFEValue_STRING))
+            targetTypeCode == H2EvalTypeCode_RAWPTR
+            && (sourceValue->kind == H2CTFEValue_REFERENCE || sourceValue->kind == H2CTFEValue_NULL
+                || sourceValue->kind == H2CTFEValue_STRING))
         {
-            HOPEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+            H2EvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         } else if (
-            sourceValue->kind == HOPCTFEValue_STRING
-            && (targetTypeCode == HOPEvalTypeCode_STR_REF
-                || targetTypeCode == HOPEvalTypeCode_STR_PTR))
+            sourceValue->kind == H2CTFEValue_STRING
+            && (targetTypeCode == H2EvalTypeCode_STR_REF
+                || targetTypeCode == H2EvalTypeCode_STR_PTR))
         {
-            HOPEvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
+            H2EvalValueSetRuntimeTypeCode(inOutValue, targetTypeCode);
         }
     }
     return 0;
 }
 
-static int HOPEvalForInIndexCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    const HOPCTFEValue* sourceValue,
-    uint32_t            index,
-    int                 byRef,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst) {
-    const HOPCTFEValue* targetValue;
-    HOPEvalArray*       array;
+static int H2EvalForInIndexCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    const H2CTFEValue* sourceValue,
+    uint32_t           index,
+    int                byRef,
+    H2CTFEValue*       outValue,
+    int*               outIsConst) {
+    const H2CTFEValue* targetValue;
+    H2EvalArray*       array;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -1894,57 +1889,55 @@ static int HOPEvalForInIndexCb(
     {
         return -1;
     }
-    targetValue = HOPEvalValueTargetOrSelf(sourceValue);
-    if (targetValue->kind == HOPCTFEValue_ARRAY) {
-        array = HOPEvalValueAsArray(targetValue);
+    targetValue = H2EvalValueTargetOrSelf(sourceValue);
+    if (targetValue->kind == H2CTFEValue_ARRAY) {
+        array = H2EvalValueAsArray(targetValue);
         if (array == NULL || index >= array->len) {
             return 0;
         }
         if (byRef) {
-            HOPEvalValueSetReference(outValue, &array->elems[index]);
+            H2EvalValueSetReference(outValue, &array->elems[index]);
         } else {
             *outValue = array->elems[index];
         }
         *outIsConst = 1;
         return 0;
     }
-    if (targetValue->kind == HOPCTFEValue_STRING) {
+    if (targetValue->kind == H2CTFEValue_STRING) {
         if (index >= targetValue->s.len) {
             return 0;
         }
         if (byRef) {
-            HOPCTFEValue* byteValue = (HOPCTFEValue*)HOPArenaAlloc(
-                ((HOPEvalProgram*)ctx)->arena,
-                sizeof(HOPCTFEValue),
-                (uint32_t)_Alignof(HOPCTFEValue));
+            H2CTFEValue* byteValue = (H2CTFEValue*)H2ArenaAlloc(
+                ((H2EvalProgram*)ctx)->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
             if (byteValue == NULL) {
                 return ErrorSimple("out of memory");
             }
-            HOPEvalValueSetInt(byteValue, (int64_t)targetValue->s.bytes[index]);
-            HOPEvalValueSetRuntimeTypeCode(byteValue, HOPEvalTypeCode_U8);
-            HOPEvalValueSetReference(outValue, byteValue);
+            H2EvalValueSetInt(byteValue, (int64_t)targetValue->s.bytes[index]);
+            H2EvalValueSetRuntimeTypeCode(byteValue, H2EvalTypeCode_U8);
+            H2EvalValueSetReference(outValue, byteValue);
             *outIsConst = 1;
             return 0;
         }
-        HOPEvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[index]);
-        HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
+        H2EvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[index]);
+        H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_U8);
         *outIsConst = 1;
         return 0;
     }
-    HOPCTFEExecSetReason(execCtx, 0, 0, "for-in loop source is not supported in evaluator backend");
+    H2CTFEExecSetReason(execCtx, 0, 0, "for-in loop source is not supported in evaluator backend");
     return 0;
 }
 
-static int HOPEvalCollectCallArgs(
-    HOPEvalProgram* p,
-    const HOPAst*   ast,
-    int32_t         firstArgNode,
-    HOPCTFEValue**  outArgs,
-    uint32_t*       outArgCount,
+static int H2EvalCollectCallArgs(
+    H2EvalProgram* p,
+    const H2Ast*   ast,
+    int32_t        firstArgNode,
+    H2CTFEValue**  outArgs,
+    uint32_t*      outArgCount,
     int32_t* _Nullable outLastArgNode) {
-    HOPCTFEValue tempArgs[256];
-    uint32_t     argCount = 0;
-    int32_t      argNode = firstArgNode;
+    H2CTFEValue tempArgs[256];
+    uint32_t    argCount = 0;
+    int32_t     argNode = firstArgNode;
     if (outArgs != NULL) {
         *outArgs = NULL;
     }
@@ -1958,10 +1951,10 @@ static int HOPEvalCollectCallArgs(
         return -1;
     }
     while (argNode >= 0) {
-        int32_t      argExprNode = argNode;
-        HOPCTFEValue argValue;
-        int          argIsConst = 0;
-        if (ast->nodes[argNode].kind == HOPAst_CALL_ARG) {
+        int32_t     argExprNode = argNode;
+        H2CTFEValue argValue;
+        int         argIsConst = 0;
+        if (ast->nodes[argNode].kind == H2Ast_CALL_ARG) {
             argExprNode = ast->nodes[argNode].firstChild;
         }
         if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
@@ -1969,7 +1962,7 @@ static int HOPEvalCollectCallArgs(
             *outArgs = NULL;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
+        if (H2EvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
             return -1;
         }
         if (!argIsConst) {
@@ -1977,12 +1970,12 @@ static int HOPEvalCollectCallArgs(
             *outArgs = NULL;
             return 0;
         }
-        HOPEvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
-        if (ast->nodes[argNode].kind == HOPAst_CALL_ARG
-            && (ast->nodes[argNode].flags & HOPAstFlag_CALL_ARG_SPREAD) != 0)
+        H2EvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
+        if (ast->nodes[argNode].kind == H2Ast_CALL_ARG
+            && (ast->nodes[argNode].flags & H2AstFlag_CALL_ARG_SPREAD) != 0)
         {
-            HOPEvalArray* array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&argValue));
-            uint32_t      i;
+            H2EvalArray* array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&argValue));
+            uint32_t     i;
             if (array == NULL) {
                 *outArgCount = 0;
                 *outArgs = NULL;
@@ -2006,20 +1999,20 @@ static int HOPEvalCollectCallArgs(
         argNode = ast->nodes[argNode].nextSibling;
     }
     if (argCount > 0) {
-        *outArgs = (HOPCTFEValue*)HOPArenaAlloc(
-            p->arena, sizeof(HOPCTFEValue) * argCount, (uint32_t)_Alignof(HOPCTFEValue));
+        *outArgs = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue) * argCount, (uint32_t)_Alignof(H2CTFEValue));
         if (*outArgs == NULL) {
             return ErrorSimple("out of memory");
         }
-        memcpy(*outArgs, tempArgs, sizeof(HOPCTFEValue) * argCount);
+        memcpy(*outArgs, tempArgs, sizeof(H2CTFEValue) * argCount);
     }
     *outArgCount = argCount;
     return 1;
 }
 
-static int HOPEvalCurrentContextFieldByLiteral(
-    const HOPEvalProgram* p, const char* fieldName, HOPCTFEValue* outValue) {
-    const HOPEvalContext* context;
+static int H2EvalCurrentContextFieldByLiteral(
+    const H2EvalProgram* p, const char* fieldName, H2CTFEValue* outValue) {
+    const H2EvalContext* context;
     if (p == NULL || fieldName == NULL || outValue == NULL) {
         return 0;
     }
@@ -2039,57 +2032,57 @@ static int HOPEvalCurrentContextFieldByLiteral(
     return 0;
 }
 
-static int HOPEvalCurrentContextFieldAddressByLiteral(
-    HOPEvalProgram* p, const char* fieldName, HOPCTFEValue* outValue) {
-    HOPEvalContext* context;
+static int H2EvalCurrentContextFieldAddressByLiteral(
+    H2EvalProgram* p, const char* fieldName, H2CTFEValue* outValue) {
+    H2EvalContext* context;
     if (p == NULL || fieldName == NULL || outValue == NULL) {
         return 0;
     }
-    context = p->currentContext != NULL ? (HOPEvalContext*)p->currentContext : &p->rootContext;
+    context = p->currentContext != NULL ? (H2EvalContext*)p->currentContext : &p->rootContext;
     if (strcmp(fieldName, "allocator") == 0) {
-        HOPEvalValueSetReference(outValue, &context->allocator);
+        H2EvalValueSetReference(outValue, &context->allocator);
         return 1;
     }
     if (strcmp(fieldName, "temp_allocator") == 0) {
-        HOPEvalValueSetReference(outValue, &context->tempAllocator);
+        H2EvalValueSetReference(outValue, &context->tempAllocator);
         return 1;
     }
     if (strcmp(fieldName, "logger") == 0) {
-        HOPEvalValueSetReference(outValue, &context->logger);
+        H2EvalValueSetReference(outValue, &context->logger);
         return 1;
     }
     return 0;
 }
 
-static int HOPEvalCurrentContextField(
-    const HOPEvalProgram* p,
-    const char*           source,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    HOPCTFEValue*         outValue) {
+static int H2EvalCurrentContextField(
+    const H2EvalProgram* p,
+    const char*          source,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    H2CTFEValue*         outValue) {
     if (source == NULL) {
         return 0;
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "allocator")) {
-        return HOPEvalCurrentContextFieldByLiteral(p, "allocator", outValue);
+        return H2EvalCurrentContextFieldByLiteral(p, "allocator", outValue);
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "temp_allocator")) {
-        return HOPEvalCurrentContextFieldByLiteral(p, "temp_allocator", outValue);
+        return H2EvalCurrentContextFieldByLiteral(p, "temp_allocator", outValue);
     }
     if (SliceEqCStr(source, nameStart, nameEnd, "logger")) {
-        return HOPEvalCurrentContextFieldByLiteral(p, "logger", outValue);
+        return H2EvalCurrentContextFieldByLiteral(p, "logger", outValue);
     }
     return 0;
 }
 
-static int HOPEvalMirContextGet(
+static int H2EvalMirContextGet(
     void* _Nullable ctx,
-    uint32_t         fieldId,
-    HOPMirExecValue* outValue,
-    int*             outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    const char*     fieldName = NULL;
+    uint32_t        fieldId,
+    H2MirExecValue* outValue,
+    int*            outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    const char*    fieldName = NULL;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -2097,27 +2090,27 @@ static int HOPEvalMirContextGet(
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    switch ((HOPMirContextField)fieldId) {
-        case HOPMirContextField_ALLOCATOR:      fieldName = "allocator"; break;
-        case HOPMirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
-        case HOPMirContextField_LOGGER:         fieldName = "logger"; break;
-        default:                                return 0;
+    switch ((H2MirContextField)fieldId) {
+        case H2MirContextField_ALLOCATOR:      fieldName = "allocator"; break;
+        case H2MirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
+        case H2MirContextField_LOGGER:         fieldName = "logger"; break;
+        default:                               return 0;
     }
-    if (!HOPEvalCurrentContextFieldByLiteral(p, fieldName, outValue)) {
+    if (!H2EvalCurrentContextFieldByLiteral(p, fieldName, outValue)) {
         return 0;
     }
     *outIsConst = 1;
     return 1;
 }
 
-static int HOPEvalMirContextAddr(
+static int H2EvalMirContextAddr(
     void* _Nullable ctx,
-    uint32_t         fieldId,
-    HOPMirExecValue* outValue,
-    int*             outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    const char*     fieldName = NULL;
+    uint32_t        fieldId,
+    H2MirExecValue* outValue,
+    int*            outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    const char*    fieldName = NULL;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -2125,36 +2118,36 @@ static int HOPEvalMirContextAddr(
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    switch ((HOPMirContextField)fieldId) {
-        case HOPMirContextField_ALLOCATOR:      fieldName = "allocator"; break;
-        case HOPMirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
-        case HOPMirContextField_LOGGER:         fieldName = "logger"; break;
-        default:                                return 0;
+    switch ((H2MirContextField)fieldId) {
+        case H2MirContextField_ALLOCATOR:      fieldName = "allocator"; break;
+        case H2MirContextField_TEMP_ALLOCATOR: fieldName = "temp_allocator"; break;
+        case H2MirContextField_LOGGER:         fieldName = "logger"; break;
+        default:                               return 0;
     }
-    if (!HOPEvalCurrentContextFieldAddressByLiteral(p, fieldName, outValue)) {
+    if (!H2EvalCurrentContextFieldAddressByLiteral(p, fieldName, outValue)) {
         return 0;
     }
     *outIsConst = 1;
     return 1;
 }
 
-static int HOPEvalBuildContextOverlay(
-    HOPEvalProgram* p, int32_t overlayNode, HOPEvalContext* outContext, const HOPParsedFile* file);
+static int H2EvalBuildContextOverlay(
+    H2EvalProgram* p, int32_t overlayNode, H2EvalContext* outContext, const H2ParsedFile* file);
 
-static int HOPEvalMirEvalWithContext(
+static int H2EvalMirEvalWithContext(
     void* _Nullable ctx,
-    uint32_t         sourceNode,
-    HOPMirExecValue* outValue,
-    int*             outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*       p = (HOPEvalProgram*)ctx;
-    const HOPEvalContext* savedContext;
-    HOPEvalContext        overlayContext;
-    const HOPAstNode*     n;
-    int32_t               exprNode;
-    int32_t               overlayNode;
-    int                   overlayRc;
-    int                   rc;
+    uint32_t        sourceNode,
+    H2MirExecValue* outValue,
+    int*            outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*       p = (H2EvalProgram*)ctx;
+    const H2EvalContext* savedContext;
+    H2EvalContext        overlayContext;
+    const H2AstNode*     n;
+    int32_t              exprNode;
+    int32_t              overlayNode;
+    int                  overlayRc;
+    int                  rc;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -2165,7 +2158,7 @@ static int HOPEvalMirEvalWithContext(
         return -1;
     }
     n = &p->currentFile->ast.nodes[sourceNode];
-    if (n->kind != HOPAst_CALL_WITH_CONTEXT) {
+    if (n->kind != H2Ast_CALL_WITH_CONTEXT) {
         return 0;
     }
     exprNode = n->firstChild;
@@ -2173,13 +2166,13 @@ static int HOPEvalMirEvalWithContext(
     if (exprNode < 0) {
         return 0;
     }
-    overlayRc = HOPEvalBuildContextOverlay(p, overlayNode, &overlayContext, p->currentFile);
+    overlayRc = H2EvalBuildContextOverlay(p, overlayNode, &overlayContext, p->currentFile);
     if (overlayRc != 1) {
         return overlayRc < 0 ? -1 : 0;
     }
     savedContext = p->currentContext;
     p->currentContext = &overlayContext;
-    rc = HOPEvalExecExprCb(p, exprNode, outValue, outIsConst);
+    rc = H2EvalExecExprCb(p, exprNode, outValue, outIsConst);
     p->currentContext = savedContext;
     if (rc != 0) {
         return -1;
@@ -2187,10 +2180,10 @@ static int HOPEvalMirEvalWithContext(
     return *outIsConst ? 1 : 0;
 }
 
-static int HOPEvalBuildContextOverlay(
-    HOPEvalProgram* p, int32_t overlayNode, HOPEvalContext* outContext, const HOPParsedFile* file) {
-    const HOPAst* ast;
-    int32_t       bindNode;
+static int H2EvalBuildContextOverlay(
+    H2EvalProgram* p, int32_t overlayNode, H2EvalContext* outContext, const H2ParsedFile* file) {
+    const H2Ast* ast;
+    int32_t      bindNode;
     if (p == NULL || outContext == NULL || file == NULL || p->currentFile == NULL) {
         return -1;
     }
@@ -2199,31 +2192,31 @@ static int HOPEvalBuildContextOverlay(
     if (overlayNode < 0 || (uint32_t)overlayNode >= ast->len) {
         return 1;
     }
-    if (ast->nodes[overlayNode].kind != HOPAst_CONTEXT_OVERLAY) {
+    if (ast->nodes[overlayNode].kind != H2Ast_CONTEXT_OVERLAY) {
         return 0;
     }
     bindNode = ASTFirstChild(ast, overlayNode);
     while (bindNode >= 0) {
-        const HOPAstNode* bind = &ast->nodes[bindNode];
-        int32_t           exprNode = ASTFirstChild(ast, bindNode);
-        HOPCTFEValue      fieldValue;
-        int               fieldIsConst = 0;
-        if (bind->kind != HOPAst_CONTEXT_BIND) {
+        const H2AstNode* bind = &ast->nodes[bindNode];
+        int32_t          exprNode = ASTFirstChild(ast, bindNode);
+        H2CTFEValue      fieldValue;
+        int              fieldIsConst = 0;
+        if (bind->kind != H2Ast_CONTEXT_BIND) {
             bindNode = ASTNextSibling(ast, bindNode);
             continue;
         }
         if (exprNode >= 0) {
-            if (HOPEvalExecExprCb(p, exprNode, &fieldValue, &fieldIsConst) != 0) {
+            if (H2EvalExecExprCb(p, exprNode, &fieldValue, &fieldIsConst) != 0) {
                 return -1;
             }
             if (!fieldIsConst) {
                 return 0;
             }
-        } else if (!HOPEvalCurrentContextField(
+        } else if (!H2EvalCurrentContextField(
                        p, file->source, bind->dataStart, bind->dataEnd, &fieldValue))
         {
             if (p->currentExecCtx != NULL) {
-                HOPCTFEExecSetReason(
+                H2CTFEExecSetReason(
                     p->currentExecCtx,
                     bind->dataStart,
                     bind->dataEnd,
@@ -2243,11 +2236,11 @@ static int HOPEvalBuildContextOverlay(
     return 1;
 }
 
-static void HOPEvalValueSetReference(HOPCTFEValue* value, HOPCTFEValue* target) {
+static void H2EvalValueSetReference(H2CTFEValue* value, H2CTFEValue* target) {
     if (value == NULL) {
         return;
     }
-    value->kind = HOPCTFEValue_REFERENCE;
+    value->kind = H2CTFEValue_REFERENCE;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
@@ -2256,22 +2249,22 @@ static void HOPEvalValueSetReference(HOPCTFEValue* value, HOPCTFEValue* target) 
     value->s.len = 0;
 }
 
-static HOPCTFEValue* _Nullable HOPEvalValueReferenceTarget(const HOPCTFEValue* value) {
-    if (value == NULL || value->kind != HOPCTFEValue_REFERENCE || value->s.bytes == NULL) {
+static H2CTFEValue* _Nullable H2EvalValueReferenceTarget(const H2CTFEValue* value) {
+    if (value == NULL || value->kind != H2CTFEValue_REFERENCE || value->s.bytes == NULL) {
         return NULL;
     }
-    return (HOPCTFEValue*)value->s.bytes;
+    return (H2CTFEValue*)value->s.bytes;
 }
 
-static int32_t HOPEvalFindNamedAggregateDeclInPackage(
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    int32_t               typeNode,
-    const HOPParsedFile** outFile) {
-    const HOPAstNode* typeNameNode;
-    uint32_t          lookupStart;
-    uint32_t          lookupEnd;
-    uint32_t          fileIndex;
+static int32_t H2EvalFindNamedAggregateDeclInPackage(
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    int32_t              typeNode,
+    const H2ParsedFile** outFile) {
+    const H2AstNode* typeNameNode;
+    uint32_t         lookupStart;
+    uint32_t         lookupEnd;
+    uint32_t         fileIndex;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -2281,7 +2274,7 @@ static int32_t HOPEvalFindNamedAggregateDeclInPackage(
         return -1;
     }
     typeNameNode = &callerFile->ast.nodes[typeNode];
-    if (typeNameNode->kind != HOPAst_TYPE_NAME) {
+    if (typeNameNode->kind != H2Ast_TYPE_NAME) {
         return -1;
     }
     lookupStart = typeNameNode->dataStart;
@@ -2295,11 +2288,11 @@ static int32_t HOPEvalFindNamedAggregateDeclInPackage(
         }
     }
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* pkgFile = &pkg->files[fileIndex];
-        int32_t              nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        const H2ParsedFile* pkgFile = &pkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
         while (nodeId >= 0) {
-            const HOPAstNode* n = &pkgFile->ast.nodes[nodeId];
-            if ((n->kind == HOPAst_STRUCT || n->kind == HOPAst_UNION)
+            const H2AstNode* n = &pkgFile->ast.nodes[nodeId];
+            if ((n->kind == H2Ast_STRUCT || n->kind == H2Ast_UNION)
                 && SliceEqSlice(
                     callerFile->source,
                     lookupStart,
@@ -2319,23 +2312,23 @@ static int32_t HOPEvalFindNamedAggregateDeclInPackage(
     return -1;
 }
 
-static int32_t HOPEvalFindNamedAggregateDecl(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    int32_t               typeNode,
-    const HOPParsedFile** outFile) {
-    const HOPPackage* currentPkg;
-    uint32_t          pkgIndex;
-    int32_t           nodeId;
+static int32_t H2EvalFindNamedAggregateDecl(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  callerFile,
+    int32_t              typeNode,
+    const H2ParsedFile** outFile) {
+    const H2Package* currentPkg;
+    uint32_t         pkgIndex;
+    int32_t          nodeId;
     if (outFile != NULL) {
         *outFile = NULL;
     }
     if (p == NULL || callerFile == NULL) {
         return -1;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, callerFile);
+    currentPkg = H2EvalFindPackageByFile(p, callerFile);
     if (currentPkg != NULL) {
-        nodeId = HOPEvalFindNamedAggregateDeclInPackage(currentPkg, callerFile, typeNode, outFile);
+        nodeId = H2EvalFindNamedAggregateDeclInPackage(currentPkg, callerFile, typeNode, outFile);
         if (nodeId >= 0) {
             return nodeId;
         }
@@ -2344,11 +2337,11 @@ static int32_t HOPEvalFindNamedAggregateDecl(
         return -1;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
         if (pkg == currentPkg) {
             continue;
         }
-        nodeId = HOPEvalFindNamedAggregateDeclInPackage(pkg, callerFile, typeNode, outFile);
+        nodeId = H2EvalFindNamedAggregateDeclInPackage(pkg, callerFile, typeNode, outFile);
         if (nodeId >= 0) {
             return nodeId;
         }
@@ -2356,12 +2349,12 @@ static int32_t HOPEvalFindNamedAggregateDecl(
     return -1;
 }
 
-static int32_t HOPEvalFindNamedEnumDeclInPackage(
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPParsedFile** outFile) {
+static int32_t H2EvalFindNamedEnumDeclInPackage(
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const H2ParsedFile** outFile) {
     uint32_t fileIndex;
     if (outFile != NULL) {
         *outFile = NULL;
@@ -2370,11 +2363,11 @@ static int32_t HOPEvalFindNamedEnumDeclInPackage(
         return -1;
     }
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* pkgFile = &pkg->files[fileIndex];
-        int32_t              nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        const H2ParsedFile* pkgFile = &pkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
         while (nodeId >= 0) {
-            const HOPAstNode* n = &pkgFile->ast.nodes[nodeId];
-            if (n->kind == HOPAst_ENUM
+            const H2AstNode* n = &pkgFile->ast.nodes[nodeId];
+            if (n->kind == H2Ast_ENUM
                 && SliceEqSlice(
                     callerFile->source,
                     nameStart,
@@ -2394,24 +2387,24 @@ static int32_t HOPEvalFindNamedEnumDeclInPackage(
     return -1;
 }
 
-static int32_t HOPEvalFindNamedEnumDecl(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPParsedFile** outFile) {
-    const HOPPackage* currentPkg;
-    uint32_t          pkgIndex;
-    int32_t           nodeId;
+static int32_t H2EvalFindNamedEnumDecl(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const H2ParsedFile** outFile) {
+    const H2Package* currentPkg;
+    uint32_t         pkgIndex;
+    int32_t          nodeId;
     if (outFile != NULL) {
         *outFile = NULL;
     }
     if (p == NULL || callerFile == NULL) {
         return -1;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, callerFile);
+    currentPkg = H2EvalFindPackageByFile(p, callerFile);
     if (currentPkg != NULL) {
-        nodeId = HOPEvalFindNamedEnumDeclInPackage(
+        nodeId = H2EvalFindNamedEnumDeclInPackage(
             currentPkg, callerFile, nameStart, nameEnd, outFile);
         if (nodeId >= 0) {
             return nodeId;
@@ -2421,11 +2414,11 @@ static int32_t HOPEvalFindNamedEnumDecl(
         return -1;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
         if (pkg == currentPkg) {
             continue;
         }
-        nodeId = HOPEvalFindNamedEnumDeclInPackage(pkg, callerFile, nameStart, nameEnd, outFile);
+        nodeId = H2EvalFindNamedEnumDeclInPackage(pkg, callerFile, nameStart, nameEnd, outFile);
         if (nodeId >= 0) {
             return nodeId;
         }
@@ -2433,14 +2426,14 @@ static int32_t HOPEvalFindNamedEnumDecl(
     return -1;
 }
 
-static int HOPEvalFindEnumVariant(
-    const HOPParsedFile* enumFile,
-    int32_t              enumNode,
-    const char*          source,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    int32_t*             outVariantNode,
-    uint32_t*            outTagIndex) {
+static int H2EvalFindEnumVariant(
+    const H2ParsedFile* enumFile,
+    int32_t             enumNode,
+    const char*         source,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outVariantNode,
+    uint32_t*           outTagIndex) {
     int32_t  child;
     uint32_t tagIndex = 0;
     if (outVariantNode != NULL) {
@@ -2455,12 +2448,12 @@ static int HOPEvalFindEnumVariant(
         return 0;
     }
     child = ASTFirstChild(&enumFile->ast, enumNode);
-    if (child >= 0 && enumFile->ast.nodes[child].kind != HOPAst_FIELD) {
+    if (child >= 0 && enumFile->ast.nodes[child].kind != H2Ast_FIELD) {
         child = ASTNextSibling(&enumFile->ast, child);
     }
     while (child >= 0) {
-        const HOPAstNode* fieldNode = &enumFile->ast.nodes[child];
-        if (fieldNode->kind == HOPAst_FIELD) {
+        const H2AstNode* fieldNode = &enumFile->ast.nodes[child];
+        if (fieldNode->kind == H2Ast_FIELD) {
             if (SliceEqSlice(
                     source,
                     nameStart,
@@ -2484,17 +2477,17 @@ static int HOPEvalFindEnumVariant(
     return 0;
 }
 
-static int HOPEvalEnumHasPayloadVariants(const HOPParsedFile* enumFile, int32_t enumNode) {
+static int H2EvalEnumHasPayloadVariants(const H2ParsedFile* enumFile, int32_t enumNode) {
     int32_t child;
     if (enumFile == NULL || enumNode < 0 || (uint32_t)enumNode >= enumFile->ast.len) {
         return 0;
     }
     child = ASTFirstChild(&enumFile->ast, enumNode);
     while (child >= 0) {
-        if (enumFile->ast.nodes[child].kind == HOPAst_FIELD) {
+        if (enumFile->ast.nodes[child].kind == H2Ast_FIELD) {
             int32_t valueNode = ASTFirstChild(&enumFile->ast, child);
             if (valueNode >= 0 && (uint32_t)valueNode < enumFile->ast.len
-                && enumFile->ast.nodes[valueNode].kind == HOPAst_FIELD)
+                && enumFile->ast.nodes[valueNode].kind == H2Ast_FIELD)
             {
                 return 1;
             }
@@ -2504,283 +2497,283 @@ static int HOPEvalEnumHasPayloadVariants(const HOPParsedFile* enumFile, int32_t 
     return 0;
 }
 
-static int HOPEvalZeroInitTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    HOPCTFEValue*         outValue,
-    int*                  outIsConst);
-static int HOPEvalResolveAggregateTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  typeFile,
-    int32_t               typeNode,
-    const HOPParsedFile** outDeclFile,
-    int32_t*              outDeclNode);
-static int HOPEvalExecExprWithTypeNode(
-    HOPEvalProgram*      p,
-    int32_t              exprNode,
-    const HOPParsedFile* typeFile,
+static int H2EvalZeroInitTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
     int32_t              typeNode,
-    HOPCTFEValue*        outValue,
+    H2CTFEValue*         outValue,
     int*                 outIsConst);
-static int HOPEvalExecExprInFileWithType(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* exprFile,
-    HOPCTFEExecEnv*      env,
-    int32_t              exprNode,
-    const HOPParsedFile* typeFile,
+static int H2EvalResolveAggregateTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  typeFile,
     int32_t              typeNode,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst);
-static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalAssignExprCb(
-    void* ctx, HOPCTFEExecCtx* execCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalAssignValueExprCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    int32_t             lhsExprNode,
-    const HOPCTFEValue* inValue,
-    HOPCTFEValue*       outValue,
+    const H2ParsedFile** outDeclFile,
+    int32_t*             outDeclNode);
+static int H2EvalExecExprWithTypeNode(
+    H2EvalProgram*      p,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
     int*                outIsConst);
-static int HOPEvalMatchPatternCb(
+static int H2EvalExecExprInFileWithType(
+    H2EvalProgram*      p,
+    const H2ParsedFile* exprFile,
+    H2CTFEExecEnv*      env,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst);
+static int H2EvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalAssignExprCb(
+    void* ctx, H2CTFEExecCtx* execCtx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalAssignValueExprCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    int32_t            lhsExprNode,
+    const H2CTFEValue* inValue,
+    H2CTFEValue*       outValue,
+    int*               outIsConst);
+static int H2EvalMatchPatternCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    const H2CTFEValue* subjectValue,
+    int32_t            labelExprNode,
+    int*               outMatched);
+static int H2EvalZeroInitCb(void* ctx, int32_t typeNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalMirZeroInitLocal(
     void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    const HOPCTFEValue* subjectValue,
-    int32_t             labelExprNode,
-    int*                outMatched);
-static int HOPEvalZeroInitCb(void* ctx, int32_t typeNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalMirZeroInitLocal(
-    void*                ctx,
-    const HOPMirTypeRef* typeRef,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirCoerceValueForType(
-    void* ctx, const HOPMirTypeRef* typeRef, HOPCTFEValue* inOutValue, HOPDiag* _Nullable diag);
-static int HOPEvalMirIndexValue(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    const HOPCTFEValue* index,
-    HOPCTFEValue*       outValue,
+    const H2MirTypeRef* typeRef,
+    H2CTFEValue*        outValue,
     int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirIndexAddr(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    const HOPCTFEValue* index,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirSliceValue(
+    H2Diag* _Nullable diag);
+static int H2EvalMirCoerceValueForType(
+    void* ctx, const H2MirTypeRef* typeRef, H2CTFEValue* inOutValue, H2Diag* _Nullable diag);
+static int H2EvalMirIndexValue(
+    void*              ctx,
+    const H2CTFEValue* base,
+    const H2CTFEValue* index,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirIndexAddr(
+    void*              ctx,
+    const H2CTFEValue* base,
+    const H2CTFEValue* index,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirSliceValue(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull base,
-    const HOPCTFEValue* _Nullable start,
-    const HOPCTFEValue* _Nullable end,
+    const H2CTFEValue* _Nonnull base,
+    const H2CTFEValue* _Nullable start,
+    const H2CTFEValue* _Nullable end,
     uint16_t flags,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirAggGetField(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirAggAddrField(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirAggSetField(
+    H2Diag* _Nullable diag);
+static int H2EvalMirAggGetField(
+    void*              ctx,
+    const H2CTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirAggAddrField(
+    void*              ctx,
+    const H2CTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirAggSetField(
     void* _Nullable ctx,
-    HOPCTFEValue* _Nonnull inOutBase,
+    H2CTFEValue* _Nonnull inOutBase,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nonnull inValue,
+    const H2CTFEValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirMakeTuple(
-    void*               ctx,
-    const HOPCTFEValue* elems,
-    uint32_t            elemCount,
-    uint32_t            typeNodeHint,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirMakeVariadicPack(
+    H2Diag* _Nullable diag);
+static int H2EvalMirMakeTuple(
+    void*              ctx,
+    const H2CTFEValue* elems,
+    uint32_t           elemCount,
+    uint32_t           typeNodeHint,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirMakeVariadicPack(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirTypeRef* _Nullable paramTypeRef,
-    uint16_t            callFlags,
-    const HOPCTFEValue* args,
-    uint32_t            argCount,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirHostCall(
-    void*               ctx,
-    uint32_t            hostId,
-    const HOPCTFEValue* args,
-    uint32_t            argCount,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalTryMirZeroInitType(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              typeNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst);
-static int HOPEvalTryMirEvalTopInit(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              initExprNode,
-    int32_t              declTypeNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    const HOPParsedFile* _Nullable coerceTypeFile,
-    int32_t       coerceTypeNode,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    int* _Nullable outSupported);
-static int HOPEvalMirBuildTopInitProgram(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              initExprNode,
-    int32_t              declTypeNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    HOPMirProgram*       outProgram,
-    HOPEvalMirExecCtx*   outExecCtx,
-    uint32_t*            outRootMirFnIndex,
-    int*                 outSupported);
-static void HOPEvalMirAdaptOutValue(
-    const HOPEvalMirExecCtx* c, HOPCTFEValue* _Nullable value, int* _Nullable inOutIsConst);
-static int HOPEvalTryMirEvalExprWithType(
-    HOPEvalProgram*      p,
-    int32_t              exprNode,
-    const HOPParsedFile* exprFile,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    const HOPParsedFile* _Nullable typeFile,
-    int32_t       typeNode,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    int*          outSupported);
-static int HOPEvalMirEnterFunction(
-    void* ctx, uint32_t functionIndex, uint32_t sourceRef, HOPDiag* _Nullable diag);
-static void HOPEvalMirLeaveFunction(void* ctx);
-static int  HOPEvalMirBindFrame(
-    void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPCTFEValue* _Nullable locals,
-    uint32_t localCount,
-    HOPDiag* _Nullable diag);
-static void HOPEvalMirUnbindFrame(void* _Nullable ctx);
-static void HOPEvalMirInitExecEnv(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    HOPMirExecEnv*       env,
-    HOPEvalMirExecCtx* _Nullable functionCtx);
-static int HOPEvalMirEvalBinary(
-    void* _Nullable ctx,
-    HOPTokenKind op,
-    const HOPMirExecValue* _Nonnull lhs,
-    const HOPMirExecValue* _Nonnull rhs,
-    HOPMirExecValue* _Nonnull outValue,
-    int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirAllocNew(
-    void* _Nullable ctx,
-    uint32_t sourceNode,
-    HOPMirExecValue* _Nonnull outValue,
-    int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirContextGet(
-    void* _Nullable ctx,
-    uint32_t fieldId,
-    HOPMirExecValue* _Nonnull outValue,
-    int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirEvalWithContext(
-    void* _Nullable ctx,
-    uint32_t sourceNode,
-    HOPMirExecValue* _Nonnull outValue,
-    int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveIdent(
-    void*         ctx,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirAssignIdent(
-    void*               ctx,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirTypeRef* _Nullable paramTypeRef,
+    uint16_t           callFlags,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirHostCall(
+    void*              ctx,
+    uint32_t           hostId,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalTryMirZeroInitType(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             typeNode,
     uint32_t            nameStart,
     uint32_t            nameEnd,
-    const HOPCTFEValue* inValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveCall(
+    H2CTFEValue*        outValue,
+    int*                outIsConst);
+static int H2EvalTryMirEvalTopInit(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const H2ParsedFile* _Nullable coerceTypeFile,
+    int32_t      coerceTypeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    int* _Nullable outSupported);
+static int H2EvalMirBuildTopInitProgram(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    H2MirProgram*       outProgram,
+    H2EvalMirExecCtx*   outExecCtx,
+    uint32_t*           outRootMirFnIndex,
+    int*                outSupported);
+static void H2EvalMirAdaptOutValue(
+    const H2EvalMirExecCtx* c, H2CTFEValue* _Nullable value, int* _Nullable inOutIsConst);
+static int H2EvalTryMirEvalExprWithType(
+    H2EvalProgram*      p,
+    int32_t             exprNode,
+    const H2ParsedFile* exprFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    int*         outSupported);
+static int H2EvalMirEnterFunction(
+    void* ctx, uint32_t functionIndex, uint32_t sourceRef, H2Diag* _Nullable diag);
+static void H2EvalMirLeaveFunction(void* ctx);
+static int  H2EvalMirBindFrame(
+    void* _Nullable ctx,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2CTFEValue* _Nullable locals,
+    uint32_t localCount,
+    H2Diag* _Nullable diag);
+static void H2EvalMirUnbindFrame(void* _Nullable ctx);
+static void H2EvalMirInitExecEnv(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    H2MirExecEnv*       env,
+    H2EvalMirExecCtx* _Nullable functionCtx);
+static int H2EvalMirEvalBinary(
+    void* _Nullable ctx,
+    H2TokenKind op,
+    const H2MirExecValue* _Nonnull lhs,
+    const H2MirExecValue* _Nonnull rhs,
+    H2MirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirAllocNew(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    H2MirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirContextGet(
+    void* _Nullable ctx,
+    uint32_t fieldId,
+    H2MirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirEvalWithContext(
+    void* _Nullable ctx,
+    uint32_t sourceNode,
+    H2MirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveIdent(
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirAssignIdent(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveCall(
     void*    ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveCallMir(
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveCallMir(
     void* ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveCallMirPre(
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveCallMirPre(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalEvalTopVar(
-    HOPEvalProgram* p, uint32_t topVarIndex, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalInvokeFunction(
-    HOPEvalProgram* p,
-    int32_t         fnIndex,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t              argCount,
-    const HOPEvalContext* callContext,
-    HOPCTFEValue*         outValue,
-    int*                  outDidReturn);
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalEvalTopVar(
+    H2EvalProgram* p, uint32_t topVarIndex, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalInvokeFunction(
+    H2EvalProgram* p,
+    int32_t        fnIndex,
+    const H2CTFEValue* _Nullable args,
+    uint32_t             argCount,
+    const H2EvalContext* callContext,
+    H2CTFEValue*         outValue,
+    int*                 outDidReturn);
 
-static int32_t HOPEvalAggregateLookupFieldIndex(
-    const HOPEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+static int32_t H2EvalAggregateLookupFieldIndex(
+    const H2EvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (agg == NULL || source == NULL) {
         return -1;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &agg->fields[i];
+        const H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -2788,14 +2781,14 @@ static int32_t HOPEvalAggregateLookupFieldIndex(
         }
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &agg->fields[i];
-        HOPEvalAggregate*            embedded = NULL;
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) == 0) {
+        const H2EvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregate*            embedded = NULL;
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) == 0) {
             continue;
         }
-        embedded = HOPEvalValueAsAggregate(&field->value);
+        embedded = H2EvalValueAsAggregate(&field->value);
         if (embedded != NULL) {
-            int32_t nested = HOPEvalAggregateLookupFieldIndex(embedded, source, nameStart, nameEnd);
+            int32_t nested = H2EvalAggregateLookupFieldIndex(embedded, source, nameStart, nameEnd);
             if (nested >= 0) {
                 return (int32_t)i;
             }
@@ -2804,14 +2797,14 @@ static int32_t HOPEvalAggregateLookupFieldIndex(
     return -1;
 }
 
-static int32_t HOPEvalAggregateLookupDirectFieldIndex(
-    const HOPEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+static int32_t H2EvalAggregateLookupDirectFieldIndex(
+    const H2EvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (agg == NULL || source == NULL) {
         return -1;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &agg->fields[i];
+        const H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -2821,18 +2814,18 @@ static int32_t HOPEvalAggregateLookupDirectFieldIndex(
     return -1;
 }
 
-static HOPEvalAggregateField* _Nullable HOPEvalAggregateLookupField(
-    HOPEvalAggregate* agg,
-    const char*       source,
-    uint32_t          nameStart,
-    uint32_t          nameEnd,
-    HOPEvalAggregate** _Nullable outOwner) {
+static H2EvalAggregateField* _Nullable H2EvalAggregateLookupField(
+    H2EvalAggregate* agg,
+    const char*      source,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    H2EvalAggregate** _Nullable outOwner) {
     uint32_t i;
     if (agg == NULL || source == NULL) {
         return NULL;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -2843,17 +2836,17 @@ static HOPEvalAggregateField* _Nullable HOPEvalAggregateLookupField(
         }
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
-        HOPEvalAggregate*      embedded = NULL;
-        HOPEvalAggregateField* nested = NULL;
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) == 0) {
+        H2EvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregate*      embedded = NULL;
+        H2EvalAggregateField* nested = NULL;
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) == 0) {
             continue;
         }
-        embedded = HOPEvalValueAsAggregate(&field->value);
+        embedded = H2EvalValueAsAggregate(&field->value);
         if (embedded == NULL) {
             continue;
         }
-        nested = HOPEvalAggregateLookupField(embedded, source, nameStart, nameEnd, outOwner);
+        nested = H2EvalAggregateLookupField(embedded, source, nameStart, nameEnd, outOwner);
         if (nested != NULL) {
             return nested;
         }
@@ -2861,30 +2854,30 @@ static HOPEvalAggregateField* _Nullable HOPEvalAggregateLookupField(
     return NULL;
 }
 
-static uint32_t HOPEvalAggregateFieldBindingCount(const HOPEvalAggregate* agg) {
+static uint32_t H2EvalAggregateFieldBindingCount(const H2EvalAggregate* agg) {
     uint32_t i;
     uint32_t count = 0;
     if (agg == NULL) {
         return 0;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &agg->fields[i];
+        const H2EvalAggregateField* field = &agg->fields[i];
         count++;
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
-            HOPEvalAggregate* embedded = HOPEvalValueAsAggregate(&field->value);
-            count += HOPEvalAggregateFieldBindingCount(embedded);
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) != 0) {
+            H2EvalAggregate* embedded = H2EvalValueAsAggregate(&field->value);
+            count += H2EvalAggregateFieldBindingCount(embedded);
         }
     }
     return count;
 }
 
-static int HOPEvalAppendAggregateFieldBindings(
-    HOPCTFEExecBinding*    fieldBindings,
-    uint32_t               bindingCap,
-    HOPCTFEExecEnv*        fieldFrame,
-    HOPEvalAggregateField* field) {
-    HOPEvalAggregate* embedded;
-    uint32_t          i;
+static int H2EvalAppendAggregateFieldBindings(
+    H2CTFEExecBinding*    fieldBindings,
+    uint32_t              bindingCap,
+    H2CTFEExecEnv*        fieldFrame,
+    H2EvalAggregateField* field) {
+    H2EvalAggregate* embedded;
+    uint32_t         i;
     if (fieldBindings == NULL || fieldFrame == NULL || field == NULL) {
         return 0;
     }
@@ -2898,15 +2891,15 @@ static int HOPEvalAppendAggregateFieldBindings(
     fieldBindings[fieldFrame->bindingLen].mutable = 1u;
     fieldBindings[fieldFrame->bindingLen].value = field->value;
     fieldFrame->bindingLen++;
-    if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) == 0) {
+    if ((field->flags & H2AstFlag_FIELD_EMBEDDED) == 0) {
         return 0;
     }
-    embedded = HOPEvalValueAsAggregate(&field->value);
+    embedded = H2EvalValueAsAggregate(&field->value);
     if (embedded == NULL) {
         return 0;
     }
     for (i = 0; i < embedded->fieldLen; i++) {
-        if (HOPEvalAppendAggregateFieldBindings(
+        if (H2EvalAppendAggregateFieldBindings(
                 fieldBindings, bindingCap, fieldFrame, &embedded->fields[i])
             != 0)
         {
@@ -2917,53 +2910,52 @@ static int HOPEvalAppendAggregateFieldBindings(
 }
 
 typedef struct {
-    uint32_t     nameStart;
-    uint32_t     nameEnd;
-    int32_t      topFieldIndex;
-    HOPCTFEValue value;
-} HOPEvalExplicitAggregateField;
+    uint32_t    nameStart;
+    uint32_t    nameEnd;
+    int32_t     topFieldIndex;
+    H2CTFEValue value;
+} H2EvalExplicitAggregateField;
 
-static int HOPEvalAggregateGetFieldValue(
-    const HOPEvalAggregate* agg,
-    const char*             source,
-    uint32_t                nameStart,
-    uint32_t                nameEnd,
-    HOPCTFEValue*           outValue) {
+static int H2EvalAggregateGetFieldValue(
+    const H2EvalAggregate* agg,
+    const char*            source,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    H2CTFEValue*           outValue) {
     int32_t fieldIndex;
     if (outValue == NULL) {
         return 0;
     }
-    fieldIndex = HOPEvalAggregateLookupFieldIndex(agg, source, nameStart, nameEnd);
+    fieldIndex = H2EvalAggregateLookupFieldIndex(agg, source, nameStart, nameEnd);
     if (fieldIndex < 0) {
         return 0;
     }
     {
-        const HOPEvalAggregateField* field = &agg->fields[fieldIndex];
+        const H2EvalAggregateField* field = &agg->fields[fieldIndex];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
             *outValue = field->value;
             return 1;
         }
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0) {
-            HOPEvalAggregate* embedded = HOPEvalValueAsAggregate(&field->value);
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) != 0) {
+            H2EvalAggregate* embedded = H2EvalValueAsAggregate(&field->value);
             if (embedded != NULL) {
-                return HOPEvalAggregateGetFieldValue(
-                    embedded, source, nameStart, nameEnd, outValue);
+                return H2EvalAggregateGetFieldValue(embedded, source, nameStart, nameEnd, outValue);
             }
         }
     }
     return 0;
 }
 
-static HOPCTFEValue* _Nullable HOPEvalAggregateLookupFieldValuePtr(
-    HOPEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+static H2CTFEValue* _Nullable H2EvalAggregateLookupFieldValuePtr(
+    H2EvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (agg == NULL || source == NULL) {
         return NULL;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -2971,17 +2963,17 @@ static HOPCTFEValue* _Nullable HOPEvalAggregateLookupFieldValuePtr(
         }
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
-        HOPEvalAggregate*      embedded;
-        HOPCTFEValue*          nested;
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) == 0) {
+        H2EvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregate*      embedded;
+        H2CTFEValue*          nested;
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) == 0) {
             continue;
         }
-        embedded = HOPEvalValueAsAggregate(&field->value);
+        embedded = H2EvalValueAsAggregate(&field->value);
         if (embedded == NULL) {
             continue;
         }
-        nested = HOPEvalAggregateLookupFieldValuePtr(embedded, source, nameStart, nameEnd);
+        nested = H2EvalAggregateLookupFieldValuePtr(embedded, source, nameStart, nameEnd);
         if (nested != NULL) {
             return nested;
         }
@@ -2989,19 +2981,19 @@ static HOPCTFEValue* _Nullable HOPEvalAggregateLookupFieldValuePtr(
     return NULL;
 }
 
-static int HOPEvalAggregateSetFieldValue(
-    HOPEvalAggregate*   agg,
-    const char*         source,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    const HOPCTFEValue* inValue,
-    HOPCTFEValue* _Nullable outValue) {
+static int H2EvalAggregateSetFieldValue(
+    H2EvalAggregate*   agg,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue,
+    H2CTFEValue* _Nullable outValue) {
     uint32_t i;
     if (agg == NULL || source == NULL || inValue == NULL) {
         return 0;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -3014,14 +3006,14 @@ static int HOPEvalAggregateSetFieldValue(
         }
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
-        HOPEvalAggregate*      embedded = NULL;
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) == 0) {
+        H2EvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregate*      embedded = NULL;
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) == 0) {
             continue;
         }
-        embedded = HOPEvalValueAsAggregate(&field->value);
+        embedded = H2EvalValueAsAggregate(&field->value);
         if (embedded != NULL
-            && HOPEvalAggregateSetFieldValue(
+            && H2EvalAggregateSetFieldValue(
                 embedded, source, nameStart, nameEnd, inValue, outValue))
         {
             return 1;
@@ -3030,14 +3022,14 @@ static int HOPEvalAggregateSetFieldValue(
     return 0;
 }
 
-static HOPEvalAggregateField* _Nullable HOPEvalAggregateFindDirectField(
-    HOPEvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+static H2EvalAggregateField* _Nullable H2EvalAggregateFindDirectField(
+    H2EvalAggregate* agg, const char* source, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (agg == NULL || source == NULL) {
         return NULL;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (SliceEqSlice(
                 source, nameStart, nameEnd, agg->file->source, field->nameStart, field->nameEnd))
         {
@@ -3047,41 +3039,41 @@ static HOPEvalAggregateField* _Nullable HOPEvalAggregateFindDirectField(
     return NULL;
 }
 
-static int HOPEvalValueSetFieldPath(
-    HOPCTFEValue*       value,
-    const char*         source,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    const HOPCTFEValue* inValue) {
+static int H2EvalValueSetFieldPath(
+    H2CTFEValue*       value,
+    const char*        source,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue) {
     uint32_t i;
     if (value == NULL || source == NULL || inValue == NULL) {
         return 0;
     }
     for (i = nameStart; i < nameEnd; i++) {
         if (source[i] == '.') {
-            HOPCTFEValue*          childValue = NULL;
-            HOPEvalAggregateField* field;
-            HOPEvalAggregate*      agg = HOPEvalValueAsAggregate(value);
-            HOPEvalTaggedEnum*     tagged = HOPEvalValueAsTaggedEnum(value);
+            H2CTFEValue*          childValue = NULL;
+            H2EvalAggregateField* field;
+            H2EvalAggregate*      agg = H2EvalValueAsAggregate(value);
+            H2EvalTaggedEnum*     tagged = H2EvalValueAsTaggedEnum(value);
             if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
                 agg = tagged->payload;
             }
             if (agg == NULL) {
-                agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(value));
+                agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(value));
             }
             if (agg == NULL) {
                 return 0;
             }
-            field = HOPEvalAggregateFindDirectField(agg, source, nameStart, i);
+            field = H2EvalAggregateFindDirectField(agg, source, nameStart, i);
             if (field == NULL) {
                 return 0;
             }
             childValue = &field->value;
-            return HOPEvalValueSetFieldPath(childValue, source, i + 1u, nameEnd, inValue);
+            return H2EvalValueSetFieldPath(childValue, source, i + 1u, nameEnd, inValue);
         }
     }
-    if (value->kind == HOPCTFEValue_STRING) {
-        if (SliceEqCStr(source, nameStart, nameEnd, "len") && inValue->kind == HOPCTFEValue_INT
+    if (value->kind == H2CTFEValue_STRING) {
+        if (SliceEqCStr(source, nameStart, nameEnd, "len") && inValue->kind == H2CTFEValue_INT
             && inValue->i64 >= 0)
         {
             value->s.len = (uint32_t)inValue->i64;
@@ -3090,33 +3082,33 @@ static int HOPEvalValueSetFieldPath(
         return 0;
     }
     {
-        HOPEvalAggregate*  agg = HOPEvalValueAsAggregate(value);
-        HOPEvalTaggedEnum* tagged = HOPEvalValueAsTaggedEnum(value);
+        H2EvalAggregate*  agg = H2EvalValueAsAggregate(value);
+        H2EvalTaggedEnum* tagged = H2EvalValueAsTaggedEnum(value);
         if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
             agg = tagged->payload;
         }
         if (agg == NULL) {
-            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(value));
+            agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(value));
         }
         if (agg != NULL) {
-            return HOPEvalAggregateSetFieldValue(agg, source, nameStart, nameEnd, inValue, NULL);
+            return H2EvalAggregateSetFieldValue(agg, source, nameStart, nameEnd, inValue, NULL);
         }
     }
     return 0;
 }
 
-static int HOPEvalAggregateHasReservedFields(const HOPEvalAggregate* agg) {
+static int H2EvalAggregateHasReservedFields(const H2EvalAggregate* agg) {
     uint32_t i;
     if (agg == NULL) {
         return 0;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &agg->fields[i];
+        const H2EvalAggregateField* field = &agg->fields[i];
         if ((field->_reserved & 1u) != 0u) {
             return 1;
         }
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0
-            && HOPEvalAggregateHasReservedFields(HOPEvalValueAsAggregate(&field->value)))
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) != 0
+            && H2EvalAggregateHasReservedFields(H2EvalValueAsAggregate(&field->value)))
         {
             return 1;
         }
@@ -3124,23 +3116,22 @@ static int HOPEvalAggregateHasReservedFields(const HOPEvalAggregate* agg) {
     return 0;
 }
 
-static int HOPEvalReplayReservedAggregateFields(
-    HOPCTFEValue* target, const HOPEvalAggregate* sourceAgg) {
+static int H2EvalReplayReservedAggregateFields(
+    H2CTFEValue* target, const H2EvalAggregate* sourceAgg) {
     uint32_t i;
     if (target == NULL || sourceAgg == NULL) {
         return 1;
     }
     for (i = 0; i < sourceAgg->fieldLen; i++) {
-        const HOPEvalAggregateField* field = &sourceAgg->fields[i];
+        const H2EvalAggregateField* field = &sourceAgg->fields[i];
         if ((field->_reserved & 1u) != 0u
-            && !HOPEvalValueSetFieldPath(
+            && !H2EvalValueSetFieldPath(
                 target, sourceAgg->file->source, field->nameStart, field->nameEnd, &field->value))
         {
             return 0;
         }
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0
-            && !HOPEvalReplayReservedAggregateFields(
-                target, HOPEvalValueAsAggregate(&field->value)))
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) != 0
+            && !H2EvalReplayReservedAggregateFields(target, H2EvalValueAsAggregate(&field->value)))
         {
             return 0;
         }
@@ -3148,32 +3139,32 @@ static int HOPEvalReplayReservedAggregateFields(
     return 1;
 }
 
-static int HOPEvalFinalizeAggregateVarArrays(HOPEvalProgram* p, HOPEvalAggregate* agg) {
+static int H2EvalFinalizeAggregateVarArrays(H2EvalProgram* p, H2EvalAggregate* agg) {
     uint32_t i;
     if (p == NULL || agg == NULL) {
         return -1;
     }
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
-        const HOPAstNode*      typeNode;
-        HOPCTFEValue           lenValue;
-        int64_t                len = 0;
-        HOPEvalArray*          array;
-        uint32_t               j;
+        H2EvalAggregateField* field = &agg->fields[i];
+        const H2AstNode*      typeNode;
+        H2CTFEValue           lenValue;
+        int64_t               len = 0;
+        H2EvalArray*          array;
+        uint32_t              j;
         if (field->typeNode < 0 || (uint32_t)field->typeNode >= agg->file->ast.len) {
             continue;
         }
         typeNode = &agg->file->ast.nodes[field->typeNode];
-        if (typeNode->kind != HOPAst_TYPE_VARRAY) {
+        if (typeNode->kind != H2Ast_TYPE_VARRAY) {
             continue;
         }
-        if (!HOPEvalAggregateGetFieldValue(
+        if (!H2EvalAggregateGetFieldValue(
                 agg, agg->file->source, typeNode->dataStart, typeNode->dataEnd, &lenValue)
-            || HOPCTFEValueToInt64(&lenValue, &len) != 0 || len < 0)
+            || H2CTFEValueToInt64(&lenValue, &len) != 0 || len < 0)
         {
             return 0;
         }
-        array = HOPEvalAllocArrayView(
+        array = H2EvalAllocArrayView(
             p,
             agg->file,
             field->typeNode,
@@ -3184,15 +3175,15 @@ static int HOPEvalFinalizeAggregateVarArrays(HOPEvalProgram* p, HOPEvalAggregate
             return ErrorSimple("out of memory");
         }
         if (array->len > 0) {
-            array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue) * array->len, (uint32_t)_Alignof(HOPCTFEValue));
+            array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * array->len, (uint32_t)_Alignof(H2CTFEValue));
             if (array->elems == NULL) {
                 return ErrorSimple("out of memory");
             }
-            memset(array->elems, 0, sizeof(HOPCTFEValue) * array->len);
+            memset(array->elems, 0, sizeof(H2CTFEValue) * array->len);
             for (j = 0; j < array->len; j++) {
                 int elemIsConst = 0;
-                if (HOPEvalZeroInitTypeNode(
+                if (H2EvalZeroInitTypeNode(
                         p, agg->file, array->elemTypeNode, &array->elems[j], &elemIsConst)
                     != 0)
                 {
@@ -3203,23 +3194,23 @@ static int HOPEvalFinalizeAggregateVarArrays(HOPEvalProgram* p, HOPEvalAggregate
                 }
             }
         }
-        HOPEvalValueSetArray(&field->value, agg->file, field->typeNode, array);
+        H2EvalValueSetArray(&field->value, agg->file, field->typeNode, array);
     }
     return 1;
 }
 
-static int HOPEvalBuildTaggedEnumPayload(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* enumFile,
-    int32_t              variantNode,
-    int32_t              compoundLitNode,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    uint32_t          fieldCount = 0;
-    uint32_t          fieldIndex = 0;
-    int32_t           child;
-    HOPEvalAggregate* agg;
-    int32_t           fieldNode;
+static int H2EvalBuildTaggedEnumPayload(
+    H2EvalProgram*      p,
+    const H2ParsedFile* enumFile,
+    int32_t             variantNode,
+    int32_t             compoundLitNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    uint32_t         fieldCount = 0;
+    uint32_t         fieldIndex = 0;
+    int32_t          child;
+    H2EvalAggregate* agg;
+    int32_t          fieldNode;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -3230,13 +3221,13 @@ static int HOPEvalBuildTaggedEnumPayload(
     }
     child = ASTFirstChild(&enumFile->ast, variantNode);
     while (child >= 0) {
-        if (enumFile->ast.nodes[child].kind == HOPAst_FIELD) {
+        if (enumFile->ast.nodes[child].kind == H2Ast_FIELD) {
             fieldCount++;
         }
         child = ASTNextSibling(&enumFile->ast, child);
     }
-    agg = (HOPEvalAggregate*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalAggregate), (uint32_t)_Alignof(HOPEvalAggregate));
+    agg = (H2EvalAggregate*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalAggregate), (uint32_t)_Alignof(H2EvalAggregate));
     if (agg == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -3245,26 +3236,26 @@ static int HOPEvalBuildTaggedEnumPayload(
     agg->nodeId = variantNode;
     agg->fieldLen = fieldCount;
     if (fieldCount > 0) {
-        agg->fields = (HOPEvalAggregateField*)HOPArenaAlloc(
+        agg->fields = (H2EvalAggregateField*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPEvalAggregateField) * fieldCount,
-            (uint32_t)_Alignof(HOPEvalAggregateField));
+            sizeof(H2EvalAggregateField) * fieldCount,
+            (uint32_t)_Alignof(H2EvalAggregateField));
         if (agg->fields == NULL) {
             return ErrorSimple("out of memory");
         }
-        memset(agg->fields, 0, sizeof(HOPEvalAggregateField) * fieldCount);
+        memset(agg->fields, 0, sizeof(H2EvalAggregateField) * fieldCount);
     }
     child = ASTFirstChild(&enumFile->ast, variantNode);
     while (child >= 0) {
-        const HOPAstNode* variantField = &enumFile->ast.nodes[child];
-        if (variantField->kind == HOPAst_FIELD) {
-            int32_t                fieldTypeNode = ASTFirstChild(&enumFile->ast, child);
-            int                    fieldIsConst = 0;
-            HOPEvalAggregateField* field = &agg->fields[fieldIndex++];
+        const H2AstNode* variantField = &enumFile->ast.nodes[child];
+        if (variantField->kind == H2Ast_FIELD) {
+            int32_t               fieldTypeNode = ASTFirstChild(&enumFile->ast, child);
+            int                   fieldIsConst = 0;
+            H2EvalAggregateField* field = &agg->fields[fieldIndex++];
             field->nameStart = variantField->dataStart;
             field->nameEnd = variantField->dataEnd;
             field->typeNode = fieldTypeNode;
-            if (HOPEvalZeroInitTypeNode(p, enumFile, fieldTypeNode, &field->value, &fieldIsConst)
+            if (H2EvalZeroInitTypeNode(p, enumFile, fieldTypeNode, &field->value, &fieldIsConst)
                 != 0)
             {
                 return -1;
@@ -3285,19 +3276,19 @@ static int HOPEvalBuildTaggedEnumPayload(
         }
     }
     while (fieldNode >= 0) {
-        const HOPAstNode* compoundField = &p->currentFile->ast.nodes[fieldNode];
-        int32_t           valueNode = ASTFirstChild(&p->currentFile->ast, fieldNode);
-        HOPCTFEValue      fieldValue;
-        int               fieldIsConst = 0;
-        if (compoundField->kind != HOPAst_COMPOUND_FIELD || valueNode < 0) {
+        const H2AstNode* compoundField = &p->currentFile->ast.nodes[fieldNode];
+        int32_t          valueNode = ASTFirstChild(&p->currentFile->ast, fieldNode);
+        H2CTFEValue      fieldValue;
+        int              fieldIsConst = 0;
+        if (compoundField->kind != H2Ast_COMPOUND_FIELD || valueNode < 0) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+        if (H2EvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
             return -1;
         }
         if (!fieldIsConst
-            || !HOPEvalAggregateSetFieldValue(
+            || !H2EvalAggregateSetFieldValue(
                 agg,
                 p->currentFile->source,
                 compoundField->dataStart,
@@ -3310,22 +3301,22 @@ static int HOPEvalBuildTaggedEnumPayload(
         }
         fieldNode = ASTNextSibling(&p->currentFile->ast, fieldNode);
     }
-    HOPEvalValueSetAggregate(outValue, enumFile, variantNode, agg);
+    H2EvalValueSetAggregate(outValue, enumFile, variantNode, agg);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalZeroInitAggregateValue(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  declFile,
-    int32_t               declNode,
-    HOPCTFEValue*         outValue,
-    int*                  outIsConst) {
-    const HOPAstNode* aggregateDecl;
-    HOPEvalAggregate* agg;
-    uint32_t          fieldCount = 0;
-    uint32_t          fieldIndex = 0;
-    int32_t           child;
+static int H2EvalZeroInitAggregateValue(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  declFile,
+    int32_t              declNode,
+    H2CTFEValue*         outValue,
+    int*                 outIsConst) {
+    const H2AstNode* aggregateDecl;
+    H2EvalAggregate* agg;
+    uint32_t         fieldCount = 0;
+    uint32_t         fieldIndex = 0;
+    int32_t          child;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -3335,21 +3326,21 @@ static int HOPEvalZeroInitAggregateValue(
         return -1;
     }
     aggregateDecl = &declFile->ast.nodes[declNode];
-    if (aggregateDecl->kind != HOPAst_STRUCT && aggregateDecl->kind != HOPAst_UNION
-        && aggregateDecl->kind != HOPAst_TYPE_ANON_STRUCT
-        && aggregateDecl->kind != HOPAst_TYPE_ANON_UNION)
+    if (aggregateDecl->kind != H2Ast_STRUCT && aggregateDecl->kind != H2Ast_UNION
+        && aggregateDecl->kind != H2Ast_TYPE_ANON_STRUCT
+        && aggregateDecl->kind != H2Ast_TYPE_ANON_UNION)
     {
         return 0;
     }
     child = ASTFirstChild(&declFile->ast, declNode);
     while (child >= 0) {
-        if (declFile->ast.nodes[child].kind == HOPAst_FIELD) {
+        if (declFile->ast.nodes[child].kind == H2Ast_FIELD) {
             fieldCount++;
         }
         child = ASTNextSibling(&declFile->ast, child);
     }
-    agg = (HOPEvalAggregate*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalAggregate), (uint32_t)_Alignof(HOPEvalAggregate));
+    agg = (H2EvalAggregate*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalAggregate), (uint32_t)_Alignof(H2EvalAggregate));
     if (agg == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -3358,30 +3349,30 @@ static int HOPEvalZeroInitAggregateValue(
     agg->nodeId = declNode;
     agg->fieldLen = fieldCount;
     if (fieldCount > 0) {
-        agg->fields = (HOPEvalAggregateField*)HOPArenaAlloc(
+        agg->fields = (H2EvalAggregateField*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPEvalAggregateField) * fieldCount,
-            (uint32_t)_Alignof(HOPEvalAggregateField));
+            sizeof(H2EvalAggregateField) * fieldCount,
+            (uint32_t)_Alignof(H2EvalAggregateField));
         if (agg->fields == NULL) {
             return ErrorSimple("out of memory");
         }
-        memset(agg->fields, 0, sizeof(HOPEvalAggregateField) * fieldCount);
+        memset(agg->fields, 0, sizeof(H2EvalAggregateField) * fieldCount);
     }
     child = ASTFirstChild(&declFile->ast, declNode);
     while (child >= 0) {
-        const HOPAstNode* fieldNode = &declFile->ast.nodes[child];
-        if (fieldNode->kind == HOPAst_FIELD) {
+        const H2AstNode* fieldNode = &declFile->ast.nodes[child];
+        if (fieldNode->kind == H2Ast_FIELD) {
             int32_t fieldTypeNode = ASTFirstChild(&declFile->ast, child);
             int32_t fieldDefaultNode =
                 fieldTypeNode >= 0 ? ASTNextSibling(&declFile->ast, fieldTypeNode) : -1;
-            int                    fieldIsConst = 0;
-            HOPEvalAggregateField* field = &agg->fields[fieldIndex++];
+            int                   fieldIsConst = 0;
+            H2EvalAggregateField* field = &agg->fields[fieldIndex++];
             field->nameStart = fieldNode->dataStart;
             field->nameEnd = fieldNode->dataEnd;
             field->flags = (uint16_t)fieldNode->flags;
             field->typeNode = fieldTypeNode;
             field->defaultExprNode = fieldDefaultNode;
-            if (HOPEvalZeroInitTypeNode(p, declFile, fieldTypeNode, &field->value, &fieldIsConst)
+            if (H2EvalZeroInitTypeNode(p, declFile, fieldTypeNode, &field->value, &fieldIsConst)
                 != 0)
             {
                 return -1;
@@ -3392,162 +3383,159 @@ static int HOPEvalZeroInitAggregateValue(
         }
         child = ASTNextSibling(&declFile->ast, child);
     }
-    HOPEvalValueSetAggregate(outValue, declFile, declNode, agg);
+    H2EvalValueSetAggregate(outValue, declFile, declNode, agg);
     if (outIsConst != NULL) {
         *outIsConst = 1;
     }
     return 0;
 }
 
-static int HOPEvalTypeValueFromTypeNode(
-    HOPEvalProgram* p, const HOPParsedFile* file, int32_t typeNode, HOPCTFEValue* outValue) {
-    const HOPAstNode*     n;
-    int32_t               childNode;
-    int32_t               typeCode = HOPEvalTypeCode_INVALID;
-    HOPEvalReflectedType* rt;
-    uint32_t              arrayLen = 0;
+static int H2EvalTypeValueFromTypeNode(
+    H2EvalProgram* p, const H2ParsedFile* file, int32_t typeNode, H2CTFEValue* outValue) {
+    const H2AstNode*     n;
+    int32_t              childNode;
+    int32_t              typeCode = H2EvalTypeCode_INVALID;
+    H2EvalReflectedType* rt;
+    uint32_t             arrayLen = 0;
     if (p == NULL || file == NULL || outValue == NULL || typeNode < 0
         || (uint32_t)typeNode >= file->ast.len)
     {
         return 0;
     }
-    if (HOPEvalTypeCodeFromTypeNode(file, typeNode, &typeCode)) {
-        HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+    if (H2EvalTypeCodeFromTypeNode(file, typeNode, &typeCode)) {
+        H2EvalValueSetSimpleTypeValue(outValue, typeCode);
         return 1;
     }
     n = &file->ast.nodes[typeNode];
-    if (n->kind == HOPAst_TYPE_NAME) {
-        return HOPEvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
+    if (n->kind == H2Ast_TYPE_NAME) {
+        return H2EvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
     }
-    if (n->kind != HOPAst_TYPE_PTR && n->kind != HOPAst_TYPE_REF && n->kind != HOPAst_TYPE_ARRAY) {
+    if (n->kind != H2Ast_TYPE_PTR && n->kind != H2Ast_TYPE_REF && n->kind != H2Ast_TYPE_ARRAY) {
         return 0;
     }
     childNode = ASTFirstChild(&file->ast, typeNode);
-    if (childNode < 0 || !HOPEvalTypeValueFromTypeNode(p, file, childNode, outValue)) {
+    if (childNode < 0 || !H2EvalTypeValueFromTypeNode(p, file, childNode, outValue)) {
         return 0;
     }
-    rt = (HOPEvalReflectedType*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+    rt = (H2EvalReflectedType*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalReflectedType), (uint32_t)_Alignof(H2EvalReflectedType));
     if (rt == NULL) {
         return -1;
     }
     memset(rt, 0, sizeof(*rt));
-    if (n->kind == HOPAst_TYPE_PTR) {
-        rt->kind = HOPEvalReflectType_PTR;
-        rt->namedKind = HOPEvalTypeKind_POINTER;
-    } else if (n->kind == HOPAst_TYPE_REF) {
-        rt->kind = HOPEvalReflectType_PTR;
-        rt->namedKind = HOPEvalTypeKind_REFERENCE;
+    if (n->kind == H2Ast_TYPE_PTR) {
+        rt->kind = H2EvalReflectType_PTR;
+        rt->namedKind = H2EvalTypeKind_POINTER;
+    } else if (n->kind == H2Ast_TYPE_REF) {
+        rt->kind = H2EvalReflectType_PTR;
+        rt->namedKind = H2EvalTypeKind_REFERENCE;
     } else {
-        if (!HOPEvalParseUintSlice(file->source, n->dataStart, n->dataEnd, &arrayLen)) {
+        if (!H2EvalParseUintSlice(file->source, n->dataStart, n->dataEnd, &arrayLen)) {
             return 0;
         }
-        rt->kind = HOPEvalReflectType_ARRAY;
-        rt->namedKind = HOPEvalTypeKind_ARRAY;
+        rt->kind = H2EvalReflectType_ARRAY;
+        rt->namedKind = H2EvalTypeKind_ARRAY;
         rt->arrayLen = arrayLen;
     }
     rt->elemType = *outValue;
-    HOPEvalValueSetReflectedTypeValue(outValue, rt);
+    H2EvalValueSetReflectedTypeValue(outValue, rt);
     return 1;
 }
 
-static HOPCTFEExecBinding* _Nullable HOPEvalFindBinding(
-    const HOPCTFEExecCtx* _Nullable execCtx,
-    const HOPParsedFile* file,
-    uint32_t             nameStart,
-    uint32_t             nameEnd);
+static H2CTFEExecBinding* _Nullable H2EvalFindBinding(
+    const H2CTFEExecCtx* _Nullable execCtx,
+    const H2ParsedFile* file,
+    uint32_t            nameStart,
+    uint32_t            nameEnd);
 
-static int HOPEvalTypeValueFromExprNode(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    const HOPAst*        ast,
-    int32_t              exprNode,
-    HOPCTFEValue*        outValue) {
-    const HOPAstNode* n;
+static int H2EvalTypeValueFromExprNode(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    const H2Ast*        ast,
+    int32_t             exprNode,
+    H2CTFEValue*        outValue) {
+    const H2AstNode* n;
     if (p == NULL || file == NULL || ast == NULL || outValue == NULL || exprNode < 0
         || (uint32_t)exprNode >= ast->len)
     {
         return 0;
     }
     n = &ast->nodes[exprNode];
-    while (n->kind == HOPAst_CALL_ARG) {
+    while (n->kind == H2Ast_CALL_ARG) {
         exprNode = n->firstChild;
         if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
             return 0;
         }
         n = &ast->nodes[exprNode];
     }
-    if (HOPEvalTypeValueFromTypeNode(p, file, exprNode, outValue)) {
+    if (H2EvalTypeValueFromTypeNode(p, file, exprNode, outValue)) {
         return 1;
     }
-    if (n->kind == HOPAst_IDENT) {
-        HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+    if (n->kind == H2Ast_IDENT) {
+        H2CTFEExecBinding* binding = H2EvalFindBinding(
             p->currentExecCtx, file, n->dataStart, n->dataEnd);
-        const HOPParsedFile* localTypeFile = NULL;
-        int32_t              localTypeNode = -1;
-        int32_t              visibleLocalTypeNode = -1;
+        const H2ParsedFile* localTypeFile = NULL;
+        int32_t             localTypeNode = -1;
+        int32_t             visibleLocalTypeNode = -1;
         if (binding != NULL && binding->typeNode >= 0
             && !(
-                file->ast.nodes[binding->typeNode].kind == HOPAst_TYPE_NAME
+                file->ast.nodes[binding->typeNode].kind == H2Ast_TYPE_NAME
                 && SliceEqCStr(
                     file->source,
                     file->ast.nodes[binding->typeNode].dataStart,
                     file->ast.nodes[binding->typeNode].dataEnd,
                     "anytype"))
-            && HOPEvalTypeValueFromTypeNode(p, file, binding->typeNode, outValue))
+            && H2EvalTypeValueFromTypeNode(p, file, binding->typeNode, outValue))
         {
             return 1;
         }
-        if (HOPEvalFindVisibleLocalTypeNodeByName(
+        if (H2EvalFindVisibleLocalTypeNodeByName(
                 file, n->start, n->dataStart, n->dataEnd, &visibleLocalTypeNode)
             && visibleLocalTypeNode >= 0
             && !(
-                file->ast.nodes[visibleLocalTypeNode].kind == HOPAst_TYPE_NAME
+                file->ast.nodes[visibleLocalTypeNode].kind == H2Ast_TYPE_NAME
                 && SliceEqCStr(
                     file->source,
                     file->ast.nodes[visibleLocalTypeNode].dataStart,
                     file->ast.nodes[visibleLocalTypeNode].dataEnd,
                     "anytype"))
-            && HOPEvalTypeValueFromTypeNode(p, file, visibleLocalTypeNode, outValue))
+            && H2EvalTypeValueFromTypeNode(p, file, visibleLocalTypeNode, outValue))
         {
             return 1;
         }
-        if (HOPEvalMirLookupLocalTypeNode(
+        if (H2EvalMirLookupLocalTypeNode(
                 p, n->dataStart, n->dataEnd, &localTypeFile, &localTypeNode)
             && localTypeFile != NULL && localTypeNode >= 0
             && !(
-                localTypeFile->ast.nodes[localTypeNode].kind == HOPAst_TYPE_NAME
+                localTypeFile->ast.nodes[localTypeNode].kind == H2Ast_TYPE_NAME
                 && SliceEqCStr(
                     localTypeFile->source,
                     localTypeFile->ast.nodes[localTypeNode].dataStart,
                     localTypeFile->ast.nodes[localTypeNode].dataEnd,
                     "anytype"))
-            && HOPEvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue))
+            && H2EvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue))
         {
             return 1;
         }
-        return HOPEvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
+        return H2EvalResolveTypeValueName(p, file, n->dataStart, n->dataEnd, outValue);
     }
     return 0;
 }
 
-static int HOPEvalZeroInitTypeValue(
-    const HOPEvalProgram* p,
-    const HOPCTFEValue*   typeValue,
-    HOPCTFEValue*         outValue,
-    int*                  outIsConst) {
-    int32_t               typeCode = HOPEvalTypeCode_INVALID;
-    HOPEvalReflectedType* rt;
+static int H2EvalZeroInitTypeValue(
+    const H2EvalProgram* p, const H2CTFEValue* typeValue, H2CTFEValue* outValue, int* outIsConst) {
+    int32_t              typeCode = H2EvalTypeCode_INVALID;
+    H2EvalReflectedType* rt;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (p == NULL || typeValue == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (HOPEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+    if (H2EvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
         switch (typeCode) {
-            case HOPEvalTypeCode_BOOL:
-                outValue->kind = HOPCTFEValue_BOOL;
+            case H2EvalTypeCode_BOOL:
+                outValue->kind = H2CTFEValue_BOOL;
                 outValue->b = 0;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
@@ -3556,9 +3544,9 @@ static int HOPEvalZeroInitTypeValue(
                 outValue->s.len = 0;
                 *outIsConst = 1;
                 return 0;
-            case HOPEvalTypeCode_F32:
-            case HOPEvalTypeCode_F64:
-                outValue->kind = HOPCTFEValue_FLOAT;
+            case H2EvalTypeCode_F32:
+            case H2EvalTypeCode_F64:
+                outValue->kind = H2CTFEValue_FLOAT;
                 outValue->b = 0;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
@@ -3567,76 +3555,76 @@ static int HOPEvalZeroInitTypeValue(
                 outValue->s.len = 0;
                 *outIsConst = 1;
                 return 0;
-            case HOPEvalTypeCode_STR_REF:
-            case HOPEvalTypeCode_STR_PTR:
-                outValue->kind = HOPCTFEValue_STRING;
+            case H2EvalTypeCode_STR_REF:
+            case H2EvalTypeCode_STR_PTR:
+                outValue->kind = H2CTFEValue_STRING;
                 outValue->b = 0;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
                 *outIsConst = 1;
                 return 0;
-            case HOPEvalTypeCode_RAWPTR:
-                HOPEvalValueSetNull(outValue);
-                HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+            case H2EvalTypeCode_RAWPTR:
+                H2EvalValueSetNull(outValue);
+                H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
                 *outIsConst = 1;
                 return 0;
-            case HOPEvalTypeCode_U8:
-            case HOPEvalTypeCode_U16:
-            case HOPEvalTypeCode_U32:
-            case HOPEvalTypeCode_U64:
-            case HOPEvalTypeCode_UINT:
-            case HOPEvalTypeCode_I8:
-            case HOPEvalTypeCode_I16:
-            case HOPEvalTypeCode_I32:
-            case HOPEvalTypeCode_I64:
-            case HOPEvalTypeCode_INT:
-                HOPEvalValueSetInt(outValue, 0);
+            case H2EvalTypeCode_U8:
+            case H2EvalTypeCode_U16:
+            case H2EvalTypeCode_U32:
+            case H2EvalTypeCode_U64:
+            case H2EvalTypeCode_UINT:
+            case H2EvalTypeCode_I8:
+            case H2EvalTypeCode_I16:
+            case H2EvalTypeCode_I32:
+            case H2EvalTypeCode_I64:
+            case H2EvalTypeCode_INT:
+                H2EvalValueSetInt(outValue, 0);
                 *outIsConst = 1;
                 return 0;
             default: return 0;
         }
     }
-    rt = HOPEvalValueAsReflectedType(typeValue);
+    rt = H2EvalValueAsReflectedType(typeValue);
     if (rt == NULL) {
         return 0;
     }
-    if (rt->kind == HOPEvalReflectType_NAMED) {
-        const HOPAstNode* declNode = NULL;
+    if (rt->kind == H2EvalReflectType_NAMED) {
+        const H2AstNode* declNode = NULL;
         if (rt->file == NULL || rt->nodeId < 0 || (uint32_t)rt->nodeId >= rt->file->ast.len) {
             return 0;
         }
         declNode = &rt->file->ast.nodes[rt->nodeId];
-        if (rt->namedKind == HOPEvalTypeKind_ALIAS) {
-            int32_t      baseTypeNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
-            HOPCTFEValue baseTypeValue;
+        if (rt->namedKind == H2EvalTypeKind_ALIAS) {
+            int32_t     baseTypeNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
+            H2CTFEValue baseTypeValue;
             if (baseTypeNode < 0
-                || !HOPEvalTypeValueFromTypeNode(
-                    (HOPEvalProgram*)p, rt->file, baseTypeNode, &baseTypeValue))
+                || !H2EvalTypeValueFromTypeNode(
+                    (H2EvalProgram*)p, rt->file, baseTypeNode, &baseTypeValue))
             {
                 return 0;
             }
-            if (HOPEvalZeroInitTypeValue(p, &baseTypeValue, outValue, outIsConst) != 0) {
+            if (H2EvalZeroInitTypeValue(p, &baseTypeValue, outValue, outIsConst) != 0) {
                 return -1;
             }
             if (*outIsConst) {
-                outValue->typeTag = HOPEvalMakeAliasTag(rt->file, rt->nodeId);
+                outValue->typeTag = H2EvalMakeAliasTag(rt->file, rt->nodeId);
             }
             return 0;
         }
-        if (rt->namedKind == HOPEvalTypeKind_STRUCT || rt->namedKind == HOPEvalTypeKind_UNION) {
-            return HOPEvalZeroInitAggregateValue(p, rt->file, rt->nodeId, outValue, outIsConst);
+        if (rt->namedKind == H2EvalTypeKind_STRUCT || rt->namedKind == H2EvalTypeKind_UNION) {
+            return H2EvalZeroInitAggregateValue(p, rt->file, rt->nodeId, outValue, outIsConst);
         }
-        if (rt->namedKind == HOPEvalTypeKind_ENUM && declNode != NULL) {
+        if (rt->namedKind == H2EvalTypeKind_ENUM && declNode != NULL) {
             int32_t  variantNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
             uint32_t tagIndex = 0;
             while (variantNode >= 0) {
-                if (rt->file->ast.nodes[variantNode].kind == HOPAst_FIELD) {
-                    HOPEvalValueSetTaggedEnum(
-                        (HOPEvalProgram*)p,
+                if (rt->file->ast.nodes[variantNode].kind == H2Ast_FIELD) {
+                    H2EvalValueSetTaggedEnum(
+                        (H2EvalProgram*)p,
                         outValue,
                         rt->file,
                         rt->nodeId,
@@ -3647,7 +3635,7 @@ static int HOPEvalZeroInitTypeValue(
                     *outIsConst = 1;
                     return 0;
                 }
-                if (rt->file->ast.nodes[variantNode].kind == HOPAst_FIELD) {
+                if (rt->file->ast.nodes[variantNode].kind == H2Ast_FIELD) {
                     tagIndex++;
                 }
                 variantNode = ASTNextSibling(&rt->file->ast, variantNode);
@@ -3655,15 +3643,15 @@ static int HOPEvalZeroInitTypeValue(
         }
         return 0;
     }
-    if (rt->kind == HOPEvalReflectType_PTR) {
-        HOPEvalValueSetNull(outValue);
+    if (rt->kind == H2EvalReflectType_PTR) {
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (rt->kind == HOPEvalReflectType_ARRAY) {
-        uint32_t      i;
-        HOPEvalArray* array = (HOPEvalArray*)HOPArenaAlloc(
-            p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+    if (rt->kind == H2EvalReflectType_ARRAY) {
+        uint32_t     i;
+        H2EvalArray* array = (H2EvalArray*)H2ArenaAlloc(
+            p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
         if (array == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -3672,15 +3660,15 @@ static int HOPEvalZeroInitTypeValue(
         array->typeNode = rt->nodeId;
         array->len = rt->arrayLen;
         if (rt->arrayLen > 0) {
-            array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue) * rt->arrayLen, (uint32_t)_Alignof(HOPCTFEValue));
+            array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * rt->arrayLen, (uint32_t)_Alignof(H2CTFEValue));
             if (array->elems == NULL) {
                 return ErrorSimple("out of memory");
             }
-            memset(array->elems, 0, sizeof(HOPCTFEValue) * rt->arrayLen);
+            memset(array->elems, 0, sizeof(H2CTFEValue) * rt->arrayLen);
             for (i = 0; i < rt->arrayLen; i++) {
                 int elemIsConst = 0;
-                if (HOPEvalZeroInitTypeValue(p, &rt->elemType, &array->elems[i], &elemIsConst) != 0)
+                if (H2EvalZeroInitTypeValue(p, &rt->elemType, &array->elems[i], &elemIsConst) != 0)
                 {
                     return -1;
                 }
@@ -3689,27 +3677,27 @@ static int HOPEvalZeroInitTypeValue(
                 }
             }
         }
-        HOPEvalValueSetArray(outValue, rt->file, rt->nodeId, array);
+        H2EvalValueSetArray(outValue, rt->file, rt->nodeId, array);
         *outIsConst = 1;
         return 0;
     }
     return 0;
 }
 
-static int HOPEvalTypeKindOfValue(const HOPCTFEValue* typeValue, int32_t* outKind) {
-    int32_t               typeCode = HOPEvalTypeCode_INVALID;
-    HOPEvalReflectedType* rt;
+static int H2EvalTypeKindOfValue(const H2CTFEValue* typeValue, int32_t* outKind) {
+    int32_t              typeCode = H2EvalTypeCode_INVALID;
+    H2EvalReflectedType* rt;
     if (outKind != NULL) {
         *outKind = 0;
     }
-    if (typeValue == NULL || outKind == NULL || typeValue->kind != HOPCTFEValue_TYPE) {
+    if (typeValue == NULL || outKind == NULL || typeValue->kind != H2CTFEValue_TYPE) {
         return 0;
     }
-    if (HOPEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
-        *outKind = HOPEvalTypeKind_PRIMITIVE;
+    if (H2EvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+        *outKind = H2EvalTypeKind_PRIMITIVE;
         return 1;
     }
-    rt = HOPEvalValueAsReflectedType(typeValue);
+    rt = H2EvalValueAsReflectedType(typeValue);
     if (rt == NULL) {
         return 0;
     }
@@ -3717,44 +3705,44 @@ static int HOPEvalTypeKindOfValue(const HOPCTFEValue* typeValue, int32_t* outKin
     return 1;
 }
 
-static int HOPEvalTypeNameOfValue(HOPCTFEValue* typeValue, HOPCTFEValue* outValue) {
-    int32_t               typeCode = HOPEvalTypeCode_INVALID;
-    HOPEvalReflectedType* rt;
-    if (typeValue == NULL || outValue == NULL || typeValue->kind != HOPCTFEValue_TYPE) {
+static int H2EvalTypeNameOfValue(H2CTFEValue* typeValue, H2CTFEValue* outValue) {
+    int32_t              typeCode = H2EvalTypeCode_INVALID;
+    H2EvalReflectedType* rt;
+    if (typeValue == NULL || outValue == NULL || typeValue->kind != H2CTFEValue_TYPE) {
         return 0;
     }
-    if (HOPEvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
+    if (H2EvalValueGetSimpleTypeCode(typeValue, &typeCode)) {
         switch (typeCode) {
-            case HOPEvalTypeCode_BOOL: HOPEvalValueSetStringSlice(outValue, "bool", 0, 4); return 1;
-            case HOPEvalTypeCode_U8:   HOPEvalValueSetStringSlice(outValue, "u8", 0, 2); return 1;
-            case HOPEvalTypeCode_U16:  HOPEvalValueSetStringSlice(outValue, "u16", 0, 3); return 1;
-            case HOPEvalTypeCode_U32:  HOPEvalValueSetStringSlice(outValue, "u32", 0, 3); return 1;
-            case HOPEvalTypeCode_U64:  HOPEvalValueSetStringSlice(outValue, "u64", 0, 3); return 1;
-            case HOPEvalTypeCode_UINT: HOPEvalValueSetStringSlice(outValue, "uint", 0, 4); return 1;
-            case HOPEvalTypeCode_I8:   HOPEvalValueSetStringSlice(outValue, "i8", 0, 2); return 1;
-            case HOPEvalTypeCode_I16:  HOPEvalValueSetStringSlice(outValue, "i16", 0, 3); return 1;
-            case HOPEvalTypeCode_I32:  HOPEvalValueSetStringSlice(outValue, "i32", 0, 3); return 1;
-            case HOPEvalTypeCode_I64:  HOPEvalValueSetStringSlice(outValue, "i64", 0, 3); return 1;
-            case HOPEvalTypeCode_INT:  HOPEvalValueSetStringSlice(outValue, "int", 0, 3); return 1;
-            case HOPEvalTypeCode_F32:  HOPEvalValueSetStringSlice(outValue, "f32", 0, 3); return 1;
-            case HOPEvalTypeCode_F64:  HOPEvalValueSetStringSlice(outValue, "f64", 0, 3); return 1;
-            case HOPEvalTypeCode_RAWPTR:
-                HOPEvalValueSetStringSlice(outValue, "rawptr", 0, 6);
+            case H2EvalTypeCode_BOOL: H2EvalValueSetStringSlice(outValue, "bool", 0, 4); return 1;
+            case H2EvalTypeCode_U8:   H2EvalValueSetStringSlice(outValue, "u8", 0, 2); return 1;
+            case H2EvalTypeCode_U16:  H2EvalValueSetStringSlice(outValue, "u16", 0, 3); return 1;
+            case H2EvalTypeCode_U32:  H2EvalValueSetStringSlice(outValue, "u32", 0, 3); return 1;
+            case H2EvalTypeCode_U64:  H2EvalValueSetStringSlice(outValue, "u64", 0, 3); return 1;
+            case H2EvalTypeCode_UINT: H2EvalValueSetStringSlice(outValue, "uint", 0, 4); return 1;
+            case H2EvalTypeCode_I8:   H2EvalValueSetStringSlice(outValue, "i8", 0, 2); return 1;
+            case H2EvalTypeCode_I16:  H2EvalValueSetStringSlice(outValue, "i16", 0, 3); return 1;
+            case H2EvalTypeCode_I32:  H2EvalValueSetStringSlice(outValue, "i32", 0, 3); return 1;
+            case H2EvalTypeCode_I64:  H2EvalValueSetStringSlice(outValue, "i64", 0, 3); return 1;
+            case H2EvalTypeCode_INT:  H2EvalValueSetStringSlice(outValue, "int", 0, 3); return 1;
+            case H2EvalTypeCode_F32:  H2EvalValueSetStringSlice(outValue, "f32", 0, 3); return 1;
+            case H2EvalTypeCode_F64:  H2EvalValueSetStringSlice(outValue, "f64", 0, 3); return 1;
+            case H2EvalTypeCode_RAWPTR:
+                H2EvalValueSetStringSlice(outValue, "rawptr", 0, 6);
                 return 1;
-            case HOPEvalTypeCode_TYPE: HOPEvalValueSetStringSlice(outValue, "type", 0, 4); return 1;
-            case HOPEvalTypeCode_ANYTYPE:
-                HOPEvalValueSetStringSlice(outValue, "anytype", 0, 7);
+            case H2EvalTypeCode_TYPE: H2EvalValueSetStringSlice(outValue, "type", 0, 4); return 1;
+            case H2EvalTypeCode_ANYTYPE:
+                H2EvalValueSetStringSlice(outValue, "anytype", 0, 7);
                 return 1;
             default: return 0;
         }
     }
-    rt = HOPEvalValueAsReflectedType(typeValue);
-    if (rt == NULL || rt->kind != HOPEvalReflectType_NAMED || rt->file == NULL || rt->nodeId < 0
+    rt = H2EvalValueAsReflectedType(typeValue);
+    if (rt == NULL || rt->kind != H2EvalReflectType_NAMED || rt->file == NULL || rt->nodeId < 0
         || (uint32_t)rt->nodeId >= rt->file->ast.len)
     {
         return 0;
     }
-    HOPEvalValueSetStringSlice(
+    H2EvalValueSetStringSlice(
         outValue,
         rt->file->source,
         rt->file->ast.nodes[rt->nodeId].dataStart,
@@ -3762,20 +3750,20 @@ static int HOPEvalTypeNameOfValue(HOPCTFEValue* typeValue, HOPCTFEValue* outValu
     return 1;
 }
 
-static int HOPEvalZeroInitTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    HOPCTFEValue*         outValue,
-    int*                  outIsConst) {
-    const HOPAstNode*    typeNameNode;
-    const HOPPackage*    currentPkg;
-    const HOPParsedFile* aggregateFile = NULL;
-    const HOPParsedFile* aliasFile = NULL;
-    int32_t              aggregateNode = -1;
-    int32_t              aliasNode = -1;
-    int32_t              aliasTargetNode = -1;
-    uint64_t             nullTag = 0;
+static int H2EvalZeroInitTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    H2CTFEValue*         outValue,
+    int*                 outIsConst) {
+    const H2AstNode*    typeNameNode;
+    const H2Package*    currentPkg;
+    const H2ParsedFile* aggregateFile = NULL;
+    const H2ParsedFile* aliasFile = NULL;
+    int32_t             aggregateNode = -1;
+    int32_t             aliasNode = -1;
+    int32_t             aliasTargetNode = -1;
+    uint64_t            nullTag = 0;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -3786,25 +3774,25 @@ static int HOPEvalZeroInitTypeNode(
     }
     typeNameNode = &file->ast.nodes[typeNode];
     switch (typeNameNode->kind) {
-        case HOPAst_TYPE_NAME: {
-            uint32_t             dot = typeNameNode->dataStart;
-            const HOPParsedFile* enumFile = NULL;
-            int32_t              enumNode = -1;
-            int32_t              variantNode = -1;
-            uint32_t             tagIndex = 0;
+        case H2Ast_TYPE_NAME: {
+            uint32_t            dot = typeNameNode->dataStart;
+            const H2ParsedFile* enumFile = NULL;
+            int32_t             enumNode = -1;
+            int32_t             variantNode = -1;
+            uint32_t            tagIndex = 0;
             while (dot < typeNameNode->dataEnd && file->source[dot] != '.') {
                 dot++;
             }
-            if (HOPEvalTypeNodeIsTemplateParamName(file, typeNode)) {
-                HOPEvalValueSetNull(outValue);
+            if (H2EvalTypeNodeIsTemplateParamName(file, typeNode)) {
+                H2EvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;
             }
             if (dot < typeNameNode->dataEnd) {
-                enumNode = HOPEvalFindNamedEnumDecl(
+                enumNode = H2EvalFindNamedEnumDecl(
                     p, file, typeNameNode->dataStart, dot, &enumFile);
                 if (enumNode >= 0 && enumFile != NULL
-                    && HOPEvalFindEnumVariant(
+                    && H2EvalFindEnumVariant(
                         enumFile,
                         enumNode,
                         file->source,
@@ -3813,12 +3801,12 @@ static int HOPEvalZeroInitTypeNode(
                         &variantNode,
                         &tagIndex))
                 {
-                    const HOPAstNode* variantField = &enumFile->ast.nodes[variantNode];
-                    HOPCTFEValue      payloadValue;
-                    HOPEvalAggregate* payload = NULL;
-                    int               payloadIsConst = 0;
-                    if (HOPEvalBuildTaggedEnumPayload(
-                            (HOPEvalProgram*)p,
+                    const H2AstNode* variantField = &enumFile->ast.nodes[variantNode];
+                    H2CTFEValue      payloadValue;
+                    H2EvalAggregate* payload = NULL;
+                    int              payloadIsConst = 0;
+                    if (H2EvalBuildTaggedEnumPayload(
+                            (H2EvalProgram*)p,
                             enumFile,
                             variantNode,
                             -1,
@@ -3831,9 +3819,9 @@ static int HOPEvalZeroInitTypeNode(
                     if (!payloadIsConst) {
                         return 0;
                     }
-                    payload = HOPEvalValueAsAggregate(&payloadValue);
-                    HOPEvalValueSetTaggedEnum(
-                        (HOPEvalProgram*)p,
+                    payload = H2EvalValueAsAggregate(&payloadValue);
+                    H2EvalValueSetTaggedEnum(
+                        (H2EvalProgram*)p,
                         outValue,
                         enumFile,
                         enumNode,
@@ -3846,53 +3834,53 @@ static int HOPEvalZeroInitTypeNode(
                 }
             }
             if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "bool")) {
-                outValue->kind = HOPCTFEValue_BOOL;
+                outValue->kind = H2CTFEValue_BOOL;
                 outValue->b = 0;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_BOOL);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_BOOL);
                 *outIsConst = 1;
                 return 0;
             }
             if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "f32")
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "f64"))
             {
-                outValue->kind = HOPCTFEValue_FLOAT;
+                outValue->kind = H2CTFEValue_FLOAT;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                HOPEvalValueSetRuntimeTypeCode(
+                H2EvalValueSetRuntimeTypeCode(
                     outValue,
                     SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "f32")
-                        ? HOPEvalTypeCode_F32
-                        : HOPEvalTypeCode_F64);
+                        ? H2EvalTypeCode_F32
+                        : H2EvalTypeCode_F64);
                 *outIsConst = 1;
                 return 0;
             }
             if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "string")
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "str"))
             {
-                outValue->kind = HOPCTFEValue_STRING;
+                outValue->kind = H2CTFEValue_STRING;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_STR_REF);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_STR_REF);
                 *outIsConst = 1;
                 return 0;
             }
             if (SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "rawptr"))
             {
-                HOPEvalValueSetNull(outValue);
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_RAWPTR);
+                H2EvalValueSetNull(outValue);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_RAWPTR);
                 *outIsConst = 1;
                 return 0;
             }
@@ -3907,124 +3895,124 @@ static int HOPEvalZeroInitTypeNode(
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "i64")
                 || SliceEqCStr(file->source, typeNameNode->dataStart, typeNameNode->dataEnd, "int"))
             {
-                int32_t typeCode = HOPEvalTypeCode_INVALID;
-                HOPEvalValueSetInt(outValue, 0);
-                if (HOPEvalBuiltinTypeCode(
+                int32_t typeCode = H2EvalTypeCode_INVALID;
+                H2EvalValueSetInt(outValue, 0);
+                if (H2EvalBuiltinTypeCode(
                         file->source, typeNameNode->dataStart, typeNameNode->dataEnd, &typeCode))
                 {
-                    HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
                 }
                 *outIsConst = 1;
                 return 0;
             }
-            if (HOPEvalResolveAliasCastTargetNode(
+            if (H2EvalResolveAliasCastTargetNode(
                     p, file, typeNode, &aliasFile, &aliasNode, &aliasTargetNode)
                 && aliasFile != NULL && aliasNode >= 0 && aliasTargetNode >= 0)
             {
-                if (HOPEvalZeroInitTypeNode(p, aliasFile, aliasTargetNode, outValue, outIsConst)
+                if (H2EvalZeroInitTypeNode(p, aliasFile, aliasTargetNode, outValue, outIsConst)
                     != 0)
                 {
                     return -1;
                 }
                 if (*outIsConst) {
-                    outValue->typeTag = HOPEvalMakeAliasTag(aliasFile, aliasNode);
+                    outValue->typeTag = H2EvalMakeAliasTag(aliasFile, aliasNode);
                 }
                 return 0;
             }
-            currentPkg = HOPEvalFindPackageByFile(p, file);
+            currentPkg = H2EvalFindPackageByFile(p, file);
             if (currentPkg == NULL) {
                 return 0;
             }
-            aggregateNode = HOPEvalFindNamedAggregateDecl(p, file, typeNode, &aggregateFile);
+            aggregateNode = H2EvalFindNamedAggregateDecl(p, file, typeNode, &aggregateFile);
             if (aggregateNode >= 0 && aggregateFile != NULL) {
-                return HOPEvalZeroInitAggregateValue(
+                return H2EvalZeroInitAggregateValue(
                     p, aggregateFile, aggregateNode, outValue, outIsConst);
             }
             {
-                HOPCTFEValue typeValue;
-                int32_t      topConstIndex = HOPEvalFindTopConstBySlice(
+                H2CTFEValue typeValue;
+                int32_t     topConstIndex = H2EvalFindTopConstBySlice(
                     p, file, typeNameNode->dataStart, typeNameNode->dataEnd);
                 if (topConstIndex >= 0) {
                     int typeIsConst = 0;
-                    if (HOPEvalEvalTopConst(
-                            (HOPEvalProgram*)p, (uint32_t)topConstIndex, &typeValue, &typeIsConst)
+                    if (H2EvalEvalTopConst(
+                            (H2EvalProgram*)p, (uint32_t)topConstIndex, &typeValue, &typeIsConst)
                         != 0)
                     {
                         return -1;
                     }
-                    if (typeIsConst && typeValue.kind == HOPCTFEValue_TYPE) {
-                        return HOPEvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
+                    if (typeIsConst && typeValue.kind == H2CTFEValue_TYPE) {
+                        return H2EvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
                     }
                 }
-                if (HOPEvalTypeValueFromTypeNode((HOPEvalProgram*)p, file, typeNode, &typeValue)) {
-                    return HOPEvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
+                if (H2EvalTypeValueFromTypeNode((H2EvalProgram*)p, file, typeNode, &typeValue)) {
+                    return H2EvalZeroInitTypeValue(p, &typeValue, outValue, outIsConst);
                 }
             }
             return 0;
         }
-        case HOPAst_TYPE_REF: {
+        case H2Ast_TYPE_REF: {
             int32_t childNode = ASTFirstChild(&file->ast, typeNode);
             if (childNode >= 0 && (uint32_t)childNode < file->ast.len) {
-                const HOPAstNode* child = &file->ast.nodes[childNode];
-                if (child->kind == HOPAst_TYPE_NAME
+                const H2AstNode* child = &file->ast.nodes[childNode];
+                if (child->kind == H2Ast_TYPE_NAME
                     && SliceEqCStr(file->source, child->dataStart, child->dataEnd, "str"))
                 {
-                    outValue->kind = HOPCTFEValue_STRING;
+                    outValue->kind = H2CTFEValue_STRING;
                     outValue->i64 = 0;
                     outValue->f64 = 0.0;
                     outValue->b = 0;
                     outValue->typeTag = 0;
                     outValue->s.bytes = NULL;
                     outValue->s.len = 0;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_STR_REF);
+                    H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_STR_REF);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (child->kind == HOPAst_TYPE_SLICE) {
-                    int32_t       elemTypeNode = ASTFirstChild(&file->ast, childNode);
-                    HOPEvalArray* array = HOPEvalAllocArrayView(
+                if (child->kind == H2Ast_TYPE_SLICE) {
+                    int32_t      elemTypeNode = ASTFirstChild(&file->ast, childNode);
+                    H2EvalArray* array = H2EvalAllocArrayView(
                         p, file, typeNode, elemTypeNode, NULL, 0);
                     if (array == NULL) {
                         return ErrorSimple("out of memory");
                     }
-                    HOPEvalValueSetArray(outValue, file, typeNode, array);
+                    H2EvalValueSetArray(outValue, file, typeNode, array);
                     *outIsConst = 1;
                     return 0;
                 }
             }
-            HOPEvalValueSetNull(outValue);
-            if (HOPEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
+            H2EvalValueSetNull(outValue);
+            if (H2EvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
                 outValue->typeTag = nullTag;
             }
             *outIsConst = 1;
             return 0;
         }
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_MUTREF:
-            HOPEvalValueSetNull(outValue);
-            if (HOPEvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_MUTREF:
+            H2EvalValueSetNull(outValue);
+            if (H2EvalResolveNullCastTypeTag(file, typeNode, &nullTag)) {
                 outValue->typeTag = nullTag;
             }
             *outIsConst = 1;
             return 0;
-        case HOPAst_TYPE_OPTIONAL:
-            HOPEvalValueSetNull(outValue);
+        case H2Ast_TYPE_OPTIONAL:
+            H2EvalValueSetNull(outValue);
             *outIsConst = 1;
             return 0;
-        case HOPAst_TYPE_ARRAY: {
-            const HOPAstNode* arrayTypeNode = &file->ast.nodes[typeNode];
-            int32_t           elemTypeNode = ASTFirstChild(&file->ast, typeNode);
-            uint32_t          len = 0;
-            uint32_t          i;
-            HOPEvalArray*     array;
+        case H2Ast_TYPE_ARRAY: {
+            const H2AstNode* arrayTypeNode = &file->ast.nodes[typeNode];
+            int32_t          elemTypeNode = ASTFirstChild(&file->ast, typeNode);
+            uint32_t         len = 0;
+            uint32_t         i;
+            H2EvalArray*     array;
             if (elemTypeNode < 0
-                || !HOPEvalParseUintSlice(
+                || !H2EvalParseUintSlice(
                     file->source, arrayTypeNode->dataStart, arrayTypeNode->dataEnd, &len))
             {
                 return 0;
             }
-            array = (HOPEvalArray*)HOPArenaAlloc(
-                p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+            array = (H2EvalArray*)H2ArenaAlloc(
+                p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
             if (array == NULL) {
                 return ErrorSimple("out of memory");
             }
@@ -4034,15 +4022,15 @@ static int HOPEvalZeroInitTypeNode(
             array->elemTypeNode = elemTypeNode;
             array->len = len;
             if (len > 0) {
-                array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                    p->arena, sizeof(HOPCTFEValue) * len, (uint32_t)_Alignof(HOPCTFEValue));
+                array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                    p->arena, sizeof(H2CTFEValue) * len, (uint32_t)_Alignof(H2CTFEValue));
                 if (array->elems == NULL) {
                     return ErrorSimple("out of memory");
                 }
-                memset(array->elems, 0, sizeof(HOPCTFEValue) * len);
+                memset(array->elems, 0, sizeof(H2CTFEValue) * len);
                 for (i = 0; i < len; i++) {
                     int elemIsConst = 0;
-                    if (HOPEvalZeroInitTypeNode(
+                    if (H2EvalZeroInitTypeNode(
                             p, file, elemTypeNode, &array->elems[i], &elemIsConst)
                         != 0)
                     {
@@ -4053,25 +4041,25 @@ static int HOPEvalZeroInitTypeNode(
                     }
                 }
             }
-            HOPEvalValueSetArray(outValue, file, typeNode, array);
+            H2EvalValueSetArray(outValue, file, typeNode, array);
             *outIsConst = 1;
             return 0;
         }
-        case HOPAst_TYPE_VARRAY: {
-            int32_t       elemTypeNode = ASTFirstChild(&file->ast, typeNode);
-            HOPEvalArray* array = HOPEvalAllocArrayView(p, file, typeNode, elemTypeNode, NULL, 0);
+        case H2Ast_TYPE_VARRAY: {
+            int32_t      elemTypeNode = ASTFirstChild(&file->ast, typeNode);
+            H2EvalArray* array = H2EvalAllocArrayView(p, file, typeNode, elemTypeNode, NULL, 0);
             if (array == NULL) {
                 return ErrorSimple("out of memory");
             }
-            HOPEvalValueSetArray(outValue, file, typeNode, array);
+            H2EvalValueSetArray(outValue, file, typeNode, array);
             *outIsConst = 1;
             return 0;
         }
-        case HOPAst_TYPE_TUPLE: {
-            uint32_t      len = AstListCount(&file->ast, typeNode);
-            uint32_t      i;
-            HOPEvalArray* array = (HOPEvalArray*)HOPArenaAlloc(
-                p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+        case H2Ast_TYPE_TUPLE: {
+            uint32_t     len = AstListCount(&file->ast, typeNode);
+            uint32_t     i;
+            H2EvalArray* array = (H2EvalArray*)H2ArenaAlloc(
+                p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
             if (array == NULL) {
                 return ErrorSimple("out of memory");
             }
@@ -4080,17 +4068,17 @@ static int HOPEvalZeroInitTypeNode(
             array->typeNode = typeNode;
             array->len = len;
             if (len > 0) {
-                array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                    p->arena, sizeof(HOPCTFEValue) * len, (uint32_t)_Alignof(HOPCTFEValue));
+                array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                    p->arena, sizeof(H2CTFEValue) * len, (uint32_t)_Alignof(H2CTFEValue));
                 if (array->elems == NULL) {
                     return ErrorSimple("out of memory");
                 }
-                memset(array->elems, 0, sizeof(HOPCTFEValue) * len);
+                memset(array->elems, 0, sizeof(H2CTFEValue) * len);
                 for (i = 0; i < len; i++) {
                     int32_t elemTypeNode = AstListItemAt(&file->ast, typeNode, i);
                     int     elemIsConst = 0;
                     if (elemTypeNode < 0
-                        || HOPEvalZeroInitTypeNode(
+                        || H2EvalZeroInitTypeNode(
                                p, file, elemTypeNode, &array->elems[i], &elemIsConst)
                                != 0)
                     {
@@ -4101,30 +4089,30 @@ static int HOPEvalZeroInitTypeNode(
                     }
                 }
             }
-            HOPEvalValueSetArray(outValue, file, typeNode, array);
+            H2EvalValueSetArray(outValue, file, typeNode, array);
             *outIsConst = 1;
             return 0;
         }
-        case HOPAst_TYPE_ANON_STRUCT:
-        case HOPAst_TYPE_ANON_UNION:
-            return HOPEvalZeroInitAggregateValue(p, file, typeNode, outValue, outIsConst);
-        case HOPAst_TYPE_FN:
-            HOPEvalValueSetNull(outValue);
+        case H2Ast_TYPE_ANON_STRUCT:
+        case H2Ast_TYPE_ANON_UNION:
+            return H2EvalZeroInitAggregateValue(p, file, typeNode, outValue, outIsConst);
+        case H2Ast_TYPE_FN:
+            H2EvalValueSetNull(outValue);
             *outIsConst = 1;
             return 0;
         default: return 0;
     }
 }
 
-static int HOPEvalResolveSimpleAliasCastTarget(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    char*                 outTargetKind,
+static int H2EvalResolveSimpleAliasCastTarget(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    char*                outTargetKind,
     uint64_t* _Nullable outAliasTag) {
-    const HOPPackage* currentPkg;
-    const HOPAstNode* typeNameNode;
-    uint32_t          fileIndex;
+    const H2Package* currentPkg;
+    const H2AstNode* typeNameNode;
+    uint32_t         fileIndex;
     if (outTargetKind == NULL) {
         return 0;
     }
@@ -4136,19 +4124,19 @@ static int HOPEvalResolveSimpleAliasCastTarget(
         return 0;
     }
     typeNameNode = &file->ast.nodes[typeNode];
-    if (typeNameNode->kind != HOPAst_TYPE_NAME) {
+    if (typeNameNode->kind != H2Ast_TYPE_NAME) {
         return 0;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, file);
+    currentPkg = H2EvalFindPackageByFile(p, file);
     if (currentPkg == NULL) {
         return 0;
     }
     for (fileIndex = 0; fileIndex < currentPkg->fileLen; fileIndex++) {
-        const HOPParsedFile* pkgFile = &currentPkg->files[fileIndex];
-        int32_t              nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        const H2ParsedFile* pkgFile = &currentPkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
         while (nodeId >= 0) {
-            const HOPAstNode* aliasNode = &pkgFile->ast.nodes[nodeId];
-            if (aliasNode->kind == HOPAst_TYPE_ALIAS
+            const H2AstNode* aliasNode = &pkgFile->ast.nodes[nodeId];
+            if (aliasNode->kind == H2Ast_TYPE_ALIAS
                 && SliceEqSlice(
                     file->source,
                     typeNameNode->dataStart,
@@ -4157,13 +4145,13 @@ static int HOPEvalResolveSimpleAliasCastTarget(
                     aliasNode->dataStart,
                     aliasNode->dataEnd))
             {
-                int32_t           targetNodeId = aliasNode->firstChild;
-                const HOPAstNode* targetNode;
+                int32_t          targetNodeId = aliasNode->firstChild;
+                const H2AstNode* targetNode;
                 if (targetNodeId < 0 || (uint32_t)targetNodeId >= pkgFile->ast.len) {
                     return 0;
                 }
                 targetNode = &pkgFile->ast.nodes[targetNodeId];
-                if (targetNode->kind != HOPAst_TYPE_NAME) {
+                if (targetNode->kind != H2Ast_TYPE_NAME) {
                     return 0;
                 }
                 if (SliceEqCStr(
@@ -4171,7 +4159,7 @@ static int HOPEvalResolveSimpleAliasCastTarget(
                 {
                     *outTargetKind = 'b';
                     if (outAliasTag != NULL) {
-                        *outAliasTag = HOPEvalMakeAliasTag(pkgFile, nodeId);
+                        *outAliasTag = H2EvalMakeAliasTag(pkgFile, nodeId);
                     }
                     return 1;
                 }
@@ -4181,7 +4169,7 @@ static int HOPEvalResolveSimpleAliasCastTarget(
                 {
                     *outTargetKind = 'f';
                     if (outAliasTag != NULL) {
-                        *outAliasTag = HOPEvalMakeAliasTag(pkgFile, nodeId);
+                        *outAliasTag = H2EvalMakeAliasTag(pkgFile, nodeId);
                     }
                     return 1;
                 }
@@ -4190,7 +4178,7 @@ static int HOPEvalResolveSimpleAliasCastTarget(
                 {
                     *outTargetKind = 's';
                     if (outAliasTag != NULL) {
-                        *outAliasTag = HOPEvalMakeAliasTag(pkgFile, nodeId);
+                        *outAliasTag = H2EvalMakeAliasTag(pkgFile, nodeId);
                     }
                     return 1;
                 }
@@ -4216,7 +4204,7 @@ static int HOPEvalResolveSimpleAliasCastTarget(
                 {
                     *outTargetKind = 'i';
                     if (outAliasTag != NULL) {
-                        *outAliasTag = HOPEvalMakeAliasTag(pkgFile, nodeId);
+                        *outAliasTag = H2EvalMakeAliasTag(pkgFile, nodeId);
                     }
                     return 1;
                 }
@@ -4228,16 +4216,16 @@ static int HOPEvalResolveSimpleAliasCastTarget(
     return 0;
 }
 
-static int HOPEvalResolveAliasCastTargetNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    const HOPParsedFile** outAliasFile,
-    int32_t*              outAliasNode,
-    int32_t*              outTargetNode) {
-    const HOPPackage* currentPkg;
-    const HOPAstNode* typeNameNode;
-    uint32_t          fileIndex;
+static int H2EvalResolveAliasCastTargetNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    const H2ParsedFile** outAliasFile,
+    int32_t*             outAliasNode,
+    int32_t*             outTargetNode) {
+    const H2Package* currentPkg;
+    const H2AstNode* typeNameNode;
+    uint32_t         fileIndex;
     if (outAliasFile != NULL) {
         *outAliasFile = NULL;
     }
@@ -4251,19 +4239,19 @@ static int HOPEvalResolveAliasCastTargetNode(
         return 0;
     }
     typeNameNode = &file->ast.nodes[typeNode];
-    if (typeNameNode->kind != HOPAst_TYPE_NAME) {
+    if (typeNameNode->kind != H2Ast_TYPE_NAME) {
         return 0;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, file);
+    currentPkg = H2EvalFindPackageByFile(p, file);
     if (currentPkg == NULL) {
         return 0;
     }
     for (fileIndex = 0; fileIndex < currentPkg->fileLen; fileIndex++) {
-        const HOPParsedFile* pkgFile = &currentPkg->files[fileIndex];
-        int32_t              nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
+        const H2ParsedFile* pkgFile = &currentPkg->files[fileIndex];
+        int32_t             nodeId = ASTFirstChild(&pkgFile->ast, pkgFile->ast.root);
         while (nodeId >= 0) {
-            const HOPAstNode* aliasNode = &pkgFile->ast.nodes[nodeId];
-            if (aliasNode->kind == HOPAst_TYPE_ALIAS
+            const H2AstNode* aliasNode = &pkgFile->ast.nodes[nodeId];
+            if (aliasNode->kind == H2Ast_TYPE_ALIAS
                 && SliceEqSlice(
                     file->source,
                     typeNameNode->dataStart,
@@ -4293,18 +4281,18 @@ static int HOPEvalResolveAliasCastTargetNode(
     return 0;
 }
 
-static int HOPEvalDecodeNewExprNodes(
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    int32_t*             outTypeNode,
-    int32_t*             outCountNode,
-    int32_t*             outInitNode,
-    int32_t*             outAllocNode) {
-    const HOPAstNode* n;
-    int32_t           nextNode;
-    int               hasCount;
-    int               hasInit;
-    int               hasAlloc;
+static int H2EvalDecodeNewExprNodes(
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    int32_t*            outTypeNode,
+    int32_t*            outCountNode,
+    int32_t*            outInitNode,
+    int32_t*            outAllocNode) {
+    const H2AstNode* n;
+    int32_t          nextNode;
+    int              hasCount;
+    int              hasInit;
+    int              hasAlloc;
     if (outTypeNode != NULL) {
         *outTypeNode = -1;
     }
@@ -4321,12 +4309,12 @@ static int HOPEvalDecodeNewExprNodes(
         return 0;
     }
     n = &file->ast.nodes[nodeId];
-    if (n->kind != HOPAst_NEW) {
+    if (n->kind != H2Ast_NEW) {
         return 0;
     }
-    hasCount = (n->flags & HOPAstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & HOPAstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & HOPAstFlag_NEW_HAS_ALLOC) != 0;
+    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
     if (outTypeNode == NULL || outCountNode == NULL || outInitNode == NULL || outAllocNode == NULL)
     {
         return 0;
@@ -4360,63 +4348,63 @@ static int HOPEvalDecodeNewExprNodes(
     return nextNode < 0;
 }
 
-static int HOPEvalAllocReferencedValue(
-    HOPEvalProgram* p, const HOPCTFEValue* inValue, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPCTFEValue* target;
+static int H2EvalAllocReferencedValue(
+    H2EvalProgram* p, const H2CTFEValue* inValue, H2CTFEValue* outValue, int* outIsConst) {
+    H2CTFEValue* target;
     if (p == NULL || inValue == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    target = (HOPCTFEValue*)HOPArenaAlloc(
-        p->arena, sizeof(HOPCTFEValue), (uint32_t)_Alignof(HOPCTFEValue));
+    target = (H2CTFEValue*)H2ArenaAlloc(
+        p->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
     if (target == NULL) {
         return ErrorSimple("out of memory");
     }
     *target = *inValue;
-    HOPEvalValueSetReference(outValue, target);
+    H2EvalValueSetReference(outValue, target);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalCheckAllocatorImplResult(
-    HOPEvalProgram* p, int32_t exprNode, const HOPCTFEValue* allocValue, int* outReturnedNull) {
-    const HOPCTFEValue* allocTarget;
-    HOPEvalAggregate*   allocAgg;
-    HOPCTFEValue        handlerValue;
-    static const char   handlerName[] = "handler";
+static int H2EvalCheckAllocatorImplResult(
+    H2EvalProgram* p, int32_t exprNode, const H2CTFEValue* allocValue, int* outReturnedNull) {
+    const H2CTFEValue* allocTarget;
+    H2EvalAggregate*   allocAgg;
+    H2CTFEValue        handlerValue;
+    static const char  handlerName[] = "handler";
     if (outReturnedNull != NULL) {
         *outReturnedNull = 0;
     }
     if (p == NULL || allocValue == NULL) {
         return -1;
     }
-    allocTarget = HOPEvalValueTargetOrSelf(allocValue);
-    allocAgg = HOPEvalValueAsAggregate(allocTarget);
+    allocTarget = H2EvalValueTargetOrSelf(allocValue);
+    allocAgg = H2EvalValueAsAggregate(allocTarget);
     if (allocAgg == NULL
-        || !HOPEvalAggregateGetFieldValue(allocAgg, handlerName, 0u, 7u, &handlerValue)
-        || !HOPEvalValueIsInvokableFunctionRef(&handlerValue))
+        || !H2EvalAggregateGetFieldValue(allocAgg, handlerName, 0u, 7u, &handlerValue)
+        || !H2EvalValueIsInvokableFunctionRef(&handlerValue))
     {
         return 1;
     }
     {
-        HOPCTFEValue args[7];
-        HOPCTFEValue newSize;
-        HOPCTFEValue result;
-        int          resultIsConst = 0;
-        int          invoked;
+        H2CTFEValue args[7];
+        H2CTFEValue newSize;
+        H2CTFEValue result;
+        int         resultIsConst = 0;
+        int         invoked;
         args[0] = *allocValue;
-        HOPEvalValueSetNull(&args[1]);
-        HOPEvalValueSetInt(&args[2], 0);
-        HOPEvalValueSetInt(&args[3], 0);
-        HOPEvalValueSetInt(&newSize, 0);
-        HOPEvalValueSetReference(&args[4], &newSize);
-        HOPEvalValueSetInt(&args[5], 0);
-        HOPEvalValueSetNull(&args[6]);
-        invoked = HOPEvalInvokeFunctionRef(p, &handlerValue, args, 7u, &result, &resultIsConst);
+        H2EvalValueSetNull(&args[1]);
+        H2EvalValueSetInt(&args[2], 0);
+        H2EvalValueSetInt(&args[3], 0);
+        H2EvalValueSetInt(&newSize, 0);
+        H2EvalValueSetReference(&args[4], &newSize);
+        H2EvalValueSetInt(&args[5], 0);
+        H2EvalValueSetNull(&args[6]);
+        invoked = H2EvalInvokeFunctionRef(p, &handlerValue, args, 7u, &result, &resultIsConst);
         if (invoked < 0) {
             return -1;
         }
         if (invoked > 0 && resultIsConst
-            && HOPEvalValueTargetOrSelf(&result)->kind == HOPCTFEValue_NULL)
+            && H2EvalValueTargetOrSelf(&result)->kind == H2CTFEValue_NULL)
         {
             if (outReturnedNull != NULL) {
                 *outReturnedNull = 1;
@@ -4428,48 +4416,48 @@ static int HOPEvalCheckAllocatorImplResult(
     return 1;
 }
 
-static int HOPEvalExpectedNewResultIsOptional(
-    const HOPParsedFile* _Nullable typeFile, int32_t typeNode) {
+static int H2EvalExpectedNewResultIsOptional(
+    const H2ParsedFile* _Nullable typeFile, int32_t typeNode) {
     if (typeFile == NULL || typeNode < 0 || (uint32_t)typeNode >= typeFile->ast.len) {
         return 0;
     }
-    return typeFile->ast.nodes[typeNode].kind == HOPAst_TYPE_OPTIONAL;
+    return typeFile->ast.nodes[typeNode].kind == H2Ast_TYPE_OPTIONAL;
 }
 
-static int HOPEvalEvalNewExpr(
-    HOPEvalProgram* p,
-    int32_t         exprNode,
-    const HOPParsedFile* _Nullable expectedTypeFile,
-    int32_t       expectedTypeNode,
-    HOPCTFEValue* outValue,
-    int*          outIsConst) {
-    int32_t      typeNode = -1;
-    int32_t      countNode = -1;
-    int32_t      initNode = -1;
-    int32_t      allocNode = -1;
-    HOPCTFEValue allocValue;
-    int          allocIsConst = 0;
+static int H2EvalEvalNewExpr(
+    H2EvalProgram* p,
+    int32_t        exprNode,
+    const H2ParsedFile* _Nullable expectedTypeFile,
+    int32_t      expectedTypeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
+    int32_t     typeNode = -1;
+    int32_t     countNode = -1;
+    int32_t     initNode = -1;
+    int32_t     allocNode = -1;
+    H2CTFEValue allocValue;
+    int         allocIsConst = 0;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (!HOPEvalDecodeNewExprNodes(
+    if (!H2EvalDecodeNewExprNodes(
             p->currentFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
     }
     if (allocNode >= 0) {
-        if (HOPEvalExecExprCb(p, allocNode, &allocValue, &allocIsConst) != 0) {
+        if (H2EvalExecExprCb(p, allocNode, &allocValue, &allocIsConst) != 0) {
             return -1;
         }
         if (!allocIsConst) {
             return 0;
         }
-    } else if (!HOPEvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
+    } else if (!H2EvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReasonNode(
+            H2CTFEExecSetReasonNode(
                 p->currentExecCtx,
                 exprNode,
                 "allocator context is not available in evaluator backend");
@@ -4478,44 +4466,44 @@ static int HOPEvalEvalNewExpr(
     } else {
         allocIsConst = 1;
     }
-    if (HOPEvalValueTargetOrSelf(&allocValue)->kind == HOPCTFEValue_NULL) {
+    if (H2EvalValueTargetOrSelf(&allocValue)->kind == H2CTFEValue_NULL) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "invalid allocator");
+            H2CTFEExecSetReasonNode(p->currentExecCtx, exprNode, "invalid allocator");
         }
         return 0;
     }
     {
         int allocReturnedNull = 0;
-        int allocRc = HOPEvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
+        int allocRc = H2EvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
         if (allocRc <= 0) {
             if (allocRc == 0 && allocReturnedNull
-                && HOPEvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
+                && H2EvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
             {
-                HOPEvalValueSetNull(outValue);
+                H2EvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;
             }
             if (allocRc == 0 && allocReturnedNull && p->currentExecCtx != NULL) {
-                HOPCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
+                H2CTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
             }
             return allocRc;
         }
     }
     if (countNode >= 0) {
-        HOPCTFEValue  countValue;
-        int           countIsConst = 0;
-        int64_t       count = 0;
-        HOPEvalArray* array;
-        HOPCTFEValue  arrayValue;
-        uint32_t      i;
-        if (HOPEvalExecExprCb(p, countNode, &countValue, &countIsConst) != 0) {
+        H2CTFEValue  countValue;
+        int          countIsConst = 0;
+        int64_t      count = 0;
+        H2EvalArray* array;
+        H2CTFEValue  arrayValue;
+        uint32_t     i;
+        if (H2EvalExecExprCb(p, countNode, &countValue, &countIsConst) != 0) {
             return -1;
         }
-        if (!countIsConst || HOPCTFEValueToInt64(&countValue, &count) != 0 || count < 0) {
+        if (!countIsConst || H2CTFEValueToInt64(&countValue, &count) != 0 || count < 0) {
             return 0;
         }
-        array = (HOPEvalArray*)HOPArenaAlloc(
-            p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+        array = (H2EvalArray*)H2ArenaAlloc(
+            p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
         if (array == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -4525,16 +4513,16 @@ static int HOPEvalEvalNewExpr(
         array->elemTypeNode = typeNode;
         array->len = (uint32_t)count;
         if (array->len > 0) {
-            array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue) * array->len, (uint32_t)_Alignof(HOPCTFEValue));
+            array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * array->len, (uint32_t)_Alignof(H2CTFEValue));
             if (array->elems == NULL) {
                 return ErrorSimple("out of memory");
             }
-            memset(array->elems, 0, sizeof(HOPCTFEValue) * array->len);
+            memset(array->elems, 0, sizeof(H2CTFEValue) * array->len);
             if (initNode >= 0) {
-                HOPCTFEValue initValue;
-                int          initIsConst = 0;
-                if (HOPEvalExecExprWithTypeNode(
+                H2CTFEValue initValue;
+                int         initIsConst = 0;
+                if (H2EvalExecExprWithTypeNode(
                         p, initNode, p->currentFile, typeNode, &initValue, &initIsConst)
                     != 0)
                 {
@@ -4549,7 +4537,7 @@ static int HOPEvalEvalNewExpr(
             } else {
                 for (i = 0; i < array->len; i++) {
                     int elemIsConst = 0;
-                    if (HOPEvalZeroInitTypeNode(
+                    if (H2EvalZeroInitTypeNode(
                             p, p->currentFile, typeNode, &array->elems[i], &elemIsConst)
                         != 0)
                     {
@@ -4561,20 +4549,20 @@ static int HOPEvalEvalNewExpr(
                 }
             }
         }
-        HOPEvalValueSetArray(&arrayValue, p->currentFile, exprNode, array);
-        return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst);
+        H2EvalValueSetArray(&arrayValue, p->currentFile, exprNode, array);
+        return H2EvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst);
     }
     {
-        HOPCTFEValue value;
-        int          valueIsConst = 0;
+        H2CTFEValue value;
+        int         valueIsConst = 0;
         if (initNode >= 0) {
-            if (HOPEvalExecExprWithTypeNode(
+            if (H2EvalExecExprWithTypeNode(
                     p, initNode, p->currentFile, typeNode, &value, &valueIsConst)
                 != 0)
             {
                 return -1;
             }
-        } else if (HOPEvalZeroInitTypeNode(p, p->currentFile, typeNode, &value, &valueIsConst) != 0)
+        } else if (H2EvalZeroInitTypeNode(p, p->currentFile, typeNode, &value, &valueIsConst) != 0)
         {
             return -1;
         }
@@ -4582,32 +4570,32 @@ static int HOPEvalEvalNewExpr(
             return 0;
         }
         {
-            HOPEvalAggregate*   agg = HOPEvalValueAsAggregate(&value);
-            HOPCTFEExecBinding* fieldBindings = NULL;
-            HOPCTFEExecEnv      fieldFrame;
-            uint32_t            fieldBindingCap = 0;
-            uint32_t            i;
+            H2EvalAggregate*   agg = H2EvalValueAsAggregate(&value);
+            H2CTFEExecBinding* fieldBindings = NULL;
+            H2CTFEExecEnv      fieldFrame;
+            uint32_t           fieldBindingCap = 0;
+            uint32_t           i;
             if (agg != NULL && agg->fieldLen > 0) {
-                fieldBindingCap = HOPEvalAggregateFieldBindingCount(agg);
-                fieldBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+                fieldBindingCap = H2EvalAggregateFieldBindingCount(agg);
+                fieldBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
                     p->arena,
-                    sizeof(HOPCTFEExecBinding) * fieldBindingCap,
-                    (uint32_t)_Alignof(HOPCTFEExecBinding));
+                    sizeof(H2CTFEExecBinding) * fieldBindingCap,
+                    (uint32_t)_Alignof(H2CTFEExecBinding));
                 if (fieldBindings == NULL) {
                     return ErrorSimple("out of memory");
                 }
-                memset(fieldBindings, 0, sizeof(HOPCTFEExecBinding) * fieldBindingCap);
+                memset(fieldBindings, 0, sizeof(H2CTFEExecBinding) * fieldBindingCap);
             }
             fieldFrame.parent = p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL;
             fieldFrame.bindings = fieldBindings;
             fieldFrame.bindingLen = 0;
             if (agg != NULL) {
                 for (i = 0; i < agg->fieldLen; i++) {
-                    HOPEvalAggregateField* field = &agg->fields[i];
+                    H2EvalAggregateField* field = &agg->fields[i];
                     if (initNode < 0 && field->defaultExprNode >= 0) {
-                        HOPCTFEValue defaultValue;
-                        int          defaultIsConst = 0;
-                        if (HOPEvalExecExprInFileWithType(
+                        H2CTFEValue defaultValue;
+                        int         defaultIsConst = 0;
+                        if (H2EvalExecExprInFileWithType(
                                 p,
                                 agg->file,
                                 &fieldFrame,
@@ -4626,7 +4614,7 @@ static int HOPEvalEvalNewExpr(
                         field->value = defaultValue;
                     }
                     if (fieldBindings != NULL
-                        && HOPEvalAppendAggregateFieldBindings(
+                        && H2EvalAppendAggregateFieldBindings(
                                fieldBindings, fieldBindingCap, &fieldFrame, field)
                                != 0)
                     {
@@ -4635,19 +4623,19 @@ static int HOPEvalEvalNewExpr(
                 }
             }
         }
-        return HOPEvalAllocReferencedValue(p, &value, outValue, outIsConst);
+        return H2EvalAllocReferencedValue(p, &value, outValue, outIsConst);
     }
 }
 
-static int HOPEvalValueConcatStrings(
-    HOPArena* arena, const HOPCTFEValue* a, const HOPCTFEValue* b, HOPCTFEValue* outValue) {
+static int H2EvalValueConcatStrings(
+    H2Arena* arena, const H2CTFEValue* a, const H2CTFEValue* b, H2CTFEValue* outValue) {
     uint64_t totalLen64;
     uint32_t totalLen;
     uint8_t* bytes;
     if (arena == NULL || a == NULL || b == NULL || outValue == NULL) {
         return -1;
     }
-    if (a->kind != HOPCTFEValue_STRING || b->kind != HOPCTFEValue_STRING) {
+    if (a->kind != H2CTFEValue_STRING || b->kind != H2CTFEValue_STRING) {
         return 0;
     }
     totalLen64 = (uint64_t)a->s.len + (uint64_t)b->s.len;
@@ -4655,7 +4643,7 @@ static int HOPEvalValueConcatStrings(
         return 0;
     }
     totalLen = (uint32_t)totalLen64;
-    outValue->kind = HOPCTFEValue_STRING;
+    outValue->kind = H2CTFEValue_STRING;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
@@ -4665,7 +4653,7 @@ static int HOPEvalValueConcatStrings(
         outValue->s.len = 0;
         return 1;
     }
-    bytes = (uint8_t*)HOPArenaAlloc(arena, totalLen, (uint32_t)_Alignof(uint8_t));
+    bytes = (uint8_t*)H2ArenaAlloc(arena, totalLen, (uint32_t)_Alignof(uint8_t));
     if (bytes == NULL) {
         return -1;
     }
@@ -4680,52 +4668,49 @@ static int HOPEvalValueConcatStrings(
     return 1;
 }
 
-static void HOPEvalValueSetUInt(HOPCTFEValue* value, uint32_t n) {
-    HOPEvalValueSetInt(value, (int64_t)n);
-    HOPEvalValueSetRuntimeTypeCode(value, HOPEvalTypeCode_UINT);
+static void H2EvalValueSetUInt(H2CTFEValue* value, uint32_t n) {
+    H2EvalValueSetInt(value, (int64_t)n);
+    H2EvalValueSetRuntimeTypeCode(value, H2EvalTypeCode_UINT);
 }
 
-static int HOPEvalValueCopyBuiltin(
-    HOPArena*           arena,
-    const HOPCTFEValue* dstArg,
-    const HOPCTFEValue* srcArg,
-    HOPCTFEValue*       outValue) {
-    const HOPCTFEValue* srcValue;
-    HOPCTFEValue*       dstValue;
-    HOPEvalArray*       dstArray;
-    HOPEvalArray*       srcArray;
-    uint32_t            copyLen;
+static int H2EvalValueCopyBuiltin(
+    H2Arena* arena, const H2CTFEValue* dstArg, const H2CTFEValue* srcArg, H2CTFEValue* outValue) {
+    const H2CTFEValue* srcValue;
+    H2CTFEValue*       dstValue;
+    H2EvalArray*       dstArray;
+    H2EvalArray*       srcArray;
+    uint32_t           copyLen;
     if (arena == NULL || dstArg == NULL || srcArg == NULL || outValue == NULL) {
         return -1;
     }
-    srcValue = HOPEvalValueTargetOrSelf(srcArg);
-    dstValue = HOPEvalValueReferenceTarget(dstArg);
+    srcValue = H2EvalValueTargetOrSelf(srcArg);
+    dstValue = H2EvalValueReferenceTarget(dstArg);
     if (dstValue == NULL) {
-        dstValue = (HOPCTFEValue*)HOPEvalValueTargetOrSelf(dstArg);
+        dstValue = (H2CTFEValue*)H2EvalValueTargetOrSelf(dstArg);
     }
     if (dstValue == NULL || srcValue == NULL) {
         return 0;
     }
-    dstArray = HOPEvalValueAsArray(dstValue);
-    srcArray = HOPEvalValueAsArray(srcValue);
+    dstArray = H2EvalValueAsArray(dstValue);
+    srcArray = H2EvalValueAsArray(srcValue);
     if (dstArray != NULL && srcArray != NULL) {
         copyLen = dstArray->len < srcArray->len ? dstArray->len : srcArray->len;
         if (copyLen > 0) {
-            HOPCTFEValue* temp = (HOPCTFEValue*)HOPArenaAlloc(
-                arena, sizeof(HOPCTFEValue) * copyLen, (uint32_t)_Alignof(HOPCTFEValue));
+            H2CTFEValue* temp = (H2CTFEValue*)H2ArenaAlloc(
+                arena, sizeof(H2CTFEValue) * copyLen, (uint32_t)_Alignof(H2CTFEValue));
             if (temp == NULL) {
                 return -1;
             }
-            memcpy(temp, srcArray->elems, sizeof(HOPCTFEValue) * copyLen);
-            memcpy(dstArray->elems, temp, sizeof(HOPCTFEValue) * copyLen);
+            memcpy(temp, srcArray->elems, sizeof(H2CTFEValue) * copyLen);
+            memcpy(dstArray->elems, temp, sizeof(H2CTFEValue) * copyLen);
         }
-        HOPEvalValueSetUInt(outValue, copyLen);
+        H2EvalValueSetUInt(outValue, copyLen);
         return 1;
     }
-    if (dstValue->kind == HOPCTFEValue_STRING && srcValue->kind == HOPCTFEValue_STRING) {
-        int32_t dstTypeCode = HOPEvalTypeCode_INVALID;
-        if (!HOPEvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
-            || dstTypeCode != HOPEvalTypeCode_STR_PTR)
+    if (dstValue->kind == H2CTFEValue_STRING && srcValue->kind == H2CTFEValue_STRING) {
+        int32_t dstTypeCode = H2EvalTypeCode_INVALID;
+        if (!H2EvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
+            || dstTypeCode != H2EvalTypeCode_STR_PTR)
         {
             return 0;
         }
@@ -4733,36 +4718,36 @@ static int HOPEvalValueCopyBuiltin(
         if (copyLen > 0 && dstValue->s.bytes != NULL && srcValue->s.bytes != NULL) {
             memmove((uint8_t*)dstValue->s.bytes, srcValue->s.bytes, copyLen);
         }
-        HOPEvalValueSetUInt(outValue, copyLen);
+        H2EvalValueSetUInt(outValue, copyLen);
         return 1;
     }
-    if (dstArray != NULL && srcValue->kind == HOPCTFEValue_STRING) {
+    if (dstArray != NULL && srcValue->kind == H2CTFEValue_STRING) {
         copyLen = dstArray->len < srcValue->s.len ? dstArray->len : srcValue->s.len;
         for (uint32_t i = 0; i < copyLen; i++) {
-            HOPEvalValueSetInt(&dstArray->elems[i], (int64_t)srcValue->s.bytes[i]);
-            HOPEvalValueSetRuntimeTypeCode(&dstArray->elems[i], HOPEvalTypeCode_U8);
+            H2EvalValueSetInt(&dstArray->elems[i], (int64_t)srcValue->s.bytes[i]);
+            H2EvalValueSetRuntimeTypeCode(&dstArray->elems[i], H2EvalTypeCode_U8);
         }
-        HOPEvalValueSetUInt(outValue, copyLen);
+        H2EvalValueSetUInt(outValue, copyLen);
         return 1;
     }
-    if (dstValue->kind == HOPCTFEValue_STRING && srcArray != NULL) {
-        int32_t  dstTypeCode = HOPEvalTypeCode_INVALID;
+    if (dstValue->kind == H2CTFEValue_STRING && srcArray != NULL) {
+        int32_t  dstTypeCode = H2EvalTypeCode_INVALID;
         uint8_t* tempBytes;
-        if (!HOPEvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
-            || dstTypeCode != HOPEvalTypeCode_STR_PTR)
+        if (!H2EvalValueGetRuntimeTypeCode(dstValue, &dstTypeCode)
+            || dstTypeCode != H2EvalTypeCode_STR_PTR)
         {
             return 0;
         }
         copyLen = dstValue->s.len < srcArray->len ? dstValue->s.len : srcArray->len;
         tempBytes =
-            copyLen > 0 ? (uint8_t*)HOPArenaAlloc(arena, copyLen, (uint32_t)_Alignof(uint8_t))
+            copyLen > 0 ? (uint8_t*)H2ArenaAlloc(arena, copyLen, (uint32_t)_Alignof(uint8_t))
                         : NULL;
         if (copyLen > 0 && tempBytes == NULL) {
             return -1;
         }
         for (uint32_t i = 0; i < copyLen; i++) {
             int64_t byteValue = 0;
-            if (HOPCTFEValueToInt64(&srcArray->elems[i], &byteValue) != 0 || byteValue < 0
+            if (H2CTFEValueToInt64(&srcArray->elems[i], &byteValue) != 0 || byteValue < 0
                 || byteValue > 255)
             {
                 return 0;
@@ -4772,32 +4757,32 @@ static int HOPEvalValueCopyBuiltin(
         if (copyLen > 0 && dstValue->s.bytes != NULL) {
             memmove((uint8_t*)dstValue->s.bytes, tempBytes, copyLen);
         }
-        HOPEvalValueSetUInt(outValue, copyLen);
+        H2EvalValueSetUInt(outValue, copyLen);
         return 1;
     }
     return 0;
 }
 
-static int HOPEvalStringValueFromArrayBytes(
-    HOPArena* arena, const HOPCTFEValue* inValue, int32_t targetTypeCode, HOPCTFEValue* outValue) {
-    HOPEvalArray* array;
-    uint8_t*      bytes = NULL;
-    uint32_t      i;
+static int H2EvalStringValueFromArrayBytes(
+    H2Arena* arena, const H2CTFEValue* inValue, int32_t targetTypeCode, H2CTFEValue* outValue) {
+    H2EvalArray* array;
+    uint8_t*     bytes = NULL;
+    uint32_t     i;
     if (arena == NULL || inValue == NULL || outValue == NULL) {
         return -1;
     }
-    array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(inValue));
+    array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(inValue));
     if (array == NULL) {
         return 0;
     }
     if (array->len > 0) {
-        bytes = (uint8_t*)HOPArenaAlloc(arena, array->len, (uint32_t)_Alignof(uint8_t));
+        bytes = (uint8_t*)H2ArenaAlloc(arena, array->len, (uint32_t)_Alignof(uint8_t));
         if (bytes == NULL) {
             return -1;
         }
         for (i = 0; i < array->len; i++) {
             int64_t byteValue = 0;
-            if (HOPCTFEValueToInt64(&array->elems[i], &byteValue) != 0 || byteValue < 0
+            if (H2CTFEValueToInt64(&array->elems[i], &byteValue) != 0 || byteValue < 0
                 || byteValue > 255)
             {
                 return 0;
@@ -4805,19 +4790,19 @@ static int HOPEvalStringValueFromArrayBytes(
             bytes[i] = (uint8_t)byteValue;
         }
     }
-    outValue->kind = HOPCTFEValue_STRING;
+    outValue->kind = H2CTFEValue_STRING;
     outValue->i64 = 0;
     outValue->f64 = 0.0;
     outValue->b = 0;
     outValue->typeTag = 0;
     outValue->s.bytes = bytes;
     outValue->s.len = array->len;
-    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
     return 1;
 }
 
-static void HOPEvalValueSetSpan(
-    const HOPParsedFile* file, uint32_t start, uint32_t end, HOPCTFEValue* value) {
+static void H2EvalValueSetSpan(
+    const H2ParsedFile* file, uint32_t start, uint32_t end, H2CTFEValue* value) {
     uint32_t startLine = 0;
     uint32_t startCol = 0;
     uint32_t endLine = 0;
@@ -4827,7 +4812,7 @@ static void HOPEvalValueSetSpan(
     }
     DiagOffsetToLineCol(file->source, start, &startLine, &startCol);
     DiagOffsetToLineCol(file->source, end, &endLine, &endCol);
-    value->kind = HOPCTFEValue_SPAN;
+    value->kind = H2CTFEValue_SPAN;
     value->i64 = 0;
     value->f64 = 0.0;
     value->b = 0;
@@ -4848,18 +4833,18 @@ static int ErrorEvalUnsupported(
     if (detail == NULL || detail[0] == '\0') {
         detail = "operation is not supported by evaluator backend";
     }
-    return ErrorDiagf(file, source, start, end, HOPDiag_EVAL_BACKEND_UNSUPPORTED, detail);
+    return ErrorDiagf(file, source, start, end, H2Diag_EVAL_BACKEND_UNSUPPORTED, detail);
 }
 
-static int HOPEvalProgramAppendFunction(HOPEvalProgram* p, const HOPEvalFunction* fn) {
-    HOPEvalFunction* newFuncs;
-    uint32_t         newCap;
+static int H2EvalProgramAppendFunction(H2EvalProgram* p, const H2EvalFunction* fn) {
+    H2EvalFunction* newFuncs;
+    uint32_t        newCap;
     if (p == NULL || fn == NULL) {
         return -1;
     }
     if (p->funcLen >= p->funcCap) {
         newCap = p->funcCap < 8u ? 8u : p->funcCap * 2u;
-        newFuncs = (HOPEvalFunction*)realloc(p->funcs, sizeof(HOPEvalFunction) * newCap);
+        newFuncs = (H2EvalFunction*)realloc(p->funcs, sizeof(H2EvalFunction) * newCap);
         if (newFuncs == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -4870,15 +4855,15 @@ static int HOPEvalProgramAppendFunction(HOPEvalProgram* p, const HOPEvalFunction
     return 0;
 }
 
-static int HOPEvalProgramAppendTopConst(HOPEvalProgram* p, const HOPEvalTopConst* topConst) {
-    HOPEvalTopConst* newConsts;
-    uint32_t         newCap;
+static int H2EvalProgramAppendTopConst(H2EvalProgram* p, const H2EvalTopConst* topConst) {
+    H2EvalTopConst* newConsts;
+    uint32_t        newCap;
     if (p == NULL || topConst == NULL) {
         return -1;
     }
     if (p->topConstLen >= p->topConstCap) {
         newCap = p->topConstCap < 8u ? 8u : p->topConstCap * 2u;
-        newConsts = (HOPEvalTopConst*)realloc(p->topConsts, sizeof(HOPEvalTopConst) * newCap);
+        newConsts = (H2EvalTopConst*)realloc(p->topConsts, sizeof(H2EvalTopConst) * newCap);
         if (newConsts == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -4889,15 +4874,15 @@ static int HOPEvalProgramAppendTopConst(HOPEvalProgram* p, const HOPEvalTopConst
     return 0;
 }
 
-static int HOPEvalProgramAppendTopVar(HOPEvalProgram* p, const HOPEvalTopVar* topVar) {
-    HOPEvalTopVar* newVars;
-    uint32_t       newCap;
+static int H2EvalProgramAppendTopVar(H2EvalProgram* p, const H2EvalTopVar* topVar) {
+    H2EvalTopVar* newVars;
+    uint32_t      newCap;
     if (p == NULL || topVar == NULL) {
         return -1;
     }
     if (p->topVarLen >= p->topVarCap) {
         newCap = p->topVarCap < 8u ? 8u : p->topVarCap * 2u;
-        newVars = (HOPEvalTopVar*)realloc(p->topVars, sizeof(HOPEvalTopVar) * newCap);
+        newVars = (H2EvalTopVar*)realloc(p->topVars, sizeof(H2EvalTopVar) * newCap);
         if (newVars == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -4908,8 +4893,8 @@ static int HOPEvalProgramAppendTopVar(HOPEvalProgram* p, const HOPEvalTopVar* to
     return 0;
 }
 
-static int32_t HOPEvalVarLikeInitExprNodeAt(
-    const HOPParsedFile* file, int32_t varLikeNodeId, int32_t nameIndex) {
+static int32_t H2EvalVarLikeInitExprNodeAt(
+    const H2ParsedFile* file, int32_t varLikeNodeId, int32_t nameIndex) {
     int32_t firstChild;
     int32_t initNode;
     if (file == NULL || nameIndex < 0) {
@@ -4923,10 +4908,10 @@ static int32_t HOPEvalVarLikeInitExprNodeAt(
     if (initNode < 0 || (uint32_t)initNode >= file->ast.len) {
         return -1;
     }
-    if (file->ast.nodes[firstChild].kind != HOPAst_NAME_LIST) {
+    if (file->ast.nodes[firstChild].kind != H2Ast_NAME_LIST) {
         return nameIndex == 0 ? initNode : -1;
     }
-    if (file->ast.nodes[initNode].kind != HOPAst_EXPR_LIST) {
+    if (file->ast.nodes[initNode].kind != H2Ast_EXPR_LIST) {
         return -1;
     }
     {
@@ -4944,7 +4929,7 @@ static int32_t HOPEvalVarLikeInitExprNodeAt(
         {
             int32_t onlyInit = AstListItemAt(&file->ast, initNode, 0);
             if (onlyInit < 0 || (uint32_t)onlyInit >= file->ast.len
-                || file->ast.nodes[onlyInit].kind != HOPAst_TUPLE_EXPR)
+                || file->ast.nodes[onlyInit].kind != H2Ast_TUPLE_EXPR)
             {
                 return -1;
             }
@@ -4953,7 +4938,7 @@ static int32_t HOPEvalVarLikeInitExprNodeAt(
     }
 }
 
-static int32_t HOPEvalVarLikeDeclTypeNode(const HOPParsedFile* file, int32_t varLikeNodeId) {
+static int32_t H2EvalVarLikeDeclTypeNode(const H2ParsedFile* file, int32_t varLikeNodeId) {
     int32_t firstChild;
     int32_t afterNames;
     if (file == NULL || varLikeNodeId < 0 || (uint32_t)varLikeNodeId >= file->ast.len) {
@@ -4963,7 +4948,7 @@ static int32_t HOPEvalVarLikeDeclTypeNode(const HOPParsedFile* file, int32_t var
     if (firstChild < 0 || (uint32_t)firstChild >= file->ast.len) {
         return -1;
     }
-    if (file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST) {
+    if (file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST) {
         afterNames = ASTNextSibling(&file->ast, firstChild);
         if (afterNames >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[afterNames].kind)) {
             return afterNames;
@@ -4976,54 +4961,54 @@ static int32_t HOPEvalVarLikeDeclTypeNode(const HOPParsedFile* file, int32_t var
     return -1;
 }
 
-static int HOPEvalCollectTopConsts(HOPEvalProgram* p) {
+static int H2EvalCollectTopConsts(H2EvalProgram* p) {
     uint32_t pkgIndex;
     if (p == NULL || p->loader == NULL) {
         return -1;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-            const HOPParsedFile* file = &pkg->files[fileIndex];
-            const HOPAst*        ast = &file->ast;
-            int32_t              nodeId = ASTFirstChild(ast, ast->root);
+            const H2ParsedFile* file = &pkg->files[fileIndex];
+            const H2Ast*        ast = &file->ast;
+            int32_t             nodeId = ASTFirstChild(ast, ast->root);
             while (nodeId >= 0) {
-                const HOPAstNode* n = &ast->nodes[nodeId];
-                if (n->kind == HOPAst_CONST) {
+                const H2AstNode* n = &ast->nodes[nodeId];
+                if (n->kind == H2Ast_CONST) {
                     int32_t firstChild = ASTFirstChild(ast, nodeId);
-                    if (firstChild >= 0 && ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+                    if (firstChild >= 0 && ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
                         uint32_t i;
                         uint32_t nameCount = AstListCount(ast, firstChild);
                         for (i = 0; i < nameCount; i++) {
-                            int32_t           nameNode = AstListItemAt(ast, firstChild, i);
-                            const HOPAstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
-                            HOPEvalTopConst   topConst;
+                            int32_t          nameNode = AstListItemAt(ast, firstChild, i);
+                            const H2AstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
+                            H2EvalTopConst   topConst;
                             if (name == NULL) {
                                 continue;
                             }
                             memset(&topConst, 0, sizeof(topConst));
                             topConst.file = file;
                             topConst.nodeId = nodeId;
-                            topConst.initExprNode = HOPEvalVarLikeInitExprNodeAt(
+                            topConst.initExprNode = H2EvalVarLikeInitExprNodeAt(
                                 file, nodeId, (int32_t)i);
                             topConst.nameStart = name->dataStart;
                             topConst.nameEnd = name->dataEnd;
-                            topConst.state = HOPEvalTopConstState_UNSEEN;
-                            if (HOPEvalProgramAppendTopConst(p, &topConst) != 0) {
+                            topConst.state = H2EvalTopConstState_UNSEEN;
+                            if (H2EvalProgramAppendTopConst(p, &topConst) != 0) {
                                 return -1;
                             }
                         }
                     } else {
-                        HOPEvalTopConst topConst;
+                        H2EvalTopConst topConst;
                         memset(&topConst, 0, sizeof(topConst));
                         topConst.file = file;
                         topConst.nodeId = nodeId;
-                        topConst.initExprNode = HOPEvalVarLikeInitExprNodeAt(file, nodeId, 0);
+                        topConst.initExprNode = H2EvalVarLikeInitExprNodeAt(file, nodeId, 0);
                         topConst.nameStart = n->dataStart;
                         topConst.nameEnd = n->dataEnd;
-                        topConst.state = HOPEvalTopConstState_UNSEEN;
-                        if (HOPEvalProgramAppendTopConst(p, &topConst) != 0) {
+                        topConst.state = H2EvalTopConstState_UNSEEN;
+                        if (H2EvalProgramAppendTopConst(p, &topConst) != 0) {
                             return -1;
                         }
                     }
@@ -5035,57 +5020,57 @@ static int HOPEvalCollectTopConsts(HOPEvalProgram* p) {
     return 0;
 }
 
-static int HOPEvalCollectTopVars(HOPEvalProgram* p) {
+static int H2EvalCollectTopVars(H2EvalProgram* p) {
     uint32_t pkgIndex;
     if (p == NULL || p->loader == NULL) {
         return -1;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-            const HOPParsedFile* file = &pkg->files[fileIndex];
-            const HOPAst*        ast = &file->ast;
-            int32_t              nodeId = ASTFirstChild(ast, ast->root);
+            const H2ParsedFile* file = &pkg->files[fileIndex];
+            const H2Ast*        ast = &file->ast;
+            int32_t             nodeId = ASTFirstChild(ast, ast->root);
             while (nodeId >= 0) {
-                const HOPAstNode* n = &ast->nodes[nodeId];
-                if (n->kind == HOPAst_VAR) {
+                const H2AstNode* n = &ast->nodes[nodeId];
+                if (n->kind == H2Ast_VAR) {
                     if (ASTFirstChild(ast, nodeId) >= 0
-                        && ast->nodes[ASTFirstChild(ast, nodeId)].kind == HOPAst_NAME_LIST)
+                        && ast->nodes[ASTFirstChild(ast, nodeId)].kind == H2Ast_NAME_LIST)
                     {
                         uint32_t i;
                         uint32_t nameCount = AstListCount(ast, ASTFirstChild(ast, nodeId));
                         for (i = 0; i < nameCount; i++) {
                             int32_t nameNode = AstListItemAt(ast, ASTFirstChild(ast, nodeId), i);
-                            const HOPAstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
-                            HOPEvalTopVar     topVar;
+                            const H2AstNode* name = nameNode >= 0 ? &ast->nodes[nameNode] : NULL;
+                            H2EvalTopVar     topVar;
                             if (name == NULL) {
                                 continue;
                             }
                             memset(&topVar, 0, sizeof(topVar));
                             topVar.file = file;
                             topVar.nodeId = nodeId;
-                            topVar.initExprNode = HOPEvalVarLikeInitExprNodeAt(
+                            topVar.initExprNode = H2EvalVarLikeInitExprNodeAt(
                                 file, nodeId, (int32_t)i);
-                            topVar.declTypeNode = HOPEvalVarLikeDeclTypeNode(file, nodeId);
+                            topVar.declTypeNode = H2EvalVarLikeDeclTypeNode(file, nodeId);
                             topVar.nameStart = name->dataStart;
                             topVar.nameEnd = name->dataEnd;
-                            topVar.state = HOPEvalTopConstState_UNSEEN;
-                            if (HOPEvalProgramAppendTopVar(p, &topVar) != 0) {
+                            topVar.state = H2EvalTopConstState_UNSEEN;
+                            if (H2EvalProgramAppendTopVar(p, &topVar) != 0) {
                                 return -1;
                             }
                         }
                     } else {
-                        HOPEvalTopVar topVar;
+                        H2EvalTopVar topVar;
                         memset(&topVar, 0, sizeof(topVar));
                         topVar.file = file;
                         topVar.nodeId = nodeId;
-                        topVar.initExprNode = HOPEvalVarLikeInitExprNodeAt(file, nodeId, 0);
-                        topVar.declTypeNode = HOPEvalVarLikeDeclTypeNode(file, nodeId);
+                        topVar.initExprNode = H2EvalVarLikeInitExprNodeAt(file, nodeId, 0);
+                        topVar.declTypeNode = H2EvalVarLikeDeclTypeNode(file, nodeId);
                         topVar.nameStart = n->dataStart;
                         topVar.nameEnd = n->dataEnd;
-                        topVar.state = HOPEvalTopConstState_UNSEEN;
-                        if (HOPEvalProgramAppendTopVar(p, &topVar) != 0) {
+                        topVar.state = H2EvalTopConstState_UNSEEN;
+                        if (H2EvalProgramAppendTopVar(p, &topVar) != 0) {
                             return -1;
                         }
                     }
@@ -5097,17 +5082,14 @@ static int HOPEvalCollectTopVars(HOPEvalProgram* p) {
     return 0;
 }
 
-static int32_t HOPEvalFindTopConstBySlice(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindTopConstBySlice(
+    const H2EvalProgram* p, const H2ParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
         return -1;
     }
     for (i = 0; i < p->topConstLen; i++) {
-        const HOPEvalTopConst* topConst = &p->topConsts[i];
+        const H2EvalTopConst* topConst = &p->topConsts[i];
         if (SliceEqSlice(
                 callerFile->source,
                 nameStart,
@@ -5122,12 +5104,12 @@ static int32_t HOPEvalFindTopConstBySlice(
     return -1;
 }
 
-static int32_t HOPEvalFindTopConstBySliceInPackage(
-    const HOPEvalProgram* p,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindTopConstBySliceInPackage(
+    const H2EvalProgram* p,
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
@@ -5136,8 +5118,8 @@ static int32_t HOPEvalFindTopConstBySliceInPackage(
         return -1;
     }
     for (i = 0; i < p->topConstLen; i++) {
-        const HOPEvalTopConst* topConst = &p->topConsts[i];
-        const HOPPackage*      topConstPkg = HOPEvalFindPackageByFile(p, topConst->file);
+        const H2EvalTopConst* topConst = &p->topConsts[i];
+        const H2Package*      topConstPkg = H2EvalFindPackageByFile(p, topConst->file);
         if (topConstPkg != pkg) {
             continue;
         }
@@ -5159,12 +5141,12 @@ static int32_t HOPEvalFindTopConstBySliceInPackage(
     return found;
 }
 
-static int32_t HOPEvalFindTopVarBySliceInPackage(
-    const HOPEvalProgram* p,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindTopVarBySliceInPackage(
+    const H2EvalProgram* p,
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
@@ -5173,8 +5155,8 @@ static int32_t HOPEvalFindTopVarBySliceInPackage(
         return -1;
     }
     for (i = 0; i < p->topVarLen; i++) {
-        const HOPEvalTopVar* topVar = &p->topVars[i];
-        const HOPPackage*    topVarPkg = HOPEvalFindPackageByFile(p, topVar->file);
+        const H2EvalTopVar* topVar = &p->topVars[i];
+        const H2Package*    topVarPkg = H2EvalFindPackageByFile(p, topVar->file);
         if (topVarPkg != pkg) {
             continue;
         }
@@ -5196,17 +5178,14 @@ static int32_t HOPEvalFindTopVarBySliceInPackage(
     return found;
 }
 
-static int32_t HOPEvalFindTopVarBySlice(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindTopVarBySlice(
+    const H2EvalProgram* p, const H2ParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
         return -1;
     }
     for (i = 0; i < p->topVarLen; i++) {
-        const HOPEvalTopVar* topVar = &p->topVars[i];
+        const H2EvalTopVar* topVar = &p->topVars[i];
         if (SliceEqSlice(
                 callerFile->source,
                 nameStart,
@@ -5221,54 +5200,51 @@ static int32_t HOPEvalFindTopVarBySlice(
     return -1;
 }
 
-static int32_t HOPEvalFindCurrentTopVarBySlice(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
-    const HOPPackage* currentPkg;
+static int32_t H2EvalFindCurrentTopVarBySlice(
+    const H2EvalProgram* p, const H2ParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
+    const H2Package* currentPkg;
     if (p == NULL || callerFile == NULL) {
         return -1;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, callerFile);
+    currentPkg = H2EvalFindPackageByFile(p, callerFile);
     return currentPkg != NULL
-             ? HOPEvalFindTopVarBySliceInPackage(p, currentPkg, callerFile, nameStart, nameEnd)
-             : HOPEvalFindTopVarBySlice(p, callerFile, nameStart, nameEnd);
+             ? H2EvalFindTopVarBySliceInPackage(p, currentPkg, callerFile, nameStart, nameEnd)
+             : H2EvalFindTopVarBySlice(p, callerFile, nameStart, nameEnd);
 }
 
-static int HOPEvalCollectFunctionsFromPackage(
-    HOPEvalProgram* p, const HOPPackage* pkg, uint8_t isBuiltinPackageFn) {
+static int H2EvalCollectFunctionsFromPackage(
+    H2EvalProgram* p, const H2Package* pkg, uint8_t isBuiltinPackageFn) {
     uint32_t fileIndex;
     if (p == NULL || pkg == NULL) {
         return -1;
     }
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* file = &pkg->files[fileIndex];
-        const HOPAst*        ast = &file->ast;
-        int32_t              nodeId = ASTFirstChild(ast, ast->root);
+        const H2ParsedFile* file = &pkg->files[fileIndex];
+        const H2Ast*        ast = &file->ast;
+        int32_t             nodeId = ASTFirstChild(ast, ast->root);
         while (nodeId >= 0) {
-            const HOPAstNode* n = &ast->nodes[nodeId];
-            if (n->kind == HOPAst_FN) {
-                HOPEvalFunction fn;
-                int32_t         child = ASTFirstChild(ast, nodeId);
-                int32_t         bodyNode = -1;
-                uint32_t        paramCount = 0;
-                uint8_t         hasReturnType = 0;
-                uint8_t         hasContextClause = 0;
-                uint8_t         isVariadic = 0;
+            const H2AstNode* n = &ast->nodes[nodeId];
+            if (n->kind == H2Ast_FN) {
+                H2EvalFunction fn;
+                int32_t        child = ASTFirstChild(ast, nodeId);
+                int32_t        bodyNode = -1;
+                uint32_t       paramCount = 0;
+                uint8_t        hasReturnType = 0;
+                uint8_t        hasContextClause = 0;
+                uint8_t        isVariadic = 0;
 
                 while (child >= 0) {
-                    const HOPAstNode* ch = &ast->nodes[child];
-                    if (ch->kind == HOPAst_PARAM) {
+                    const H2AstNode* ch = &ast->nodes[child];
+                    if (ch->kind == H2Ast_PARAM) {
                         paramCount++;
-                        if ((ch->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
+                        if ((ch->flags & H2AstFlag_PARAM_VARIADIC) != 0) {
                             isVariadic = 1;
                         }
-                    } else if (ch->kind == HOPAst_CONTEXT_CLAUSE) {
+                    } else if (ch->kind == H2Ast_CONTEXT_CLAUSE) {
                         hasContextClause = 1;
                     } else if (IsFnReturnTypeNodeKind(ch->kind) && ch->flags == 1) {
                         hasReturnType = 1;
-                    } else if (ch->kind == HOPAst_BLOCK) {
+                    } else if (ch->kind == H2Ast_BLOCK) {
                         if (bodyNode >= 0) {
                             return ErrorEvalUnsupported(
                                 file->path,
@@ -5294,7 +5270,7 @@ static int HOPEvalCollectFunctionsFromPackage(
                     fn.hasContextClause = hasContextClause;
                     fn.isBuiltinPackageFn = isBuiltinPackageFn;
                     fn.isVariadic = isVariadic;
-                    if (HOPEvalProgramAppendFunction(p, &fn) != 0) {
+                    if (H2EvalProgramAppendFunction(p, &fn) != 0) {
                         return -1;
                     }
                 }
@@ -5305,34 +5281,34 @@ static int HOPEvalCollectFunctionsFromPackage(
     return 0;
 }
 
-static int HOPEvalCollectFunctions(HOPEvalProgram* p) {
+static int H2EvalCollectFunctions(H2EvalProgram* p) {
     uint32_t pkgIndex;
     if (p == NULL || p->loader == NULL) {
         return -1;
     }
     for (pkgIndex = 0; pkgIndex < p->loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &p->loader->packages[pkgIndex];
-        uint8_t           isBuiltinPackageFn = StrEq(pkg->name, "builtin") ? 1u : 0u;
-        if (HOPEvalCollectFunctionsFromPackage(p, pkg, isBuiltinPackageFn) != 0) {
+        const H2Package* pkg = &p->loader->packages[pkgIndex];
+        uint8_t          isBuiltinPackageFn = StrEq(pkg->name, "builtin") ? 1u : 0u;
+        if (H2EvalCollectFunctionsFromPackage(p, pkg, isBuiltinPackageFn) != 0) {
             return -1;
         }
     }
     return 0;
 }
 
-static int32_t HOPEvalFindFunctionBySlice(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    uint32_t              argCount) {
+static int32_t H2EvalFindFunctionBySlice(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    uint32_t             argCount) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
+        const H2EvalFunction* fn = &p->funcs[i];
         if (fn->paramCount != argCount) {
             continue;
         }
@@ -5354,13 +5330,13 @@ static int32_t HOPEvalFindFunctionBySlice(
     return found;
 }
 
-static int32_t HOPEvalFindFunctionBySliceInPackage(
-    const HOPEvalProgram* p,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    uint32_t              argCount) {
+static int32_t H2EvalFindFunctionBySliceInPackage(
+    const H2EvalProgram* p,
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    uint32_t             argCount) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
@@ -5369,7 +5345,7 @@ static int32_t HOPEvalFindFunctionBySliceInPackage(
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
+        const H2EvalFunction* fn = &p->funcs[i];
         if (fn->pkg != pkg || fn->paramCount != argCount) {
             continue;
         }
@@ -5391,12 +5367,12 @@ static int32_t HOPEvalFindFunctionBySliceInPackage(
     return found;
 }
 
-static int32_t HOPEvalFindAnyFunctionBySliceInPackage(
-    const HOPEvalProgram* p,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindAnyFunctionBySliceInPackage(
+    const H2EvalProgram* p,
+    const H2Package*     pkg,
+    const H2ParsedFile*  callerFile,
+    uint32_t             nameStart,
+    uint32_t             nameEnd) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || pkg == NULL || callerFile == NULL || nameEnd < nameStart
@@ -5405,7 +5381,7 @@ static int32_t HOPEvalFindAnyFunctionBySliceInPackage(
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
+        const H2EvalFunction* fn = &p->funcs[i];
         if (fn->pkg != pkg) {
             continue;
         }
@@ -5427,8 +5403,8 @@ static int32_t HOPEvalFindAnyFunctionBySliceInPackage(
     return found;
 }
 
-static int HOPEvalValueSimpleKind(
-    const HOPCTFEValue* value, char* outKind, uint64_t* _Nullable outAliasTag) {
+static int H2EvalValueSimpleKind(
+    const H2CTFEValue* value, char* outKind, uint64_t* _Nullable outAliasTag) {
     if (outKind == NULL) {
         return 0;
     }
@@ -5440,11 +5416,11 @@ static int HOPEvalValueSimpleKind(
         return 0;
     }
     switch (value->kind) {
-        case HOPCTFEValue_INT:    *outKind = 'i'; break;
-        case HOPCTFEValue_FLOAT:  *outKind = 'f'; break;
-        case HOPCTFEValue_BOOL:   *outKind = 'b'; break;
-        case HOPCTFEValue_STRING: *outKind = 's'; break;
-        default:                  return 0;
+        case H2CTFEValue_INT:    *outKind = 'i'; break;
+        case H2CTFEValue_FLOAT:  *outKind = 'f'; break;
+        case H2CTFEValue_BOOL:   *outKind = 'b'; break;
+        case H2CTFEValue_STRING: *outKind = 's'; break;
+        default:                 return 0;
     }
     if (outAliasTag != NULL) {
         *outAliasTag = value->typeTag;
@@ -5452,47 +5428,47 @@ static int HOPEvalValueSimpleKind(
     return 1;
 }
 
-static int HOPEvalClassifySimpleTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    char*                 outKind,
+static int H2EvalClassifySimpleTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    char*                outKind,
     uint64_t* _Nullable outAliasTag);
-static int HOPEvalAggregateDistanceToType(
-    const HOPEvalProgram* p,
-    const HOPCTFEValue*   value,
-    const HOPParsedFile*  callerFile,
-    int32_t               typeNode,
-    uint32_t*             outDistance);
+static int H2EvalAggregateDistanceToType(
+    const H2EvalProgram* p,
+    const H2CTFEValue*   value,
+    const H2ParsedFile*  callerFile,
+    int32_t              typeNode,
+    uint32_t*            outDistance);
 
-static int HOPEvalTypeNodeIsAnytype(const HOPParsedFile* file, int32_t typeNode) {
-    const HOPAstNode* n;
+static int H2EvalTypeNodeIsAnytype(const H2ParsedFile* file, int32_t typeNode) {
+    const H2AstNode* n;
     if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[typeNode];
-    return n->kind == HOPAst_TYPE_NAME
+    return n->kind == H2Ast_TYPE_NAME
         && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "anytype");
 }
 
-static int HOPEvalTypeNodeIsTemplateParamName(const HOPParsedFile* file, int32_t typeNode) {
-    const HOPAstNode* n;
-    int32_t           declNode;
+static int H2EvalTypeNodeIsTemplateParamName(const H2ParsedFile* file, int32_t typeNode) {
+    const H2AstNode* n;
+    int32_t          declNode;
     if (file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[typeNode];
-    if (n->kind != HOPAst_TYPE_NAME || n->firstChild >= 0) {
+    if (n->kind != H2Ast_TYPE_NAME || n->firstChild >= 0) {
         return 0;
     }
     declNode = ASTFirstChild(&file->ast, file->ast.root);
     while (declNode >= 0) {
-        const HOPAstNode* decl = &file->ast.nodes[declNode];
-        if ((decl->kind == HOPAst_FN || decl->kind == HOPAst_STRUCT) && decl->start <= n->start
+        const H2AstNode* decl = &file->ast.nodes[declNode];
+        if ((decl->kind == H2Ast_FN || decl->kind == H2Ast_STRUCT) && decl->start <= n->start
             && decl->end >= n->end)
         {
             int32_t child = ASTFirstChild(&file->ast, declNode);
-            while (child >= 0 && file->ast.nodes[child].kind == HOPAst_TYPE_PARAM) {
+            while (child >= 0 && file->ast.nodes[child].kind == H2Ast_TYPE_PARAM) {
                 if (SliceEqSlice(
                         file->source,
                         n->dataStart,
@@ -5511,70 +5487,69 @@ static int HOPEvalTypeNodeIsTemplateParamName(const HOPParsedFile* file, int32_t
     return 0;
 }
 
-static int HOPEvalValueMatchesExpectedTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  typeFile,
-    int32_t               typeNode,
-    const HOPCTFEValue*   value) {
-    char                argKind = '\0';
-    char                paramKind = '\0';
-    uint64_t            argAliasTag = 0;
-    uint64_t            paramAliasTag = 0;
-    uint32_t            structDistance = 0;
-    int32_t             typeCode = HOPEvalTypeCode_INVALID;
-    const HOPCTFEValue* sourceValue = HOPEvalValueTargetOrSelf(value);
+static int H2EvalValueMatchesExpectedTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  typeFile,
+    int32_t              typeNode,
+    const H2CTFEValue*   value) {
+    char               argKind = '\0';
+    char               paramKind = '\0';
+    uint64_t           argAliasTag = 0;
+    uint64_t           paramAliasTag = 0;
+    uint32_t           structDistance = 0;
+    int32_t            typeCode = H2EvalTypeCode_INVALID;
+    const H2CTFEValue* sourceValue = H2EvalValueTargetOrSelf(value);
     if (p == NULL || typeFile == NULL || value == NULL || typeNode < 0
         || (uint32_t)typeNode >= typeFile->ast.len)
     {
         return 0;
     }
-    if (HOPEvalTypeNodeIsAnytype(typeFile, typeNode)) {
+    if (H2EvalTypeNodeIsAnytype(typeFile, typeNode)) {
         return 1;
     }
-    if (HOPEvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
+    if (H2EvalTypeNodeIsTemplateParamName(typeFile, typeNode)) {
         return 1;
     }
-    if (HOPEvalAggregateDistanceToType(p, value, typeFile, typeNode, &structDistance)) {
+    if (H2EvalAggregateDistanceToType(p, value, typeFile, typeNode, &structDistance)) {
         return 1;
     }
-    if (HOPEvalValueSimpleKind(sourceValue, &argKind, &argAliasTag)
-        && HOPEvalClassifySimpleTypeNode(p, typeFile, typeNode, &paramKind, &paramAliasTag)
+    if (H2EvalValueSimpleKind(sourceValue, &argKind, &argAliasTag)
+        && H2EvalClassifySimpleTypeNode(p, typeFile, typeNode, &paramKind, &paramAliasTag)
         && argKind == paramKind)
     {
         return paramAliasTag == 0 || argAliasTag == paramAliasTag;
     }
-    if (!HOPEvalTypeCodeFromTypeNode(typeFile, typeNode, &typeCode)) {
+    if (!H2EvalTypeCodeFromTypeNode(typeFile, typeNode, &typeCode)) {
         return 0;
     }
     switch (typeCode) {
-        case HOPEvalTypeCode_BOOL:    return sourceValue->kind == HOPCTFEValue_BOOL;
-        case HOPEvalTypeCode_F32:
-        case HOPEvalTypeCode_F64:     return sourceValue->kind == HOPCTFEValue_FLOAT;
-        case HOPEvalTypeCode_U8:
-        case HOPEvalTypeCode_U16:
-        case HOPEvalTypeCode_U32:
-        case HOPEvalTypeCode_U64:
-        case HOPEvalTypeCode_UINT:
-        case HOPEvalTypeCode_I8:
-        case HOPEvalTypeCode_I16:
-        case HOPEvalTypeCode_I32:
-        case HOPEvalTypeCode_I64:
-        case HOPEvalTypeCode_INT:     return sourceValue->kind == HOPCTFEValue_INT;
-        case HOPEvalTypeCode_STR_REF:
-        case HOPEvalTypeCode_STR_PTR: return sourceValue->kind == HOPCTFEValue_STRING;
-        case HOPEvalTypeCode_RAWPTR:
-            return sourceValue->kind == HOPCTFEValue_REFERENCE
-                || sourceValue->kind == HOPCTFEValue_NULL
-                || sourceValue->kind == HOPCTFEValue_STRING;
-        case HOPEvalTypeCode_TYPE: return sourceValue->kind == HOPCTFEValue_TYPE;
-        default:                   return 0;
+        case H2EvalTypeCode_BOOL:    return sourceValue->kind == H2CTFEValue_BOOL;
+        case H2EvalTypeCode_F32:
+        case H2EvalTypeCode_F64:     return sourceValue->kind == H2CTFEValue_FLOAT;
+        case H2EvalTypeCode_U8:
+        case H2EvalTypeCode_U16:
+        case H2EvalTypeCode_U32:
+        case H2EvalTypeCode_U64:
+        case H2EvalTypeCode_UINT:
+        case H2EvalTypeCode_I8:
+        case H2EvalTypeCode_I16:
+        case H2EvalTypeCode_I32:
+        case H2EvalTypeCode_I64:
+        case H2EvalTypeCode_INT:     return sourceValue->kind == H2CTFEValue_INT;
+        case H2EvalTypeCode_STR_REF:
+        case H2EvalTypeCode_STR_PTR: return sourceValue->kind == H2CTFEValue_STRING;
+        case H2EvalTypeCode_RAWPTR:
+            return sourceValue->kind == H2CTFEValue_REFERENCE
+                || sourceValue->kind == H2CTFEValue_NULL || sourceValue->kind == H2CTFEValue_STRING;
+        case H2EvalTypeCode_TYPE: return sourceValue->kind == H2CTFEValue_TYPE;
+        default:                  return 0;
     }
 }
 
-static int32_t HOPEvalFunctionParamTypeNodeAt(const HOPEvalFunction* fn, uint32_t paramIndex) {
-    const HOPAst* ast;
-    int32_t       child;
-    uint32_t      i = 0;
+static int32_t H2EvalFunctionParamTypeNodeAt(const H2EvalFunction* fn, uint32_t paramIndex) {
+    const H2Ast* ast;
+    int32_t      child;
+    uint32_t     i = 0;
     if (fn == NULL || fn->file == NULL) {
         return -1;
     }
@@ -5584,8 +5559,8 @@ static int32_t HOPEvalFunctionParamTypeNodeAt(const HOPEvalFunction* fn, uint32_
     }
     child = ASTFirstChild(ast, fn->fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             if (i == paramIndex) {
                 return ASTFirstChild(ast, child);
             }
@@ -5596,11 +5571,11 @@ static int32_t HOPEvalFunctionParamTypeNodeAt(const HOPEvalFunction* fn, uint32_
     return -1;
 }
 
-static int32_t HOPEvalFunctionParamIndexByName(
-    const HOPEvalFunction* fn, const char* source, uint32_t nameStart, uint32_t nameEnd) {
-    const HOPAst* ast;
-    int32_t       child;
-    uint32_t      i = 0;
+static int32_t H2EvalFunctionParamIndexByName(
+    const H2EvalFunction* fn, const char* source, uint32_t nameStart, uint32_t nameEnd) {
+    const H2Ast* ast;
+    int32_t      child;
+    uint32_t     i = 0;
     if (fn == NULL || fn->file == NULL || source == NULL) {
         return -1;
     }
@@ -5610,8 +5585,8 @@ static int32_t HOPEvalFunctionParamIndexByName(
     }
     child = ASTFirstChild(ast, fn->fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             if (SliceEqSlice(
                     source, nameStart, nameEnd, fn->file->source, n->dataStart, n->dataEnd))
             {
@@ -5624,61 +5599,60 @@ static int32_t HOPEvalFunctionParamIndexByName(
     return -1;
 }
 
-static int HOPEvalExprIsAnytypePackIndex(HOPEvalProgram* p, const HOPAst* ast, int32_t exprNode) {
-    int32_t              baseNode;
-    int32_t              idxNode;
-    int32_t              extraNode;
-    HOPCTFEExecBinding*  binding;
-    const HOPCTFEValue*  bindingValue;
-    const HOPParsedFile* localTypeFile = NULL;
-    int32_t              localTypeNode = -1;
-    HOPCTFEValue         localValue;
+static int H2EvalExprIsAnytypePackIndex(H2EvalProgram* p, const H2Ast* ast, int32_t exprNode) {
+    int32_t             baseNode;
+    int32_t             idxNode;
+    int32_t             extraNode;
+    H2CTFEExecBinding*  binding;
+    const H2CTFEValue*  bindingValue;
+    const H2ParsedFile* localTypeFile = NULL;
+    int32_t             localTypeNode = -1;
+    H2CTFEValue         localValue;
     while (ast != NULL && exprNode >= 0 && (uint32_t)exprNode < ast->len
-           && ast->nodes[exprNode].kind == HOPAst_CALL_ARG)
+           && ast->nodes[exprNode].kind == H2Ast_CALL_ARG)
     {
         exprNode = ast->nodes[exprNode].firstChild;
     }
     if (p == NULL || p->currentFile == NULL || p->currentExecCtx == NULL || ast == NULL
         || exprNode < 0 || (uint32_t)exprNode >= ast->len
-        || ast->nodes[exprNode].kind != HOPAst_INDEX
-        || (ast->nodes[exprNode].flags & HOPAstFlag_INDEX_SLICE) != 0u)
+        || ast->nodes[exprNode].kind != H2Ast_INDEX
+        || (ast->nodes[exprNode].flags & H2AstFlag_INDEX_SLICE) != 0u)
     {
         return 0;
     }
     baseNode = ast->nodes[exprNode].firstChild;
     idxNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
     extraNode = idxNode >= 0 ? ast->nodes[idxNode].nextSibling : -1;
-    if (baseNode < 0 || idxNode < 0 || extraNode >= 0 || ast->nodes[baseNode].kind != HOPAst_IDENT)
-    {
+    if (baseNode < 0 || idxNode < 0 || extraNode >= 0 || ast->nodes[baseNode].kind != H2Ast_IDENT) {
         return 0;
     }
-    binding = HOPEvalFindBinding(
+    binding = H2EvalFindBinding(
         p->currentExecCtx,
         p->currentFile,
         ast->nodes[baseNode].dataStart,
         ast->nodes[baseNode].dataEnd);
-    if (binding != NULL && HOPEvalTypeNodeIsAnytype(p->currentFile, binding->typeNode)) {
-        bindingValue = HOPEvalValueTargetOrSelf(&binding->value);
-        return bindingValue->kind == HOPCTFEValue_ARRAY;
+    if (binding != NULL && H2EvalTypeNodeIsAnytype(p->currentFile, binding->typeNode)) {
+        bindingValue = H2EvalValueTargetOrSelf(&binding->value);
+        return bindingValue->kind == H2CTFEValue_ARRAY;
     }
-    if (!HOPEvalMirLookupLocalTypeNode(
+    if (!H2EvalMirLookupLocalTypeNode(
             p,
             ast->nodes[baseNode].dataStart,
             ast->nodes[baseNode].dataEnd,
             &localTypeFile,
             &localTypeNode)
         || localTypeFile == NULL || localTypeNode < 0
-        || !HOPEvalTypeNodeIsAnytype(localTypeFile, localTypeNode)
-        || !HOPEvalMirLookupLocalValue(
+        || !H2EvalTypeNodeIsAnytype(localTypeFile, localTypeNode)
+        || !H2EvalMirLookupLocalValue(
             p, ast->nodes[baseNode].dataStart, ast->nodes[baseNode].dataEnd, &localValue))
     {
         return 0;
     }
-    bindingValue = HOPEvalValueTargetOrSelf(&localValue);
-    return bindingValue->kind == HOPCTFEValue_ARRAY;
+    bindingValue = H2EvalValueTargetOrSelf(&localValue);
+    return bindingValue->kind == H2CTFEValue_ARRAY;
 }
 
-static int HOPEvalParamNameStartsWithUnderscore(
+static int H2EvalParamNameStartsWithUnderscore(
     const char* source, const uint32_t* starts, const uint32_t* ends, uint32_t index) {
     uint32_t start;
     uint32_t end;
@@ -5690,7 +5664,7 @@ static int HOPEvalParamNameStartsWithUnderscore(
     return end > start && source[start] == '_';
 }
 
-static uint32_t HOPEvalPositionalCallPrefixEnd(
+static uint32_t H2EvalPositionalCallPrefixEnd(
     const char*     source,
     const uint32_t* paramNameStarts,
     const uint32_t* paramNameEnds,
@@ -5702,35 +5676,35 @@ static uint32_t HOPEvalPositionalCallPrefixEnd(
     prefixEnd = 1u;
     while (
         prefixEnd < argCount
-        && HOPEvalParamNameStartsWithUnderscore(source, paramNameStarts, paramNameEnds, prefixEnd))
+        && H2EvalParamNameStartsWithUnderscore(source, paramNameStarts, paramNameEnds, prefixEnd))
     {
         prefixEnd++;
     }
     return prefixEnd;
 }
 
-static int HOPEvalReorderFixedCallArgsByName(
-    HOPEvalProgram*        p,
-    const HOPEvalFunction* fn,
-    const HOPAst*          callAst,
-    int32_t                firstArgNode,
-    HOPCTFEValue*          args,
-    uint32_t               argCount,
-    uint32_t               paramOffset) {
-    uint32_t      argNameStarts[256];
-    uint32_t      argNameEnds[256];
-    uint32_t      paramNameStarts[256];
-    uint32_t      paramNameEnds[256];
-    uint8_t       argExplicitName[256];
-    uint8_t       paramAssigned[256];
-    HOPCTFEValue  reorderedArgs[256];
-    const HOPAst* fnAst;
-    const char*   callSource;
-    int32_t       child;
-    int32_t       argNode;
-    uint32_t      i = 0;
-    uint32_t      positionalPrefixEnd;
-    int           reordered = 0;
+static int H2EvalReorderFixedCallArgsByName(
+    H2EvalProgram*        p,
+    const H2EvalFunction* fn,
+    const H2Ast*          callAst,
+    int32_t               firstArgNode,
+    H2CTFEValue*          args,
+    uint32_t              argCount,
+    uint32_t              paramOffset) {
+    uint32_t     argNameStarts[256];
+    uint32_t     argNameEnds[256];
+    uint32_t     paramNameStarts[256];
+    uint32_t     paramNameEnds[256];
+    uint8_t      argExplicitName[256];
+    uint8_t      paramAssigned[256];
+    H2CTFEValue  reorderedArgs[256];
+    const H2Ast* fnAst;
+    const char*  callSource;
+    int32_t      child;
+    int32_t      argNode;
+    uint32_t     i = 0;
+    uint32_t     positionalPrefixEnd;
+    int          reordered = 0;
 
     if (p == NULL || fn == NULL || callAst == NULL || args == NULL || fn->file == NULL) {
         return 0;
@@ -5750,13 +5724,13 @@ static int HOPEvalReorderFixedCallArgsByName(
     memset(argExplicitName, 0, sizeof(argExplicitName));
     argNode = firstArgNode;
     while (argNode >= 0) {
-        const HOPAstNode* arg = &callAst->nodes[argNode];
-        int32_t           exprNode = argNode;
+        const H2AstNode* arg = &callAst->nodes[argNode];
+        int32_t          exprNode = argNode;
         if (i >= argCount) {
             return 0;
         }
-        if (arg->kind == HOPAst_CALL_ARG) {
-            if ((arg->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) {
+        if (arg->kind == H2Ast_CALL_ARG) {
+            if ((arg->flags & H2AstFlag_CALL_ARG_SPREAD) != 0) {
                 return 0;
             }
             exprNode = arg->firstChild;
@@ -5769,9 +5743,9 @@ static int HOPEvalReorderFixedCallArgsByName(
         if (exprNode < 0 || (uint32_t)exprNode >= callAst->len) {
             return 0;
         }
-        if (!argExplicitName[i] && callAst->nodes[exprNode].kind == HOPAst_IDENT) {
-            HOPCTFEValue ignoredTypeValue;
-            if (HOPEvalResolveTypeValueName(
+        if (!argExplicitName[i] && callAst->nodes[exprNode].kind == H2Ast_IDENT) {
+            H2CTFEValue ignoredTypeValue;
+            if (H2EvalResolveTypeValueName(
                     p,
                     p->currentFile,
                     callAst->nodes[exprNode].dataStart,
@@ -5800,8 +5774,8 @@ static int HOPEvalReorderFixedCallArgsByName(
     child = ASTFirstChild(fnAst, fn->fnNode);
     i = 0;
     while (child >= 0) {
-        const HOPAstNode* n = &fnAst->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &fnAst->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             if (i < paramOffset) {
                 i++;
                 child = ASTNextSibling(fnAst, child);
@@ -5820,7 +5794,7 @@ static int HOPEvalReorderFixedCallArgsByName(
         return 0;
     }
 
-    positionalPrefixEnd = HOPEvalPositionalCallPrefixEnd(
+    positionalPrefixEnd = H2EvalPositionalCallPrefixEnd(
         fn->file->source, paramNameStarts, paramNameEnds, argCount);
     for (i = 0; i < argCount; i++) {
         uint32_t j;
@@ -5863,13 +5837,13 @@ static int HOPEvalReorderFixedCallArgsByName(
     if (!reordered) {
         return 1;
     }
-    memcpy(args, reorderedArgs, sizeof(HOPCTFEValue) * argCount);
+    memcpy(args, reorderedArgs, sizeof(H2CTFEValue) * argCount);
     return 1;
 }
 
-static int32_t HOPEvalFunctionReturnTypeNode(const HOPEvalFunction* fn) {
-    const HOPAst* ast;
-    int32_t       child;
+static int32_t H2EvalFunctionReturnTypeNode(const H2EvalFunction* fn) {
+    const H2Ast* ast;
+    int32_t      child;
     if (fn == NULL || fn->file == NULL) {
         return -1;
     }
@@ -5879,11 +5853,11 @@ static int32_t HOPEvalFunctionReturnTypeNode(const HOPEvalFunction* fn) {
     }
     child = ASTFirstChild(ast, fn->fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
+        const H2AstNode* n = &ast->nodes[child];
         if (IsFnReturnTypeNodeKind(n->kind)) {
             return child;
         }
-        if (n->kind == HOPAst_BLOCK) {
+        if (n->kind == H2Ast_BLOCK) {
             break;
         }
         child = ASTNextSibling(ast, child);
@@ -5891,8 +5865,8 @@ static int32_t HOPEvalFunctionReturnTypeNode(const HOPEvalFunction* fn) {
     return -1;
 }
 
-static void HOPEvalSaveTemplateBinding(
-    const HOPEvalProgram* p, HOPEvalTemplateBindingState* outState) {
+static void H2EvalSaveTemplateBinding(
+    const H2EvalProgram* p, H2EvalTemplateBindingState* outState) {
     if (p == NULL || outState == NULL) {
         return;
     }
@@ -5905,8 +5879,8 @@ static void HOPEvalSaveTemplateBinding(
     outState->hasActiveTemplateTypeValue = p->hasActiveTemplateTypeValue;
 }
 
-static void HOPEvalRestoreTemplateBinding(
-    HOPEvalProgram* p, const HOPEvalTemplateBindingState* state) {
+static void H2EvalRestoreTemplateBinding(
+    H2EvalProgram* p, const H2EvalTemplateBindingState* state) {
     if (p == NULL || state == NULL) {
         return;
     }
@@ -5919,9 +5893,9 @@ static void HOPEvalRestoreTemplateBinding(
     p->hasActiveTemplateTypeValue = state->hasActiveTemplateTypeValue;
 }
 
-static int32_t HOPEvalFunctionFirstTypeParamNode(const HOPEvalFunction* fn) {
-    const HOPAst* ast;
-    int32_t       child;
+static int32_t H2EvalFunctionFirstTypeParamNode(const H2EvalFunction* fn) {
+    const H2Ast* ast;
+    int32_t      child;
     if (fn == NULL || fn->file == NULL) {
         return -1;
     }
@@ -5931,7 +5905,7 @@ static int32_t HOPEvalFunctionFirstTypeParamNode(const HOPEvalFunction* fn) {
     }
     child = ASTFirstChild(ast, fn->fnNode);
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        if (ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
             return child;
         }
         child = ASTNextSibling(ast, child);
@@ -5939,16 +5913,16 @@ static int32_t HOPEvalFunctionFirstTypeParamNode(const HOPEvalFunction* fn) {
     return -1;
 }
 
-static int HOPEvalBindActiveTemplateTypeValue(
-    HOPEvalProgram*        p,
-    const HOPEvalFunction* fn,
-    int32_t                typeParamNode,
-    const HOPCTFEValue*    typeValue,
-    const HOPParsedFile* _Nullable typeFile,
+static int H2EvalBindActiveTemplateTypeValue(
+    H2EvalProgram*        p,
+    const H2EvalFunction* fn,
+    int32_t               typeParamNode,
+    const H2CTFEValue*    typeValue,
+    const H2ParsedFile* _Nullable typeFile,
     int32_t typeNode) {
-    const HOPAstNode* param;
+    const H2AstNode* param;
     if (p == NULL || fn == NULL || fn->file == NULL || typeValue == NULL
-        || typeValue->kind != HOPCTFEValue_TYPE || typeParamNode < 0
+        || typeValue->kind != H2CTFEValue_TYPE || typeParamNode < 0
         || (uint32_t)typeParamNode >= fn->file->ast.len)
     {
         return 0;
@@ -5964,13 +5938,13 @@ static int HOPEvalBindActiveTemplateTypeValue(
     return 1;
 }
 
-static int HOPEvalBindActiveTemplateForMirCall(
-    HOPEvalProgram* p,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
-    const HOPEvalFunction* fn,
-    const HOPCTFEValue* _Nullable args,
+static int H2EvalBindActiveTemplateForMirCall(
+    H2EvalProgram* p,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
+    const H2EvalFunction* fn,
+    const H2CTFEValue* _Nullable args,
     uint32_t argCount) {
     int32_t  returnTypeNode;
     uint32_t typeArgIndex;
@@ -5978,15 +5952,15 @@ static int HOPEvalBindActiveTemplateForMirCall(
         return 0;
     }
     for (typeArgIndex = 0; typeArgIndex < argCount; typeArgIndex++) {
-        if (args != NULL && args[typeArgIndex].kind == HOPCTFEValue_TYPE) {
-            int32_t typeParamNode = HOPEvalFunctionFirstTypeParamNode(fn);
-            return HOPEvalBindActiveTemplateTypeValue(
+        if (args != NULL && args[typeArgIndex].kind == H2CTFEValue_TYPE) {
+            int32_t typeParamNode = H2EvalFunctionFirstTypeParamNode(fn);
+            return H2EvalBindActiveTemplateTypeValue(
                 p, fn, typeParamNode, &args[typeArgIndex], NULL, -1);
         }
     }
-    returnTypeNode = HOPEvalFunctionReturnTypeNode(fn);
+    returnTypeNode = H2EvalFunctionReturnTypeNode(fn);
     if (program != NULL && function != NULL && inst != NULL && returnTypeNode >= 0
-        && HOPEvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
+        && H2EvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
         && p->currentMirExecCtx != NULL)
     {
         uint32_t instIndex = UINT32_MAX;
@@ -5996,30 +5970,30 @@ static int HOPEvalBindActiveTemplateForMirCall(
             instIndex = (uint32_t)(inst - program->insts);
         }
         if (instIndex != UINT32_MAX && instIndex + 1u < program->instLen
-            && program->insts[instIndex + 1u].op == HOPMirOp_LOCAL_STORE)
+            && program->insts[instIndex + 1u].op == H2MirOp_LOCAL_STORE)
         {
             uint32_t localSlot = program->insts[instIndex + 1u].aux;
             if (localSlot < function->localCount
                 && function->localStart + localSlot < program->localLen)
             {
-                const HOPMirLocal* local = &program->locals[function->localStart + localSlot];
+                const H2MirLocal* local = &program->locals[function->localStart + localSlot];
                 if (local->typeRef < program->typeLen
                     && program->types[local->typeRef].sourceRef
                            < p->currentMirExecCtx->sourceFileCap)
                 {
-                    const HOPParsedFile* typeFile =
+                    const H2ParsedFile* typeFile =
                         p->currentMirExecCtx->sourceFiles[program->types[local->typeRef].sourceRef];
-                    HOPCTFEValue typeValue;
+                    H2CTFEValue typeValue;
                     memset(&typeValue, 0, sizeof(typeValue));
                     if (typeFile != NULL
-                        && HOPEvalTypeValueFromTypeNode(
+                        && H2EvalTypeValueFromTypeNode(
                                p,
                                typeFile,
                                (int32_t)program->types[local->typeRef].astNode,
                                &typeValue)
                                > 0)
                     {
-                        return HOPEvalBindActiveTemplateTypeValue(
+                        return H2EvalBindActiveTemplateTypeValue(
                             p,
                             fn,
                             returnTypeNode,
@@ -6031,16 +6005,16 @@ static int HOPEvalBindActiveTemplateForMirCall(
             }
         }
     }
-    if (returnTypeNode >= 0 && HOPEvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
+    if (returnTypeNode >= 0 && H2EvalTypeNodeIsTemplateParamName(fn->file, returnTypeNode)
         && p->activeCallExpectedTypeFile != NULL && p->activeCallExpectedTypeNode >= 0)
     {
-        HOPCTFEValue typeValue;
+        H2CTFEValue typeValue;
         memset(&typeValue, 0, sizeof(typeValue));
-        if (HOPEvalTypeValueFromTypeNode(
+        if (H2EvalTypeValueFromTypeNode(
                 p, p->activeCallExpectedTypeFile, p->activeCallExpectedTypeNode, &typeValue)
             > 0)
         {
-            return HOPEvalBindActiveTemplateTypeValue(
+            return H2EvalBindActiveTemplateTypeValue(
                 p,
                 fn,
                 returnTypeNode,
@@ -6052,11 +6026,11 @@ static int HOPEvalBindActiveTemplateForMirCall(
     return 0;
 }
 
-static int HOPEvalFindExpectedTypeForCallExpr(
-    const HOPParsedFile* _Nullable file,
-    int32_t                         callNode,
-    const HOPParsedFile* _Nullable* outTypeFile,
-    int32_t*                        outTypeNode) {
+static int H2EvalFindExpectedTypeForCallExpr(
+    const H2ParsedFile* _Nullable file,
+    int32_t                        callNode,
+    const H2ParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
     uint32_t i;
     if (outTypeFile != NULL) {
         *outTypeFile = NULL;
@@ -6068,10 +6042,10 @@ static int HOPEvalFindExpectedTypeForCallExpr(
         return 0;
     }
     for (i = 0; i < file->ast.len; i++) {
-        const HOPAstNode* n = &file->ast.nodes[i];
-        int32_t           typeNode;
-        int32_t           initNode;
-        if (n->kind != HOPAst_VAR && n->kind != HOPAst_CONST) {
+        const H2AstNode* n = &file->ast.nodes[i];
+        int32_t          typeNode;
+        int32_t          initNode;
+        if (n->kind != H2Ast_VAR && n->kind != H2Ast_CONST) {
             continue;
         }
         typeNode = ASTFirstChild(&file->ast, (int32_t)i);
@@ -6088,11 +6062,11 @@ static int HOPEvalFindExpectedTypeForCallExpr(
     return 0;
 }
 
-static int HOPEvalFindExpectedTypeForInitExpr(
-    const HOPParsedFile* _Nullable file,
-    int32_t                         initExprNode,
-    const HOPParsedFile* _Nullable* outTypeFile,
-    int32_t*                        outTypeNode) {
+static int H2EvalFindExpectedTypeForInitExpr(
+    const H2ParsedFile* _Nullable file,
+    int32_t                        initExprNode,
+    const H2ParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
     uint32_t i;
     if (outTypeFile != NULL) {
         *outTypeFile = NULL;
@@ -6104,17 +6078,17 @@ static int HOPEvalFindExpectedTypeForInitExpr(
         return 0;
     }
     for (i = 0; i < file->ast.len; i++) {
-        const HOPAstNode* n = &file->ast.nodes[i];
-        int32_t           typeNode;
-        int32_t           initNode;
-        if (n->kind != HOPAst_VAR && n->kind != HOPAst_CONST) {
+        const H2AstNode* n = &file->ast.nodes[i];
+        int32_t          typeNode;
+        int32_t          initNode;
+        if (n->kind != H2Ast_VAR && n->kind != H2Ast_CONST) {
             continue;
         }
-        typeNode = HOPEvalVarLikeDeclTypeNode(file, (int32_t)i);
+        typeNode = H2EvalVarLikeDeclTypeNode(file, (int32_t)i);
         if (typeNode < 0) {
             continue;
         }
-        initNode = HOPEvalVarLikeInitExprNodeAt(file, (int32_t)i, 0);
+        initNode = H2EvalVarLikeInitExprNodeAt(file, (int32_t)i, 0);
         if (initNode == initExprNode) {
             *outTypeFile = file;
             *outTypeNode = typeNode;
@@ -6124,15 +6098,15 @@ static int HOPEvalFindExpectedTypeForInitExpr(
     return 0;
 }
 
-static int HOPEvalClassifySimpleTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  file,
-    int32_t               typeNode,
-    char*                 outKind,
+static int H2EvalClassifySimpleTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  file,
+    int32_t              typeNode,
+    char*                outKind,
     uint64_t* _Nullable outAliasTag) {
-    const HOPAstNode* n;
-    char              aliasKind = '\0';
-    uint64_t          aliasTag = 0;
+    const H2AstNode* n;
+    char             aliasKind = '\0';
+    uint64_t         aliasTag = 0;
     if (outKind == NULL) {
         return 0;
     }
@@ -6144,10 +6118,10 @@ static int HOPEvalClassifySimpleTypeNode(
         return 0;
     }
     n = &file->ast.nodes[typeNode];
-    if (n->kind != HOPAst_TYPE_NAME) {
+    if (n->kind != H2Ast_TYPE_NAME) {
         return 0;
     }
-    if (HOPEvalResolveSimpleAliasCastTarget(p, file, typeNode, &aliasKind, &aliasTag)) {
+    if (H2EvalResolveSimpleAliasCastTarget(p, file, typeNode, &aliasKind, &aliasTag)) {
         *outKind = aliasKind;
         if (outAliasTag != NULL) {
             *outAliasTag = aliasTag;
@@ -6185,14 +6159,14 @@ static int HOPEvalClassifySimpleTypeNode(
     return 0;
 }
 
-static int HOPEvalStructEmbeddedBase(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  structFile,
-    int32_t               structNode,
-    const HOPParsedFile** outBaseFile,
-    int32_t*              outBaseNode) {
-    int32_t           child;
-    const HOPPackage* pkg;
+static int H2EvalStructEmbeddedBase(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  structFile,
+    int32_t              structNode,
+    const H2ParsedFile** outBaseFile,
+    int32_t*             outBaseNode) {
+    int32_t          child;
+    const H2Package* pkg;
     if (outBaseFile != NULL) {
         *outBaseFile = NULL;
     }
@@ -6204,18 +6178,17 @@ static int HOPEvalStructEmbeddedBase(
     {
         return 0;
     }
-    pkg = HOPEvalFindPackageByFile(p, structFile);
+    pkg = H2EvalFindPackageByFile(p, structFile);
     if (pkg == NULL) {
         return 0;
     }
     child = ASTFirstChild(&structFile->ast, structNode);
     while (child >= 0) {
-        const HOPAstNode* fieldNode = &structFile->ast.nodes[child];
-        if (fieldNode->kind == HOPAst_FIELD && (fieldNode->flags & HOPAstFlag_FIELD_EMBEDDED) != 0)
-        {
-            int32_t              typeNode = ASTFirstChild(&structFile->ast, child);
-            const HOPParsedFile* baseFile = NULL;
-            int32_t baseNode = HOPEvalFindNamedAggregateDecl(p, structFile, typeNode, &baseFile);
+        const H2AstNode* fieldNode = &structFile->ast.nodes[child];
+        if (fieldNode->kind == H2Ast_FIELD && (fieldNode->flags & H2AstFlag_FIELD_EMBEDDED) != 0) {
+            int32_t             typeNode = ASTFirstChild(&structFile->ast, child);
+            const H2ParsedFile* baseFile = NULL;
+            int32_t baseNode = H2EvalFindNamedAggregateDecl(p, structFile, typeNode, &baseFile);
             if (baseNode >= 0 && baseFile != NULL) {
                 if (outBaseFile != NULL) {
                     *outBaseFile = baseFile;
@@ -6232,33 +6205,33 @@ static int HOPEvalStructEmbeddedBase(
     return 0;
 }
 
-static int HOPEvalAggregateDistanceToType(
-    const HOPEvalProgram* p,
-    const HOPCTFEValue*   value,
-    const HOPParsedFile*  callerFile,
-    int32_t               typeNode,
-    uint32_t*             outDistance) {
-    const HOPPackage*    pkg;
-    const HOPParsedFile* targetFile = NULL;
-    int32_t              targetNode = -1;
-    const HOPParsedFile* curFile = NULL;
-    int32_t              curNode = -1;
-    uint32_t             distance = 0;
+static int H2EvalAggregateDistanceToType(
+    const H2EvalProgram* p,
+    const H2CTFEValue*   value,
+    const H2ParsedFile*  callerFile,
+    int32_t              typeNode,
+    uint32_t*            outDistance) {
+    const H2Package*    pkg;
+    const H2ParsedFile* targetFile = NULL;
+    int32_t             targetNode = -1;
+    const H2ParsedFile* curFile = NULL;
+    int32_t             curNode = -1;
+    uint32_t            distance = 0;
     if (outDistance != NULL) {
         *outDistance = 0;
     }
     if (p == NULL || callerFile == NULL) {
         return 0;
     }
-    pkg = HOPEvalFindPackageByFile(p, callerFile);
+    pkg = H2EvalFindPackageByFile(p, callerFile);
     if (pkg == NULL) {
         return 0;
     }
     (void)pkg;
-    if (!HOPEvalResolveAggregateTypeNode(p, callerFile, typeNode, &targetFile, &targetNode)) {
+    if (!H2EvalResolveAggregateTypeNode(p, callerFile, typeNode, &targetFile, &targetNode)) {
         return 0;
     }
-    if (!HOPEvalResolveAggregateDeclFromValue(p, value, &curFile, &curNode)) {
+    if (!H2EvalResolveAggregateDeclFromValue(p, value, &curFile, &curNode)) {
         return 0;
     }
     while (curFile != NULL && curNode >= 0) {
@@ -6268,7 +6241,7 @@ static int HOPEvalAggregateDistanceToType(
             }
             return 1;
         }
-        if (!HOPEvalStructEmbeddedBase(p, curFile, curNode, &curFile, &curNode)) {
+        if (!H2EvalStructEmbeddedBase(p, curFile, curNode, &curFile, &curNode)) {
             break;
         }
         distance++;
@@ -6276,12 +6249,12 @@ static int HOPEvalAggregateDistanceToType(
     return 0;
 }
 
-static int HOPEvalScoreFunctionCandidate(
-    const HOPEvalProgram*  p,
-    const HOPEvalFunction* fn,
-    const HOPCTFEValue*    args,
-    uint32_t               argCount,
-    int*                   outScore) {
+static int H2EvalScoreFunctionCandidate(
+    const H2EvalProgram*  p,
+    const H2EvalFunction* fn,
+    const H2CTFEValue*    args,
+    uint32_t              argCount,
+    int*                  outScore) {
     uint32_t i;
     int      score = 0;
     uint32_t fixedCount;
@@ -6304,16 +6277,16 @@ static int HOPEvalScoreFunctionCandidate(
         uint64_t argAliasTag = 0;
         uint64_t paramAliasTag = 0;
         uint32_t structDistance = 0;
-        int32_t  paramTypeNode = HOPEvalFunctionParamTypeNodeAt(
+        int32_t  paramTypeNode = H2EvalFunctionParamTypeNodeAt(
             fn, fn->isVariadic && i >= fixedCount ? fixedCount : i);
         if (paramTypeNode < 0) {
             return 0;
         }
-        if (HOPEvalTypeNodeIsTemplateParamName(fn->file, paramTypeNode)) {
+        if (H2EvalTypeNodeIsTemplateParamName(fn->file, paramTypeNode)) {
             score += 1;
             continue;
         }
-        if (fn->file->ast.nodes[paramTypeNode].kind == HOPAst_TYPE_NAME
+        if (fn->file->ast.nodes[paramTypeNode].kind == H2Ast_TYPE_NAME
             && SliceEqCStr(
                 fn->file->source,
                 fn->file->ast.nodes[paramTypeNode].dataStart,
@@ -6322,13 +6295,12 @@ static int HOPEvalScoreFunctionCandidate(
         {
             continue;
         }
-        if (HOPEvalAggregateDistanceToType(p, &args[i], fn->file, paramTypeNode, &structDistance)) {
+        if (H2EvalAggregateDistanceToType(p, &args[i], fn->file, paramTypeNode, &structDistance)) {
             score += structDistance == 0 ? 16 : (int)(16u - structDistance);
             continue;
         }
-        if (!HOPEvalValueSimpleKind(&args[i], &argKind, &argAliasTag)
-            || !HOPEvalClassifySimpleTypeNode(
-                p, fn->file, paramTypeNode, &paramKind, &paramAliasTag)
+        if (!H2EvalValueSimpleKind(&args[i], &argKind, &argAliasTag)
+            || !H2EvalClassifySimpleTypeNode(p, fn->file, paramTypeNode, &paramKind, &paramAliasTag)
             || argKind != paramKind)
         {
             return 0;
@@ -6348,13 +6320,13 @@ static int HOPEvalScoreFunctionCandidate(
     return 1;
 }
 
-static int32_t HOPEvalResolveFunctionBySlice(
-    const HOPEvalProgram* p,
-    const HOPPackage* _Nullable targetPkg,
-    const HOPParsedFile* callerFile,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    const HOPCTFEValue* _Nullable args,
+static int32_t H2EvalResolveFunctionBySlice(
+    const H2EvalProgram* p,
+    const H2Package* _Nullable targetPkg,
+    const H2ParsedFile* callerFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const H2CTFEValue* _Nullable args,
     uint32_t argCount) {
     uint32_t i;
     int32_t  found = -1;
@@ -6365,9 +6337,9 @@ static int32_t HOPEvalResolveFunctionBySlice(
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int                    score = 0;
-        uint32_t               fixedCount =
+        const H2EvalFunction* fn = &p->funcs[i];
+        int                   score = 0;
+        uint32_t              fixedCount =
             fn->isVariadic && fn->paramCount > 0 ? fn->paramCount - 1u : fn->paramCount;
         if ((!fn->isVariadic && fn->paramCount != argCount)
             || (fn->isVariadic && argCount < fixedCount))
@@ -6392,7 +6364,7 @@ static int32_t HOPEvalResolveFunctionBySlice(
         } else {
             found = -2;
         }
-        if (args != NULL && HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
+        if (args != NULL && H2EvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
             if (score > bestScore) {
                 best = (int32_t)i;
                 bestScore = score;
@@ -6408,18 +6380,15 @@ static int32_t HOPEvalResolveFunctionBySlice(
     return found;
 }
 
-static int32_t HOPEvalFindAnyFunctionBySlice(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  callerFile,
-    uint32_t              nameStart,
-    uint32_t              nameEnd) {
+static int32_t H2EvalFindAnyFunctionBySlice(
+    const H2EvalProgram* p, const H2ParsedFile* callerFile, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || callerFile == NULL || nameEnd < nameStart || nameEnd > callerFile->sourceLen) {
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
+        const H2EvalFunction* fn = &p->funcs[i];
         if (!SliceEqSlice(
                 callerFile->source,
                 nameStart,
@@ -6438,17 +6407,17 @@ static int32_t HOPEvalFindAnyFunctionBySlice(
     return found;
 }
 
-static int HOPEvalExprContainsFieldExpr(const HOPAst* ast, int32_t nodeId) {
+static int H2EvalExprContainsFieldExpr(const H2Ast* ast, int32_t nodeId) {
     int32_t child;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return 0;
     }
-    if (ast->nodes[nodeId].kind == HOPAst_FIELD_EXPR) {
+    if (ast->nodes[nodeId].kind == H2Ast_FIELD_EXPR) {
         return 1;
     }
     child = ast->nodes[nodeId].firstChild;
     while (child >= 0) {
-        if (HOPEvalExprContainsFieldExpr(ast, child)) {
+        if (H2EvalExprContainsFieldExpr(ast, child)) {
             return 1;
         }
         child = ast->nodes[child].nextSibling;
@@ -6456,17 +6425,17 @@ static int HOPEvalExprContainsFieldExpr(const HOPAst* ast, int32_t nodeId) {
     return 0;
 }
 
-static int HOPEvalEvalUnary(
-    HOPTokenKind op, const HOPCTFEValue* inValue, HOPCTFEValue* outValue, int* outIsConst) {
+static int H2EvalEvalUnary(
+    H2TokenKind op, const H2CTFEValue* inValue, H2CTFEValue* outValue, int* outIsConst) {
     if (outValue == NULL || outIsConst == NULL || inValue == NULL) {
         return -1;
     }
     switch (op) {
-        case HOPTok_NOT:
-            if (inValue->kind != HOPCTFEValue_BOOL) {
+        case H2Tok_NOT:
+            if (inValue->kind != H2CTFEValue_BOOL) {
                 return 0;
             }
-            outValue->kind = HOPCTFEValue_BOOL;
+            outValue->kind = H2CTFEValue_BOOL;
             outValue->b = inValue->b ? 0u : 1u;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
@@ -6475,14 +6444,14 @@ static int HOPEvalEvalUnary(
             outValue->s.len = 0;
             *outIsConst = 1;
             return 1;
-        case HOPTok_SUB:
-            if (inValue->kind == HOPCTFEValue_INT) {
-                HOPEvalValueSetInt(outValue, -inValue->i64);
+        case H2Tok_SUB:
+            if (inValue->kind == H2CTFEValue_INT) {
+                H2EvalValueSetInt(outValue, -inValue->i64);
                 *outIsConst = 1;
                 return 1;
             }
-            if (inValue->kind == HOPCTFEValue_FLOAT) {
-                outValue->kind = HOPCTFEValue_FLOAT;
+            if (inValue->kind == H2CTFEValue_FLOAT) {
+                outValue->kind = H2CTFEValue_FLOAT;
                 outValue->i64 = 0;
                 outValue->f64 = -inValue->f64;
                 outValue->b = 0;
@@ -6497,7 +6466,7 @@ static int HOPEvalEvalUnary(
     }
 }
 
-static int HOPEvalLexCompareStrings(const HOPCTFEValue* lhs, const HOPCTFEValue* rhs, int* outCmp) {
+static int H2EvalLexCompareStrings(const H2CTFEValue* lhs, const H2CTFEValue* rhs, int* outCmp) {
     uint32_t minLen;
     int      cmp = 0;
     if (lhs == NULL || rhs == NULL || outCmp == NULL) {
@@ -6518,8 +6487,8 @@ static int HOPEvalLexCompareStrings(const HOPCTFEValue* lhs, const HOPCTFEValue*
     return 0;
 }
 
-static int32_t HOPEvalResolveFunctionByLiteralArgs(
-    const HOPEvalProgram* p, const char* name, const HOPCTFEValue* args, uint32_t argCount) {
+static int32_t H2EvalResolveFunctionByLiteralArgs(
+    const H2EvalProgram* p, const char* name, const H2CTFEValue* args, uint32_t argCount) {
     uint32_t i;
     int32_t  best = -1;
     int      bestScore = -1;
@@ -6528,9 +6497,9 @@ static int32_t HOPEvalResolveFunctionByLiteralArgs(
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int                    score = 0;
-        uint32_t               fixedCount =
+        const H2EvalFunction* fn = &p->funcs[i];
+        int                   score = 0;
+        uint32_t              fixedCount =
             fn->isVariadic && fn->paramCount > 0 ? fn->paramCount - 1u : fn->paramCount;
         if ((!fn->isVariadic && fn->paramCount != argCount)
             || (fn->isVariadic && argCount < fixedCount))
@@ -6540,7 +6509,7 @@ static int32_t HOPEvalResolveFunctionByLiteralArgs(
         if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)) {
             continue;
         }
-        if (args != NULL && HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
+        if (args != NULL && H2EvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
             if (score > bestScore) {
                 best = (int32_t)i;
                 bestScore = score;
@@ -6555,15 +6524,11 @@ static int32_t HOPEvalResolveFunctionByLiteralArgs(
     return ambiguous ? -2 : best;
 }
 
-static int HOPEvalCompareValues(
-    HOPEvalProgram*     p,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    int*                outCmp,
-    int*                outHandled);
+static int H2EvalCompareValues(
+    H2EvalProgram* p, const H2CTFEValue* lhs, const H2CTFEValue* rhs, int* outCmp, int* outHandled);
 
-static int HOPEvalTaggedEnumPayloadEqual(
-    HOPEvalProgram* p, const HOPEvalTaggedEnum* lhs, const HOPEvalTaggedEnum* rhs, int* outEqual) {
+static int H2EvalTaggedEnumPayloadEqual(
+    H2EvalProgram* p, const H2EvalTaggedEnum* lhs, const H2EvalTaggedEnum* rhs, int* outEqual) {
     if (outEqual != NULL) {
         *outEqual = 0;
     }
@@ -6587,7 +6552,7 @@ static int HOPEvalTaggedEnumPayloadEqual(
         for (i = 0; i < lhs->payload->fieldLen; i++) {
             int cmp = 0;
             int handled = 0;
-            if (HOPEvalCompareValues(
+            if (H2EvalCompareValues(
                     p,
                     &lhs->payload->fields[i].value,
                     &rhs->payload->fields[i].value,
@@ -6607,14 +6572,14 @@ static int HOPEvalTaggedEnumPayloadEqual(
     return 0;
 }
 
-static int HOPEvalCompareValues(
-    HOPEvalProgram*     p,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    int*                outCmp,
-    int*                outHandled) {
-    const HOPCTFEValue* lhsValue = HOPEvalValueTargetOrSelf(lhs);
-    const HOPCTFEValue* rhsValue = HOPEvalValueTargetOrSelf(rhs);
+static int H2EvalCompareValues(
+    H2EvalProgram*     p,
+    const H2CTFEValue* lhs,
+    const H2CTFEValue* rhs,
+    int*               outCmp,
+    int*               outHandled) {
+    const H2CTFEValue* lhsValue = H2EvalValueTargetOrSelf(lhs);
+    const H2CTFEValue* rhsValue = H2EvalValueTargetOrSelf(rhs);
     if (outCmp != NULL) {
         *outCmp = 0;
     }
@@ -6624,26 +6589,25 @@ static int HOPEvalCompareValues(
     if (lhs == NULL || rhs == NULL || outCmp == NULL || outHandled == NULL) {
         return -1;
     }
-    if ((lhsValue->kind == HOPCTFEValue_NULL && rhsValue->kind == HOPCTFEValue_REFERENCE)
-        || (lhsValue->kind == HOPCTFEValue_REFERENCE && rhsValue->kind == HOPCTFEValue_NULL))
+    if ((lhsValue->kind == H2CTFEValue_NULL && rhsValue->kind == H2CTFEValue_REFERENCE)
+        || (lhsValue->kind == H2CTFEValue_REFERENCE && rhsValue->kind == H2CTFEValue_NULL))
     {
-        uintptr_t la = lhsValue->kind == HOPCTFEValue_REFERENCE ? (uintptr_t)lhsValue->s.bytes : 0u;
-        uintptr_t ra = rhsValue->kind == HOPCTFEValue_REFERENCE ? (uintptr_t)rhsValue->s.bytes : 0u;
+        uintptr_t la = lhsValue->kind == H2CTFEValue_REFERENCE ? (uintptr_t)lhsValue->s.bytes : 0u;
+        uintptr_t ra = rhsValue->kind == H2CTFEValue_REFERENCE ? (uintptr_t)rhsValue->s.bytes : 0u;
         *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
         *outHandled = 1;
         return 0;
     }
-    if ((lhsValue->kind == HOPCTFEValue_NULL && rhsValue->kind == HOPCTFEValue_STRING)
-        || (lhsValue->kind == HOPCTFEValue_STRING && rhsValue->kind == HOPCTFEValue_NULL))
+    if ((lhsValue->kind == H2CTFEValue_NULL && rhsValue->kind == H2CTFEValue_STRING)
+        || (lhsValue->kind == H2CTFEValue_STRING && rhsValue->kind == H2CTFEValue_NULL))
     {
-        int32_t   typeCode = HOPEvalTypeCode_INVALID;
-        uintptr_t la = lhsValue->kind == HOPCTFEValue_STRING ? (uintptr_t)lhsValue->s.bytes : 0u;
-        uintptr_t ra = rhsValue->kind == HOPCTFEValue_STRING ? (uintptr_t)rhsValue->s.bytes : 0u;
-        const HOPCTFEValue* stringValue =
-            lhsValue->kind == HOPCTFEValue_STRING ? lhsValue : rhsValue;
-        if (!HOPEvalValueGetRuntimeTypeCode(stringValue, &typeCode)
-            || (typeCode != HOPEvalTypeCode_RAWPTR && typeCode != HOPEvalTypeCode_STR_PTR
-                && typeCode != HOPEvalTypeCode_STR_REF))
+        int32_t   typeCode = H2EvalTypeCode_INVALID;
+        uintptr_t la = lhsValue->kind == H2CTFEValue_STRING ? (uintptr_t)lhsValue->s.bytes : 0u;
+        uintptr_t ra = rhsValue->kind == H2CTFEValue_STRING ? (uintptr_t)rhsValue->s.bytes : 0u;
+        const H2CTFEValue* stringValue = lhsValue->kind == H2CTFEValue_STRING ? lhsValue : rhsValue;
+        if (!H2EvalValueGetRuntimeTypeCode(stringValue, &typeCode)
+            || (typeCode != H2EvalTypeCode_RAWPTR && typeCode != H2EvalTypeCode_STR_PTR
+                && typeCode != H2EvalTypeCode_STR_REF))
         {
             return 0;
         }
@@ -6651,30 +6615,29 @@ static int HOPEvalCompareValues(
         *outHandled = 1;
         return 0;
     }
-    if (lhs->kind == HOPCTFEValue_REFERENCE && rhs->kind == HOPCTFEValue_REFERENCE) {
+    if (lhs->kind == H2CTFEValue_REFERENCE && rhs->kind == H2CTFEValue_REFERENCE) {
         uintptr_t la = (uintptr_t)lhs->s.bytes;
         uintptr_t ra = (uintptr_t)rhs->s.bytes;
         *outCmp = la < ra ? -1 : (la > ra ? 1 : 0);
         *outHandled = 1;
         return 0;
     }
-    if ((lhsValue->kind == HOPCTFEValue_REFERENCE && rhsValue->kind == HOPCTFEValue_STRING)
-        || (lhsValue->kind == HOPCTFEValue_STRING && rhsValue->kind == HOPCTFEValue_REFERENCE))
+    if ((lhsValue->kind == H2CTFEValue_REFERENCE && rhsValue->kind == H2CTFEValue_STRING)
+        || (lhsValue->kind == H2CTFEValue_STRING && rhsValue->kind == H2CTFEValue_REFERENCE))
     {
-        int32_t             typeCode = HOPEvalTypeCode_INVALID;
-        const HOPCTFEValue* stringValue =
-            lhsValue->kind == HOPCTFEValue_STRING ? lhsValue : rhsValue;
-        uintptr_t la =
-            lhsValue->kind == HOPCTFEValue_REFERENCE
+        int32_t            typeCode = H2EvalTypeCode_INVALID;
+        const H2CTFEValue* stringValue = lhsValue->kind == H2CTFEValue_STRING ? lhsValue : rhsValue;
+        uintptr_t          la =
+            lhsValue->kind == H2CTFEValue_REFERENCE
                 ? (uintptr_t)lhsValue->s.bytes
                 : (uintptr_t)lhsValue->s.bytes;
         uintptr_t ra =
-            rhsValue->kind == HOPCTFEValue_REFERENCE
+            rhsValue->kind == H2CTFEValue_REFERENCE
                 ? (uintptr_t)rhsValue->s.bytes
                 : (uintptr_t)rhsValue->s.bytes;
-        if (!HOPEvalValueGetRuntimeTypeCode(stringValue, &typeCode)
-            || (typeCode != HOPEvalTypeCode_RAWPTR && typeCode != HOPEvalTypeCode_STR_PTR
-                && typeCode != HOPEvalTypeCode_STR_REF))
+        if (!H2EvalValueGetRuntimeTypeCode(stringValue, &typeCode)
+            || (typeCode != H2EvalTypeCode_RAWPTR && typeCode != H2EvalTypeCode_STR_PTR
+                && typeCode != H2EvalTypeCode_STR_REF))
         {
             return 0;
         }
@@ -6682,29 +6645,28 @@ static int HOPEvalCompareValues(
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_INT && rhsValue->kind == HOPCTFEValue_INT) {
+    if (lhsValue->kind == H2CTFEValue_INT && rhsValue->kind == H2CTFEValue_INT) {
         *outCmp = lhsValue->i64 < rhsValue->i64 ? -1 : (lhsValue->i64 > rhsValue->i64 ? 1 : 0);
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_FLOAT && rhsValue->kind == HOPCTFEValue_FLOAT) {
+    if (lhsValue->kind == H2CTFEValue_FLOAT && rhsValue->kind == H2CTFEValue_FLOAT) {
         *outCmp = lhsValue->f64 < rhsValue->f64 ? -1 : (lhsValue->f64 > rhsValue->f64 ? 1 : 0);
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_BOOL && rhsValue->kind == HOPCTFEValue_BOOL) {
+    if (lhsValue->kind == H2CTFEValue_BOOL && rhsValue->kind == H2CTFEValue_BOOL) {
         *outCmp = lhsValue->b < rhsValue->b ? -1 : (lhsValue->b > rhsValue->b ? 1 : 0);
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_STRING && rhsValue->kind == HOPCTFEValue_STRING) {
-        int32_t lhsTypeCode = HOPEvalTypeCode_INVALID;
-        int32_t rhsTypeCode = HOPEvalTypeCode_INVALID;
-        if ((HOPEvalValueGetRuntimeTypeCode(lhsValue, &lhsTypeCode)
-             && (lhsTypeCode == HOPEvalTypeCode_RAWPTR || lhsTypeCode == HOPEvalTypeCode_STR_PTR))
-            || (HOPEvalValueGetRuntimeTypeCode(rhsValue, &rhsTypeCode)
-                && (rhsTypeCode == HOPEvalTypeCode_RAWPTR
-                    || rhsTypeCode == HOPEvalTypeCode_STR_PTR)))
+    if (lhsValue->kind == H2CTFEValue_STRING && rhsValue->kind == H2CTFEValue_STRING) {
+        int32_t lhsTypeCode = H2EvalTypeCode_INVALID;
+        int32_t rhsTypeCode = H2EvalTypeCode_INVALID;
+        if ((H2EvalValueGetRuntimeTypeCode(lhsValue, &lhsTypeCode)
+             && (lhsTypeCode == H2EvalTypeCode_RAWPTR || lhsTypeCode == H2EvalTypeCode_STR_PTR))
+            || (H2EvalValueGetRuntimeTypeCode(rhsValue, &rhsTypeCode)
+                && (rhsTypeCode == H2EvalTypeCode_RAWPTR || rhsTypeCode == H2EvalTypeCode_STR_PTR)))
         {
             uintptr_t la = (uintptr_t)lhsValue->s.bytes;
             uintptr_t ra = (uintptr_t)rhsValue->s.bytes;
@@ -6712,25 +6674,25 @@ static int HOPEvalCompareValues(
             *outHandled = 1;
             return 0;
         }
-        if (HOPEvalLexCompareStrings(lhsValue, rhsValue, outCmp) != 0) {
+        if (H2EvalLexCompareStrings(lhsValue, rhsValue, outCmp) != 0) {
             return -1;
         }
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_TYPE && rhsValue->kind == HOPCTFEValue_TYPE) {
+    if (lhsValue->kind == H2CTFEValue_TYPE && rhsValue->kind == H2CTFEValue_TYPE) {
         int32_t lhsTypeCode = 0;
         int32_t rhsTypeCode = 0;
-        if (HOPEvalValueGetSimpleTypeCode(lhsValue, &lhsTypeCode)
-            && HOPEvalValueGetSimpleTypeCode(rhsValue, &rhsTypeCode))
+        if (H2EvalValueGetSimpleTypeCode(lhsValue, &lhsTypeCode)
+            && H2EvalValueGetSimpleTypeCode(rhsValue, &rhsTypeCode))
         {
             *outCmp = lhsTypeCode < rhsTypeCode ? -1 : (lhsTypeCode > rhsTypeCode ? 1 : 0);
             *outHandled = 1;
             return 0;
         }
         {
-            HOPEvalReflectedType* lhsType = HOPEvalValueAsReflectedType(lhsValue);
-            HOPEvalReflectedType* rhsType = HOPEvalValueAsReflectedType(rhsValue);
+            H2EvalReflectedType* lhsType = H2EvalValueAsReflectedType(lhsValue);
+            H2EvalReflectedType* rhsType = H2EvalValueAsReflectedType(rhsValue);
             if (lhsType != NULL && rhsType != NULL) {
                 if (lhsType->kind != rhsType->kind || lhsType->namedKind != rhsType->namedKind
                     || lhsType->file != rhsType->file || lhsType->nodeId != rhsType->nodeId
@@ -6740,13 +6702,13 @@ static int HOPEvalCompareValues(
                     *outHandled = 1;
                     return 0;
                 }
-                if (lhsType->kind == HOPEvalReflectType_PTR
-                    || lhsType->kind == HOPEvalReflectType_SLICE
-                    || lhsType->kind == HOPEvalReflectType_ARRAY)
+                if (lhsType->kind == H2EvalReflectType_PTR
+                    || lhsType->kind == H2EvalReflectType_SLICE
+                    || lhsType->kind == H2EvalReflectType_ARRAY)
                 {
                     int elemCmp = 0;
                     int elemHandled = 0;
-                    if (HOPEvalCompareValues(
+                    if (H2EvalCompareValues(
                             p, &lhsType->elemType, &rhsType->elemType, &elemCmp, &elemHandled)
                         != 0)
                     {
@@ -6766,13 +6728,13 @@ static int HOPEvalCompareValues(
         }
     }
     {
-        HOPEvalTaggedEnum* lhsTagged = HOPEvalValueAsTaggedEnum(lhsValue);
-        HOPEvalTaggedEnum* rhsTagged = HOPEvalValueAsTaggedEnum(rhsValue);
+        H2EvalTaggedEnum* lhsTagged = H2EvalValueAsTaggedEnum(lhsValue);
+        H2EvalTaggedEnum* rhsTagged = H2EvalValueAsTaggedEnum(rhsValue);
         if (lhsTagged != NULL && rhsTagged != NULL && lhsTagged->file == rhsTagged->file
             && lhsTagged->enumNode == rhsTagged->enumNode)
         {
             int equal = 0;
-            if (HOPEvalTaggedEnumPayloadEqual(p, lhsTagged, rhsTagged, &equal) != 0) {
+            if (H2EvalTaggedEnumPayloadEqual(p, lhsTagged, rhsTagged, &equal) != 0) {
                 return -1;
             }
             *outCmp = equal ? 0 : 1;
@@ -6781,8 +6743,8 @@ static int HOPEvalCompareValues(
         }
     }
     {
-        HOPEvalArray* lhsArray = HOPEvalValueAsArray(lhsValue);
-        HOPEvalArray* rhsArray = HOPEvalValueAsArray(rhsValue);
+        H2EvalArray* lhsArray = H2EvalValueAsArray(lhsValue);
+        H2EvalArray* rhsArray = H2EvalValueAsArray(rhsValue);
         if (lhsArray != NULL && rhsArray != NULL) {
             uint32_t i;
             if (lhsArray->len != rhsArray->len) {
@@ -6793,8 +6755,7 @@ static int HOPEvalCompareValues(
             for (i = 0; i < lhsArray->len; i++) {
                 int cmp = 0;
                 int handled = 0;
-                if (HOPEvalCompareValues(
-                        p, &lhsArray->elems[i], &rhsArray->elems[i], &cmp, &handled)
+                if (H2EvalCompareValues(p, &lhsArray->elems[i], &rhsArray->elems[i], &cmp, &handled)
                     != 0)
                 {
                     return -1;
@@ -6811,25 +6772,25 @@ static int HOPEvalCompareValues(
         }
     }
     {
-        HOPEvalAggregate* lhsAgg = HOPEvalValueAsAggregate(lhsValue);
-        HOPEvalAggregate* rhsAgg = HOPEvalValueAsAggregate(rhsValue);
+        H2EvalAggregate* lhsAgg = H2EvalValueAsAggregate(lhsValue);
+        H2EvalAggregate* rhsAgg = H2EvalValueAsAggregate(rhsValue);
         if (lhsAgg != NULL && rhsAgg != NULL) {
-            HOPCTFEValue args[2];
+            H2CTFEValue args[2];
             args[0] = *lhsValue;
             args[1] = *rhsValue;
             {
-                int32_t hookIndex = HOPEvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
+                int32_t hookIndex = H2EvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
                 if (hookIndex >= 0) {
-                    HOPCTFEValue hookValue;
-                    int          didReturn = 0;
-                    int64_t      order = 0;
-                    if (HOPEvalInvokeFunction(
+                    H2CTFEValue hookValue;
+                    int         didReturn = 0;
+                    int64_t     order = 0;
+                    if (H2EvalInvokeFunction(
                             p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
                         != 0)
                     {
                         return -1;
                     }
-                    if (didReturn && HOPCTFEValueToInt64(&hookValue, &order) == 0) {
+                    if (didReturn && H2CTFEValueToInt64(&hookValue, &order) == 0) {
                         *outCmp = order < 0 ? -1 : (order > 0 ? 1 : 0);
                         *outHandled = 1;
                         return 0;
@@ -6837,17 +6798,17 @@ static int HOPEvalCompareValues(
                 }
             }
             {
-                int32_t hookIndex = HOPEvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
+                int32_t hookIndex = H2EvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
                 if (hookIndex >= 0) {
-                    HOPCTFEValue hookValue;
-                    int          didReturn = 0;
-                    if (HOPEvalInvokeFunction(
+                    H2CTFEValue hookValue;
+                    int         didReturn = 0;
+                    if (H2EvalInvokeFunction(
                             p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
                         != 0)
                     {
                         return -1;
                     }
-                    if (didReturn && hookValue.kind == HOPCTFEValue_BOOL) {
+                    if (didReturn && hookValue.kind == H2CTFEValue_BOOL) {
                         *outCmp = hookValue.b ? 0 : 1;
                         *outHandled = 1;
                         return 0;
@@ -6864,7 +6825,7 @@ static int HOPEvalCompareValues(
                 for (i = 0; i < lhsAgg->fieldLen; i++) {
                     int cmp = 0;
                     int handled = 0;
-                    if (HOPEvalCompareValues(
+                    if (H2EvalCompareValues(
                             p, &lhsAgg->fields[i].value, &rhsAgg->fields[i].value, &cmp, &handled)
                         != 0)
                     {
@@ -6885,18 +6846,18 @@ static int HOPEvalCompareValues(
     return 0;
 }
 
-static int HOPEvalCompareOptionalEq(
-    HOPEvalProgram*     p,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    uint8_t*            outEqual,
-    int*                outHandled) {
-    const HOPCTFEValue* lhsValue = HOPEvalValueTargetOrSelf(lhs);
-    const HOPCTFEValue* rhsValue = HOPEvalValueTargetOrSelf(rhs);
-    const HOPCTFEValue* lhsPayload = NULL;
-    const HOPCTFEValue* rhsPayload = NULL;
-    int                 lhsIsOptional = 0;
-    int                 rhsIsOptional = 0;
+static int H2EvalCompareOptionalEq(
+    H2EvalProgram*     p,
+    const H2CTFEValue* lhs,
+    const H2CTFEValue* rhs,
+    uint8_t*           outEqual,
+    int*               outHandled) {
+    const H2CTFEValue* lhsValue = H2EvalValueTargetOrSelf(lhs);
+    const H2CTFEValue* rhsValue = H2EvalValueTargetOrSelf(rhs);
+    const H2CTFEValue* lhsPayload = NULL;
+    const H2CTFEValue* rhsPayload = NULL;
+    int                lhsIsOptional = 0;
+    int                rhsIsOptional = 0;
     if (outEqual != NULL) {
         *outEqual = 0;
     }
@@ -6907,9 +6868,9 @@ static int HOPEvalCompareOptionalEq(
         return -1;
     }
     lhsIsOptional =
-        lhsValue->kind == HOPCTFEValue_OPTIONAL && HOPEvalOptionalPayload(lhsValue, &lhsPayload);
+        lhsValue->kind == H2CTFEValue_OPTIONAL && H2EvalOptionalPayload(lhsValue, &lhsPayload);
     rhsIsOptional =
-        rhsValue->kind == HOPCTFEValue_OPTIONAL && HOPEvalOptionalPayload(rhsValue, &rhsPayload);
+        rhsValue->kind == H2CTFEValue_OPTIONAL && H2EvalOptionalPayload(rhsValue, &rhsPayload);
     if (!lhsIsOptional && !rhsIsOptional) {
         return 0;
     }
@@ -6927,7 +6888,7 @@ static int HOPEvalCompareOptionalEq(
         {
             int cmp = 0;
             int handled = 0;
-            if (HOPEvalCompareValues(p, lhsPayload, rhsPayload, &cmp, &handled) != 0) {
+            if (H2EvalCompareValues(p, lhsPayload, rhsPayload, &cmp, &handled) != 0) {
                 return -1;
             }
             if (handled) {
@@ -6939,11 +6900,11 @@ static int HOPEvalCompareOptionalEq(
     }
     if (lhsIsOptional) {
         if (lhsValue->b == 0u || lhsPayload == NULL) {
-            *outEqual = rhsValue->kind == HOPCTFEValue_NULL ? 1u : 0u;
+            *outEqual = rhsValue->kind == H2CTFEValue_NULL ? 1u : 0u;
             *outHandled = 1;
             return 0;
         }
-        if (rhsValue->kind == HOPCTFEValue_NULL) {
+        if (rhsValue->kind == H2CTFEValue_NULL) {
             *outEqual = 0u;
             *outHandled = 1;
             return 0;
@@ -6951,7 +6912,7 @@ static int HOPEvalCompareOptionalEq(
         {
             int cmp = 0;
             int handled = 0;
-            if (HOPEvalCompareValues(p, lhsPayload, rhsValue, &cmp, &handled) != 0) {
+            if (H2EvalCompareValues(p, lhsPayload, rhsValue, &cmp, &handled) != 0) {
                 return -1;
             }
             if (handled) {
@@ -6962,11 +6923,11 @@ static int HOPEvalCompareOptionalEq(
         }
     }
     if (rhsValue->b == 0u || rhsPayload == NULL) {
-        *outEqual = lhsValue->kind == HOPCTFEValue_NULL ? 1u : 0u;
+        *outEqual = lhsValue->kind == H2CTFEValue_NULL ? 1u : 0u;
         *outHandled = 1;
         return 0;
     }
-    if (lhsValue->kind == HOPCTFEValue_NULL) {
+    if (lhsValue->kind == H2CTFEValue_NULL) {
         *outEqual = 0u;
         *outHandled = 1;
         return 0;
@@ -6974,7 +6935,7 @@ static int HOPEvalCompareOptionalEq(
     {
         int cmp = 0;
         int handled = 0;
-        if (HOPEvalCompareValues(p, lhsValue, rhsPayload, &cmp, &handled) != 0) {
+        if (H2EvalCompareValues(p, lhsValue, rhsPayload, &cmp, &handled) != 0) {
             return -1;
         }
         if (handled) {
@@ -6985,72 +6946,72 @@ static int HOPEvalCompareOptionalEq(
     return 0;
 }
 
-static int HOPEvalEvalBinary(
-    HOPEvalProgram*     p,
-    HOPTokenKind        op,
-    const HOPCTFEValue* lhs,
-    const HOPCTFEValue* rhs,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst) {
+static int H2EvalEvalBinary(
+    H2EvalProgram*     p,
+    H2TokenKind        op,
+    const H2CTFEValue* lhs,
+    const H2CTFEValue* rhs,
+    H2CTFEValue*       outValue,
+    int*               outIsConst) {
     int cmp = 0;
     int handled = 0;
     if (lhs == NULL || rhs == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if ((op == HOPTok_EQ || op == HOPTok_NEQ || op == HOPTok_LT || op == HOPTok_LTE
-         || op == HOPTok_GT || op == HOPTok_GTE))
+    if ((op == H2Tok_EQ || op == H2Tok_NEQ || op == H2Tok_LT || op == H2Tok_LTE || op == H2Tok_GT
+         || op == H2Tok_GTE))
     {
-        HOPEvalAggregate* lhsAgg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(lhs));
-        HOPEvalAggregate* rhsAgg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(rhs));
+        H2EvalAggregate* lhsAgg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(lhs));
+        H2EvalAggregate* rhsAgg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(rhs));
         if (p != NULL && lhsAgg != NULL && rhsAgg != NULL) {
-            HOPCTFEValue args[2];
-            int32_t      hookIndex = -1;
-            HOPCTFEValue hookValue;
-            int          didReturn = 0;
-            args[0] = *HOPEvalValueTargetOrSelf(lhs);
-            args[1] = *HOPEvalValueTargetOrSelf(rhs);
-            if (op == HOPTok_EQ || op == HOPTok_NEQ) {
-                hookIndex = HOPEvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
+            H2CTFEValue args[2];
+            int32_t     hookIndex = -1;
+            H2CTFEValue hookValue;
+            int         didReturn = 0;
+            args[0] = *H2EvalValueTargetOrSelf(lhs);
+            args[1] = *H2EvalValueTargetOrSelf(rhs);
+            if (op == H2Tok_EQ || op == H2Tok_NEQ) {
+                hookIndex = H2EvalResolveFunctionByLiteralArgs(p, "__equal", args, 2);
                 if (hookIndex >= 0) {
-                    if (HOPEvalInvokeFunction(
+                    if (H2EvalInvokeFunction(
                             p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
                         != 0)
                     {
                         return -1;
                     }
-                    if (didReturn && hookValue.kind == HOPCTFEValue_BOOL) {
-                        outValue->kind = HOPCTFEValue_BOOL;
+                    if (didReturn && hookValue.kind == H2CTFEValue_BOOL) {
+                        outValue->kind = H2CTFEValue_BOOL;
                         outValue->i64 = 0;
                         outValue->f64 = 0.0;
                         outValue->typeTag = 0;
                         outValue->s.bytes = NULL;
                         outValue->s.len = 0;
-                        outValue->b = op == HOPTok_EQ ? hookValue.b : (uint8_t)!hookValue.b;
+                        outValue->b = op == H2Tok_EQ ? hookValue.b : (uint8_t)!hookValue.b;
                         *outIsConst = 1;
                         return 1;
                     }
                 }
             } else {
-                hookIndex = HOPEvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
+                hookIndex = H2EvalResolveFunctionByLiteralArgs(p, "__order", args, 2);
                 if (hookIndex >= 0) {
                     int64_t order = 0;
-                    if (HOPEvalInvokeFunction(
+                    if (H2EvalInvokeFunction(
                             p, hookIndex, args, 2, p->currentContext, &hookValue, &didReturn)
                         != 0)
                     {
                         return -1;
                     }
-                    if (didReturn && HOPCTFEValueToInt64(&hookValue, &order) == 0) {
-                        outValue->kind = HOPCTFEValue_BOOL;
+                    if (didReturn && H2CTFEValueToInt64(&hookValue, &order) == 0) {
+                        outValue->kind = H2CTFEValue_BOOL;
                         outValue->i64 = 0;
                         outValue->f64 = 0.0;
                         outValue->typeTag = 0;
                         outValue->s.bytes = NULL;
                         outValue->s.len = 0;
                         outValue->b =
-                            op == HOPTok_LT    ? order < 0
-                            : op == HOPTok_LTE ? order <= 0
-                            : op == HOPTok_GT
+                            op == H2Tok_LT    ? order < 0
+                            : op == H2Tok_LTE ? order <= 0
+                            : op == H2Tok_GT
                                 ? order > 0
                                 : order >= 0;
                         *outIsConst = 1;
@@ -7060,106 +7021,106 @@ static int HOPEvalEvalBinary(
             }
         }
     }
-    if (op == HOPTok_EQ || op == HOPTok_NEQ || op == HOPTok_LT || op == HOPTok_LTE
-        || op == HOPTok_GT || op == HOPTok_GTE)
+    if (op == H2Tok_EQ || op == H2Tok_NEQ || op == H2Tok_LT || op == H2Tok_LTE || op == H2Tok_GT
+        || op == H2Tok_GTE)
     {
-        HOPEvalTaggedEnum* lhsTagged = HOPEvalValueAsTaggedEnum(HOPEvalValueTargetOrSelf(lhs));
-        HOPEvalTaggedEnum* rhsTagged = HOPEvalValueAsTaggedEnum(HOPEvalValueTargetOrSelf(rhs));
-        if ((op == HOPTok_LT || op == HOPTok_LTE || op == HOPTok_GT || op == HOPTok_GTE)
+        H2EvalTaggedEnum* lhsTagged = H2EvalValueAsTaggedEnum(H2EvalValueTargetOrSelf(lhs));
+        H2EvalTaggedEnum* rhsTagged = H2EvalValueAsTaggedEnum(H2EvalValueTargetOrSelf(rhs));
+        if ((op == H2Tok_LT || op == H2Tok_LTE || op == H2Tok_GT || op == H2Tok_GTE)
             && lhsTagged != NULL && rhsTagged != NULL && lhsTagged->file == rhsTagged->file
             && lhsTagged->enumNode == rhsTagged->enumNode)
         {
-            outValue->kind = HOPCTFEValue_BOOL;
+            outValue->kind = H2CTFEValue_BOOL;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
             outValue->typeTag = 0;
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
             switch (op) {
-                case HOPTok_LT:  outValue->b = lhsTagged->tagIndex < rhsTagged->tagIndex; break;
-                case HOPTok_LTE: outValue->b = lhsTagged->tagIndex <= rhsTagged->tagIndex; break;
-                case HOPTok_GT:  outValue->b = lhsTagged->tagIndex > rhsTagged->tagIndex; break;
-                case HOPTok_GTE: outValue->b = lhsTagged->tagIndex >= rhsTagged->tagIndex; break;
-                default:         outValue->b = 0; break;
+                case H2Tok_LT:  outValue->b = lhsTagged->tagIndex < rhsTagged->tagIndex; break;
+                case H2Tok_LTE: outValue->b = lhsTagged->tagIndex <= rhsTagged->tagIndex; break;
+                case H2Tok_GT:  outValue->b = lhsTagged->tagIndex > rhsTagged->tagIndex; break;
+                case H2Tok_GTE: outValue->b = lhsTagged->tagIndex >= rhsTagged->tagIndex; break;
+                default:        outValue->b = 0; break;
             }
             *outIsConst = 1;
             return 1;
         }
-        if (op == HOPTok_EQ || op == HOPTok_NEQ) {
+        if (op == H2Tok_EQ || op == H2Tok_NEQ) {
             uint8_t equal = 0;
-            if (HOPEvalCompareOptionalEq(p, lhs, rhs, &equal, &handled) != 0) {
+            if (H2EvalCompareOptionalEq(p, lhs, rhs, &equal, &handled) != 0) {
                 return -1;
             }
             if (handled) {
-                outValue->kind = HOPCTFEValue_BOOL;
+                outValue->kind = H2CTFEValue_BOOL;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                outValue->b = op == HOPTok_EQ ? equal : (uint8_t)!equal;
+                outValue->b = op == H2Tok_EQ ? equal : (uint8_t)!equal;
                 *outIsConst = 1;
                 return 1;
             }
         }
-        if (HOPEvalCompareValues(p, lhs, rhs, &cmp, &handled) != 0) {
+        if (H2EvalCompareValues(p, lhs, rhs, &cmp, &handled) != 0) {
             return -1;
         }
         if (handled) {
-            outValue->kind = HOPCTFEValue_BOOL;
+            outValue->kind = H2CTFEValue_BOOL;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
             outValue->typeTag = 0;
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
             switch (op) {
-                case HOPTok_EQ:  outValue->b = cmp == 0; break;
-                case HOPTok_NEQ: outValue->b = cmp != 0; break;
-                case HOPTok_LT:  outValue->b = cmp < 0; break;
-                case HOPTok_LTE: outValue->b = cmp <= 0; break;
-                case HOPTok_GT:  outValue->b = cmp > 0; break;
-                case HOPTok_GTE: outValue->b = cmp >= 0; break;
-                default:         break;
+                case H2Tok_EQ:  outValue->b = cmp == 0; break;
+                case H2Tok_NEQ: outValue->b = cmp != 0; break;
+                case H2Tok_LT:  outValue->b = cmp < 0; break;
+                case H2Tok_LTE: outValue->b = cmp <= 0; break;
+                case H2Tok_GT:  outValue->b = cmp > 0; break;
+                case H2Tok_GTE: outValue->b = cmp >= 0; break;
+                default:        break;
             }
             *outIsConst = 1;
             return 1;
         }
     }
-    if (lhs->kind == HOPCTFEValue_INT && rhs->kind == HOPCTFEValue_INT) {
+    if (lhs->kind == H2CTFEValue_INT && rhs->kind == H2CTFEValue_INT) {
         switch (op) {
-            case HOPTok_ADD: HOPEvalValueSetInt(outValue, lhs->i64 + rhs->i64); break;
-            case HOPTok_SUB: HOPEvalValueSetInt(outValue, lhs->i64 - rhs->i64); break;
-            case HOPTok_MUL: HOPEvalValueSetInt(outValue, lhs->i64 * rhs->i64); break;
-            case HOPTok_DIV:
+            case H2Tok_ADD: H2EvalValueSetInt(outValue, lhs->i64 + rhs->i64); break;
+            case H2Tok_SUB: H2EvalValueSetInt(outValue, lhs->i64 - rhs->i64); break;
+            case H2Tok_MUL: H2EvalValueSetInt(outValue, lhs->i64 * rhs->i64); break;
+            case H2Tok_DIV:
                 if (rhs->i64 == 0) {
                     return 0;
                 }
-                HOPEvalValueSetInt(outValue, lhs->i64 / rhs->i64);
+                H2EvalValueSetInt(outValue, lhs->i64 / rhs->i64);
                 break;
-            case HOPTok_MOD:
+            case H2Tok_MOD:
                 if (rhs->i64 == 0) {
                     return 0;
                 }
-                HOPEvalValueSetInt(outValue, lhs->i64 % rhs->i64);
+                H2EvalValueSetInt(outValue, lhs->i64 % rhs->i64);
                 break;
             default: return 0;
         }
         *outIsConst = 1;
         return 1;
     }
-    if (lhs->kind == HOPCTFEValue_BOOL && rhs->kind == HOPCTFEValue_BOOL) {
+    if (lhs->kind == H2CTFEValue_BOOL && rhs->kind == H2CTFEValue_BOOL) {
         switch (op) {
-            case HOPTok_AND:
-            case HOPTok_OR:
-            case HOPTok_LOGICAL_AND:
-            case HOPTok_LOGICAL_OR:
-                outValue->kind = HOPCTFEValue_BOOL;
+            case H2Tok_AND:
+            case H2Tok_OR:
+            case H2Tok_LOGICAL_AND:
+            case H2Tok_LOGICAL_OR:
+                outValue->kind = H2CTFEValue_BOOL;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->typeTag = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                if (op == HOPTok_AND || op == HOPTok_LOGICAL_AND) {
+                if (op == H2Tok_AND || op == H2Tok_LOGICAL_AND) {
                     outValue->b = lhs->b && rhs->b;
                 } else {
                     outValue->b = lhs->b || rhs->b;
@@ -7169,18 +7130,18 @@ static int HOPEvalEvalBinary(
             default: return 0;
         }
     }
-    if (lhs->kind == HOPCTFEValue_FLOAT && rhs->kind == HOPCTFEValue_FLOAT) {
+    if (lhs->kind == H2CTFEValue_FLOAT && rhs->kind == H2CTFEValue_FLOAT) {
         switch (op) {
-            case HOPTok_ADD:
-            case HOPTok_SUB:
-            case HOPTok_MUL:
-            case HOPTok_DIV:
-                outValue->kind = HOPCTFEValue_FLOAT;
+            case H2Tok_ADD:
+            case H2Tok_SUB:
+            case H2Tok_MUL:
+            case H2Tok_DIV:
+                outValue->kind = H2CTFEValue_FLOAT;
                 outValue->i64 = 0;
                 outValue->f64 =
-                    op == HOPTok_ADD   ? lhs->f64 + rhs->f64
-                    : op == HOPTok_SUB ? lhs->f64 - rhs->f64
-                    : op == HOPTok_MUL
+                    op == H2Tok_ADD   ? lhs->f64 + rhs->f64
+                    : op == H2Tok_SUB ? lhs->f64 - rhs->f64
+                    : op == H2Tok_MUL
                         ? lhs->f64 * rhs->f64
                         : lhs->f64 / rhs->f64;
                 outValue->b = 0;
@@ -7192,12 +7153,12 @@ static int HOPEvalEvalBinary(
             default: return 0;
         }
     }
-    if (lhs->kind == HOPCTFEValue_NULL && rhs->kind == HOPCTFEValue_NULL) {
-        if (op == HOPTok_EQ || op == HOPTok_NEQ) {
-            outValue->kind = HOPCTFEValue_BOOL;
+    if (lhs->kind == H2CTFEValue_NULL && rhs->kind == H2CTFEValue_NULL) {
+        if (op == H2Tok_EQ || op == H2Tok_NEQ) {
+            outValue->kind = H2CTFEValue_BOOL;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
-            outValue->b = op == HOPTok_EQ ? 1u : 0u;
+            outValue->b = op == H2Tok_EQ ? 1u : 0u;
             outValue->typeTag = 0;
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
@@ -7209,15 +7170,15 @@ static int HOPEvalEvalBinary(
     return 0;
 }
 
-static int HOPEvalResolveAggregateTypeNode(
-    const HOPEvalProgram* p,
-    const HOPParsedFile*  typeFile,
-    int32_t               typeNode,
-    const HOPParsedFile** outDeclFile,
-    int32_t*              outDeclNode) {
-    const HOPAstNode*    n;
-    const HOPParsedFile* declFile = NULL;
-    int32_t              declNode = -1;
+static int H2EvalResolveAggregateTypeNode(
+    const H2EvalProgram* p,
+    const H2ParsedFile*  typeFile,
+    int32_t              typeNode,
+    const H2ParsedFile** outDeclFile,
+    int32_t*             outDeclNode) {
+    const H2AstNode*    n;
+    const H2ParsedFile* declFile = NULL;
+    int32_t             declNode = -1;
     if (outDeclFile != NULL) {
         *outDeclFile = NULL;
     }
@@ -7228,14 +7189,14 @@ static int HOPEvalResolveAggregateTypeNode(
         return 0;
     }
     n = &typeFile->ast.nodes[typeNode];
-    while (n->kind == HOPAst_TYPE_REF || n->kind == HOPAst_TYPE_MUTREF) {
+    while (n->kind == H2Ast_TYPE_REF || n->kind == H2Ast_TYPE_MUTREF) {
         typeNode = n->firstChild;
         if (typeNode < 0 || (uint32_t)typeNode >= typeFile->ast.len) {
             return 0;
         }
         n = &typeFile->ast.nodes[typeNode];
     }
-    if (n->kind == HOPAst_TYPE_ANON_STRUCT || n->kind == HOPAst_TYPE_ANON_UNION) {
+    if (n->kind == H2Ast_TYPE_ANON_STRUCT || n->kind == H2Ast_TYPE_ANON_UNION) {
         if (outDeclFile != NULL) {
             *outDeclFile = typeFile;
         }
@@ -7244,10 +7205,10 @@ static int HOPEvalResolveAggregateTypeNode(
         }
         return 1;
     }
-    if (n->kind != HOPAst_TYPE_NAME) {
+    if (n->kind != H2Ast_TYPE_NAME) {
         return 0;
     }
-    declNode = HOPEvalFindNamedAggregateDecl(p, typeFile, typeNode, &declFile);
+    declNode = H2EvalFindNamedAggregateDecl(p, typeFile, typeNode, &declFile);
     if (declNode < 0 || declFile == NULL) {
         return 0;
     }
@@ -7260,22 +7221,22 @@ static int HOPEvalResolveAggregateTypeNode(
     return 1;
 }
 
-static int HOPEvalExecExprForTypeCb(
-    void* ctx, int32_t exprNode, int32_t typeNode, HOPCTFEValue* outValue, int* outIsConst);
+static int H2EvalExecExprForTypeCb(
+    void* ctx, int32_t exprNode, int32_t typeNode, H2CTFEValue* outValue, int* outIsConst);
 
-static int HOPEvalExecExprInFileWithType(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* exprFile,
-    HOPCTFEExecEnv*      env,
-    int32_t              exprNode,
-    const HOPParsedFile* typeFile,
-    int32_t              typeNode,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    const HOPParsedFile* savedFile;
-    HOPCTFEExecCtx*      savedExecCtx;
-    HOPCTFEExecCtx       tempExecCtx;
-    int                  rc;
+static int H2EvalExecExprInFileWithType(
+    H2EvalProgram*      p,
+    const H2ParsedFile* exprFile,
+    H2CTFEExecEnv*      env,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    const H2ParsedFile* savedFile;
+    H2CTFEExecCtx*      savedExecCtx;
+    H2CTFEExecCtx       tempExecCtx;
+    int                 rc;
     if (p == NULL || exprFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -7288,38 +7249,38 @@ static int HOPEvalExecExprInFileWithType(
     tempExecCtx.src.len = exprFile->sourceLen;
     tempExecCtx.env =
         env != NULL ? env : (p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL);
-    tempExecCtx.evalExpr = HOPEvalExecExprCb;
+    tempExecCtx.evalExpr = H2EvalExecExprCb;
     tempExecCtx.evalExprCtx = p;
-    tempExecCtx.evalExprForType = HOPEvalExecExprForTypeCb;
+    tempExecCtx.evalExprForType = H2EvalExecExprForTypeCb;
     tempExecCtx.evalExprForTypeCtx = p;
-    tempExecCtx.zeroInit = HOPEvalZeroInitCb;
+    tempExecCtx.zeroInit = H2EvalZeroInitCb;
     tempExecCtx.zeroInitCtx = p;
-    tempExecCtx.assignExpr = HOPEvalAssignExprCb;
+    tempExecCtx.assignExpr = H2EvalAssignExprCb;
     tempExecCtx.assignExprCtx = p;
-    tempExecCtx.assignValueExpr = HOPEvalAssignValueExprCb;
+    tempExecCtx.assignValueExpr = H2EvalAssignValueExprCb;
     tempExecCtx.assignValueExprCtx = p;
-    tempExecCtx.matchPattern = HOPEvalMatchPatternCb;
+    tempExecCtx.matchPattern = H2EvalMatchPatternCb;
     tempExecCtx.matchPatternCtx = p;
-    tempExecCtx.forInIndex = HOPEvalForInIndexCb;
+    tempExecCtx.forInIndex = H2EvalForInIndexCb;
     tempExecCtx.forInIndexCtx = p;
-    tempExecCtx.forInIter = HOPEvalForInIterCb;
+    tempExecCtx.forInIter = H2EvalForInIterCb;
     tempExecCtx.forInIterCtx = p;
     tempExecCtx.pendingReturnExprNode = -1;
     if (tempExecCtx.forIterLimit == 0) {
-        tempExecCtx.forIterLimit = HOPCTFE_EXEC_DEFAULT_FOR_LIMIT;
+        tempExecCtx.forIterLimit = H2CTFE_EXEC_DEFAULT_FOR_LIMIT;
     }
-    HOPCTFEExecResetReason(&tempExecCtx);
+    H2CTFEExecResetReason(&tempExecCtx);
 
     savedFile = p->currentFile;
     savedExecCtx = p->currentExecCtx;
     p->currentFile = exprFile;
     p->currentExecCtx = &tempExecCtx;
-    rc = HOPEvalExecExprWithTypeNode(p, exprNode, typeFile, typeNode, outValue, outIsConst);
+    rc = H2EvalExecExprWithTypeNode(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     p->currentExecCtx = savedExecCtx;
     p->currentFile = savedFile;
 
     if (rc == 0 && !*outIsConst && savedExecCtx != NULL && tempExecCtx.nonConstReason != NULL) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             savedExecCtx,
             tempExecCtx.nonConstStart,
             tempExecCtx.nonConstEnd,
@@ -7328,34 +7289,34 @@ static int HOPEvalExecExprInFileWithType(
     return rc;
 }
 
-static int HOPEvalEvalCompoundLiteral(
-    HOPEvalProgram*      p,
-    int32_t              exprNode,
-    const HOPParsedFile* litFile,
-    const HOPParsedFile* expectedTypeFile,
-    int32_t              expectedTypeNode,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    const HOPAst*                  ast;
-    int32_t                        child;
-    int32_t                        fieldNode;
-    const HOPParsedFile*           declFile = NULL;
-    int32_t                        declNode = -1;
-    const HOPParsedFile*           targetTypeFile = expectedTypeFile;
-    int32_t                        targetTypeNode = expectedTypeNode;
-    HOPCTFEValue                   aggregateValue;
-    int                            aggregateIsConst = 0;
-    HOPEvalAggregate*              agg;
-    uint8_t*                       explicitSet = NULL;
-    HOPCTFEValue*                  explicitValues = NULL;
-    HOPEvalExplicitAggregateField* promotedExplicit = NULL;
-    HOPCTFEExecBinding*            fieldBindings = NULL;
-    HOPCTFEExecEnv                 fieldFrame;
-    uint32_t                       promotedExplicitCap = 0;
-    uint32_t                       promotedExplicitLen = 0;
-    uint32_t                       fieldBindingCap = 0;
-    uint32_t                       i;
-    int                            rc = 0;
+static int H2EvalEvalCompoundLiteral(
+    H2EvalProgram*      p,
+    int32_t             exprNode,
+    const H2ParsedFile* litFile,
+    const H2ParsedFile* expectedTypeFile,
+    int32_t             expectedTypeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    const H2Ast*                  ast;
+    int32_t                       child;
+    int32_t                       fieldNode;
+    const H2ParsedFile*           declFile = NULL;
+    int32_t                       declNode = -1;
+    const H2ParsedFile*           targetTypeFile = expectedTypeFile;
+    int32_t                       targetTypeNode = expectedTypeNode;
+    H2CTFEValue                   aggregateValue;
+    int                           aggregateIsConst = 0;
+    H2EvalAggregate*              agg;
+    uint8_t*                      explicitSet = NULL;
+    H2CTFEValue*                  explicitValues = NULL;
+    H2EvalExplicitAggregateField* promotedExplicit = NULL;
+    H2CTFEExecBinding*            fieldBindings = NULL;
+    H2CTFEExecEnv                 fieldFrame;
+    uint32_t                      promotedExplicitCap = 0;
+    uint32_t                      promotedExplicitLen = 0;
+    uint32_t                      fieldBindingCap = 0;
+    uint32_t                      i;
+    int                           rc = 0;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -7364,7 +7325,7 @@ static int HOPEvalEvalCompoundLiteral(
     }
     ast = &litFile->ast;
     if (exprNode < 0 || (uint32_t)exprNode >= ast->len
-        || ast->nodes[exprNode].kind != HOPAst_COMPOUND_LIT)
+        || ast->nodes[exprNode].kind != H2Ast_COMPOUND_LIT)
     {
         return 0;
     }
@@ -7377,21 +7338,21 @@ static int HOPEvalEvalCompoundLiteral(
     }
     if (targetTypeFile != NULL && targetTypeNode >= 0
         && (uint32_t)targetTypeNode < targetTypeFile->ast.len
-        && targetTypeFile->ast.nodes[targetTypeNode].kind == HOPAst_TYPE_NAME)
+        && targetTypeFile->ast.nodes[targetTypeNode].kind == H2Ast_TYPE_NAME)
     {
-        const HOPAstNode* typeNode = &targetTypeFile->ast.nodes[targetTypeNode];
-        uint32_t          dot = typeNode->dataStart;
+        const H2AstNode* typeNode = &targetTypeFile->ast.nodes[targetTypeNode];
+        uint32_t         dot = typeNode->dataStart;
         while (dot < typeNode->dataEnd && targetTypeFile->source[dot] != '.') {
             dot++;
         }
         if (dot < typeNode->dataEnd) {
-            const HOPParsedFile* enumFile = NULL;
-            int32_t              enumNode = HOPEvalFindNamedEnumDecl(
+            const H2ParsedFile* enumFile = NULL;
+            int32_t             enumNode = H2EvalFindNamedEnumDecl(
                 p, targetTypeFile, typeNode->dataStart, dot, &enumFile);
             int32_t  variantNode = -1;
             uint32_t tagIndex = 0;
             if (enumNode >= 0 && enumFile != NULL
-                && HOPEvalFindEnumVariant(
+                && H2EvalFindEnumVariant(
                     enumFile,
                     enumNode,
                     targetTypeFile->source,
@@ -7400,11 +7361,11 @@ static int HOPEvalEvalCompoundLiteral(
                     &variantNode,
                     &tagIndex))
             {
-                const HOPAstNode* variantField = &enumFile->ast.nodes[variantNode];
-                HOPCTFEValue      payloadValue;
-                int               payloadIsConst = 0;
-                HOPEvalAggregate* payload = NULL;
-                if (HOPEvalBuildTaggedEnumPayload(
+                const H2AstNode* variantField = &enumFile->ast.nodes[variantNode];
+                H2CTFEValue      payloadValue;
+                int              payloadIsConst = 0;
+                H2EvalAggregate* payload = NULL;
+                if (H2EvalBuildTaggedEnumPayload(
                         p, enumFile, variantNode, exprNode, &payloadValue, &payloadIsConst)
                     != 0)
                 {
@@ -7414,8 +7375,8 @@ static int HOPEvalEvalCompoundLiteral(
                     *outIsConst = 0;
                     return 0;
                 }
-                payload = HOPEvalValueAsAggregate(&payloadValue);
-                HOPEvalValueSetTaggedEnum(
+                payload = H2EvalValueAsAggregate(&payloadValue);
+                H2EvalValueSetTaggedEnum(
                     p,
                     outValue,
                     enumFile,
@@ -7431,7 +7392,7 @@ static int HOPEvalEvalCompoundLiteral(
     }
     if (targetTypeFile != NULL && targetTypeNode >= 0
         && (uint32_t)targetTypeNode < targetTypeFile->ast.len
-        && targetTypeFile->ast.nodes[targetTypeNode].kind == HOPAst_TYPE_NAME
+        && targetTypeFile->ast.nodes[targetTypeNode].kind == H2Ast_TYPE_NAME
         && (SliceEqCStr(
                 targetTypeFile->source,
                 targetTypeFile->ast.nodes[targetTypeNode].dataStart,
@@ -7443,9 +7404,9 @@ static int HOPEvalEvalCompoundLiteral(
                 targetTypeFile->ast.nodes[targetTypeNode].dataEnd,
                 "string")))
     {
-        HOPCTFEValue stringValue;
-        int          stringIsConst = 0;
-        if (HOPEvalZeroInitTypeNode(p, targetTypeFile, targetTypeNode, &stringValue, &stringIsConst)
+        H2CTFEValue stringValue;
+        int         stringIsConst = 0;
+        if (H2EvalZeroInitTypeNode(p, targetTypeFile, targetTypeNode, &stringValue, &stringIsConst)
             != 0)
         {
             return -1;
@@ -7455,19 +7416,19 @@ static int HOPEvalEvalCompoundLiteral(
             return 0;
         }
         while (fieldNode >= 0) {
-            const HOPAstNode* fieldAst = &ast->nodes[fieldNode];
-            int32_t           valueNode = ASTFirstChild(ast, fieldNode);
-            HOPCTFEValue      fieldValue;
-            int               fieldIsConst = 0;
-            if (fieldAst->kind != HOPAst_COMPOUND_FIELD || valueNode < 0) {
+            const H2AstNode* fieldAst = &ast->nodes[fieldNode];
+            int32_t          valueNode = ASTFirstChild(ast, fieldNode);
+            H2CTFEValue      fieldValue;
+            int              fieldIsConst = 0;
+            if (fieldAst->kind != H2Ast_COMPOUND_FIELD || valueNode < 0) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (HOPEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+            if (H2EvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
                 return -1;
             }
             if (!fieldIsConst
-                || !HOPEvalValueSetFieldPath(
+                || !H2EvalValueSetFieldPath(
                     &stringValue,
                     litFile->source,
                     fieldAst->dataStart,
@@ -7483,7 +7444,7 @@ static int HOPEvalEvalCompoundLiteral(
         *outIsConst = 1;
         return 0;
     }
-    if (!HOPEvalResolveAggregateTypeNode(
+    if (!H2EvalResolveAggregateTypeNode(
             p,
             targetTypeFile != NULL ? targetTypeFile : litFile,
             targetTypeNode,
@@ -7493,7 +7454,7 @@ static int HOPEvalEvalCompoundLiteral(
         uint32_t inferredFieldCount = 0;
         int32_t  scanNode = fieldNode;
         while (scanNode >= 0) {
-            if (ast->nodes[scanNode].kind != HOPAst_COMPOUND_FIELD) {
+            if (ast->nodes[scanNode].kind != H2Ast_COMPOUND_FIELD) {
                 *outIsConst = 0;
                 return 0;
             }
@@ -7504,8 +7465,8 @@ static int HOPEvalEvalCompoundLiteral(
             *outIsConst = 0;
             return 0;
         }
-        agg = (HOPEvalAggregate*)HOPArenaAlloc(
-            p->arena, sizeof(HOPEvalAggregate), (uint32_t)_Alignof(HOPEvalAggregate));
+        agg = (H2EvalAggregate*)H2ArenaAlloc(
+            p->arena, sizeof(H2EvalAggregate), (uint32_t)_Alignof(H2EvalAggregate));
         if (agg == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -7513,21 +7474,21 @@ static int HOPEvalEvalCompoundLiteral(
         agg->file = litFile;
         agg->nodeId = exprNode;
         agg->fieldLen = inferredFieldCount;
-        agg->fields = (HOPEvalAggregateField*)HOPArenaAlloc(
+        agg->fields = (H2EvalAggregateField*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPEvalAggregateField) * inferredFieldCount,
-            (uint32_t)_Alignof(HOPEvalAggregateField));
+            sizeof(H2EvalAggregateField) * inferredFieldCount,
+            (uint32_t)_Alignof(H2EvalAggregateField));
         if (agg->fields == NULL) {
             return ErrorSimple("out of memory");
         }
-        memset(agg->fields, 0, sizeof(HOPEvalAggregateField) * inferredFieldCount);
+        memset(agg->fields, 0, sizeof(H2EvalAggregateField) * inferredFieldCount);
         scanNode = fieldNode;
         for (i = 0; i < inferredFieldCount; i++) {
-            const HOPAstNode* fieldAst = &ast->nodes[scanNode];
-            int32_t           valueNode = ASTFirstChild(ast, scanNode);
-            int               fieldIsConst = 0;
+            const H2AstNode* fieldAst = &ast->nodes[scanNode];
+            int32_t          valueNode = ASTFirstChild(ast, scanNode);
+            int              fieldIsConst = 0;
             if (valueNode < 0
-                || HOPEvalExecExprCb(p, valueNode, &agg->fields[i].value, &fieldIsConst) != 0)
+                || H2EvalExecExprCb(p, valueNode, &agg->fields[i].value, &fieldIsConst) != 0)
             {
                 return valueNode < 0 ? 0 : -1;
             }
@@ -7541,11 +7502,11 @@ static int HOPEvalEvalCompoundLiteral(
             agg->fields[i].defaultExprNode = -1;
             scanNode = ASTNextSibling(ast, scanNode);
         }
-        HOPEvalValueSetAggregate(outValue, litFile, exprNode, agg);
+        H2EvalValueSetAggregate(outValue, litFile, exprNode, agg);
         *outIsConst = 1;
         return 0;
     }
-    if (HOPEvalZeroInitAggregateValue(p, declFile, declNode, &aggregateValue, &aggregateIsConst)
+    if (H2EvalZeroInitAggregateValue(p, declFile, declNode, &aggregateValue, &aggregateIsConst)
         != 0)
     {
         return -1;
@@ -7554,7 +7515,7 @@ static int HOPEvalEvalCompoundLiteral(
         *outIsConst = 0;
         return 0;
     }
-    agg = HOPEvalValueAsAggregate(&aggregateValue);
+    agg = H2EvalValueAsAggregate(&aggregateValue);
     if (agg == NULL) {
         *outIsConst = 0;
         return 0;
@@ -7562,62 +7523,61 @@ static int HOPEvalEvalCompoundLiteral(
     {
         int32_t scanNode = fieldNode;
         while (scanNode >= 0) {
-            if (ast->nodes[scanNode].kind == HOPAst_COMPOUND_FIELD) {
+            if (ast->nodes[scanNode].kind == H2Ast_COMPOUND_FIELD) {
                 promotedExplicitCap++;
             }
             scanNode = ASTNextSibling(ast, scanNode);
         }
     }
     if (agg->fieldLen > 0) {
-        fieldBindingCap = HOPEvalAggregateFieldBindingCount(agg);
-        explicitSet = (uint8_t*)HOPArenaAlloc(p->arena, agg->fieldLen, (uint32_t)_Alignof(uint8_t));
-        explicitValues = (HOPCTFEValue*)HOPArenaAlloc(
-            p->arena, sizeof(HOPCTFEValue) * agg->fieldLen, (uint32_t)_Alignof(HOPCTFEValue));
+        fieldBindingCap = H2EvalAggregateFieldBindingCount(agg);
+        explicitSet = (uint8_t*)H2ArenaAlloc(p->arena, agg->fieldLen, (uint32_t)_Alignof(uint8_t));
+        explicitValues = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue) * agg->fieldLen, (uint32_t)_Alignof(H2CTFEValue));
         if (promotedExplicitCap > 0) {
-            promotedExplicit = (HOPEvalExplicitAggregateField*)HOPArenaAlloc(
+            promotedExplicit = (H2EvalExplicitAggregateField*)H2ArenaAlloc(
                 p->arena,
-                sizeof(HOPEvalExplicitAggregateField) * promotedExplicitCap,
-                (uint32_t)_Alignof(HOPEvalExplicitAggregateField));
+                sizeof(H2EvalExplicitAggregateField) * promotedExplicitCap,
+                (uint32_t)_Alignof(H2EvalExplicitAggregateField));
         }
-        fieldBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+        fieldBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPCTFEExecBinding) * fieldBindingCap,
-            (uint32_t)_Alignof(HOPCTFEExecBinding));
+            sizeof(H2CTFEExecBinding) * fieldBindingCap,
+            (uint32_t)_Alignof(H2CTFEExecBinding));
         if (explicitSet == NULL || explicitValues == NULL
             || (promotedExplicitCap > 0 && promotedExplicit == NULL) || fieldBindings == NULL)
         {
             return ErrorSimple("out of memory");
         }
         memset(explicitSet, 0, agg->fieldLen);
-        memset(explicitValues, 0, sizeof(HOPCTFEValue) * agg->fieldLen);
+        memset(explicitValues, 0, sizeof(H2CTFEValue) * agg->fieldLen);
         if (promotedExplicit != NULL) {
-            memset(
-                promotedExplicit, 0, sizeof(HOPEvalExplicitAggregateField) * promotedExplicitCap);
+            memset(promotedExplicit, 0, sizeof(H2EvalExplicitAggregateField) * promotedExplicitCap);
         }
-        memset(fieldBindings, 0, sizeof(HOPCTFEExecBinding) * fieldBindingCap);
+        memset(fieldBindings, 0, sizeof(H2CTFEExecBinding) * fieldBindingCap);
     }
 
     while (fieldNode >= 0) {
-        const HOPAstNode*      fieldAst = &ast->nodes[fieldNode];
-        int32_t                valueNode = ASTFirstChild(ast, fieldNode);
-        int32_t                directFieldIndex;
-        int32_t                topFieldIndex;
-        HOPEvalAggregateField* valueField;
-        HOPEvalAggregate*      valueFieldOwner = NULL;
-        HOPCTFEValue           fieldValue;
-        int                    fieldIsConst = 0;
-        if (fieldAst->kind != HOPAst_COMPOUND_FIELD) {
+        const H2AstNode*      fieldAst = &ast->nodes[fieldNode];
+        int32_t               valueNode = ASTFirstChild(ast, fieldNode);
+        int32_t               directFieldIndex;
+        int32_t               topFieldIndex;
+        H2EvalAggregateField* valueField;
+        H2EvalAggregate*      valueFieldOwner = NULL;
+        H2CTFEValue           fieldValue;
+        int                   fieldIsConst = 0;
+        if (fieldAst->kind != H2Ast_COMPOUND_FIELD) {
             *outIsConst = 0;
             return 0;
         }
-        directFieldIndex = HOPEvalAggregateLookupDirectFieldIndex(
+        directFieldIndex = H2EvalAggregateLookupDirectFieldIndex(
             agg, litFile->source, fieldAst->dataStart, fieldAst->dataEnd);
-        topFieldIndex = HOPEvalAggregateLookupFieldIndex(
+        topFieldIndex = H2EvalAggregateLookupFieldIndex(
             agg, litFile->source, fieldAst->dataStart, fieldAst->dataEnd);
-        valueField = HOPEvalAggregateLookupField(
+        valueField = H2EvalAggregateLookupField(
             agg, litFile->source, fieldAst->dataStart, fieldAst->dataEnd, &valueFieldOwner);
         if (valueNode >= 0 && valueField != NULL) {
-            if (HOPEvalExecExprWithTypeNode(
+            if (H2EvalExecExprWithTypeNode(
                     p,
                     valueNode,
                     valueFieldOwner != NULL ? valueFieldOwner->file : agg->file,
@@ -7628,15 +7588,15 @@ static int HOPEvalEvalCompoundLiteral(
             {
                 return -1;
             }
-        } else if ((fieldAst->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0) {
-            if (HOPEvalResolveIdent(
+        } else if ((fieldAst->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0) {
+            if (H2EvalResolveIdent(
                     p, fieldAst->dataStart, fieldAst->dataEnd, &fieldValue, &fieldIsConst, NULL)
                 != 0)
             {
                 return -1;
             }
         } else if (valueNode >= 0) {
-            if (HOPEvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
+            if (H2EvalExecExprCb(p, valueNode, &fieldValue, &fieldIsConst) != 0) {
                 return -1;
             }
         } else {
@@ -7662,7 +7622,7 @@ static int HOPEvalEvalCompoundLiteral(
             promotedExplicit[promotedExplicitLen].topFieldIndex = topFieldIndex;
             promotedExplicit[promotedExplicitLen].value = fieldValue;
             promotedExplicitLen++;
-            if (!HOPEvalValueSetFieldPath(
+            if (!H2EvalValueSetFieldPath(
                     &aggregateValue,
                     litFile->source,
                     fieldAst->dataStart,
@@ -7672,7 +7632,7 @@ static int HOPEvalEvalCompoundLiteral(
                 *outIsConst = 0;
                 return 0;
             }
-        } else if (!HOPEvalValueSetFieldPath(
+        } else if (!H2EvalValueSetFieldPath(
                        &aggregateValue,
                        litFile->source,
                        fieldAst->dataStart,
@@ -7689,13 +7649,13 @@ static int HOPEvalEvalCompoundLiteral(
     fieldFrame.bindings = fieldBindings;
     fieldFrame.bindingLen = 0;
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (explicitSet != NULL && explicitSet[i] != 0u) {
             field->value = explicitValues[i];
         } else if (field->defaultExprNode >= 0) {
-            HOPCTFEValue defaultValue;
-            int          defaultIsConst = 0;
-            if (HOPEvalExecExprInFileWithType(
+            H2CTFEValue defaultValue;
+            int         defaultIsConst = 0;
+            if (H2EvalExecExprInFileWithType(
                     p,
                     agg->file,
                     &fieldFrame,
@@ -7714,11 +7674,11 @@ static int HOPEvalEvalCompoundLiteral(
             }
             field->value = defaultValue;
         }
-        if ((field->flags & HOPAstFlag_FIELD_EMBEDDED) != 0 && promotedExplicit != NULL) {
+        if ((field->flags & H2AstFlag_FIELD_EMBEDDED) != 0 && promotedExplicit != NULL) {
             uint32_t j;
             for (j = 0; j < promotedExplicitLen; j++) {
                 if (promotedExplicit[j].topFieldIndex == (int32_t)i
-                    && !HOPEvalValueSetFieldPath(
+                    && !H2EvalValueSetFieldPath(
                         &aggregateValue,
                         litFile->source,
                         promotedExplicit[j].nameStart,
@@ -7731,14 +7691,14 @@ static int HOPEvalEvalCompoundLiteral(
             }
         }
         if (fieldBindings != NULL
-            && HOPEvalAppendAggregateFieldBindings(
+            && H2EvalAppendAggregateFieldBindings(
                    fieldBindings, fieldBindingCap, &fieldFrame, field)
                    != 0)
         {
             return ErrorSimple("out of memory");
         }
     }
-    rc = HOPEvalFinalizeAggregateVarArrays(p, agg);
+    rc = H2EvalFinalizeAggregateVarArrays(p, agg);
     if (rc != 1) {
         *outIsConst = 0;
         return rc < 0 ? -1 : 0;
@@ -7748,14 +7708,14 @@ static int HOPEvalEvalCompoundLiteral(
     return 0;
 }
 
-static int HOPEvalExecExprWithTypeNode(
-    HOPEvalProgram*      p,
-    int32_t              exprNode,
-    const HOPParsedFile* typeFile,
-    int32_t              typeNode,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    const HOPAst* ast;
+static int H2EvalExecExprWithTypeNode(
+    H2EvalProgram*      p,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    const H2Ast* ast;
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
@@ -7763,7 +7723,7 @@ static int HOPEvalExecExprWithTypeNode(
     if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
         return -1;
     }
-    if (ast->nodes[exprNode].kind == HOPAst_CALL_ARG) {
+    if (ast->nodes[exprNode].kind == H2Ast_CALL_ARG) {
         exprNode = ast->nodes[exprNode].firstChild;
         if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
             *outIsConst = 0;
@@ -7771,12 +7731,12 @@ static int HOPEvalExecExprWithTypeNode(
         }
     }
     if (typeFile != NULL && typeNode >= 0 && (uint32_t)typeNode < typeFile->ast.len
-        && typeFile->ast.nodes[typeNode].kind == HOPAst_TYPE_TUPLE
-        && ast->nodes[exprNode].kind == HOPAst_TUPLE_EXPR)
+        && typeFile->ast.nodes[typeNode].kind == H2Ast_TYPE_TUPLE
+        && ast->nodes[exprNode].kind == H2Ast_TUPLE_EXPR)
     {
-        HOPCTFEValue elems[256];
-        uint32_t     elemCount = AstListCount(ast, exprNode);
-        uint32_t     i;
+        H2CTFEValue elems[256];
+        uint32_t    elemCount = AstListCount(ast, exprNode);
+        uint32_t    i;
         if (elemCount == 0 || elemCount > 256u
             || AstListCount(&typeFile->ast, typeNode) != elemCount)
         {
@@ -7788,7 +7748,7 @@ static int HOPEvalExecExprWithTypeNode(
             int32_t elemTypeNode = AstListItemAt(&typeFile->ast, typeNode, i);
             int     elemIsConst = 0;
             if (valueNode < 0 || elemTypeNode < 0
-                || HOPEvalExecExprWithTypeNode(
+                || H2EvalExecExprWithTypeNode(
                        p, valueNode, typeFile, elemTypeNode, &elems[i], &elemIsConst)
                        != 0)
             {
@@ -7799,11 +7759,10 @@ static int HOPEvalExecExprWithTypeNode(
                 return 0;
             }
         }
-        return HOPEvalAllocTupleValue(
-            p, typeFile, typeNode, elems, elemCount, outValue, outIsConst);
+        return H2EvalAllocTupleValue(p, typeFile, typeNode, elems, elemCount, outValue, outIsConst);
     }
-    if (ast->nodes[exprNode].kind == HOPAst_COMPOUND_LIT) {
-        return HOPEvalEvalCompoundLiteral(
+    if (ast->nodes[exprNode].kind == H2Ast_COMPOUND_LIT) {
+        return H2EvalEvalCompoundLiteral(
             p,
             exprNode,
             p->currentFile,
@@ -7812,23 +7771,23 @@ static int HOPEvalExecExprWithTypeNode(
             outValue,
             outIsConst);
     }
-    if (ast->nodes[exprNode].kind == HOPAst_NEW) {
-        return HOPEvalEvalNewExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
+    if (ast->nodes[exprNode].kind == H2Ast_NEW) {
+        return H2EvalEvalNewExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     }
-    if (ast->nodes[exprNode].kind == HOPAst_CALL && typeFile != NULL && typeNode >= 0) {
-        const HOPParsedFile* savedExprFile = p->expectedCallExprFile;
-        int32_t              savedExprNode = p->expectedCallExprNode;
-        const HOPParsedFile* savedTypeFile = p->expectedCallTypeFile;
-        int32_t              savedTypeNode = p->expectedCallTypeNode;
-        const HOPParsedFile* savedActiveExpectedTypeFile = p->activeCallExpectedTypeFile;
-        int32_t              savedActiveExpectedTypeNode = p->activeCallExpectedTypeNode;
+    if (ast->nodes[exprNode].kind == H2Ast_CALL && typeFile != NULL && typeNode >= 0) {
+        const H2ParsedFile* savedExprFile = p->expectedCallExprFile;
+        int32_t             savedExprNode = p->expectedCallExprNode;
+        const H2ParsedFile* savedTypeFile = p->expectedCallTypeFile;
+        int32_t             savedTypeNode = p->expectedCallTypeNode;
+        const H2ParsedFile* savedActiveExpectedTypeFile = p->activeCallExpectedTypeFile;
+        int32_t             savedActiveExpectedTypeNode = p->activeCallExpectedTypeNode;
         p->expectedCallExprFile = p->currentFile;
         p->expectedCallExprNode = exprNode;
         p->expectedCallTypeFile = typeFile;
         p->expectedCallTypeNode = typeNode;
         p->activeCallExpectedTypeFile = typeFile;
         p->activeCallExpectedTypeNode = typeNode;
-        if (HOPEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
+        if (H2EvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
             p->expectedCallExprFile = savedExprFile;
             p->expectedCallExprNode = savedExprNode;
             p->expectedCallTypeFile = savedTypeFile;
@@ -7844,80 +7803,80 @@ static int HOPEvalExecExprWithTypeNode(
         p->activeCallExpectedTypeFile = savedActiveExpectedTypeFile;
         p->activeCallExpectedTypeNode = savedActiveExpectedTypeNode;
     } else {
-        if (HOPEvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
+        if (H2EvalExecExprCb(p, exprNode, outValue, outIsConst) != 0) {
             return -1;
         }
     }
     if (*outIsConst && typeFile != NULL && typeNode >= 0
-        && HOPEvalCoerceValueToTypeNode(p, typeFile, typeNode, outValue) != 0)
+        && H2EvalCoerceValueToTypeNode(p, typeFile, typeNode, outValue) != 0)
     {
         return -1;
     }
     return 0;
 }
 
-static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalAssignExprCb(
-    void* ctx, HOPCTFEExecCtx* execCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalZeroInitCb(void* ctx, int32_t typeNode, HOPCTFEValue* outValue, int* outIsConst);
-static int HOPEvalMirMakeAggregate(
-    void*         ctx,
-    uint32_t      sourceNode,
-    uint32_t      fieldCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalMirZeroInitLocal(
-    void*                ctx,
-    const HOPMirTypeRef* typeRef,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalExecExprForTypeCb(
-    void* ctx, int32_t exprNode, int32_t typeNode, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+static int H2EvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalAssignExprCb(
+    void* ctx, H2CTFEExecCtx* execCtx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalZeroInitCb(void* ctx, int32_t typeNode, H2CTFEValue* outValue, int* outIsConst);
+static int H2EvalMirMakeAggregate(
+    void*        ctx,
+    uint32_t     sourceNode,
+    uint32_t     fieldCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalMirZeroInitLocal(
+    void*               ctx,
+    const H2MirTypeRef* typeRef,
+    H2CTFEValue*        outValue,
+    int*                outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalExecExprForTypeCb(
+    void* ctx, int32_t exprNode, int32_t typeNode, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     if (p == NULL) {
         return -1;
     }
-    return HOPEvalExecExprWithTypeNode(p, exprNode, p->currentFile, typeNode, outValue, outIsConst);
+    return H2EvalExecExprWithTypeNode(p, exprNode, p->currentFile, typeNode, outValue, outIsConst);
 }
-static int HOPEvalResolveIdent(
-    void*         ctx,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveCall(
+static int H2EvalResolveIdent(
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveCall(
     void*    ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalResolveCallMir(
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalResolveCallMir(
     void* ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag);
-static int HOPEvalEvalTopConst(
-    HOPEvalProgram* p, uint32_t topConstIndex, HOPCTFEValue* outValue, int* outIsConst);
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag);
+static int H2EvalEvalTopConst(
+    H2EvalProgram* p, uint32_t topConstIndex, H2CTFEValue* outValue, int* outIsConst);
 
-static HOPCTFEExecBinding* _Nullable HOPEvalFindBinding(
-    const HOPCTFEExecCtx* _Nullable execCtx,
-    const HOPParsedFile* file,
-    uint32_t             nameStart,
-    uint32_t             nameEnd) {
-    const HOPCTFEExecEnv* frame;
+static H2CTFEExecBinding* _Nullable H2EvalFindBinding(
+    const H2CTFEExecCtx* _Nullable execCtx,
+    const H2ParsedFile* file,
+    uint32_t            nameStart,
+    uint32_t            nameEnd) {
+    const H2CTFEExecEnv* frame;
     if (execCtx == NULL || file == NULL) {
         return NULL;
     }
@@ -7925,7 +7884,7 @@ static HOPCTFEExecBinding* _Nullable HOPEvalFindBinding(
     while (frame != NULL) {
         uint32_t i = frame->bindingLen;
         while (i > 0) {
-            HOPCTFEExecBinding* binding;
+            H2CTFEExecBinding* binding;
             i--;
             binding = &frame->bindings[i];
             if (SliceEqSlice(
@@ -7944,10 +7903,10 @@ static HOPCTFEExecBinding* _Nullable HOPEvalFindBinding(
     return NULL;
 }
 
-static int HOPEvalTypeNodesEquivalent(
-    const HOPParsedFile* aFile, int32_t aNode, const HOPParsedFile* bFile, int32_t bNode) {
-    const HOPAstNode* a;
-    const HOPAstNode* b;
+static int H2EvalTypeNodesEquivalent(
+    const H2ParsedFile* aFile, int32_t aNode, const H2ParsedFile* bFile, int32_t bNode) {
+    const H2AstNode* a;
+    const H2AstNode* b;
     if (aFile == NULL || bFile == NULL || aNode < 0 || bNode < 0
         || (uint32_t)aNode >= aFile->ast.len || (uint32_t)bNode >= bFile->ast.len)
     {
@@ -7959,18 +7918,18 @@ static int HOPEvalTypeNodesEquivalent(
         return 0;
     }
     switch (a->kind) {
-        case HOPAst_TYPE_NAME:
+        case H2Ast_TYPE_NAME:
             return SliceEqSlice(
                 aFile->source, a->dataStart, a->dataEnd, bFile->source, b->dataStart, b->dataEnd);
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF:
-        case HOPAst_TYPE_OPTIONAL:
-        case HOPAst_TYPE_SLICE:
-        case HOPAst_TYPE_MUTSLICE:
-        case HOPAst_TYPE_VARRAY:
-            return HOPEvalTypeNodesEquivalent(aFile, a->firstChild, bFile, b->firstChild);
-        case HOPAst_TYPE_ARRAY:
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF:
+        case H2Ast_TYPE_OPTIONAL:
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE:
+        case H2Ast_TYPE_VARRAY:
+            return H2EvalTypeNodesEquivalent(aFile, a->firstChild, bFile, b->firstChild);
+        case H2Ast_TYPE_ARRAY:
             return SliceEqSlice(
                        aFile->source,
                        a->dataStart,
@@ -7978,29 +7937,29 @@ static int HOPEvalTypeNodesEquivalent(
                        bFile->source,
                        b->dataStart,
                        b->dataEnd)
-                && HOPEvalTypeNodesEquivalent(aFile, a->firstChild, bFile, b->firstChild);
+                && H2EvalTypeNodesEquivalent(aFile, a->firstChild, bFile, b->firstChild);
         default: return 0;
     }
 }
 
-static int32_t HOPEvalResolveFunctionByTypeNodeLiteral(
-    const HOPEvalProgram* p, const char* name, const HOPParsedFile* typeFile, int32_t typeNode) {
+static int32_t H2EvalResolveFunctionByTypeNodeLiteral(
+    const H2EvalProgram* p, const char* name, const H2ParsedFile* typeFile, int32_t typeNode) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || name == NULL || typeFile == NULL || typeNode < 0) {
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int32_t                paramTypeNode;
+        const H2EvalFunction* fn = &p->funcs[i];
+        int32_t               paramTypeNode;
         if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)
             || fn->paramCount != 1u)
         {
             continue;
         }
-        paramTypeNode = HOPEvalFunctionParamTypeNodeAt(fn, 0);
+        paramTypeNode = H2EvalFunctionParamTypeNodeAt(fn, 0);
         if (paramTypeNode < 0
-            || !HOPEvalTypeNodesEquivalent(fn->file, paramTypeNode, typeFile, typeNode))
+            || !H2EvalTypeNodesEquivalent(fn->file, paramTypeNode, typeFile, typeNode))
         {
             continue;
         }
@@ -8012,38 +7971,38 @@ static int32_t HOPEvalResolveFunctionByTypeNodeLiteral(
     return found;
 }
 
-static int32_t HOPEvalResolvePointerFunctionByPointeeTypeLiteral(
-    const HOPEvalProgram* p,
-    const char*           name,
-    const HOPParsedFile*  typeFile,
-    int32_t               pointeeTypeNode) {
+static int32_t H2EvalResolvePointerFunctionByPointeeTypeLiteral(
+    const H2EvalProgram* p,
+    const char*          name,
+    const H2ParsedFile*  typeFile,
+    int32_t              pointeeTypeNode) {
     uint32_t i;
     int32_t  found = -1;
     if (p == NULL || name == NULL || typeFile == NULL || pointeeTypeNode < 0) {
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int32_t                paramTypeNode;
-        int32_t                childTypeNode;
+        const H2EvalFunction* fn = &p->funcs[i];
+        int32_t               paramTypeNode;
+        int32_t               childTypeNode;
         if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)
             || fn->paramCount != 1u)
         {
             continue;
         }
-        paramTypeNode = HOPEvalFunctionParamTypeNodeAt(fn, 0);
+        paramTypeNode = H2EvalFunctionParamTypeNodeAt(fn, 0);
         if (paramTypeNode < 0) {
             continue;
         }
-        if (fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_PTR
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_REF
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_MUTREF)
+        if (fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_PTR
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_REF
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_MUTREF)
         {
             continue;
         }
         childTypeNode = fn->file->ast.nodes[paramTypeNode].firstChild;
         if (childTypeNode < 0
-            || !HOPEvalTypeNodesEquivalent(fn->file, childTypeNode, typeFile, pointeeTypeNode))
+            || !H2EvalTypeNodesEquivalent(fn->file, childTypeNode, typeFile, pointeeTypeNode))
         {
             continue;
         }
@@ -8055,23 +8014,23 @@ static int32_t HOPEvalResolvePointerFunctionByPointeeTypeLiteral(
     return found;
 }
 
-static int HOPEvalIsTypeNodeKind(HOPAstKind kind) {
-    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
-        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
-        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
-        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_TUPLE || kind == HOPAst_TYPE_ANON_STRUCT
-        || kind == HOPAst_TYPE_ANON_UNION;
+static int H2EvalIsTypeNodeKind(H2AstKind kind) {
+    return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
+        || kind == H2Ast_TYPE_MUTREF || kind == H2Ast_TYPE_ARRAY || kind == H2Ast_TYPE_VARRAY
+        || kind == H2Ast_TYPE_SLICE || kind == H2Ast_TYPE_MUTSLICE || kind == H2Ast_TYPE_OPTIONAL
+        || kind == H2Ast_TYPE_FN || kind == H2Ast_TYPE_TUPLE || kind == H2Ast_TYPE_ANON_STRUCT
+        || kind == H2Ast_TYPE_ANON_UNION;
 }
 
-static int HOPEvalFindVisibleLocalTypeNodeByName(
-    const HOPParsedFile* file,
-    uint32_t             beforePos,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    int32_t*             outTypeNode) {
-    const HOPAst* ast;
-    uint32_t      i;
-    int32_t       found = -1;
+static int H2EvalFindVisibleLocalTypeNodeByName(
+    const H2ParsedFile* file,
+    uint32_t            beforePos,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outTypeNode) {
+    const H2Ast* ast;
+    uint32_t     i;
+    int32_t      found = -1;
     if (outTypeNode != NULL) {
         *outTypeNode = -1;
     }
@@ -8080,12 +8039,12 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
     }
     ast = &file->ast;
     for (i = 0; i < ast->len; i++) {
-        const HOPAstNode* n = &ast->nodes[i];
-        int32_t           firstChild;
-        int32_t           maybeTypeNode;
-        int32_t           initNode;
-        int               nameMatches = 0;
-        if ((n->kind != HOPAst_VAR && n->kind != HOPAst_CONST) || n->start >= beforePos) {
+        const H2AstNode* n = &ast->nodes[i];
+        int32_t          firstChild;
+        int32_t          maybeTypeNode;
+        int32_t          initNode;
+        int              nameMatches = 0;
+        if ((n->kind != H2Ast_VAR && n->kind != H2Ast_CONST) || n->start >= beforePos) {
             continue;
         }
         firstChild = n->firstChild;
@@ -8093,11 +8052,11 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
             continue;
         }
         maybeTypeNode = -1;
-        if (ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+        if (ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
             int32_t afterNames;
             int32_t nameNode = ast->nodes[firstChild].firstChild;
             while (nameNode >= 0) {
-                if ((uint32_t)nameNode < ast->len && ast->nodes[nameNode].kind == HOPAst_IDENT
+                if ((uint32_t)nameNode < ast->len && ast->nodes[nameNode].kind == H2Ast_IDENT
                     && SliceEqSlice(
                         file->source,
                         ast->nodes[nameNode].dataStart,
@@ -8113,7 +8072,7 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
             }
             afterNames = ast->nodes[firstChild].nextSibling;
             if (afterNames >= 0 && (uint32_t)afterNames < ast->len
-                && HOPEvalIsTypeNodeKind(ast->nodes[afterNames].kind))
+                && H2EvalIsTypeNodeKind(ast->nodes[afterNames].kind))
             {
                 maybeTypeNode = afterNames;
                 initNode = ast->nodes[afterNames].nextSibling;
@@ -8123,7 +8082,7 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
         } else {
             nameMatches = SliceEqSlice(
                 file->source, n->dataStart, n->dataEnd, file->source, nameStart, nameEnd);
-            if (HOPEvalIsTypeNodeKind(ast->nodes[firstChild].kind)) {
+            if (H2EvalIsTypeNodeKind(ast->nodes[firstChild].kind)) {
                 maybeTypeNode = firstChild;
                 initNode = ast->nodes[firstChild].nextSibling;
             } else {
@@ -8138,11 +8097,11 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
             continue;
         }
         if (initNode >= 0 && (uint32_t)initNode < ast->len
-            && ast->nodes[initNode].kind == HOPAst_COMPOUND_LIT)
+            && ast->nodes[initNode].kind == H2Ast_COMPOUND_LIT)
         {
             int32_t typeNode = ast->nodes[initNode].firstChild;
             if (typeNode >= 0 && (uint32_t)typeNode < ast->len
-                && HOPEvalIsTypeNodeKind(ast->nodes[typeNode].kind))
+                && H2EvalIsTypeNodeKind(ast->nodes[typeNode].kind))
             {
                 found = typeNode;
             }
@@ -8155,13 +8114,13 @@ static int HOPEvalFindVisibleLocalTypeNodeByName(
     return 1;
 }
 
-static int HOPEvalResolveAggregateDeclFromValue(
-    const HOPEvalProgram* p,
-    const HOPCTFEValue*   value,
-    const HOPParsedFile** outFile,
-    int32_t*              outNode) {
-    const HOPCTFEValue* valueTarget;
-    HOPEvalAggregate*   agg;
+static int H2EvalResolveAggregateDeclFromValue(
+    const H2EvalProgram* p,
+    const H2CTFEValue*   value,
+    const H2ParsedFile** outFile,
+    int32_t*             outNode) {
+    const H2CTFEValue* valueTarget;
+    H2EvalAggregate*   agg;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -8171,19 +8130,19 @@ static int HOPEvalResolveAggregateDeclFromValue(
     if (p == NULL || value == NULL || outFile == NULL || outNode == NULL) {
         return 0;
     }
-    valueTarget = HOPEvalValueTargetOrSelf(value);
-    agg = HOPEvalValueAsAggregate(valueTarget);
+    valueTarget = H2EvalValueTargetOrSelf(value);
+    agg = H2EvalValueAsAggregate(valueTarget);
     if (agg == NULL || agg->file == NULL || agg->nodeId < 0) {
         return 0;
     }
     if ((uint32_t)agg->nodeId < agg->file->ast.len) {
-        const HOPAstNode* aggNode = &agg->file->ast.nodes[agg->nodeId];
-        if (aggNode->kind == HOPAst_COMPOUND_LIT) {
-            int32_t              typeNode = aggNode->firstChild;
-            const HOPParsedFile* declFile = NULL;
-            int32_t              declNode = -1;
+        const H2AstNode* aggNode = &agg->file->ast.nodes[agg->nodeId];
+        if (aggNode->kind == H2Ast_COMPOUND_LIT) {
+            int32_t             typeNode = aggNode->firstChild;
+            const H2ParsedFile* declFile = NULL;
+            int32_t             declNode = -1;
             if (typeNode >= 0
-                && HOPEvalResolveAggregateTypeNode(p, agg->file, typeNode, &declFile, &declNode))
+                && H2EvalResolveAggregateTypeNode(p, agg->file, typeNode, &declFile, &declNode))
             {
                 *outFile = declFile;
                 *outNode = declNode;
@@ -8196,49 +8155,49 @@ static int HOPEvalResolveAggregateDeclFromValue(
     return 1;
 }
 
-static int32_t HOPEvalResolvePointerAggregateFunctionByLiteral(
-    const HOPEvalProgram* p, const char* name, const HOPCTFEValue* argValue) {
-    const HOPCTFEValue*  targetValue;
-    HOPEvalAggregate*    agg;
-    const HOPParsedFile* aggDeclFile = NULL;
-    int32_t              aggDeclNode = -1;
-    uint32_t             i;
-    int32_t              found = -1;
+static int32_t H2EvalResolvePointerAggregateFunctionByLiteral(
+    const H2EvalProgram* p, const char* name, const H2CTFEValue* argValue) {
+    const H2CTFEValue*  targetValue;
+    H2EvalAggregate*    agg;
+    const H2ParsedFile* aggDeclFile = NULL;
+    int32_t             aggDeclNode = -1;
+    uint32_t            i;
+    int32_t             found = -1;
     if (p == NULL || name == NULL || argValue == NULL) {
         return -1;
     }
-    targetValue = HOPEvalValueTargetOrSelf(argValue);
-    agg = HOPEvalValueAsAggregate(targetValue);
+    targetValue = H2EvalValueTargetOrSelf(argValue);
+    agg = H2EvalValueAsAggregate(targetValue);
     if (agg == NULL) {
-        return HOPEvalResolveFunctionByLiteralArgs(p, name, argValue, 1);
+        return H2EvalResolveFunctionByLiteralArgs(p, name, argValue, 1);
     }
-    if (!HOPEvalResolveAggregateDeclFromValue(p, argValue, &aggDeclFile, &aggDeclNode)) {
+    if (!H2EvalResolveAggregateDeclFromValue(p, argValue, &aggDeclFile, &aggDeclNode)) {
         aggDeclFile = agg->file;
         aggDeclNode = agg->nodeId;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int32_t                paramTypeNode;
-        int32_t                childTypeNode;
-        const HOPParsedFile*   declFile = NULL;
-        int32_t                declNode = -1;
+        const H2EvalFunction* fn = &p->funcs[i];
+        int32_t               paramTypeNode;
+        int32_t               childTypeNode;
+        const H2ParsedFile*   declFile = NULL;
+        int32_t               declNode = -1;
         if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)
             || fn->paramCount != 1u)
         {
             continue;
         }
-        paramTypeNode = HOPEvalFunctionParamTypeNodeAt(fn, 0);
+        paramTypeNode = H2EvalFunctionParamTypeNodeAt(fn, 0);
         if (paramTypeNode < 0) {
             continue;
         }
-        if (fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_PTR
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_REF
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_MUTREF)
+        if (fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_PTR
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_REF
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_MUTREF)
         {
             continue;
         }
         childTypeNode = fn->file->ast.nodes[paramTypeNode].firstChild;
-        if (!HOPEvalResolveAggregateTypeNode(p, fn->file, childTypeNode, &declFile, &declNode)
+        if (!H2EvalResolveAggregateTypeNode(p, fn->file, childTypeNode, &declFile, &declNode)
             || declFile != aggDeclFile || declNode != aggDeclNode)
         {
             continue;
@@ -8251,55 +8210,55 @@ static int32_t HOPEvalResolvePointerAggregateFunctionByLiteral(
     return found;
 }
 
-static int32_t HOPEvalResolveFunctionBySourceExprLiteral(
-    HOPEvalProgram*      p,
-    HOPCTFEExecCtx*      execCtx,
-    const HOPParsedFile* file,
-    int32_t              exprNode,
-    const char*          name) {
-    const HOPAstNode* expr;
-    int32_t           bindingTypeNode = -1;
+static int32_t H2EvalResolveFunctionBySourceExprLiteral(
+    H2EvalProgram*      p,
+    H2CTFEExecCtx*      execCtx,
+    const H2ParsedFile* file,
+    int32_t             exprNode,
+    const char*         name) {
+    const H2AstNode* expr;
+    int32_t          bindingTypeNode = -1;
     if (p == NULL || execCtx == NULL || file == NULL || exprNode < 0
         || (uint32_t)exprNode >= file->ast.len || name == NULL)
     {
         return -1;
     }
     expr = &file->ast.nodes[exprNode];
-    if (expr->kind == HOPAst_IDENT) {
-        HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+    if (expr->kind == H2Ast_IDENT) {
+        H2CTFEExecBinding* binding = H2EvalFindBinding(
             execCtx, file, expr->dataStart, expr->dataEnd);
         if (binding != NULL && binding->typeNode >= 0) {
-            return HOPEvalResolveFunctionByTypeNodeLiteral(p, name, file, binding->typeNode);
+            return H2EvalResolveFunctionByTypeNodeLiteral(p, name, file, binding->typeNode);
         }
-        if (HOPEvalFindVisibleLocalTypeNodeByName(
+        if (H2EvalFindVisibleLocalTypeNodeByName(
                 file, expr->start, expr->dataStart, expr->dataEnd, &bindingTypeNode))
         {
-            return HOPEvalResolveFunctionByTypeNodeLiteral(p, name, file, bindingTypeNode);
+            return H2EvalResolveFunctionByTypeNodeLiteral(p, name, file, bindingTypeNode);
         }
         return -1;
     }
-    if (expr->kind == HOPAst_UNARY && (HOPTokenKind)expr->op == HOPTok_AND) {
+    if (expr->kind == H2Ast_UNARY && (H2TokenKind)expr->op == H2Tok_AND) {
         int32_t childNode = expr->firstChild;
         if (childNode >= 0 && (uint32_t)childNode < file->ast.len
-            && file->ast.nodes[childNode].kind == HOPAst_IDENT)
+            && file->ast.nodes[childNode].kind == H2Ast_IDENT)
         {
-            HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+            H2CTFEExecBinding* binding = H2EvalFindBinding(
                 execCtx,
                 file,
                 file->ast.nodes[childNode].dataStart,
                 file->ast.nodes[childNode].dataEnd);
             if (binding != NULL && binding->typeNode >= 0) {
-                return HOPEvalResolvePointerFunctionByPointeeTypeLiteral(
+                return H2EvalResolvePointerFunctionByPointeeTypeLiteral(
                     p, name, file, binding->typeNode);
             }
-            if (HOPEvalFindVisibleLocalTypeNodeByName(
+            if (H2EvalFindVisibleLocalTypeNodeByName(
                     file,
                     expr->start,
                     file->ast.nodes[childNode].dataStart,
                     file->ast.nodes[childNode].dataEnd,
                     &bindingTypeNode))
             {
-                return HOPEvalResolvePointerFunctionByPointeeTypeLiteral(
+                return H2EvalResolvePointerFunctionByPointeeTypeLiteral(
                     p, name, file, bindingTypeNode);
             }
         }
@@ -8307,43 +8266,42 @@ static int32_t HOPEvalResolveFunctionBySourceExprLiteral(
     return -1;
 }
 
-static int32_t HOPEvalResolveIteratorHookByReturnType(
-    const HOPEvalProgram* p, const char* name, int32_t iteratorFnIndex) {
-    const HOPEvalFunction* iteratorFn;
-    int32_t                iteratorTypeNode;
-    uint32_t               i;
-    int32_t                found = -1;
+static int32_t H2EvalResolveIteratorHookByReturnType(
+    const H2EvalProgram* p, const char* name, int32_t iteratorFnIndex) {
+    const H2EvalFunction* iteratorFn;
+    int32_t               iteratorTypeNode;
+    uint32_t              i;
+    int32_t               found = -1;
     if (p == NULL || name == NULL || iteratorFnIndex < 0 || (uint32_t)iteratorFnIndex >= p->funcLen)
     {
         return -1;
     }
     iteratorFn = &p->funcs[iteratorFnIndex];
-    iteratorTypeNode = HOPEvalFunctionReturnTypeNode(iteratorFn);
+    iteratorTypeNode = H2EvalFunctionReturnTypeNode(iteratorFn);
     if (iteratorTypeNode < 0) {
         return -1;
     }
     for (i = 0; i < p->funcLen; i++) {
-        const HOPEvalFunction* fn = &p->funcs[i];
-        int32_t                paramTypeNode;
-        int32_t                childTypeNode;
+        const H2EvalFunction* fn = &p->funcs[i];
+        int32_t               paramTypeNode;
+        int32_t               childTypeNode;
         if (!SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, name)
             || fn->paramCount != 1u)
         {
             continue;
         }
-        paramTypeNode = HOPEvalFunctionParamTypeNodeAt(fn, 0);
+        paramTypeNode = H2EvalFunctionParamTypeNodeAt(fn, 0);
         if (paramTypeNode < 0) {
             continue;
         }
-        if (fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_PTR
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_REF
-            && fn->file->ast.nodes[paramTypeNode].kind != HOPAst_TYPE_MUTREF)
+        if (fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_PTR
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_REF
+            && fn->file->ast.nodes[paramTypeNode].kind != H2Ast_TYPE_MUTREF)
         {
             continue;
         }
         childTypeNode = fn->file->ast.nodes[paramTypeNode].firstChild;
-        if (!HOPEvalTypeNodesEquivalent(
-                fn->file, childTypeNode, iteratorFn->file, iteratorTypeNode))
+        if (!H2EvalTypeNodesEquivalent(fn->file, childTypeNode, iteratorFn->file, iteratorTypeNode))
         {
             continue;
         }
@@ -8355,44 +8313,41 @@ static int32_t HOPEvalResolveIteratorHookByReturnType(
     return found;
 }
 
-static void HOPEvalAdaptForInValueBinding(
-    const HOPCTFEValue* inValue, int valueRef, HOPCTFEValue* outValue) {
-    const HOPCTFEValue* target;
+static void H2EvalAdaptForInValueBinding(
+    const H2CTFEValue* inValue, int valueRef, H2CTFEValue* outValue) {
+    const H2CTFEValue* target;
     if (outValue == NULL) {
         return;
     }
     if (inValue == NULL) {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
         return;
     }
     if (valueRef) {
         *outValue = *inValue;
         return;
     }
-    target = HOPEvalValueReferenceTarget(inValue);
+    target = H2EvalValueReferenceTarget(inValue);
     *outValue = target != NULL ? *target : *inValue;
 }
 
-static int32_t HOPEvalResolveForInIteratorFn(
-    HOPEvalProgram*     p,
-    HOPCTFEExecCtx*     execCtx,
-    int32_t             sourceNode,
-    const HOPCTFEValue* sourceValue) {
-    HOPCTFEValue         sourceArg;
-    const HOPParsedFile* sourceTypeFile = NULL;
-    int32_t              sourceTypeNode = -1;
-    int32_t              iteratorFn = -1;
+static int32_t H2EvalResolveForInIteratorFn(
+    H2EvalProgram* p, H2CTFEExecCtx* execCtx, int32_t sourceNode, const H2CTFEValue* sourceValue) {
+    H2CTFEValue         sourceArg;
+    const H2ParsedFile* sourceTypeFile = NULL;
+    int32_t             sourceTypeNode = -1;
+    int32_t             iteratorFn = -1;
     if (p == NULL || execCtx == NULL || sourceValue == NULL) {
         return -1;
     }
     sourceArg = *sourceValue;
     if (p->currentFile != NULL) {
-        iteratorFn = HOPEvalResolveFunctionBySourceExprLiteral(
+        iteratorFn = H2EvalResolveFunctionBySourceExprLiteral(
             p, execCtx, p->currentFile, sourceNode, "__iterator");
         if (sourceNode >= 0 && (uint32_t)sourceNode < p->currentFile->ast.len
-            && p->currentFile->ast.nodes[sourceNode].kind == HOPAst_IDENT)
+            && p->currentFile->ast.nodes[sourceNode].kind == H2Ast_IDENT)
         {
-            HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+            H2CTFEExecBinding* binding = H2EvalFindBinding(
                 execCtx,
                 p->currentFile,
                 p->currentFile->ast.nodes[sourceNode].dataStart,
@@ -8404,39 +8359,39 @@ static int32_t HOPEvalResolveForInIteratorFn(
         }
     }
     if (iteratorFn < 0 && sourceTypeNode >= 0) {
-        iteratorFn = HOPEvalResolveFunctionByTypeNodeLiteral(
+        iteratorFn = H2EvalResolveFunctionByTypeNodeLiteral(
             p, "__iterator", sourceTypeFile, sourceTypeNode);
     }
     if (iteratorFn < 0) {
-        iteratorFn = HOPEvalResolvePointerAggregateFunctionByLiteral(p, "__iterator", sourceValue);
+        iteratorFn = H2EvalResolvePointerAggregateFunctionByLiteral(p, "__iterator", sourceValue);
     }
     if (iteratorFn < 0) {
-        iteratorFn = HOPEvalResolveFunctionByLiteralArgs(p, "__iterator", &sourceArg, 1);
+        iteratorFn = H2EvalResolveFunctionByLiteralArgs(p, "__iterator", &sourceArg, 1);
     }
     return iteratorFn;
 }
 
-static int HOPEvalAdvanceForInIterator(
-    HOPEvalProgram* p,
-    HOPCTFEExecCtx* execCtx,
-    int32_t         iteratorFn,
-    HOPCTFEValue*   iteratorValue,
-    int             hasKey,
-    int             keyRef,
-    int             valueRef,
-    int             valueDiscard,
-    int*            outHasItem,
-    HOPCTFEValue*   outKey,
-    int*            outKeyIsConst,
-    HOPCTFEValue*   outValue,
-    int*            outValueIsConst) {
-    HOPCTFEValue        iterRef;
-    HOPCTFEValue        callResult;
-    const HOPCTFEValue* payload = NULL;
-    int32_t             nextFn = -1;
-    int32_t             nextReturnTypeNode = -1;
-    int                 didReturn = 0;
-    int                 usePair = 0;
+static int H2EvalAdvanceForInIterator(
+    H2EvalProgram* p,
+    H2CTFEExecCtx* execCtx,
+    int32_t        iteratorFn,
+    H2CTFEValue*   iteratorValue,
+    int            hasKey,
+    int            keyRef,
+    int            valueRef,
+    int            valueDiscard,
+    int*           outHasItem,
+    H2CTFEValue*   outKey,
+    int*           outKeyIsConst,
+    H2CTFEValue*   outValue,
+    int*           outValueIsConst) {
+    H2CTFEValue        iterRef;
+    H2CTFEValue        callResult;
+    const H2CTFEValue* payload = NULL;
+    int32_t            nextFn = -1;
+    int32_t            nextReturnTypeNode = -1;
+    int                didReturn = 0;
+    int                usePair = 0;
     if (outHasItem != NULL) {
         *outHasItem = 1;
     }
@@ -8447,10 +8402,10 @@ static int HOPEvalAdvanceForInIterator(
         *outValueIsConst = 0;
     }
     if (outKey != NULL) {
-        HOPEvalValueSetNull(outKey);
+        H2EvalValueSetNull(outKey);
     }
     if (outValue != NULL) {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     }
     if (p == NULL || execCtx == NULL || iteratorValue == NULL || outHasItem == NULL
         || outKey == NULL || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
@@ -8458,55 +8413,54 @@ static int HOPEvalAdvanceForInIterator(
         return -1;
     }
     if (keyRef) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             execCtx, 0, 0, "for-in key reference is not supported in evaluator backend");
         return 0;
     }
-    HOPEvalValueSetReference(&iterRef, iteratorValue);
+    H2EvalValueSetReference(&iterRef, iteratorValue);
     if (hasKey) {
         if (!valueDiscard) {
-            nextFn = HOPEvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
+            nextFn = H2EvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
             usePair = 1;
         } else {
-            nextFn = HOPEvalResolveIteratorHookByReturnType(p, "next_key", iteratorFn);
+            nextFn = H2EvalResolveIteratorHookByReturnType(p, "next_key", iteratorFn);
             usePair = 0;
             if (nextFn < 0) {
-                nextFn = HOPEvalResolveIteratorHookByReturnType(
-                    p, "next_key_and_value", iteratorFn);
+                nextFn = H2EvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
                 usePair = nextFn >= 0 ? 1 : 0;
             }
         }
     } else {
-        nextFn = HOPEvalResolveIteratorHookByReturnType(p, "next_value", iteratorFn);
+        nextFn = H2EvalResolveIteratorHookByReturnType(p, "next_value", iteratorFn);
         usePair = 0;
         if (nextFn < 0) {
-            nextFn = HOPEvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
+            nextFn = H2EvalResolveIteratorHookByReturnType(p, "next_key_and_value", iteratorFn);
             usePair = nextFn >= 0 ? 1 : 0;
         }
     }
     if (nextFn < 0) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             execCtx, 0, 0, "for-in iterator hooks are not supported in evaluator backend");
         return 0;
     }
-    nextReturnTypeNode = HOPEvalFunctionReturnTypeNode(&p->funcs[nextFn]);
+    nextReturnTypeNode = H2EvalFunctionReturnTypeNode(&p->funcs[nextFn]);
     if (nextReturnTypeNode < 0) {
-        HOPCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
+        H2CTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
         return 0;
     }
-    if (HOPEvalInvokeFunction(p, nextFn, &iterRef, 1, p->currentContext, &callResult, &didReturn)
+    if (H2EvalInvokeFunction(p, nextFn, &iterRef, 1, p->currentContext, &callResult, &didReturn)
         != 0)
     {
         return -1;
     }
     if (!didReturn) {
-        HOPCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook returned unsupported value");
+        H2CTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook returned unsupported value");
         return 0;
     }
-    if (p->funcs[nextFn].file->ast.nodes[nextReturnTypeNode].kind == HOPAst_TYPE_OPTIONAL) {
-        if (callResult.kind == HOPCTFEValue_OPTIONAL) {
-            if (!HOPEvalOptionalPayload(&callResult, &payload)) {
-                HOPCTFEExecSetReason(
+    if (p->funcs[nextFn].file->ast.nodes[nextReturnTypeNode].kind == H2Ast_TYPE_OPTIONAL) {
+        if (callResult.kind == H2CTFEValue_OPTIONAL) {
+            if (!H2EvalOptionalPayload(&callResult, &payload)) {
+                H2CTFEExecSetReason(
                     execCtx, 0, 0, "for-in iterator hook returned unsupported value");
                 return 0;
             }
@@ -8516,7 +8470,7 @@ static int HOPEvalAdvanceForInIterator(
                 *outValueIsConst = 1;
                 return 0;
             }
-        } else if (callResult.kind == HOPCTFEValue_NULL) {
+        } else if (callResult.kind == H2CTFEValue_NULL) {
             *outHasItem = 0;
             *outKeyIsConst = 1;
             *outValueIsConst = 1;
@@ -8525,7 +8479,7 @@ static int HOPEvalAdvanceForInIterator(
             payload = &callResult;
         }
     } else {
-        HOPCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
+        H2CTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook has unsupported return type");
         return 0;
     }
     if (payload == NULL) {
@@ -8535,10 +8489,10 @@ static int HOPEvalAdvanceForInIterator(
         return 0;
     }
     if (usePair) {
-        const HOPCTFEValue* pairValue = HOPEvalValueTargetOrSelf(payload);
-        HOPEvalArray*       tuple = HOPEvalValueAsArray(pairValue);
+        const H2CTFEValue* pairValue = H2EvalValueTargetOrSelf(payload);
+        H2EvalArray*       tuple = H2EvalValueAsArray(pairValue);
         if (tuple == NULL || tuple->len != 2u) {
-            HOPCTFEExecSetReason(execCtx, 0, 0, "for-in pair iterator returned malformed tuple");
+            H2CTFEExecSetReason(execCtx, 0, 0, "for-in pair iterator returned malformed tuple");
             return 0;
         }
         if (hasKey) {
@@ -8548,7 +8502,7 @@ static int HOPEvalAdvanceForInIterator(
             *outValueIsConst = 1;
         }
         if (!valueDiscard) {
-            HOPEvalAdaptForInValueBinding(&tuple->elems[1], valueRef, outValue);
+            H2EvalAdaptForInValueBinding(&tuple->elems[1], valueRef, outValue);
             *outValueIsConst = 1;
         } else {
             *outValueIsConst = 1;
@@ -8558,33 +8512,33 @@ static int HOPEvalAdvanceForInIterator(
         *outKeyIsConst = 1;
         *outValueIsConst = 1;
     } else {
-        HOPEvalAdaptForInValueBinding(payload, valueRef, outValue);
+        H2EvalAdaptForInValueBinding(payload, valueRef, outValue);
         *outValueIsConst = 1;
         *outKeyIsConst = 1;
     }
     return 0;
 }
 
-static int HOPEvalForInIterCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    int32_t             sourceNode,
-    const HOPCTFEValue* sourceValue,
-    uint32_t            index,
-    int                 hasKey,
-    int                 keyRef,
-    int                 valueRef,
-    int                 valueDiscard,
-    int*                outHasItem,
-    HOPCTFEValue*       outKey,
-    int*                outKeyIsConst,
-    HOPCTFEValue*       outValue,
-    int*                outValueIsConst) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    HOPCTFEValue    iterValue;
-    int32_t         iteratorFn = -1;
-    uint32_t        step;
-    int             didReturn = 0;
+static int H2EvalForInIterCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    int32_t            sourceNode,
+    const H2CTFEValue* sourceValue,
+    uint32_t           index,
+    int                hasKey,
+    int                keyRef,
+    int                valueRef,
+    int                valueDiscard,
+    int*               outHasItem,
+    H2CTFEValue*       outKey,
+    int*               outKeyIsConst,
+    H2CTFEValue*       outValue,
+    int*               outValueIsConst) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    H2CTFEValue    iterValue;
+    int32_t        iteratorFn = -1;
+    uint32_t       step;
+    int            didReturn = 0;
     if (outHasItem != NULL) {
         *outHasItem = 1;
     }
@@ -8595,10 +8549,10 @@ static int HOPEvalForInIterCb(
         *outValueIsConst = 0;
     }
     if (outKey != NULL) {
-        HOPEvalValueSetNull(outKey);
+        H2EvalValueSetNull(outKey);
     }
     if (outValue != NULL) {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     }
     if (p == NULL || execCtx == NULL || sourceValue == NULL || outHasItem == NULL || outKey == NULL
         || outKeyIsConst == NULL || outValue == NULL || outValueIsConst == NULL)
@@ -8606,28 +8560,28 @@ static int HOPEvalForInIterCb(
         return -1;
     }
     if (keyRef) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             execCtx, 0, 0, "for-in key reference is not supported in evaluator backend");
         return 0;
     }
-    iteratorFn = HOPEvalResolveForInIteratorFn(p, execCtx, sourceNode, sourceValue);
+    iteratorFn = H2EvalResolveForInIteratorFn(p, execCtx, sourceNode, sourceValue);
     if (iteratorFn < 0) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             execCtx, 0, 0, "for-in loop source is not supported in evaluator backend");
         return 0;
     }
-    if (HOPEvalInvokeFunction(
+    if (H2EvalInvokeFunction(
             p, iteratorFn, sourceValue, 1, p->currentContext, &iterValue, &didReturn)
         != 0)
     {
         return -1;
     }
     if (!didReturn) {
-        HOPCTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook did not return a value");
+        H2CTFEExecSetReason(execCtx, 0, 0, "for-in iterator hook did not return a value");
         return 0;
     }
     for (step = 0; step <= index; step++) {
-        if (HOPEvalAdvanceForInIterator(
+        if (H2EvalAdvanceForInIterator(
                 p,
                 execCtx,
                 iteratorFn,
@@ -8652,30 +8606,30 @@ static int HOPEvalForInIterCb(
     return 0;
 }
 
-static int HOPEvalZeroInitCb(void* ctx, int32_t typeNode, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+static int H2EvalZeroInitCb(void* ctx, int32_t typeNode, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     if (p == NULL || p->currentFile == NULL) {
         return -1;
     }
-    return HOPEvalZeroInitTypeNode(p, p->currentFile, typeNode, outValue, outIsConst);
+    return H2EvalZeroInitTypeNode(p, p->currentFile, typeNode, outValue, outIsConst);
 }
 
-static int HOPEvalMirMakeAggregate(
-    void*         ctx,
-    uint32_t      sourceNode,
-    uint32_t      fieldCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*   p = (HOPEvalProgram*)ctx;
-    HOPEvalAggregate* agg;
+static int H2EvalMirMakeAggregate(
+    void*        ctx,
+    uint32_t     sourceNode,
+    uint32_t     fieldCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*   p = (H2EvalProgram*)ctx;
+    H2EvalAggregate* agg;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         if (diag != NULL) {
-            diag->code = HOPDiag_UNEXPECTED_TOKEN;
-            diag->type = HOPDiagTypeOfCode(diag->code);
+            diag->code = H2Diag_UNEXPECTED_TOKEN;
+            diag->type = H2DiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -8683,8 +8637,8 @@ static int HOPEvalMirMakeAggregate(
         }
         return -1;
     }
-    agg = (HOPEvalAggregate*)HOPArenaAlloc(
-        p->arena, sizeof(HOPEvalAggregate), (uint32_t)_Alignof(HOPEvalAggregate));
+    agg = (H2EvalAggregate*)H2ArenaAlloc(
+        p->arena, sizeof(H2EvalAggregate), (uint32_t)_Alignof(H2EvalAggregate));
     if (agg == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -8692,11 +8646,11 @@ static int HOPEvalMirMakeAggregate(
     agg->file = p->currentFile;
     agg->nodeId = (int32_t)sourceNode;
     if (sourceNode < p->currentFile->ast.len) {
-        const HOPAstNode*    sourceAst = &p->currentFile->ast.nodes[sourceNode];
-        const HOPParsedFile* declFile = NULL;
-        int32_t              declNode = -1;
-        if (sourceAst->kind == HOPAst_COMPOUND_LIT && sourceAst->firstChild >= 0
-            && HOPEvalResolveAggregateTypeNode(
+        const H2AstNode*    sourceAst = &p->currentFile->ast.nodes[sourceNode];
+        const H2ParsedFile* declFile = NULL;
+        int32_t             declNode = -1;
+        if (sourceAst->kind == H2Ast_COMPOUND_LIT && sourceAst->firstChild >= 0
+            && H2EvalResolveAggregateTypeNode(
                 p, p->currentFile, sourceAst->firstChild, &declFile, &declNode))
         {
             agg->file = declFile;
@@ -8705,14 +8659,14 @@ static int HOPEvalMirMakeAggregate(
     }
     agg->fieldLen = fieldCount;
     if (fieldCount > 0) {
-        agg->fields = (HOPEvalAggregateField*)HOPArenaAlloc(
+        agg->fields = (H2EvalAggregateField*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPEvalAggregateField) * fieldCount,
-            (uint32_t)_Alignof(HOPEvalAggregateField));
+            sizeof(H2EvalAggregateField) * fieldCount,
+            (uint32_t)_Alignof(H2EvalAggregateField));
         if (agg->fields == NULL) {
             return ErrorSimple("out of memory");
         }
-        memset(agg->fields, 0, sizeof(HOPEvalAggregateField) * fieldCount);
+        memset(agg->fields, 0, sizeof(H2EvalAggregateField) * fieldCount);
         {
             uint32_t i;
             for (i = 0; i < fieldCount; i++) {
@@ -8721,18 +8675,18 @@ static int HOPEvalMirMakeAggregate(
             }
         }
     }
-    HOPEvalValueSetAggregate(outValue, agg->file, agg->nodeId, agg);
-    outValue->typeTag |= HOPCTFEValueTag_AGG_PARTIAL;
+    H2EvalValueSetAggregate(outValue, agg->file, agg->nodeId, agg);
+    outValue->typeTag |= H2CTFEValueTag_AGG_PARTIAL;
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirFindCallNodeBySpan(
-    const HOPParsedFile* file,
-    uint32_t             callStart,
-    uint32_t             callEnd,
-    uint32_t             argCount,
-    int32_t*             outCallNode) {
+static int H2EvalMirFindCallNodeBySpan(
+    const H2ParsedFile* file,
+    uint32_t            callStart,
+    uint32_t            callEnd,
+    uint32_t            argCount,
+    int32_t*            outCallNode) {
     uint32_t i;
     int32_t  found = -1;
     if (outCallNode != NULL) {
@@ -8742,14 +8696,14 @@ static int HOPEvalMirFindCallNodeBySpan(
         return 0;
     }
     for (i = 0; i < file->ast.len; i++) {
-        const HOPAstNode* call = &file->ast.nodes[i];
-        const HOPAstNode* callee;
-        int32_t           calleeNode;
-        uint32_t          curArgCount = 0;
-        int32_t           argNode;
-        uint32_t          curStart;
-        uint32_t          curEnd;
-        if (call->kind != HOPAst_CALL) {
+        const H2AstNode* call = &file->ast.nodes[i];
+        const H2AstNode* callee;
+        int32_t          calleeNode;
+        uint32_t         curArgCount = 0;
+        int32_t          argNode;
+        uint32_t         curStart;
+        uint32_t         curEnd;
+        if (call->kind != H2Ast_CALL) {
             continue;
         }
         calleeNode = call->firstChild;
@@ -8757,7 +8711,7 @@ static int HOPEvalMirFindCallNodeBySpan(
             continue;
         }
         callee = &file->ast.nodes[calleeNode];
-        if (callee->kind != HOPAst_IDENT && callee->kind != HOPAst_FIELD_EXPR) {
+        if (callee->kind != H2Ast_IDENT && callee->kind != H2Ast_FIELD_EXPR) {
             continue;
         }
         curStart = callee->dataStart;
@@ -8785,24 +8739,24 @@ static int HOPEvalMirFindCallNodeBySpan(
     return 1;
 }
 
-static int HOPEvalMirAdjustCallArgs(
+static int H2EvalMirAdjustCallArgs(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
-    uint32_t         calleeFunctionIndex,
-    HOPMirExecValue* args,
-    uint32_t         argCount,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*        p = (HOPEvalProgram*)ctx;
-    HOPEvalMirExecCtx*     execCtx;
-    uint32_t               evalFnIndex;
-    uint32_t               receiverArgCount;
-    int32_t                callNode = -1;
-    int32_t                calleeNode;
-    int32_t                argNode;
-    int32_t                firstArgNode;
-    const HOPEvalFunction* calleeFn;
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
+    uint32_t        calleeFunctionIndex,
+    H2MirExecValue* args,
+    uint32_t        argCount,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*        p = (H2EvalProgram*)ctx;
+    H2EvalMirExecCtx*     execCtx;
+    uint32_t              evalFnIndex;
+    uint32_t              receiverArgCount;
+    int32_t               callNode = -1;
+    int32_t               calleeNode;
+    int32_t               argNode;
+    int32_t               firstArgNode;
+    const H2EvalFunction* calleeFn;
     (void)function;
     (void)diag;
     if (p == NULL || inst == NULL || args == NULL || p->currentFile == NULL) {
@@ -8818,11 +8772,11 @@ static int HOPEvalMirAdjustCallArgs(
     if (evalFnIndex == UINT32_MAX || evalFnIndex >= p->funcLen) {
         return 0;
     }
-    receiverArgCount = HOPMirCallTokDropsReceiverArg0(inst->tok) ? 1u : 0u;
+    receiverArgCount = H2MirCallTokDropsReceiverArg0(inst->tok) ? 1u : 0u;
     if (argCount < receiverArgCount) {
         return 0;
     }
-    if (!HOPEvalMirFindCallNodeBySpan(
+    if (!H2EvalMirFindCallNodeBySpan(
             p->currentFile, inst->start, inst->end, argCount - receiverArgCount, &callNode))
     {
         return 0;
@@ -8837,17 +8791,17 @@ static int HOPEvalMirAdjustCallArgs(
     if (argCount > receiverArgCount && argNode >= 0) {
         uint32_t argIndex = 0;
         while (argNode >= 0 && argIndex + receiverArgCount < argCount) {
-            const HOPAstNode* arg = &p->currentFile->ast.nodes[argNode];
-            int32_t           exprNode = argNode;
-            int32_t           paramTypeNode;
-            int32_t           paramIndex = (int32_t)(argIndex + receiverArgCount);
-            if (arg->kind == HOPAst_CALL_ARG) {
-                if ((arg->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) {
+            const H2AstNode* arg = &p->currentFile->ast.nodes[argNode];
+            int32_t          exprNode = argNode;
+            int32_t          paramTypeNode;
+            int32_t          paramIndex = (int32_t)(argIndex + receiverArgCount);
+            if (arg->kind == H2Ast_CALL_ARG) {
+                if ((arg->flags & H2AstFlag_CALL_ARG_SPREAD) != 0) {
                     break;
                 }
                 exprNode = arg->firstChild;
                 if (arg->dataEnd > arg->dataStart) {
-                    paramIndex = HOPEvalFunctionParamIndexByName(
+                    paramIndex = H2EvalFunctionParamIndexByName(
                         calleeFn, p->currentFile->source, arg->dataStart, arg->dataEnd);
                     if (paramIndex < 0) {
                         break;
@@ -8857,14 +8811,14 @@ static int HOPEvalMirAdjustCallArgs(
             if (exprNode < 0 || (uint32_t)exprNode >= p->currentFile->ast.len) {
                 break;
             }
-            paramTypeNode = HOPEvalFunctionParamTypeNodeAt(calleeFn, (uint32_t)paramIndex);
+            paramTypeNode = H2EvalFunctionParamTypeNodeAt(calleeFn, (uint32_t)paramIndex);
             if (paramTypeNode >= 0
-                && HOPEvalExprIsAnytypePackIndex(p, &p->currentFile->ast, exprNode)
-                && !HOPEvalValueMatchesExpectedTypeNode(
+                && H2EvalExprIsAnytypePackIndex(p, &p->currentFile->ast, exprNode)
+                && !H2EvalValueMatchesExpectedTypeNode(
                     p, calleeFn->file, paramTypeNode, &args[argIndex + receiverArgCount]))
             {
                 if (p->currentExecCtx != NULL) {
-                    HOPCTFEExecSetReasonNode(
+                    H2CTFEExecSetReasonNode(
                         p->currentExecCtx, exprNode, "anytype pack element type mismatch");
                 }
                 return 1;
@@ -8873,7 +8827,7 @@ static int HOPEvalMirAdjustCallArgs(
             argNode = p->currentFile->ast.nodes[argNode].nextSibling;
         }
     }
-    (void)HOPEvalReorderFixedCallArgsByName(
+    (void)H2EvalReorderFixedCallArgsByName(
         p,
         calleeFn,
         &p->currentFile->ast,
@@ -8884,14 +8838,14 @@ static int HOPEvalMirAdjustCallArgs(
     if (program != NULL && calleeFunctionIndex < program->funcLen
         && !p->currentMirExecCtx->hasPendingTemplateBinding)
     {
-        const HOPMirFunction*       calleeMirFn = &program->funcs[calleeFunctionIndex];
-        HOPEvalTemplateBindingState savedBinding;
-        uint32_t                    directArgCount = argCount - receiverArgCount;
-        if ((calleeMirFn->flags & HOPMirFunctionFlag_VARIADIC) == 0u
+        const H2MirFunction*       calleeMirFn = &program->funcs[calleeFunctionIndex];
+        H2EvalTemplateBindingState savedBinding;
+        uint32_t                   directArgCount = argCount - receiverArgCount;
+        if ((calleeMirFn->flags & H2MirFunctionFlag_VARIADIC) == 0u
             && directArgCount == calleeMirFn->paramCount)
         {
-            HOPEvalSaveTemplateBinding(p, &savedBinding);
-            if (HOPEvalBindActiveTemplateForMirCall(
+            H2EvalSaveTemplateBinding(p, &savedBinding);
+            if (H2EvalBindActiveTemplateForMirCall(
                     p, program, function, inst, calleeFn, args + receiverArgCount, directArgCount))
             {
                 p->currentMirExecCtx->pendingTemplateBinding = savedBinding;
@@ -8902,16 +8856,16 @@ static int HOPEvalMirAdjustCallArgs(
     return 0;
 }
 
-static int HOPEvalMirAssignIdent(
-    void*               ctx,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    const HOPCTFEValue* inValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    int32_t         topVarIndex;
-    HOPCTFEValue    value;
+static int H2EvalMirAssignIdent(
+    void*              ctx,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    const H2CTFEValue* inValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    int32_t        topVarIndex;
+    H2CTFEValue    value;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -8919,10 +8873,10 @@ static int HOPEvalMirAssignIdent(
     if (p == NULL || p->currentFile == NULL || inValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    topVarIndex = HOPEvalFindCurrentTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
+    topVarIndex = H2EvalFindCurrentTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
     if (topVarIndex < 0) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -8932,7 +8886,7 @@ static int HOPEvalMirAssignIdent(
     }
     value = *inValue;
     if (p->topVars[(uint32_t)topVarIndex].declTypeNode >= 0
-        && HOPEvalCoerceValueToTypeNode(
+        && H2EvalCoerceValueToTypeNode(
                p,
                p->topVars[(uint32_t)topVarIndex].file,
                p->topVars[(uint32_t)topVarIndex].declTypeNode,
@@ -8942,24 +8896,24 @@ static int HOPEvalMirAssignIdent(
         return -1;
     }
     p->topVars[(uint32_t)topVarIndex].value = value;
-    p->topVars[(uint32_t)topVarIndex].state = HOPEvalTopConstState_READY;
+    p->topVars[(uint32_t)topVarIndex].state = H2EvalTopConstState_READY;
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirZeroInitLocal(
-    void*                ctx,
-    const HOPMirTypeRef* typeRef,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+static int H2EvalMirZeroInitLocal(
+    void*               ctx,
+    const H2MirTypeRef* typeRef,
+    H2CTFEValue*        outValue,
+    int*                outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     if (p == NULL || p->currentFile == NULL || typeRef == NULL || typeRef->astNode == UINT32_MAX
         || typeRef->astNode >= p->currentFile->ast.len)
     {
         if (diag != NULL) {
-            diag->code = HOPDiag_UNEXPECTED_TOKEN;
-            diag->type = HOPDiagTypeOfCode(diag->code);
+            diag->code = H2Diag_UNEXPECTED_TOKEN;
+            diag->type = H2DiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -8967,19 +8921,19 @@ static int HOPEvalMirZeroInitLocal(
         }
         return -1;
     }
-    return HOPEvalZeroInitTypeNode(
+    return H2EvalZeroInitTypeNode(
         p, p->currentFile, (int32_t)typeRef->astNode, outValue, outIsConst);
 }
 
-static int HOPEvalMirCoerceValueForType(
-    void* ctx, const HOPMirTypeRef* typeRef, HOPCTFEValue* inOutValue, HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+static int H2EvalMirCoerceValueForType(
+    void* ctx, const H2MirTypeRef* typeRef, H2CTFEValue* inOutValue, H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     if (p == NULL || p->currentFile == NULL || typeRef == NULL || inOutValue == NULL
         || typeRef->astNode == UINT32_MAX || typeRef->astNode >= p->currentFile->ast.len)
     {
         if (diag != NULL) {
-            diag->code = HOPDiag_UNEXPECTED_TOKEN;
-            diag->type = HOPDiagTypeOfCode(diag->code);
+            diag->code = H2Diag_UNEXPECTED_TOKEN;
+            diag->type = H2DiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -8987,20 +8941,20 @@ static int HOPEvalMirCoerceValueForType(
         }
         return -1;
     }
-    return HOPEvalCoerceValueToTypeNode(p, p->currentFile, (int32_t)typeRef->astNode, inOutValue);
+    return H2EvalCoerceValueToTypeNode(p, p->currentFile, (int32_t)typeRef->astNode, inOutValue);
 }
 
-static int HOPEvalMirIndexValue(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    const HOPCTFEValue* index,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*     p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue* baseValue;
-    HOPEvalArray*       array;
-    int64_t             indexInt = 0;
+static int H2EvalMirIndexValue(
+    void*              ctx,
+    const H2CTFEValue* base,
+    const H2CTFEValue* index,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*     p = (H2EvalProgram*)ctx;
+    const H2CTFEValue* baseValue;
+    H2EvalArray*       array;
+    int64_t            indexInt = 0;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9008,11 +8962,11 @@ static int HOPEvalMirIndexValue(
     if (p == NULL || base == NULL || index == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    if (HOPCTFEValueToInt64(index, &indexInt) != 0 || indexInt < 0) {
+    baseValue = H2EvalValueTargetOrSelf(base);
+    if (H2CTFEValueToInt64(index, &indexInt) != 0 || indexInt < 0) {
         return 0;
     }
-    array = HOPEvalValueAsArray(baseValue);
+    array = H2EvalValueAsArray(baseValue);
     if (array == NULL) {
         return 0;
     }
@@ -9024,17 +8978,17 @@ static int HOPEvalMirIndexValue(
     return 0;
 }
 
-static int HOPEvalMirIndexAddr(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    const HOPCTFEValue* index,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*     p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue* baseValue;
-    HOPEvalArray*       array;
-    int64_t             indexInt = 0;
+static int H2EvalMirIndexAddr(
+    void*              ctx,
+    const H2CTFEValue* base,
+    const H2CTFEValue* index,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*     p = (H2EvalProgram*)ctx;
+    const H2CTFEValue* baseValue;
+    H2EvalArray*       array;
+    int64_t            indexInt = 0;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9042,57 +8996,57 @@ static int HOPEvalMirIndexAddr(
     if (p == NULL || base == NULL || index == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    if (HOPCTFEValueToInt64(index, &indexInt) != 0 || indexInt < 0) {
+    baseValue = H2EvalValueTargetOrSelf(base);
+    if (H2CTFEValueToInt64(index, &indexInt) != 0 || indexInt < 0) {
         return 0;
     }
-    array = HOPEvalValueAsArray(baseValue);
+    array = H2EvalValueAsArray(baseValue);
     if (array == NULL || (uint64_t)indexInt >= (uint64_t)array->len) {
-        HOPCTFEValue* targetValue = HOPEvalValueReferenceTarget(base);
-        int32_t       baseTypeCode = HOPEvalTypeCode_INVALID;
+        H2CTFEValue* targetValue = H2EvalValueReferenceTarget(base);
+        int32_t      baseTypeCode = H2EvalTypeCode_INVALID;
         if (targetValue == NULL) {
-            targetValue = (HOPCTFEValue*)baseValue;
+            targetValue = (H2CTFEValue*)baseValue;
         }
-        if (targetValue != NULL && targetValue->kind == HOPCTFEValue_STRING
-            && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
-            && baseTypeCode == HOPEvalTypeCode_STR_PTR
+        if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
+            && H2EvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+            && baseTypeCode == H2EvalTypeCode_STR_PTR
             && (uint64_t)indexInt < (uint64_t)targetValue->s.len)
         {
-            HOPCTFEValue* byteProxy = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue), (uint32_t)_Alignof(HOPCTFEValue));
+            H2CTFEValue* byteProxy = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
             if (byteProxy == NULL) {
                 return ErrorSimple("out of memory");
             }
-            HOPMirValueSetByteRefProxy(byteProxy, (uint8_t*)targetValue->s.bytes + indexInt);
-            HOPEvalValueSetRuntimeTypeCode(byteProxy, HOPEvalTypeCode_U8);
-            HOPEvalValueSetReference(outValue, byteProxy);
+            H2MirValueSetByteRefProxy(byteProxy, (uint8_t*)targetValue->s.bytes + indexInt);
+            H2EvalValueSetRuntimeTypeCode(byteProxy, H2EvalTypeCode_U8);
+            H2EvalValueSetReference(outValue, byteProxy);
             *outIsConst = 1;
             return 0;
         }
         return 0;
     }
-    HOPEvalValueSetReference(outValue, &array->elems[(uint32_t)indexInt]);
+    H2EvalValueSetReference(outValue, &array->elems[(uint32_t)indexInt]);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirSliceValue(
+static int H2EvalMirSliceValue(
     void* _Nullable ctx,
-    const HOPCTFEValue* _Nonnull base,
-    const HOPCTFEValue* _Nullable start,
-    const HOPCTFEValue* _Nullable end,
+    const H2CTFEValue* _Nonnull base,
+    const H2CTFEValue* _Nullable start,
+    const H2CTFEValue* _Nullable end,
     uint16_t flags,
-    HOPCTFEValue* _Nonnull outValue,
+    H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*     p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue* baseValue;
-    HOPEvalArray*       array;
-    HOPEvalArray*       view;
-    int64_t             startInt = 0;
-    int64_t             endInt = -1;
-    uint32_t            startIndex = 0;
-    uint32_t            endIndex = 0;
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*     p = (H2EvalProgram*)ctx;
+    const H2CTFEValue* baseValue;
+    H2EvalArray*       array;
+    H2EvalArray*       view;
+    int64_t            startInt = 0;
+    int64_t            endInt = -1;
+    uint32_t           startIndex = 0;
+    uint32_t           endIndex = 0;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9100,19 +9054,19 @@ static int HOPEvalMirSliceValue(
     if (p == NULL || base == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    if ((flags & HOPAstFlag_INDEX_HAS_START) != 0u) {
-        if (start == NULL || HOPCTFEValueToInt64(start, &startInt) != 0 || startInt < 0) {
+    baseValue = H2EvalValueTargetOrSelf(base);
+    if ((flags & H2AstFlag_INDEX_HAS_START) != 0u) {
+        if (start == NULL || H2CTFEValueToInt64(start, &startInt) != 0 || startInt < 0) {
             return 0;
         }
     }
-    if ((flags & HOPAstFlag_INDEX_HAS_END) != 0u) {
-        if (end == NULL || HOPCTFEValueToInt64(end, &endInt) != 0 || endInt < 0) {
+    if ((flags & H2AstFlag_INDEX_HAS_END) != 0u) {
+        if (end == NULL || H2CTFEValueToInt64(end, &endInt) != 0 || endInt < 0) {
             return 0;
         }
     }
-    if (baseValue->kind == HOPCTFEValue_STRING) {
-        int32_t currentTypeCode = HOPEvalTypeCode_INVALID;
+    if (baseValue->kind == H2CTFEValue_STRING) {
+        int32_t currentTypeCode = H2EvalTypeCode_INVALID;
         startIndex = (uint32_t)startInt;
         endIndex = endInt >= 0 ? (uint32_t)endInt : baseValue->s.len;
         if (startIndex > endIndex || endIndex > baseValue->s.len) {
@@ -9121,14 +9075,14 @@ static int HOPEvalMirSliceValue(
         *outValue = *baseValue;
         outValue->s.bytes = baseValue->s.bytes != NULL ? baseValue->s.bytes + startIndex : NULL;
         outValue->s.len = endIndex - startIndex;
-        if (!HOPEvalValueGetRuntimeTypeCode(baseValue, &currentTypeCode)) {
-            currentTypeCode = HOPEvalTypeCode_STR_REF;
+        if (!H2EvalValueGetRuntimeTypeCode(baseValue, &currentTypeCode)) {
+            currentTypeCode = H2EvalTypeCode_STR_REF;
         }
-        HOPEvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
+        H2EvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
         *outIsConst = 1;
         return 0;
     }
-    array = HOPEvalValueAsArray(baseValue);
+    array = H2EvalValueAsArray(baseValue);
     if (array == NULL) {
         return 0;
     }
@@ -9137,9 +9091,9 @@ static int HOPEvalMirSliceValue(
     if (startIndex > endIndex || endIndex > array->len) {
         return 0;
     }
-    view = HOPEvalAllocArrayView(
+    view = H2EvalAllocArrayView(
         p,
-        baseValue->kind == HOPCTFEValue_ARRAY ? array->file : p->currentFile,
+        baseValue->kind == H2CTFEValue_ARRAY ? array->file : p->currentFile,
         array->typeNode,
         array->elemTypeNode,
         array->elems + startIndex,
@@ -9148,20 +9102,20 @@ static int HOPEvalMirSliceValue(
         return ErrorSimple("out of memory");
     }
     {
-        HOPCTFEValue viewValue;
-        HOPEvalValueSetArray(&viewValue, p->currentFile, array->typeNode, view);
-        return HOPEvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
+        H2CTFEValue viewValue;
+        H2EvalValueSetArray(&viewValue, p->currentFile, array->typeNode, view);
+        return H2EvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
     }
 }
 
-static int HOPEvalMirSequenceLen(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*     p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue* baseValue;
+static int H2EvalMirSequenceLen(
+    void*              ctx,
+    const H2CTFEValue* base,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*     p = (H2EvalProgram*)ctx;
+    const H2CTFEValue* baseValue;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9169,32 +9123,32 @@ static int HOPEvalMirSequenceLen(
     if (p == NULL || base == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    if (baseValue->kind != HOPCTFEValue_STRING && baseValue->kind != HOPCTFEValue_ARRAY
-        && baseValue->kind != HOPCTFEValue_NULL)
+    baseValue = H2EvalValueTargetOrSelf(base);
+    if (baseValue->kind != H2CTFEValue_STRING && baseValue->kind != H2CTFEValue_ARRAY
+        && baseValue->kind != H2CTFEValue_NULL)
     {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx, 0, 0, "len argument is not supported by evaluator backend");
         }
         return 0;
     }
-    HOPEvalValueSetInt(outValue, (int64_t)baseValue->s.len);
+    H2EvalValueSetInt(outValue, (int64_t)baseValue->s.len);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirMakeTuple(
-    void*               ctx,
-    const HOPCTFEValue* elems,
-    uint32_t            elemCount,
-    uint32_t            typeNodeHint,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*      p = (HOPEvalProgram*)ctx;
-    const HOPParsedFile* file;
-    int32_t              typeNode = -1;
+static int H2EvalMirMakeTuple(
+    void*              ctx,
+    const H2CTFEValue* elems,
+    uint32_t           elemCount,
+    uint32_t           typeNodeHint,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*      p = (H2EvalProgram*)ctx;
+    const H2ParsedFile* file;
+    int32_t             typeNode = -1;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9209,28 +9163,28 @@ static int HOPEvalMirMakeTuple(
     if (typeNodeHint != UINT32_MAX && typeNodeHint < file->ast.len) {
         typeNode = (int32_t)typeNodeHint;
     }
-    return HOPEvalAllocTupleValue(p, file, typeNode, elems, elemCount, outValue, outIsConst);
+    return H2EvalAllocTupleValue(p, file, typeNode, elems, elemCount, outValue, outIsConst);
 }
 
-static int HOPEvalMirMakeVariadicPack(
+static int H2EvalMirMakeVariadicPack(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirTypeRef* _Nullable paramTypeRef,
-    uint16_t            callFlags,
-    const HOPCTFEValue* args,
-    uint32_t            argCount,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*      p = (HOPEvalProgram*)ctx;
-    const HOPParsedFile* file;
-    const HOPEvalArray*  spreadArray = NULL;
-    HOPEvalArray*        packArray;
-    int32_t              typeNode = -1;
-    uint32_t             packLen = argCount;
-    uint32_t             prefixCount = argCount;
-    uint32_t             i;
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirTypeRef* _Nullable paramTypeRef,
+    uint16_t           callFlags,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*      p = (H2EvalProgram*)ctx;
+    const H2ParsedFile* file;
+    const H2EvalArray*  spreadArray = NULL;
+    H2EvalArray*        packArray;
+    int32_t             typeNode = -1;
+    uint32_t            packLen = argCount;
+    uint32_t            prefixCount = argCount;
+    uint32_t            i;
     (void)program;
     (void)function;
     (void)diag;
@@ -9247,76 +9201,76 @@ static int HOPEvalMirMakeVariadicPack(
     if (paramTypeRef != NULL && paramTypeRef->astNode < file->ast.len) {
         typeNode = (int32_t)paramTypeRef->astNode;
     }
-    if (HOPMirCallTokHasSpreadLast(callFlags)) {
+    if (H2MirCallTokHasSpreadLast(callFlags)) {
         if (argCount == 0u) {
             return 0;
         }
-        spreadArray = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&args[argCount - 1u]));
+        spreadArray = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&args[argCount - 1u]));
         if (spreadArray == NULL || spreadArray->len > UINT32_MAX - (argCount - 1u)) {
             return 0;
         }
         prefixCount = argCount - 1u;
         packLen = prefixCount + spreadArray->len;
     }
-    packArray = HOPEvalAllocArrayView(p, file, typeNode, typeNode, NULL, packLen);
+    packArray = H2EvalAllocArrayView(p, file, typeNode, typeNode, NULL, packLen);
     if (packArray == NULL) {
         return ErrorSimple("out of memory");
     }
     if (packLen > 0u) {
-        packArray->elems = (HOPCTFEValue*)HOPArenaAlloc(
-            p->arena, sizeof(HOPCTFEValue) * packLen, (uint32_t)_Alignof(HOPCTFEValue));
+        packArray->elems = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue) * packLen, (uint32_t)_Alignof(H2CTFEValue));
         if (packArray->elems == NULL) {
             return ErrorSimple("out of memory");
         }
         for (i = 0; i < prefixCount; i++) {
             packArray->elems[i] = args[i];
-            HOPEvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
+            H2EvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
         }
         if (spreadArray != NULL) {
             uint32_t j;
             for (j = 0; j < spreadArray->len; j++) {
                 packArray->elems[prefixCount + j] = spreadArray->elems[j];
-                HOPEvalAnnotateUntypedLiteralValue(&packArray->elems[prefixCount + j]);
+                H2EvalAnnotateUntypedLiteralValue(&packArray->elems[prefixCount + j]);
             }
         } else {
             for (; i < packLen; i++) {
                 packArray->elems[i] = args[i];
-                HOPEvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
+                H2EvalAnnotateUntypedLiteralValue(&packArray->elems[i]);
             }
         }
     }
-    HOPEvalValueSetArray(outValue, file, typeNode, packArray);
+    H2EvalValueSetArray(outValue, file, typeNode, packArray);
     *outIsConst = 1;
     return 0;
 }
 
-static HOPEvalMirIteratorState* _Nullable HOPEvalMirIteratorStateFromValue(
-    const HOPCTFEValue* iterValue) {
-    HOPCTFEValue* target;
+static H2EvalMirIteratorState* _Nullable H2EvalMirIteratorStateFromValue(
+    const H2CTFEValue* iterValue) {
+    H2CTFEValue* target;
     if (iterValue == NULL) {
         return NULL;
     }
-    target = HOPEvalValueReferenceTarget(iterValue);
-    if (target == NULL || target->kind != HOPCTFEValue_SPAN
-        || target->typeTag != HOP_EVAL_MIR_ITER_MAGIC || target->s.bytes == NULL)
+    target = H2EvalValueReferenceTarget(iterValue);
+    if (target == NULL || target->kind != H2CTFEValue_SPAN
+        || target->typeTag != H2_EVAL_MIR_ITER_MAGIC || target->s.bytes == NULL)
     {
         return NULL;
     }
-    return (HOPEvalMirIteratorState*)target->s.bytes;
+    return (H2EvalMirIteratorState*)target->s.bytes;
 }
 
-static int HOPEvalMirIterInit(
-    void*               ctx,
-    uint32_t            sourceNode,
-    const HOPCTFEValue* source,
-    uint16_t            flags,
-    HOPCTFEValue*       outIter,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*          p = (HOPEvalProgram*)ctx;
-    HOPEvalMirIteratorState* state;
-    HOPCTFEValue*            target;
-    const HOPCTFEValue*      sourceValue;
+static int H2EvalMirIterInit(
+    void*              ctx,
+    uint32_t           sourceNode,
+    const H2CTFEValue* source,
+    uint16_t           flags,
+    H2CTFEValue*       outIter,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*          p = (H2EvalProgram*)ctx;
+    H2EvalMirIteratorState* state;
+    H2CTFEValue*            target;
+    const H2CTFEValue*      sourceValue;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9324,46 +9278,45 @@ static int HOPEvalMirIterInit(
     if (p == NULL || source == NULL || outIter == NULL || outIsConst == NULL) {
         return -1;
     }
-    if ((flags & HOPMirIterFlag_KEY_REF) != 0u) {
+    if ((flags & H2MirIterFlag_KEY_REF) != 0u) {
         return 0;
     }
-    state = (HOPEvalMirIteratorState*)HOPArenaAlloc(
-        p->arena, sizeof(*state), (uint32_t)_Alignof(HOPEvalMirIteratorState));
-    target = (HOPCTFEValue*)HOPArenaAlloc(
-        p->arena, sizeof(*target), (uint32_t)_Alignof(HOPCTFEValue));
+    state = (H2EvalMirIteratorState*)H2ArenaAlloc(
+        p->arena, sizeof(*state), (uint32_t)_Alignof(H2EvalMirIteratorState));
+    target = (H2CTFEValue*)H2ArenaAlloc(p->arena, sizeof(*target), (uint32_t)_Alignof(H2CTFEValue));
     if (state == NULL || target == NULL) {
         return ErrorSimple("out of memory");
     }
     memset(state, 0, sizeof(*state));
-    state->magic = HOP_EVAL_MIR_ITER_MAGIC;
+    state->magic = H2_EVAL_MIR_ITER_MAGIC;
     state->sourceNode = sourceNode;
     state->index = 0;
     state->iteratorFn = -1;
     state->flags = flags;
     state->sourceValue = *source;
-    state->iteratorValue = (HOPCTFEValue){ .kind = HOPCTFEValue_INVALID };
-    sourceValue = HOPEvalValueTargetOrSelf(source);
-    if (sourceValue->kind == HOPCTFEValue_ARRAY || sourceValue->kind == HOPCTFEValue_STRING
-        || sourceValue->kind == HOPCTFEValue_NULL)
+    state->iteratorValue = (H2CTFEValue){ .kind = H2CTFEValue_INVALID };
+    sourceValue = H2EvalValueTargetOrSelf(source);
+    if (sourceValue->kind == H2CTFEValue_ARRAY || sourceValue->kind == H2CTFEValue_STRING
+        || sourceValue->kind == H2CTFEValue_NULL)
     {
-        state->kind = HOP_EVAL_MIR_ITER_KIND_SEQUENCE;
+        state->kind = H2_EVAL_MIR_ITER_KIND_SEQUENCE;
     } else {
         int didReturn = 0;
-        state->kind = HOP_EVAL_MIR_ITER_KIND_PROTOCOL;
+        state->kind = H2_EVAL_MIR_ITER_KIND_PROTOCOL;
         if (p->currentExecCtx == NULL) {
             return 0;
         }
-        state->iteratorFn = HOPEvalResolveForInIteratorFn(
+        state->iteratorFn = H2EvalResolveForInIteratorFn(
             p, p->currentExecCtx, (int32_t)sourceNode, source);
         if (state->iteratorFn < 0) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 0,
                 0,
                 "for-in loop source is not supported in evaluator backend");
             return 0;
         }
-        if (HOPEvalInvokeFunction(
+        if (H2EvalInvokeFunction(
                 p,
                 state->iteratorFn,
                 source,
@@ -9376,41 +9329,41 @@ static int HOPEvalMirIterInit(
             return -1;
         }
         if (!didReturn) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx, 0, 0, "for-in iterator hook did not return a value");
             return 0;
         }
     }
-    target->kind = HOPCTFEValue_SPAN;
+    target->kind = H2CTFEValue_SPAN;
     target->i64 = 0;
     target->f64 = 0.0;
     target->b = 0;
-    target->typeTag = HOP_EVAL_MIR_ITER_MAGIC;
+    target->typeTag = H2_EVAL_MIR_ITER_MAGIC;
     target->s.bytes = (const uint8_t*)state;
     target->s.len = 0;
-    target->span = (HOPCTFESpan){ 0 };
-    HOPEvalValueSetReference(outIter, target);
+    target->span = (H2CTFESpan){ 0 };
+    H2EvalValueSetReference(outIter, target);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirIterNext(
-    void*               ctx,
-    const HOPCTFEValue* iter,
-    uint16_t            flags,
-    int*                outHasItem,
-    HOPCTFEValue*       outKey,
-    int*                outKeyIsConst,
-    HOPCTFEValue*       outValue,
-    int*                outValueIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*          p = (HOPEvalProgram*)ctx;
-    HOPEvalMirIteratorState* state;
-    const HOPCTFEValue*      sourceValue;
-    int                      hasKey;
-    int                      keyRef;
-    int                      valueRef;
-    int                      valueDiscard;
+static int H2EvalMirIterNext(
+    void*              ctx,
+    const H2CTFEValue* iter,
+    uint16_t           flags,
+    int*               outHasItem,
+    H2CTFEValue*       outKey,
+    int*               outKeyIsConst,
+    H2CTFEValue*       outValue,
+    int*               outValueIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*          p = (H2EvalProgram*)ctx;
+    H2EvalMirIteratorState* state;
+    const H2CTFEValue*      sourceValue;
+    int                     hasKey;
+    int                     keyRef;
+    int                     valueRef;
+    int                     valueDiscard;
     (void)diag;
     if (outHasItem != NULL) {
         *outHasItem = 0;
@@ -9422,28 +9375,28 @@ static int HOPEvalMirIterNext(
         *outValueIsConst = 0;
     }
     if (outKey != NULL) {
-        HOPEvalValueSetNull(outKey);
+        H2EvalValueSetNull(outKey);
     }
     if (outValue != NULL) {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     }
     if (p == NULL || iter == NULL || outHasItem == NULL || outKey == NULL || outKeyIsConst == NULL
         || outValue == NULL || outValueIsConst == NULL)
     {
         return -1;
     }
-    state = HOPEvalMirIteratorStateFromValue(iter);
+    state = H2EvalMirIteratorStateFromValue(iter);
     if (state == NULL) {
         return 0;
     }
-    hasKey = (flags & HOPMirIterFlag_HAS_KEY) != 0u;
-    keyRef = (flags & HOPMirIterFlag_KEY_REF) != 0u;
-    valueRef = (flags & HOPMirIterFlag_VALUE_REF) != 0u;
-    valueDiscard = (flags & HOPMirIterFlag_VALUE_DISCARD) != 0u;
-    if (state->kind == HOP_EVAL_MIR_ITER_KIND_SEQUENCE) {
-        sourceValue = HOPEvalValueTargetOrSelf(&state->sourceValue);
-        if (sourceValue->kind != HOPCTFEValue_ARRAY && sourceValue->kind != HOPCTFEValue_STRING
-            && sourceValue->kind != HOPCTFEValue_NULL)
+    hasKey = (flags & H2MirIterFlag_HAS_KEY) != 0u;
+    keyRef = (flags & H2MirIterFlag_KEY_REF) != 0u;
+    valueRef = (flags & H2MirIterFlag_VALUE_REF) != 0u;
+    valueDiscard = (flags & H2MirIterFlag_VALUE_DISCARD) != 0u;
+    if (state->kind == H2_EVAL_MIR_ITER_KIND_SEQUENCE) {
+        sourceValue = H2EvalValueTargetOrSelf(&state->sourceValue);
+        if (sourceValue->kind != H2CTFEValue_ARRAY && sourceValue->kind != H2CTFEValue_STRING
+            && sourceValue->kind != H2CTFEValue_NULL)
         {
             return 0;
         }
@@ -9454,7 +9407,7 @@ static int HOPEvalMirIterNext(
             return 0;
         }
         if (hasKey) {
-            HOPEvalValueSetInt(outKey, (int64_t)state->index);
+            H2EvalValueSetInt(outKey, (int64_t)state->index);
             *outKeyIsConst = 1;
         } else {
             *outKeyIsConst = 1;
@@ -9463,7 +9416,7 @@ static int HOPEvalMirIterNext(
             if (p->currentExecCtx == NULL) {
                 return 0;
             }
-            if (HOPEvalForInIndexCb(
+            if (H2EvalForInIndexCb(
                     p,
                     p->currentExecCtx,
                     &state->sourceValue,
@@ -9485,11 +9438,11 @@ static int HOPEvalMirIterNext(
         state->index++;
         return 0;
     }
-    if (state->kind == HOP_EVAL_MIR_ITER_KIND_PROTOCOL) {
+    if (state->kind == H2_EVAL_MIR_ITER_KIND_PROTOCOL) {
         if (p->currentExecCtx == NULL) {
             return 0;
         }
-        if (HOPEvalAdvanceForInIterator(
+        if (H2EvalAdvanceForInIterator(
                 p,
                 p->currentExecCtx,
                 state->iteratorFn,
@@ -9515,20 +9468,20 @@ static int HOPEvalMirIterNext(
     return 0;
 }
 
-static int HOPEvalMirAggGetField(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*       p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue*   baseValue;
-    const HOPCTFEValue*   payload = NULL;
-    HOPEvalAggregate*     agg = NULL;
-    HOPEvalReflectedType* rt;
-    HOPEvalTaggedEnum*    tagged;
+static int H2EvalMirAggGetField(
+    void*              ctx,
+    const H2CTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*       p = (H2EvalProgram*)ctx;
+    const H2CTFEValue*   baseValue;
+    const H2CTFEValue*   payload = NULL;
+    H2EvalAggregate*     agg = NULL;
+    H2EvalReflectedType* rt;
+    H2EvalTaggedEnum*    tagged;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9538,21 +9491,21 @@ static int HOPEvalMirAggGetField(
     {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    tagged = HOPEvalValueAsTaggedEnum(baseValue);
+    baseValue = H2EvalValueTargetOrSelf(base);
+    tagged = H2EvalValueAsTaggedEnum(baseValue);
     if (tagged != NULL && tagged->payload != NULL
-        && HOPEvalAggregateGetFieldValue(
+        && H2EvalAggregateGetFieldValue(
             tagged->payload, p->currentFile->source, nameStart, nameEnd, outValue))
     {
         *outIsConst = 1;
         return 0;
     }
-    if (baseValue->kind == HOPCTFEValue_OPTIONAL && HOPEvalOptionalPayload(baseValue, &payload)
+    if (baseValue->kind == H2CTFEValue_OPTIONAL && H2EvalOptionalPayload(baseValue, &payload)
         && baseValue->b != 0u && payload != NULL)
     {
-        baseValue = HOPEvalValueTargetOrSelf(payload);
+        baseValue = H2EvalValueTargetOrSelf(payload);
     }
-    if (baseValue->kind == HOPCTFEValue_INT && baseValue->i64 == 3
+    if (baseValue->kind == H2CTFEValue_INT && baseValue->i64 == 3
         && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "prefix"))
     {
         *outValue = p->loggerPrefix;
@@ -9560,27 +9513,27 @@ static int HOPEvalMirAggGetField(
         return 0;
     }
     if (SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "len")
-        && (baseValue->kind == HOPCTFEValue_STRING || baseValue->kind == HOPCTFEValue_ARRAY
-            || baseValue->kind == HOPCTFEValue_NULL))
+        && (baseValue->kind == H2CTFEValue_STRING || baseValue->kind == H2CTFEValue_ARRAY
+            || baseValue->kind == H2CTFEValue_NULL))
     {
-        HOPEvalValueSetInt(outValue, (int64_t)baseValue->s.len);
+        H2EvalValueSetInt(outValue, (int64_t)baseValue->s.len);
         *outIsConst = 1;
         return 0;
     }
     if (SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "cstr")
-        && baseValue->kind == HOPCTFEValue_STRING)
+        && baseValue->kind == H2CTFEValue_STRING)
     {
         *outValue = *baseValue;
         *outIsConst = 1;
         return 0;
     }
-    rt = HOPEvalValueAsReflectedType(baseValue);
-    if (rt != NULL && rt->kind == HOPEvalReflectType_NAMED && rt->namedKind == HOPEvalTypeKind_ENUM
+    rt = H2EvalValueAsReflectedType(baseValue);
+    if (rt != NULL && rt->kind == H2EvalReflectType_NAMED && rt->namedKind == H2EvalTypeKind_ENUM
         && rt->file != NULL && rt->nodeId >= 0 && (uint32_t)rt->nodeId < rt->file->ast.len)
     {
         int32_t  variantNode = -1;
         uint32_t tagIndex = 0;
-        if (HOPEvalFindEnumVariant(
+        if (H2EvalFindEnumVariant(
                 rt->file,
                 rt->nodeId,
                 p->currentFile->source,
@@ -9589,13 +9542,13 @@ static int HOPEvalMirAggGetField(
                 &variantNode,
                 &tagIndex))
         {
-            const HOPAstNode* variantField = &rt->file->ast.nodes[variantNode];
-            int32_t           valueNode = ASTFirstChild(&rt->file->ast, variantNode);
-            if (valueNode >= 0 && rt->file->ast.nodes[valueNode].kind != HOPAst_FIELD
-                && !HOPEvalEnumHasPayloadVariants(rt->file, rt->nodeId))
+            const H2AstNode* variantField = &rt->file->ast.nodes[variantNode];
+            int32_t          valueNode = ASTFirstChild(&rt->file->ast, variantNode);
+            if (valueNode >= 0 && rt->file->ast.nodes[valueNode].kind != H2Ast_FIELD
+                && !H2EvalEnumHasPayloadVariants(rt->file, rt->nodeId))
             {
                 int valueIsConst = 0;
-                if (HOPEvalExecExprInFileWithType(
+                if (H2EvalExecExprInFileWithType(
                         p,
                         rt->file,
                         p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL,
@@ -9614,7 +9567,7 @@ static int HOPEvalMirAggGetField(
                 *outIsConst = 1;
                 return 0;
             }
-            HOPEvalValueSetTaggedEnum(
+            H2EvalValueSetTaggedEnum(
                 p,
                 outValue,
                 rt->file,
@@ -9627,10 +9580,10 @@ static int HOPEvalMirAggGetField(
             return 0;
         }
     }
-    agg = HOPEvalValueAsAggregate(baseValue);
+    agg = H2EvalValueAsAggregate(baseValue);
     if (agg == NULL) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -9638,9 +9591,9 @@ static int HOPEvalMirAggGetField(
         }
         return 0;
     }
-    if (!HOPEvalAggregateGetFieldValue(agg, p->currentFile->source, nameStart, nameEnd, outValue)) {
+    if (!H2EvalAggregateGetFieldValue(agg, p->currentFile->source, nameStart, nameEnd, outValue)) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -9652,19 +9605,19 @@ static int HOPEvalMirAggGetField(
     return 0;
 }
 
-static int HOPEvalMirAggAddrField(
-    void*               ctx,
-    const HOPCTFEValue* base,
-    uint32_t            nameStart,
-    uint32_t            nameEnd,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*     p = (HOPEvalProgram*)ctx;
-    const HOPCTFEValue* baseValue;
-    const HOPCTFEValue* payload = NULL;
-    HOPEvalAggregate*   agg = NULL;
-    HOPCTFEValue*       fieldValue;
+static int H2EvalMirAggAddrField(
+    void*              ctx,
+    const H2CTFEValue* base,
+    uint32_t           nameStart,
+    uint32_t           nameEnd,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*     p = (H2EvalProgram*)ctx;
+    const H2CTFEValue* baseValue;
+    const H2CTFEValue* payload = NULL;
+    H2EvalAggregate*   agg = NULL;
+    H2CTFEValue*       fieldValue;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9674,23 +9627,23 @@ static int HOPEvalMirAggAddrField(
     {
         return -1;
     }
-    baseValue = HOPEvalValueTargetOrSelf(base);
-    if (baseValue->kind == HOPCTFEValue_OPTIONAL && HOPEvalOptionalPayload(baseValue, &payload)
+    baseValue = H2EvalValueTargetOrSelf(base);
+    if (baseValue->kind == H2CTFEValue_OPTIONAL && H2EvalOptionalPayload(baseValue, &payload)
         && baseValue->b != 0u && payload != NULL)
     {
-        baseValue = HOPEvalValueTargetOrSelf(payload);
+        baseValue = H2EvalValueTargetOrSelf(payload);
     }
-    if (baseValue->kind == HOPCTFEValue_INT && baseValue->i64 == 3
+    if (baseValue->kind == H2CTFEValue_INT && baseValue->i64 == 3
         && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "prefix"))
     {
-        HOPEvalValueSetReference(outValue, &p->loggerPrefix);
+        H2EvalValueSetReference(outValue, &p->loggerPrefix);
         *outIsConst = 1;
         return 0;
     }
-    agg = HOPEvalValueAsAggregate(baseValue);
+    agg = H2EvalValueAsAggregate(baseValue);
     if (agg == NULL) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -9698,11 +9651,11 @@ static int HOPEvalMirAggAddrField(
         }
         return 0;
     }
-    fieldValue = HOPEvalAggregateLookupFieldValuePtr(
+    fieldValue = H2EvalAggregateLookupFieldValuePtr(
         agg, p->currentFile->source, nameStart, nameEnd);
     if (fieldValue == NULL) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -9710,20 +9663,20 @@ static int HOPEvalMirAggAddrField(
         }
         return 0;
     }
-    HOPEvalValueSetReference(outValue, fieldValue);
+    H2EvalValueSetReference(outValue, fieldValue);
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalMirAggSetField(
+static int H2EvalMirAggSetField(
     void* _Nullable ctx,
-    HOPCTFEValue* _Nonnull inOutBase,
+    H2CTFEValue* _Nonnull inOutBase,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nonnull inValue,
+    const H2CTFEValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -9734,11 +9687,11 @@ static int HOPEvalMirAggSetField(
         return -1;
     }
     {
-        HOPCTFEValue*      value = inOutBase;
-        HOPEvalAggregate*  agg = HOPEvalValueAsAggregate(value);
-        HOPEvalTaggedEnum* tagged = HOPEvalValueAsTaggedEnum(value);
-        uint32_t           i;
-        uint32_t           dot = nameStart;
+        H2CTFEValue*      value = inOutBase;
+        H2EvalAggregate*  agg = H2EvalValueAsAggregate(value);
+        H2EvalTaggedEnum* tagged = H2EvalValueAsTaggedEnum(value);
+        uint32_t          i;
+        uint32_t          dot = nameStart;
         while (dot < nameEnd && p->currentFile->source[dot] != '.') {
             dot++;
         }
@@ -9746,23 +9699,23 @@ static int HOPEvalMirAggSetField(
             agg = tagged->payload;
         }
         if (agg == NULL) {
-            value = (HOPCTFEValue*)HOPEvalValueTargetOrSelf(inOutBase);
-            agg = HOPEvalValueAsAggregate(value);
-            tagged = HOPEvalValueAsTaggedEnum(value);
+            value = (H2CTFEValue*)H2EvalValueTargetOrSelf(inOutBase);
+            agg = H2EvalValueAsAggregate(value);
+            tagged = H2EvalValueAsTaggedEnum(value);
             if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
                 agg = tagged->payload;
             }
         }
         if (agg != NULL && dot == nameEnd) {
             if (value != NULL) {
-                value->typeTag |= HOPCTFEValueTag_AGG_PARTIAL;
+                value->typeTag |= H2CTFEValueTag_AGG_PARTIAL;
             }
-            HOPEvalAggregateField* field = HOPEvalAggregateFindDirectField(
+            H2EvalAggregateField* field = H2EvalAggregateFindDirectField(
                 agg, p->currentFile->source, nameStart, nameEnd);
             if (field != NULL) {
-                HOPCTFEValue coercedValue = *inValue;
+                H2CTFEValue coercedValue = *inValue;
                 if (field->typeNode >= 0
-                    && HOPEvalCoerceValueToTypeNode(p, agg->file, field->typeNode, &coercedValue)
+                    && H2EvalCoerceValueToTypeNode(p, agg->file, field->typeNode, &coercedValue)
                            != 0)
                 {
                     return -1;
@@ -9788,12 +9741,12 @@ static int HOPEvalMirAggSetField(
             }
         }
         if (agg != NULL && value != NULL) {
-            value->typeTag |= HOPCTFEValueTag_AGG_PARTIAL;
+            value->typeTag |= H2CTFEValueTag_AGG_PARTIAL;
         }
     }
-    if (!HOPEvalValueSetFieldPath(inOutBase, p->currentFile->source, nameStart, nameEnd, inValue)) {
+    if (!H2EvalValueSetFieldPath(inOutBase, p->currentFile->source, nameStart, nameEnd, inValue)) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -9805,21 +9758,20 @@ static int HOPEvalMirAggSetField(
     return 0;
 }
 
-static int HOPEvalMirHostCall(
-    void*               ctx,
-    uint32_t            hostId,
-    const HOPCTFEValue* args,
-    uint32_t            argCount,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+static int H2EvalMirHostCall(
+    void*              ctx,
+    uint32_t           hostId,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     (void)diag;
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_PRINT && argCount == 1u && args[0].kind == HOPCTFEValue_STRING)
-    {
+    if (hostId == H2_EVAL_MIR_HOST_PRINT && argCount == 1u && args[0].kind == H2CTFEValue_STRING) {
         if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
             if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
                 return ErrorSimple("failed to write print output");
@@ -9827,12 +9779,12 @@ static int HOPEvalMirHostCall(
         }
         fputc('\n', stdout);
         fflush(stdout);
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_CONCAT && argCount == 2u) {
-        int concatRc = HOPEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+    if (hostId == H2_EVAL_MIR_HOST_CONCAT && argCount == 2u) {
+        int concatRc = H2EvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
         if (concatRc < 0) {
             return -1;
         }
@@ -9843,8 +9795,8 @@ static int HOPEvalMirHostCall(
         *outIsConst = 0;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_COPY && argCount == 2u) {
-        int copyRc = HOPEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+    if (hostId == H2_EVAL_MIR_HOST_COPY && argCount == 2u) {
+        int copyRc = H2EvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
         if (copyRc < 0) {
             return -1;
         }
@@ -9855,26 +9807,26 @@ static int HOPEvalMirHostCall(
         *outIsConst = 0;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
-        HOPEvalValueSetNull(outValue);
+    if (hostId == H2_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_PLATFORM_EXIT && argCount == 1u) {
+    if (hostId == H2_EVAL_MIR_HOST_PLATFORM_EXIT && argCount == 1u) {
         int64_t exitCode = 0;
-        if (HOPCTFEValueToInt64(&args[0], &exitCode) != 0) {
+        if (H2CTFEValueToInt64(&args[0], &exitCode) != 0) {
             *outIsConst = 0;
             return 0;
         }
         p->exitCalled = 1;
         p->exitCode = (int)(exitCode & 255);
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u) {
+    if (hostId == H2_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u) {
         int64_t flags = 0;
-        if (args[0].kind != HOPCTFEValue_STRING || HOPCTFEValueToInt64(&args[1], &flags) != 0) {
+        if (args[0].kind != H2CTFEValue_STRING || H2CTFEValueToInt64(&args[1], &flags) != 0) {
             *outIsConst = 0;
             return 0;
         }
@@ -9886,7 +9838,7 @@ static int HOPEvalMirHostCall(
         }
         fputc('\n', stdout);
         fflush(stdout);
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
@@ -9894,26 +9846,26 @@ static int HOPEvalMirHostCall(
     return 0;
 }
 
-static void HOPEvalMirSetReason(
+static void H2EvalMirSetReason(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* _Nonnull reason) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     if (p == NULL || p->currentExecCtx == NULL || reason[0] == '\0') {
         return;
     }
-    HOPCTFEExecSetReason(p->currentExecCtx, start, end, reason);
+    H2CTFEExecSetReason(p->currentExecCtx, start, end, reason);
 }
 
-static int HOPEvalMirEnterFunction(
-    void* ctx, uint32_t functionIndex, uint32_t sourceRef, HOPDiag* _Nullable diag) {
-    HOPEvalMirExecCtx* c = (HOPEvalMirExecCtx*)ctx;
-    uint8_t            pushed = 0;
-    uint32_t           frameIndex;
+static int H2EvalMirEnterFunction(
+    void* ctx, uint32_t functionIndex, uint32_t sourceRef, H2Diag* _Nullable diag) {
+    H2EvalMirExecCtx* c = (H2EvalMirExecCtx*)ctx;
+    uint8_t           pushed = 0;
+    uint32_t          frameIndex;
     if (c == NULL || c->p == NULL || sourceRef >= c->sourceFileCap
-        || c->savedFileLen >= HOP_EVAL_CALL_MAX_DEPTH)
+        || c->savedFileLen >= H2_EVAL_CALL_MAX_DEPTH)
     {
         if (diag != NULL) {
-            diag->code = HOPDiag_UNEXPECTED_TOKEN;
-            diag->type = HOPDiagTypeOfCode(diag->code);
+            diag->code = H2Diag_UNEXPECTED_TOKEN;
+            diag->type = H2DiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -9925,8 +9877,8 @@ static int HOPEvalMirEnterFunction(
         uint32_t evalFnIndex;
         if (c->mirToEval == NULL || functionIndex >= c->mirToEvalLen) {
             if (diag != NULL) {
-                diag->code = HOPDiag_UNEXPECTED_TOKEN;
-                diag->type = HOPDiagTypeOfCode(diag->code);
+                diag->code = H2Diag_UNEXPECTED_TOKEN;
+                diag->type = H2DiagTypeOfCode(diag->code);
                 diag->start = 0;
                 diag->end = 0;
                 diag->argStart = 0;
@@ -9937,10 +9889,10 @@ static int HOPEvalMirEnterFunction(
         evalFnIndex = c->mirToEval[functionIndex];
         if (evalFnIndex == UINT32_MAX) {
             pushed = 0;
-        } else if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= HOP_EVAL_CALL_MAX_DEPTH) {
+        } else if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= H2_EVAL_CALL_MAX_DEPTH) {
             if (diag != NULL) {
-                diag->code = HOPDiag_UNEXPECTED_TOKEN;
-                diag->type = HOPDiagTypeOfCode(diag->code);
+                diag->code = H2Diag_UNEXPECTED_TOKEN;
+                diag->type = H2DiagTypeOfCode(diag->code);
                 diag->start = 0;
                 diag->end = 0;
                 diag->argStart = 0;
@@ -9969,9 +9921,9 @@ static int HOPEvalMirEnterFunction(
     return 0;
 }
 
-static void HOPEvalMirLeaveFunction(void* ctx) {
-    HOPEvalMirExecCtx* c = (HOPEvalMirExecCtx*)ctx;
-    uint32_t           frameIndex;
+static void H2EvalMirLeaveFunction(void* ctx) {
+    H2EvalMirExecCtx* c = (H2EvalMirExecCtx*)ctx;
+    uint32_t          frameIndex;
     if (c == NULL || c->p == NULL || c->savedFileLen == 0) {
         return;
     }
@@ -9980,25 +9932,25 @@ static void HOPEvalMirLeaveFunction(void* ctx) {
         c->p->callDepth--;
     }
     if (c->restoresTemplateBinding[frameIndex]) {
-        HOPEvalRestoreTemplateBinding(c->p, &c->savedTemplateBindings[frameIndex]);
+        H2EvalRestoreTemplateBinding(c->p, &c->savedTemplateBindings[frameIndex]);
         c->restoresTemplateBinding[frameIndex] = 0u;
     }
     c->p->currentMirExecCtx = c->savedMirExecCtxs[c->savedFileLen - 1u];
     c->p->currentFile = c->savedFiles[--c->savedFileLen];
 }
 
-static int HOPEvalMirBindFrame(
+static int H2EvalMirBindFrame(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPCTFEValue* _Nullable locals,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2CTFEValue* _Nullable locals,
     uint32_t localCount,
-    HOPDiag* _Nullable diag) {
-    HOPEvalMirExecCtx* c = (HOPEvalMirExecCtx*)ctx;
-    if (c == NULL || c->mirFrameDepth >= HOP_EVAL_CALL_MAX_DEPTH) {
+    H2Diag* _Nullable diag) {
+    H2EvalMirExecCtx* c = (H2EvalMirExecCtx*)ctx;
+    if (c == NULL || c->mirFrameDepth >= H2_EVAL_CALL_MAX_DEPTH) {
         if (diag != NULL) {
-            diag->code = HOPDiag_UNEXPECTED_TOKEN;
-            diag->type = HOPDiagTypeOfCode(diag->code);
+            diag->code = H2Diag_UNEXPECTED_TOKEN;
+            diag->type = H2DiagTypeOfCode(diag->code);
             diag->start = 0;
             diag->end = 0;
             diag->argStart = 0;
@@ -10018,8 +9970,8 @@ static int HOPEvalMirBindFrame(
     return 0;
 }
 
-static void HOPEvalMirUnbindFrame(void* _Nullable ctx) {
-    HOPEvalMirExecCtx* c = (HOPEvalMirExecCtx*)ctx;
+static void H2EvalMirUnbindFrame(void* _Nullable ctx) {
+    H2EvalMirExecCtx* c = (H2EvalMirExecCtx*)ctx;
     if (c == NULL || c->mirFrameDepth == 0) {
         return;
     }
@@ -10030,31 +9982,31 @@ static void HOPEvalMirUnbindFrame(void* _Nullable ctx) {
     c->mirLocalCount = c->savedMirLocalCounts[c->mirFrameDepth];
 }
 
-static int HOPEvalMirResolveCallNode(
-    const HOPMirProgram* _Nullable program,
-    const HOPMirInst* _Nullable inst,
+static int H2EvalMirResolveCallNode(
+    const H2MirProgram* _Nullable program,
+    const H2MirInst* _Nullable inst,
     int32_t* _Nonnull outCallNode) {
-    const HOPMirSymbolRef* symbol;
+    const H2MirSymbolRef* symbol;
     *outCallNode = -1;
-    if (program == NULL || inst == NULL || inst->op != HOPMirOp_CALL
+    if (program == NULL || inst == NULL || inst->op != H2MirOp_CALL
         || inst->aux >= program->symbolLen)
     {
         return 0;
     }
     symbol = &program->symbols[inst->aux];
-    if (symbol->kind != HOPMirSymbol_CALL || symbol->target == UINT32_MAX) {
+    if (symbol->kind != H2MirSymbol_CALL || symbol->target == UINT32_MAX) {
         return 0;
     }
     *outCallNode = (int32_t)symbol->target;
     return 1;
 }
 
-static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) {
-    const HOPAst*     ast;
-    const HOPAstNode* call;
-    const HOPAstNode* callee;
-    int32_t           calleeNode;
-    int32_t           recvNode;
+static int H2EvalMirCallNodeIsLazyBuiltin(H2EvalProgram* p, int32_t callNode) {
+    const H2Ast*     ast;
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
     if (p == NULL || p->currentFile == NULL) {
         return 0;
     }
@@ -10065,26 +10017,26 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
     call = &ast->nodes[callNode];
     calleeNode = call->firstChild;
     callee = calleeNode >= 0 ? &ast->nodes[calleeNode] : NULL;
-    if (call->kind != HOPAst_CALL || callee == NULL) {
+    if (call->kind != H2Ast_CALL || callee == NULL) {
         return 0;
     }
-    if (callee->kind == HOPAst_IDENT) {
-        return HOPEvalNameEqLiteralOrPkgBuiltin(
+    if (callee->kind == H2Ast_IDENT) {
+        return H2EvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source,
                    callee->dataStart,
                    callee->dataEnd,
                    "source_location_of",
                    "builtin")
-            || HOPEvalNameIsLazyTypeBuiltin(
+            || H2EvalNameIsLazyTypeBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd)
-            || HOPEvalNameIsCompilerDiagBuiltin(
+            || H2EvalNameIsCompilerDiagBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd);
     }
-    if (callee->kind != HOPAst_FIELD_EXPR) {
+    if (callee->kind != H2Ast_FIELD_EXPR) {
         return 0;
     }
     recvNode = callee->firstChild;
-    if (recvNode < 0 || (uint32_t)recvNode >= ast->len || ast->nodes[recvNode].kind != HOPAst_IDENT)
+    if (recvNode < 0 || (uint32_t)recvNode >= ast->len || ast->nodes[recvNode].kind != H2Ast_IDENT)
     {
         return 0;
     }
@@ -10094,7 +10046,7 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
             ast->nodes[recvNode].dataEnd,
             "builtin"))
     {
-        return HOPEvalNameEqLiteralOrPkgBuiltin(
+        return H2EvalNameEqLiteralOrPkgBuiltin(
             p->currentFile->source,
             callee->dataStart,
             callee->dataEnd,
@@ -10107,17 +10059,17 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
             ast->nodes[recvNode].dataEnd,
             "reflect"))
     {
-        return HOPEvalNameEqLiteralOrPkgBuiltin(
+        return H2EvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd, "kind", "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
+            || H2EvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source, callee->dataStart, callee->dataEnd, "base", "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
+            || H2EvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source,
                    callee->dataStart,
                    callee->dataEnd,
                    "is_alias",
                    "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
+            || H2EvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source,
                    callee->dataStart,
                    callee->dataEnd,
@@ -10132,24 +10084,24 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
     {
         return 0;
     }
-    return HOPEvalNameIsCompilerDiagBuiltin(
+    return H2EvalNameIsCompilerDiagBuiltin(
         p->currentFile->source, callee->dataStart, callee->dataEnd);
 }
 
-static const HOPPackage* _Nullable HOPEvalMirResolveQualifiedImportCallTargetPkg(
-    HOPEvalProgram* p, int32_t callNode) {
-    const HOPPackage* currentPkg;
-    const HOPAst*     ast;
-    const HOPAstNode* call;
-    const HOPAstNode* callee;
-    const HOPAstNode* base;
-    uint32_t          i;
-    int32_t           calleeNode;
-    int32_t           baseNode;
+static const H2Package* _Nullable H2EvalMirResolveQualifiedImportCallTargetPkg(
+    H2EvalProgram* p, int32_t callNode) {
+    const H2Package* currentPkg;
+    const H2Ast*     ast;
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    const H2AstNode* base;
+    uint32_t         i;
+    int32_t          calleeNode;
+    int32_t          baseNode;
     if (p == NULL || p->currentFile == NULL) {
         return NULL;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
+    currentPkg = H2EvalFindPackageByFile(p, p->currentFile);
     ast = &p->currentFile->ast;
     if (currentPkg == NULL || callNode < 0 || (uint32_t)callNode >= ast->len) {
         return NULL;
@@ -10159,13 +10111,13 @@ static const HOPPackage* _Nullable HOPEvalMirResolveQualifiedImportCallTargetPkg
     callee = calleeNode >= 0 ? &ast->nodes[calleeNode] : NULL;
     baseNode = calleeNode >= 0 ? ast->nodes[calleeNode].firstChild : -1;
     base = baseNode >= 0 ? &ast->nodes[baseNode] : NULL;
-    if (call->kind != HOPAst_CALL || callee == NULL || callee->kind != HOPAst_FIELD_EXPR
-        || base == NULL || base->kind != HOPAst_IDENT)
+    if (call->kind != H2Ast_CALL || callee == NULL || callee->kind != H2Ast_FIELD_EXPR
+        || base == NULL || base->kind != H2Ast_IDENT)
     {
         return NULL;
     }
     for (i = 0; i < currentPkg->importLen; i++) {
-        const HOPImportRef* imp = &currentPkg->imports[i];
+        const H2ImportRef* imp = &currentPkg->imports[i];
         if (imp->bindName == NULL || imp->target == NULL) {
             continue;
         }
@@ -10182,10 +10134,10 @@ static const HOPPackage* _Nullable HOPEvalMirResolveQualifiedImportCallTargetPkg
     return NULL;
 }
 
-static int HOPEvalMirLookupLocalValue(
-    HOPEvalProgram* p, uint32_t nameStart, uint32_t nameEnd, HOPCTFEValue* outValue) {
-    HOPEvalMirExecCtx*   c;
-    const HOPParsedFile* file;
+static int H2EvalMirLookupLocalValue(
+    H2EvalProgram* p, uint32_t nameStart, uint32_t nameEnd, H2CTFEValue* outValue) {
+    H2EvalMirExecCtx*   c;
+    const H2ParsedFile* file;
     if (p == NULL || outValue == NULL || p->currentFile == NULL) {
         return 0;
     }
@@ -10199,9 +10151,9 @@ static int HOPEvalMirLookupLocalValue(
             && c->mirLocalCount >= c->mirFunction->localCount)
         {
             for (i = c->mirFunction->localCount; i > 0; i--) {
-                const HOPMirLocal* local =
+                const H2MirLocal* local =
                     &c->mirProgram->locals[c->mirFunction->localStart + i - 1u];
-                const HOPCTFEValue* value = &c->mirLocals[i - 1u];
+                const H2CTFEValue* value = &c->mirLocals[i - 1u];
                 if (local->nameEnd <= local->nameStart
                     || !SliceEqSlice(
                         file->source,
@@ -10213,17 +10165,17 @@ static int HOPEvalMirLookupLocalValue(
                 {
                     continue;
                 }
-                if (value->kind == HOPCTFEValue_INVALID) {
+                if (value->kind == H2CTFEValue_INVALID) {
                     continue;
                 }
                 *outValue = *value;
                 if (local->typeRef != UINT32_MAX && local->typeRef < c->mirProgram->typeLen) {
                     int32_t typeNode = (int32_t)c->mirProgram->types[local->typeRef].astNode;
-                    int32_t typeCode = HOPEvalTypeCode_INVALID;
-                    if (!HOPEvalValueGetRuntimeTypeCode(outValue, &typeCode) && typeNode >= 0
-                        && HOPEvalTypeCodeFromTypeNode(file, typeNode, &typeCode))
+                    int32_t typeCode = H2EvalTypeCode_INVALID;
+                    if (!H2EvalValueGetRuntimeTypeCode(outValue, &typeCode) && typeNode >= 0
+                        && H2EvalTypeCodeFromTypeNode(file, typeNode, &typeCode))
                     {
-                        HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                        H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
                     }
                 }
                 return 1;
@@ -10240,14 +10192,14 @@ static int HOPEvalMirLookupLocalValue(
     return 0;
 }
 
-static int HOPEvalMirLookupLocalTypeNode(
-    HOPEvalProgram*       p,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    const HOPParsedFile** outFile,
-    int32_t*              outTypeNode) {
-    HOPEvalMirExecCtx*   c;
-    const HOPParsedFile* file;
+static int H2EvalMirLookupLocalTypeNode(
+    H2EvalProgram*       p,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    const H2ParsedFile** outFile,
+    int32_t*             outTypeNode) {
+    H2EvalMirExecCtx*   c;
+    const H2ParsedFile* file;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -10267,7 +10219,7 @@ static int HOPEvalMirLookupLocalTypeNode(
             && c->mirLocalCount >= c->mirFunction->localCount)
         {
             for (i = c->mirFunction->localCount; i > 0; i--) {
-                const HOPMirLocal* local =
+                const H2MirLocal* local =
                     &c->mirProgram->locals[c->mirFunction->localStart + i - 1u];
                 if (local->nameEnd <= local->nameStart || local->typeRef == UINT32_MAX
                     || local->typeRef >= c->mirProgram->typeLen
@@ -10297,128 +10249,128 @@ static int HOPEvalMirLookupLocalTypeNode(
     return 0;
 }
 
-static void HOPEvalMirInitExecEnv(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    HOPMirExecEnv*       env,
-    HOPEvalMirExecCtx* _Nullable functionCtx) {
+static void H2EvalMirInitExecEnv(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    H2MirExecEnv*       env,
+    H2EvalMirExecCtx* _Nullable functionCtx) {
     if (p == NULL || file == NULL || env == NULL) {
         return;
     }
     memset(env, 0, sizeof(*env));
     env->src.ptr = file->source;
     env->src.len = file->sourceLen;
-    env->resolveIdent = HOPEvalResolveIdent;
-    env->assignIdent = HOPEvalMirAssignIdent;
+    env->resolveIdent = H2EvalResolveIdent;
+    env->assignIdent = H2EvalMirAssignIdent;
     env->assignIdentCtx = p;
-    env->resolveCallPre = HOPEvalResolveCallMirPre;
-    env->resolveCall = HOPEvalResolveCallMir;
-    env->adjustCallArgs = HOPEvalMirAdjustCallArgs;
+    env->resolveCallPre = H2EvalResolveCallMirPre;
+    env->resolveCall = H2EvalResolveCallMir;
+    env->adjustCallArgs = H2EvalMirAdjustCallArgs;
     env->resolveCtx = p;
     env->adjustCallArgsCtx = p;
-    env->hostCall = HOPEvalMirHostCall;
+    env->hostCall = H2EvalMirHostCall;
     env->hostCtx = p;
-    env->zeroInitLocal = HOPEvalMirZeroInitLocal;
+    env->zeroInitLocal = H2EvalMirZeroInitLocal;
     env->zeroInitCtx = p;
-    env->coerceValueForType = HOPEvalMirCoerceValueForType;
+    env->coerceValueForType = H2EvalMirCoerceValueForType;
     env->coerceValueCtx = p;
-    env->indexValue = HOPEvalMirIndexValue;
+    env->indexValue = H2EvalMirIndexValue;
     env->indexValueCtx = p;
-    env->indexAddr = HOPEvalMirIndexAddr;
+    env->indexAddr = H2EvalMirIndexAddr;
     env->indexAddrCtx = p;
-    env->sliceValue = HOPEvalMirSliceValue;
+    env->sliceValue = H2EvalMirSliceValue;
     env->sliceValueCtx = p;
-    env->sequenceLen = HOPEvalMirSequenceLen;
+    env->sequenceLen = H2EvalMirSequenceLen;
     env->sequenceLenCtx = p;
-    env->iterInit = HOPEvalMirIterInit;
+    env->iterInit = H2EvalMirIterInit;
     env->iterInitCtx = p;
-    env->iterNext = HOPEvalMirIterNext;
+    env->iterNext = H2EvalMirIterNext;
     env->iterNextCtx = p;
-    env->aggGetField = HOPEvalMirAggGetField;
+    env->aggGetField = H2EvalMirAggGetField;
     env->aggGetFieldCtx = p;
-    env->aggAddrField = HOPEvalMirAggAddrField;
+    env->aggAddrField = H2EvalMirAggAddrField;
     env->aggAddrFieldCtx = p;
-    env->aggSetField = HOPEvalMirAggSetField;
+    env->aggSetField = H2EvalMirAggSetField;
     env->aggSetFieldCtx = p;
-    env->makeAggregate = HOPEvalMirMakeAggregate;
+    env->makeAggregate = H2EvalMirMakeAggregate;
     env->makeAggregateCtx = p;
-    env->makeTuple = HOPEvalMirMakeTuple;
+    env->makeTuple = H2EvalMirMakeTuple;
     env->makeTupleCtx = p;
-    env->makeVariadicPack = HOPEvalMirMakeVariadicPack;
+    env->makeVariadicPack = H2EvalMirMakeVariadicPack;
     env->makeVariadicPackCtx = p;
-    env->evalBinary = HOPEvalMirEvalBinary;
+    env->evalBinary = H2EvalMirEvalBinary;
     env->evalBinaryCtx = p;
-    env->allocNew = HOPEvalMirAllocNew;
+    env->allocNew = H2EvalMirAllocNew;
     env->allocNewCtx = p;
-    env->contextGet = HOPEvalMirContextGet;
+    env->contextGet = H2EvalMirContextGet;
     env->contextGetCtx = p;
-    env->contextAddr = HOPEvalMirContextAddr;
+    env->contextAddr = H2EvalMirContextAddr;
     env->contextAddrCtx = p;
-    env->evalWithContext = HOPEvalMirEvalWithContext;
+    env->evalWithContext = H2EvalMirEvalWithContext;
     env->evalWithContextCtx = p;
-    env->setReason = HOPEvalMirSetReason;
+    env->setReason = H2EvalMirSetReason;
     env->setReasonCtx = p;
     env->backwardJumpLimit = p->currentExecCtx != NULL ? p->currentExecCtx->forIterLimit : 0;
     env->diag = p->currentExecCtx != NULL ? p->currentExecCtx->diag : NULL;
     if (functionCtx != NULL) {
-        env->enterFunction = HOPEvalMirEnterFunction;
-        env->leaveFunction = HOPEvalMirLeaveFunction;
+        env->enterFunction = H2EvalMirEnterFunction;
+        env->leaveFunction = H2EvalMirLeaveFunction;
         env->functionCtx = functionCtx;
-        env->bindFrame = HOPEvalMirBindFrame;
-        env->unbindFrame = HOPEvalMirUnbindFrame;
+        env->bindFrame = H2EvalMirBindFrame;
+        env->unbindFrame = H2EvalMirUnbindFrame;
         env->frameCtx = functionCtx;
     }
 }
 
-static int HOPEvalMirEvalBinary(
+static int H2EvalMirEvalBinary(
     void* _Nullable ctx,
-    HOPTokenKind           op,
-    const HOPMirExecValue* lhs,
-    const HOPMirExecValue* rhs,
-    HOPMirExecValue*       outValue,
-    int*                   outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+    H2TokenKind           op,
+    const H2MirExecValue* lhs,
+    const H2MirExecValue* rhs,
+    H2MirExecValue*       outValue,
+    int*                  outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
     (void)diag;
-    return HOPEvalEvalBinary(p, op, lhs, rhs, outValue, outIsConst);
+    return H2EvalEvalBinary(p, op, lhs, rhs, outValue, outIsConst);
 }
 
-static int HOPEvalTryMirZeroInitType(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              typeNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    HOPCTFEValue*        outValue,
-    int*                 outIsConst) {
-    return HOPEvalTryMirEvalTopInit(
+static int H2EvalTryMirZeroInitType(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             typeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    return H2EvalTryMirEvalTopInit(
         p, file, -1, typeNode, nameStart, nameEnd, NULL, -1, outValue, outIsConst, NULL);
 }
 
-static int HOPEvalTryMirEvalTopInit(
-    HOPEvalProgram*      p,
-    const HOPParsedFile* file,
-    int32_t              initExprNode,
-    int32_t              declTypeNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    const HOPParsedFile* _Nullable coerceTypeFile,
-    int32_t       coerceTypeNode,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
+static int H2EvalTryMirEvalTopInit(
+    H2EvalProgram*      p,
+    const H2ParsedFile* file,
+    int32_t             initExprNode,
+    int32_t             declTypeNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const H2ParsedFile* _Nullable coerceTypeFile,
+    int32_t      coerceTypeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
     int* _Nullable outSupported) {
-    HOPMirProgram     program = { 0 };
-    HOPMirExecEnv     env = { 0 };
-    HOPEvalMirExecCtx functionCtx = { 0 };
-    uint32_t          rootMirFnIndex = UINT32_MAX;
-    int               supported = 0;
+    H2MirProgram     program = { 0 };
+    H2MirExecEnv     env = { 0 };
+    H2EvalMirExecCtx functionCtx = { 0 };
+    uint32_t         rootMirFnIndex = UINT32_MAX;
+    int              supported = 0;
     if (outSupported != NULL) {
         *outSupported = 0;
     }
     if (p == NULL || file == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (HOPEvalMirBuildTopInitProgram(
+    if (H2EvalMirBuildTopInitProgram(
             p,
             file,
             initExprNode,
@@ -10437,18 +10389,18 @@ static int HOPEvalTryMirEvalTopInit(
         *outIsConst = 0;
         return 0;
     }
-    HOPEvalMirInitExecEnv(p, file, &env, &functionCtx);
-    if (!HOPMirProgramNeedsDynamicResolution(&program)) {
-        HOPMirExecEnvDisableDynamicResolution(&env);
+    H2EvalMirInitExecEnv(p, file, &env, &functionCtx);
+    if (!H2MirProgramNeedsDynamicResolution(&program)) {
+        H2MirExecEnvDisableDynamicResolution(&env);
     }
-    if (HOPMirEvalFunction(p->arena, &program, rootMirFnIndex, NULL, 0, &env, outValue, outIsConst)
+    if (H2MirEvalFunction(p->arena, &program, rootMirFnIndex, NULL, 0, &env, outValue, outIsConst)
         != 0)
     {
         return -1;
     }
-    HOPEvalMirAdaptOutValue(&functionCtx, outValue, outIsConst);
+    H2EvalMirAdaptOutValue(&functionCtx, outValue, outIsConst);
     if (*outIsConst && coerceTypeFile != NULL && coerceTypeNode >= 0
-        && HOPEvalAdaptStringValueForType(
+        && H2EvalAdaptStringValueForType(
                p->arena, coerceTypeFile, coerceTypeNode, outValue, outValue)
                < 0)
     {
@@ -10460,18 +10412,18 @@ static int HOPEvalTryMirEvalTopInit(
     return 0;
 }
 
-static int HOPEvalTryMirEvalExprWithType(
-    HOPEvalProgram*      p,
-    int32_t              exprNode,
-    const HOPParsedFile* exprFile,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    const HOPParsedFile* _Nullable typeFile,
-    int32_t       typeNode,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    int*          outSupported) {
-    return HOPEvalTryMirEvalTopInit(
+static int H2EvalTryMirEvalExprWithType(
+    H2EvalProgram*      p,
+    int32_t             exprNode,
+    const H2ParsedFile* exprFile,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    int*         outSupported) {
+    return H2EvalTryMirEvalTopInit(
         p,
         exprFile,
         exprNode,
@@ -10485,13 +10437,13 @@ static int HOPEvalTryMirEvalExprWithType(
         outSupported);
 }
 
-static int HOPEvalValueNeedsDefaultFieldEval(const HOPCTFEValue* value) {
-    HOPEvalAggregate* agg;
-    uint32_t          i;
+static int H2EvalValueNeedsDefaultFieldEval(const H2CTFEValue* value) {
+    H2EvalAggregate* agg;
+    uint32_t         i;
     if (value == NULL) {
         return 0;
     }
-    agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(value));
+    agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(value));
     if (agg == NULL) {
         return 0;
     }
@@ -10503,37 +10455,37 @@ static int HOPEvalValueNeedsDefaultFieldEval(const HOPCTFEValue* value) {
     return 0;
 }
 
-static int HOPEvalFinalizeNewAggregateDefaults(HOPEvalProgram* p, HOPCTFEValue* inOutValue) {
-    HOPEvalAggregate*   agg = HOPEvalValueAsAggregate(inOutValue);
-    HOPCTFEExecBinding* fieldBindings = NULL;
-    HOPCTFEExecEnv      fieldFrame;
-    uint32_t            fieldBindingCap = 0;
-    uint32_t            i;
+static int H2EvalFinalizeNewAggregateDefaults(H2EvalProgram* p, H2CTFEValue* inOutValue) {
+    H2EvalAggregate*   agg = H2EvalValueAsAggregate(inOutValue);
+    H2CTFEExecBinding* fieldBindings = NULL;
+    H2CTFEExecEnv      fieldFrame;
+    uint32_t           fieldBindingCap = 0;
+    uint32_t           i;
     if (p == NULL || inOutValue == NULL || agg == NULL
-        || !HOPEvalValueNeedsDefaultFieldEval(inOutValue))
+        || !H2EvalValueNeedsDefaultFieldEval(inOutValue))
     {
         return 1;
     }
     if (agg->fieldLen > 0) {
-        fieldBindingCap = HOPEvalAggregateFieldBindingCount(agg);
-        fieldBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+        fieldBindingCap = H2EvalAggregateFieldBindingCount(agg);
+        fieldBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPCTFEExecBinding) * fieldBindingCap,
-            (uint32_t)_Alignof(HOPCTFEExecBinding));
+            sizeof(H2CTFEExecBinding) * fieldBindingCap,
+            (uint32_t)_Alignof(H2CTFEExecBinding));
         if (fieldBindings == NULL) {
             return ErrorSimple("out of memory");
         }
-        memset(fieldBindings, 0, sizeof(HOPCTFEExecBinding) * fieldBindingCap);
+        memset(fieldBindings, 0, sizeof(H2CTFEExecBinding) * fieldBindingCap);
     }
     fieldFrame.parent = p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL;
     fieldFrame.bindings = fieldBindings;
     fieldFrame.bindingLen = 0;
     for (i = 0; i < agg->fieldLen; i++) {
-        HOPEvalAggregateField* field = &agg->fields[i];
+        H2EvalAggregateField* field = &agg->fields[i];
         if (field->defaultExprNode >= 0) {
-            HOPCTFEValue defaultValue;
-            int          defaultIsConst = 0;
-            if (HOPEvalExecExprInFileWithType(
+            H2CTFEValue defaultValue;
+            int         defaultIsConst = 0;
+            if (H2EvalExecExprInFileWithType(
                     p,
                     agg->file,
                     &fieldFrame,
@@ -10552,7 +10504,7 @@ static int HOPEvalFinalizeNewAggregateDefaults(HOPEvalProgram* p, HOPCTFEValue* 
             field->value = defaultValue;
         }
         if (fieldBindings != NULL
-            && HOPEvalAppendAggregateFieldBindings(
+            && H2EvalAppendAggregateFieldBindings(
                    fieldBindings, fieldBindingCap, &fieldFrame, field)
                    != 0)
         {
@@ -10562,22 +10514,22 @@ static int HOPEvalFinalizeNewAggregateDefaults(HOPEvalProgram* p, HOPCTFEValue* 
     return 1;
 }
 
-static int HOPEvalMirAllocNew(
+static int H2EvalMirAllocNew(
     void* _Nullable ctx,
-    uint32_t         sourceNode,
-    HOPMirExecValue* outValue,
-    int*             outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*      p = (HOPEvalProgram*)ctx;
-    const HOPParsedFile* newFile;
-    int32_t              exprNode = (int32_t)sourceNode;
-    int32_t              typeNode = -1;
-    int32_t              countNode = -1;
-    int32_t              initNode = -1;
-    int32_t              allocNode = -1;
-    HOPCTFEValue         allocValue;
-    int                  allocIsConst = 0;
-    int                  allocSupported = 0;
+    uint32_t        sourceNode,
+    H2MirExecValue* outValue,
+    int*            outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*      p = (H2EvalProgram*)ctx;
+    const H2ParsedFile* newFile;
+    int32_t             exprNode = (int32_t)sourceNode;
+    int32_t             typeNode = -1;
+    int32_t             countNode = -1;
+    int32_t             initNode = -1;
+    int32_t             allocNode = -1;
+    H2CTFEValue         allocValue;
+    int                 allocIsConst = 0;
+    int                 allocSupported = 0;
     (void)diag;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -10586,12 +10538,12 @@ static int HOPEvalMirAllocNew(
         return -1;
     }
     newFile = p->currentFile;
-    if (!HOPEvalDecodeNewExprNodes(newFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
+    if (!H2EvalDecodeNewExprNodes(newFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
     }
     if (allocNode >= 0) {
-        if (HOPEvalTryMirEvalExprWithType(
+        if (H2EvalTryMirEvalExprWithType(
                 p, allocNode, newFile, 0, 0, NULL, -1, &allocValue, &allocIsConst, &allocSupported)
             != 0)
         {
@@ -10600,63 +10552,63 @@ static int HOPEvalMirAllocNew(
         if (!allocSupported || !allocIsConst) {
             return 0;
         }
-    } else if (!HOPEvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
+    } else if (!H2EvalCurrentContextFieldByLiteral(p, "allocator", &allocValue)) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReasonNode(
+            H2CTFEExecSetReasonNode(
                 p->currentExecCtx,
                 exprNode,
                 "allocator context is not available in evaluator backend");
         }
         return 0;
     }
-    if (HOPEvalValueTargetOrSelf(&allocValue)->kind == HOPCTFEValue_NULL) {
+    if (H2EvalValueTargetOrSelf(&allocValue)->kind == H2CTFEValue_NULL) {
         if (p->currentExecCtx != NULL) {
-            HOPCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "invalid allocator");
+            H2CTFEExecSetReasonNode(p->currentExecCtx, exprNode, "invalid allocator");
         }
         return 0;
     }
     {
-        const HOPParsedFile* expectedTypeFile = NULL;
-        int32_t              expectedTypeNode = -1;
-        int                  allocReturnedNull = 0;
-        int allocRc = HOPEvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
+        const H2ParsedFile* expectedTypeFile = NULL;
+        int32_t             expectedTypeNode = -1;
+        int                 allocReturnedNull = 0;
+        int allocRc = H2EvalCheckAllocatorImplResult(p, exprNode, &allocValue, &allocReturnedNull);
         if (allocRc <= 0) {
             if (allocRc == 0 && allocReturnedNull
-                && HOPEvalFindExpectedTypeForInitExpr(
+                && H2EvalFindExpectedTypeForInitExpr(
                     newFile, exprNode, &expectedTypeFile, &expectedTypeNode)
-                && HOPEvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
+                && H2EvalExpectedNewResultIsOptional(expectedTypeFile, expectedTypeNode))
             {
-                HOPEvalValueSetNull(outValue);
+                H2EvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 1;
             }
             if (allocRc == 0 && allocReturnedNull && p->currentExecCtx != NULL) {
-                HOPCTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
+                H2CTFEExecSetReasonNode(p->currentExecCtx, exprNode, "allocator returned null");
             }
             return allocRc;
         }
     }
     if (countNode >= 0) {
-        HOPCTFEValue  countValue;
-        HOPCTFEValue  arrayValue;
-        HOPEvalArray* array;
-        int           countIsConst = 0;
-        int           countSupported = 0;
-        int64_t       count = 0;
-        uint32_t      i;
-        if (HOPEvalTryMirEvalExprWithType(
+        H2CTFEValue  countValue;
+        H2CTFEValue  arrayValue;
+        H2EvalArray* array;
+        int          countIsConst = 0;
+        int          countSupported = 0;
+        int64_t      count = 0;
+        uint32_t     i;
+        if (H2EvalTryMirEvalExprWithType(
                 p, countNode, newFile, 0, 0, NULL, -1, &countValue, &countIsConst, &countSupported)
             != 0)
         {
             return -1;
         }
-        if (!countSupported || !countIsConst || HOPCTFEValueToInt64(&countValue, &count) != 0
+        if (!countSupported || !countIsConst || H2CTFEValueToInt64(&countValue, &count) != 0
             || count < 0)
         {
             return 0;
         }
-        array = (HOPEvalArray*)HOPArenaAlloc(
-            p->arena, sizeof(HOPEvalArray), (uint32_t)_Alignof(HOPEvalArray));
+        array = (H2EvalArray*)H2ArenaAlloc(
+            p->arena, sizeof(H2EvalArray), (uint32_t)_Alignof(H2EvalArray));
         if (array == NULL) {
             return ErrorSimple("out of memory");
         }
@@ -10666,16 +10618,16 @@ static int HOPEvalMirAllocNew(
         array->elemTypeNode = typeNode;
         array->len = (uint32_t)count;
         if (array->len > 0) {
-            array->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                p->arena, sizeof(HOPCTFEValue) * array->len, (uint32_t)_Alignof(HOPCTFEValue));
+            array->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * array->len, (uint32_t)_Alignof(H2CTFEValue));
             if (array->elems == NULL) {
                 return ErrorSimple("out of memory");
             }
-            memset(array->elems, 0, sizeof(HOPCTFEValue) * array->len);
+            memset(array->elems, 0, sizeof(H2CTFEValue) * array->len);
             if (initNode >= 0) {
-                HOPCTFEValue initValue;
-                int          initIsConst = 0;
-                if (HOPEvalExecExprWithTypeNode(
+                H2CTFEValue initValue;
+                int         initIsConst = 0;
+                if (H2EvalExecExprWithTypeNode(
                         p, initNode, newFile, typeNode, &initValue, &initIsConst)
                     != 0)
                 {
@@ -10684,7 +10636,7 @@ static int HOPEvalMirAllocNew(
                 if (!initIsConst) {
                     return 0;
                 }
-                if (HOPEvalCoerceValueToTypeNode(p, newFile, typeNode, &initValue) != 0) {
+                if (H2EvalCoerceValueToTypeNode(p, newFile, typeNode, &initValue) != 0) {
                     return -1;
                 }
                 for (i = 0; i < array->len; i++) {
@@ -10693,8 +10645,7 @@ static int HOPEvalMirAllocNew(
             } else {
                 for (i = 0; i < array->len; i++) {
                     int elemIsConst = 0;
-                    if (HOPEvalZeroInitTypeNode(
-                            p, newFile, typeNode, &array->elems[i], &elemIsConst)
+                    if (H2EvalZeroInitTypeNode(p, newFile, typeNode, &array->elems[i], &elemIsConst)
                         != 0)
                     {
                         return -1;
@@ -10703,7 +10654,7 @@ static int HOPEvalMirAllocNew(
                         return 0;
                     }
                     {
-                        int finalizeRc = HOPEvalFinalizeNewAggregateDefaults(p, &array->elems[i]);
+                        int finalizeRc = H2EvalFinalizeNewAggregateDefaults(p, &array->elems[i]);
                         if (finalizeRc <= 0) {
                             return finalizeRc < 0 ? -1 : 0;
                         }
@@ -10711,14 +10662,14 @@ static int HOPEvalMirAllocNew(
                 }
             }
         }
-        HOPEvalValueSetArray(&arrayValue, newFile, exprNode, array);
-        return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst) == 0 ? 1 : -1;
+        H2EvalValueSetArray(&arrayValue, newFile, exprNode, array);
+        return H2EvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst) == 0 ? 1 : -1;
     }
     {
-        HOPCTFEValue value;
-        int          valueIsConst = 0;
+        H2CTFEValue value;
+        int         valueIsConst = 0;
         if (initNode >= 0) {
-            if (HOPEvalExecExprWithTypeNode(p, initNode, newFile, typeNode, &value, &valueIsConst)
+            if (H2EvalExecExprWithTypeNode(p, initNode, newFile, typeNode, &value, &valueIsConst)
                 != 0)
             {
                 return -1;
@@ -10727,7 +10678,7 @@ static int HOPEvalMirAllocNew(
                 return 0;
             }
         } else {
-            if (HOPEvalZeroInitTypeNode(p, newFile, typeNode, &value, &valueIsConst) != 0) {
+            if (H2EvalZeroInitTypeNode(p, newFile, typeNode, &value, &valueIsConst) != 0) {
                 return -1;
             }
             if (!valueIsConst) {
@@ -10735,42 +10686,42 @@ static int HOPEvalMirAllocNew(
             }
         }
         if (initNode >= 0) {
-            if (HOPEvalCoerceValueToTypeNode(p, newFile, typeNode, &value) != 0) {
+            if (H2EvalCoerceValueToTypeNode(p, newFile, typeNode, &value) != 0) {
                 return -1;
             }
         } else {
-            int finalizeRc = HOPEvalFinalizeNewAggregateDefaults(p, &value);
+            int finalizeRc = H2EvalFinalizeNewAggregateDefaults(p, &value);
             if (finalizeRc <= 0) {
                 return finalizeRc < 0 ? -1 : 0;
             }
         }
-        return HOPEvalAllocReferencedValue(p, &value, outValue, outIsConst) == 0 ? 1 : -1;
+        return H2EvalAllocReferencedValue(p, &value, outValue, outIsConst) == 0 ? 1 : -1;
     }
 }
 
-static int HOPEvalBinaryOpForAssignToken(HOPTokenKind assignOp, HOPTokenKind* outBinaryOp) {
+static int H2EvalBinaryOpForAssignToken(H2TokenKind assignOp, H2TokenKind* outBinaryOp) {
     if (outBinaryOp == NULL) {
         return 0;
     }
     switch (assignOp) {
-        case HOPTok_ADD_ASSIGN: *outBinaryOp = HOPTok_ADD; return 1;
-        case HOPTok_SUB_ASSIGN: *outBinaryOp = HOPTok_SUB; return 1;
-        case HOPTok_MUL_ASSIGN: *outBinaryOp = HOPTok_MUL; return 1;
-        case HOPTok_DIV_ASSIGN: *outBinaryOp = HOPTok_DIV; return 1;
-        case HOPTok_MOD_ASSIGN: *outBinaryOp = HOPTok_MOD; return 1;
-        default:                *outBinaryOp = HOPTok_INVALID; return 0;
+        case H2Tok_ADD_ASSIGN: *outBinaryOp = H2Tok_ADD; return 1;
+        case H2Tok_SUB_ASSIGN: *outBinaryOp = H2Tok_SUB; return 1;
+        case H2Tok_MUL_ASSIGN: *outBinaryOp = H2Tok_MUL; return 1;
+        case H2Tok_DIV_ASSIGN: *outBinaryOp = H2Tok_DIV; return 1;
+        case H2Tok_MOD_ASSIGN: *outBinaryOp = H2Tok_MOD; return 1;
+        default:               *outBinaryOp = H2Tok_INVALID; return 0;
     }
 }
 
-static int HOPEvalAssignExprCb(
-    void* ctx, HOPCTFEExecCtx* execCtx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalProgram*   p = (HOPEvalProgram*)ctx;
-    const HOPAst*     ast;
-    const HOPAstNode* expr;
-    int32_t           lhsNode;
-    int32_t           rhsNode;
-    HOPCTFEValue      rhsValue;
-    int               rhsIsConst = 0;
+static int H2EvalAssignExprCb(
+    void* ctx, H2CTFEExecCtx* execCtx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalProgram*   p = (H2EvalProgram*)ctx;
+    const H2Ast*     ast;
+    const H2AstNode* expr;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    H2CTFEValue      rhsValue;
+    int              rhsIsConst = 0;
     if (p == NULL || p->currentFile == NULL || execCtx == NULL || outValue == NULL
         || outIsConst == NULL)
     {
@@ -10784,20 +10735,20 @@ static int HOPEvalAssignExprCb(
     expr = &ast->nodes[exprNode];
     lhsNode = expr->firstChild;
     rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
-    if (expr->kind != HOPAst_BINARY || lhsNode < 0 || rhsNode < 0
+    if (expr->kind != H2Ast_BINARY || lhsNode < 0 || rhsNode < 0
         || ast->nodes[rhsNode].nextSibling >= 0)
     {
         *outIsConst = 0;
         return 0;
     }
-    if (ast->nodes[lhsNode].kind == HOPAst_IDENT) {
+    if (ast->nodes[lhsNode].kind == H2Ast_IDENT) {
         if (SliceEqCStr(
                 p->currentFile->source,
                 ast->nodes[lhsNode].dataStart,
                 ast->nodes[lhsNode].dataEnd,
                 "_"))
         {
-            if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+            if (H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
                 return -1;
             }
             if (!rhsIsConst) {
@@ -10808,19 +10759,19 @@ static int HOPEvalAssignExprCb(
             *outIsConst = 1;
             return 0;
         }
-        int32_t topVarIndex = HOPEvalFindCurrentTopVarBySlice(
+        int32_t topVarIndex = H2EvalFindCurrentTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsNode].dataStart, ast->nodes[lhsNode].dataEnd);
         if (topVarIndex >= 0) {
-            HOPEvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
-            if ((HOPTokenKind)expr->op == HOPTok_ASSIGN) {
+            H2EvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
+            if ((H2TokenKind)expr->op == H2Tok_ASSIGN) {
                 if (topVar->declTypeNode >= 0) {
-                    if (HOPEvalExecExprWithTypeNode(
+                    if (H2EvalExecExprWithTypeNode(
                             p, rhsNode, topVar->file, topVar->declTypeNode, &rhsValue, &rhsIsConst)
                         != 0)
                     {
                         return -1;
                     }
-                } else if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+                } else if (H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
                     return -1;
                 }
                 if (!rhsIsConst) {
@@ -10828,24 +10779,24 @@ static int HOPEvalAssignExprCb(
                     return 0;
                 }
                 topVar->value = rhsValue;
-                topVar->state = HOPEvalTopConstState_READY;
+                topVar->state = H2EvalTopConstState_READY;
                 *outValue = rhsValue;
                 *outIsConst = 1;
                 return 0;
             }
         }
     }
-    if (ast->nodes[lhsNode].kind == HOPAst_INDEX && (ast->nodes[lhsNode].flags & 0x7u) == 0u) {
-        int32_t       baseNode = ast->nodes[lhsNode].firstChild;
-        int32_t       indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
-        HOPCTFEValue  baseValue;
-        HOPCTFEValue  indexValue;
-        HOPEvalArray* array;
-        HOPTokenKind  binaryOp = HOPTok_INVALID;
-        int           baseIsConst = 0;
-        int           indexIsConst = 0;
-        int64_t       index = 0;
-        if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+    if (ast->nodes[lhsNode].kind == H2Ast_INDEX && (ast->nodes[lhsNode].flags & 0x7u) == 0u) {
+        int32_t      baseNode = ast->nodes[lhsNode].firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        H2CTFEValue  baseValue;
+        H2CTFEValue  indexValue;
+        H2EvalArray* array;
+        H2TokenKind  binaryOp = H2Tok_INVALID;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
+        if (H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
             return -1;
         }
         if (!rhsIsConst || baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0)
@@ -10853,27 +10804,27 @@ static int HOPEvalAssignExprCb(
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
-            || HOPEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || H2EvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
         {
             return -1;
         }
-        if (!baseIsConst || !indexIsConst || HOPCTFEValueToInt64(&indexValue, &index) != 0) {
+        if (!baseIsConst || !indexIsConst || H2CTFEValueToInt64(&indexValue, &index) != 0) {
             *outIsConst = 0;
             return 0;
         }
-        array = HOPEvalValueAsArray(&baseValue);
+        array = H2EvalValueAsArray(&baseValue);
         if (array == NULL) {
-            array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&baseValue));
+            array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&baseValue));
         }
         if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
-            if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
+            if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
                 int handled;
-                if (!HOPEvalBinaryOpForAssignToken((HOPTokenKind)expr->op, &binaryOp)) {
+                if (!H2EvalBinaryOpForAssignToken((H2TokenKind)expr->op, &binaryOp)) {
                     *outIsConst = 0;
                     return 0;
                 }
-                handled = HOPEvalEvalBinary(
+                handled = H2EvalEvalBinary(
                     p, binaryOp, &array->elems[(uint32_t)index], &rhsValue, &rhsValue, outIsConst);
                 if (handled <= 0 || !*outIsConst) {
                     *outIsConst = 0;
@@ -10886,22 +10837,22 @@ static int HOPEvalAssignExprCb(
             return 0;
         }
         {
-            HOPCTFEValue* targetValue = HOPEvalValueReferenceTarget(&baseValue);
-            int32_t       baseTypeCode = HOPEvalTypeCode_INVALID;
-            int64_t       byteValue = 0;
+            H2CTFEValue* targetValue = H2EvalValueReferenceTarget(&baseValue);
+            int32_t      baseTypeCode = H2EvalTypeCode_INVALID;
+            int64_t      byteValue = 0;
             if (targetValue == NULL) {
-                targetValue = (HOPCTFEValue*)HOPEvalValueTargetOrSelf(&baseValue);
+                targetValue = (H2CTFEValue*)H2EvalValueTargetOrSelf(&baseValue);
             }
-            if (targetValue != NULL && targetValue->kind == HOPCTFEValue_STRING
-                && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
-                && baseTypeCode == HOPEvalTypeCode_STR_PTR && index >= 0
+            if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
+                && H2EvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+                && baseTypeCode == H2EvalTypeCode_STR_PTR && index >= 0
                 && (uint64_t)index < (uint64_t)targetValue->s.len
-                && HOPCTFEValueToInt64(&rhsValue, &byteValue) == 0 && byteValue >= 0
+                && H2CTFEValueToInt64(&rhsValue, &byteValue) == 0 && byteValue >= 0
                 && byteValue <= 255)
             {
                 ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
-                HOPEvalValueSetInt(outValue, byteValue);
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
+                H2EvalValueSetInt(outValue, byteValue);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_U8);
                 *outIsConst = 1;
                 return 0;
             }
@@ -10909,40 +10860,39 @@ static int HOPEvalAssignExprCb(
         *outIsConst = 0;
         return 0;
     }
-    if (ast->nodes[lhsNode].kind == HOPAst_UNARY
-        && (HOPTokenKind)ast->nodes[lhsNode].op == HOPTok_MUL)
+    if (ast->nodes[lhsNode].kind == H2Ast_UNARY && (H2TokenKind)ast->nodes[lhsNode].op == H2Tok_MUL)
     {
-        int32_t       refNode = ast->nodes[lhsNode].firstChild;
-        HOPCTFEValue  refValue;
-        HOPCTFEValue* target;
-        HOPTokenKind  binaryOp = HOPTok_INVALID;
-        int           refIsConst = 0;
-        if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+        int32_t      refNode = ast->nodes[lhsNode].firstChild;
+        H2CTFEValue  refValue;
+        H2CTFEValue* target;
+        H2TokenKind  binaryOp = H2Tok_INVALID;
+        int          refIsConst = 0;
+        if (H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
             return -1;
         }
         if (!rhsIsConst || refNode < 0) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, refNode, &refValue, &refIsConst) != 0) {
+        if (H2EvalExecExprCb(p, refNode, &refValue, &refIsConst) != 0) {
             return -1;
         }
         if (!refIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        target = HOPEvalValueReferenceTarget(&refValue);
+        target = H2EvalValueReferenceTarget(&refValue);
         if (target == NULL) {
             *outIsConst = 0;
             return 0;
         }
-        if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
+        if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
             int handled;
-            if (!HOPEvalBinaryOpForAssignToken((HOPTokenKind)expr->op, &binaryOp)) {
+            if (!H2EvalBinaryOpForAssignToken((H2TokenKind)expr->op, &binaryOp)) {
                 *outIsConst = 0;
                 return 0;
             }
-            handled = HOPEvalEvalBinary(p, binaryOp, target, &rhsValue, &rhsValue, outIsConst);
+            handled = H2EvalEvalBinary(p, binaryOp, target, &rhsValue, &rhsValue, outIsConst);
             if (handled <= 0 || !*outIsConst) {
                 *outIsConst = 0;
                 return handled < 0 ? -1 : 0;
@@ -10953,11 +10903,11 @@ static int HOPEvalAssignExprCb(
         *outIsConst = 1;
         return 0;
     }
-    if (ast->nodes[lhsNode].kind != HOPAst_FIELD_EXPR) {
+    if (ast->nodes[lhsNode].kind != H2Ast_FIELD_EXPR) {
         *outIsConst = 0;
         return 0;
     }
-    if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+    if (H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
         return -1;
     }
     if (!rhsIsConst) {
@@ -10965,18 +10915,18 @@ static int HOPEvalAssignExprCb(
         return 0;
     }
     {
-        int32_t             curNode = lhsNode;
-        HOPCTFEExecBinding* binding = NULL;
-        HOPEvalAggregate*   agg = NULL;
-        while (ast->nodes[curNode].kind == HOPAst_FIELD_EXPR) {
+        int32_t            curNode = lhsNode;
+        H2CTFEExecBinding* binding = NULL;
+        H2EvalAggregate*   agg = NULL;
+        while (ast->nodes[curNode].kind == H2Ast_FIELD_EXPR) {
             int32_t baseNode = ast->nodes[curNode].firstChild;
             if (baseNode < 0) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (ast->nodes[baseNode].kind == HOPAst_IDENT) {
+            if (ast->nodes[baseNode].kind == H2Ast_IDENT) {
                 int allowIndirectMutation = 0;
-                binding = HOPEvalFindBinding(
+                binding = H2EvalFindBinding(
                     execCtx,
                     p->currentFile,
                     ast->nodes[baseNode].dataStart,
@@ -10985,11 +10935,11 @@ static int HOPEvalAssignExprCb(
                     *outIsConst = 0;
                     return 0;
                 }
-                agg = HOPEvalValueAsAggregate(&binding->value);
+                agg = H2EvalValueAsAggregate(&binding->value);
                 if (agg != NULL) {
                     allowIndirectMutation = 0;
                 } else {
-                    agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(&binding->value));
+                    agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&binding->value));
                     allowIndirectMutation = agg != NULL;
                 }
                 if (!binding->mutable && !allowIndirectMutation) {
@@ -10998,7 +10948,7 @@ static int HOPEvalAssignExprCb(
                 }
                 break;
             }
-            if (ast->nodes[baseNode].kind == HOPAst_FIELD_EXPR) {
+            if (ast->nodes[baseNode].kind == H2Ast_FIELD_EXPR) {
                 curNode = baseNode;
                 continue;
             }
@@ -11013,7 +10963,7 @@ static int HOPEvalAssignExprCb(
             int32_t  pathNodes[16];
             uint32_t pathLen = 0;
             curNode = lhsNode;
-            while (curNode >= 0 && ast->nodes[curNode].kind == HOPAst_FIELD_EXPR) {
+            while (curNode >= 0 && ast->nodes[curNode].kind == H2Ast_FIELD_EXPR) {
                 if (pathLen >= 16u) {
                     *outIsConst = 0;
                     return 0;
@@ -11022,15 +10972,15 @@ static int HOPEvalAssignExprCb(
                 curNode = ast->nodes[curNode].firstChild;
             }
             while (pathLen > 0) {
-                const HOPAstNode* fieldNode;
+                const H2AstNode* fieldNode;
                 pathLen--;
                 fieldNode = &ast->nodes[pathNodes[pathLen]];
                 if (pathLen == 0) {
-                    if ((HOPTokenKind)expr->op != HOPTok_ASSIGN) {
-                        HOPCTFEValue curValue;
-                        HOPTokenKind binaryOp = HOPTok_INVALID;
-                        int          handled = 0;
-                        if (!HOPEvalAggregateGetFieldValue(
+                    if ((H2TokenKind)expr->op != H2Tok_ASSIGN) {
+                        H2CTFEValue curValue;
+                        H2TokenKind binaryOp = H2Tok_INVALID;
+                        int         handled = 0;
+                        if (!H2EvalAggregateGetFieldValue(
                                 agg,
                                 p->currentFile->source,
                                 fieldNode->dataStart,
@@ -11040,18 +10990,18 @@ static int HOPEvalAssignExprCb(
                             *outIsConst = 0;
                             return 0;
                         }
-                        if (!HOPEvalBinaryOpForAssignToken((HOPTokenKind)expr->op, &binaryOp)) {
+                        if (!H2EvalBinaryOpForAssignToken((H2TokenKind)expr->op, &binaryOp)) {
                             *outIsConst = 0;
                             return 0;
                         }
-                        handled = HOPEvalEvalBinary(
+                        handled = H2EvalEvalBinary(
                             p, binaryOp, &curValue, &rhsValue, &rhsValue, outIsConst);
                         if (handled <= 0 || !*outIsConst) {
                             *outIsConst = 0;
                             return handled < 0 ? -1 : 0;
                         }
                     }
-                    if (HOPEvalAggregateSetFieldValue(
+                    if (H2EvalAggregateSetFieldValue(
                             agg,
                             p->currentFile->source,
                             fieldNode->dataStart,
@@ -11066,8 +11016,8 @@ static int HOPEvalAssignExprCb(
                     return 0;
                 }
                 {
-                    HOPCTFEValue nestedValue;
-                    if (!HOPEvalAggregateGetFieldValue(
+                    H2CTFEValue nestedValue;
+                    if (!H2EvalAggregateGetFieldValue(
                             agg,
                             p->currentFile->source,
                             fieldNode->dataStart,
@@ -11077,7 +11027,7 @@ static int HOPEvalAssignExprCb(
                         *outIsConst = 0;
                         return 0;
                     }
-                    agg = HOPEvalValueAsAggregate(&nestedValue);
+                    agg = H2EvalValueAsAggregate(&nestedValue);
                 }
                 if (agg == NULL) {
                     *outIsConst = 0;
@@ -11090,12 +11040,12 @@ static int HOPEvalAssignExprCb(
     return 0;
 }
 
-static HOPCTFEValue* _Nullable HOPEvalResolveFieldExprValuePtr(
-    HOPEvalProgram* p, HOPCTFEExecCtx* execCtx, int32_t fieldExprNode) {
-    const HOPAst*     ast;
-    const HOPAstNode* fieldExpr;
-    int32_t           baseNode;
-    HOPEvalAggregate* agg = NULL;
+static H2CTFEValue* _Nullable H2EvalResolveFieldExprValuePtr(
+    H2EvalProgram* p, H2CTFEExecCtx* execCtx, int32_t fieldExprNode) {
+    const H2Ast*     ast;
+    const H2AstNode* fieldExpr;
+    int32_t          baseNode;
+    H2EvalAggregate* agg = NULL;
     if (p == NULL || p->currentFile == NULL || execCtx == NULL || fieldExprNode < 0) {
         return NULL;
     }
@@ -11104,49 +11054,49 @@ static HOPCTFEValue* _Nullable HOPEvalResolveFieldExprValuePtr(
         return NULL;
     }
     fieldExpr = &ast->nodes[fieldExprNode];
-    if (fieldExpr->kind != HOPAst_FIELD_EXPR) {
+    if (fieldExpr->kind != H2Ast_FIELD_EXPR) {
         return NULL;
     }
     baseNode = fieldExpr->firstChild;
     if (baseNode < 0 || (uint32_t)baseNode >= ast->len) {
         return NULL;
     }
-    if (ast->nodes[baseNode].kind == HOPAst_IDENT) {
-        HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+    if (ast->nodes[baseNode].kind == H2Ast_IDENT) {
+        H2CTFEExecBinding* binding = H2EvalFindBinding(
             execCtx, p->currentFile, ast->nodes[baseNode].dataStart, ast->nodes[baseNode].dataEnd);
         if (binding == NULL) {
             return NULL;
         }
-        agg = HOPEvalValueAsAggregate(&binding->value);
+        agg = H2EvalValueAsAggregate(&binding->value);
         if (agg == NULL) {
-            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(&binding->value));
+            agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&binding->value));
         }
-    } else if (ast->nodes[baseNode].kind == HOPAst_FIELD_EXPR) {
-        HOPCTFEValue* baseValue = HOPEvalResolveFieldExprValuePtr(p, execCtx, baseNode);
+    } else if (ast->nodes[baseNode].kind == H2Ast_FIELD_EXPR) {
+        H2CTFEValue* baseValue = H2EvalResolveFieldExprValuePtr(p, execCtx, baseNode);
         if (baseValue == NULL) {
             return NULL;
         }
-        agg = HOPEvalValueAsAggregate(baseValue);
+        agg = H2EvalValueAsAggregate(baseValue);
         if (agg == NULL) {
-            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(baseValue));
+            agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(baseValue));
         }
     }
     if (agg == NULL) {
         return NULL;
     }
-    return HOPEvalAggregateLookupFieldValuePtr(
+    return H2EvalAggregateLookupFieldValuePtr(
         agg, p->currentFile->source, fieldExpr->dataStart, fieldExpr->dataEnd);
 }
 
-static int HOPEvalAssignValueExprCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    int32_t             lhsExprNode,
-    const HOPCTFEValue* inValue,
-    HOPCTFEValue*       outValue,
-    int*                outIsConst) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    const HOPAst*   ast;
+static int H2EvalAssignValueExprCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    int32_t            lhsExprNode,
+    const H2CTFEValue* inValue,
+    H2CTFEValue*       outValue,
+    int*               outIsConst) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    const H2Ast*   ast;
     if (p == NULL || p->currentFile == NULL || execCtx == NULL || inValue == NULL
         || outValue == NULL || outIsConst == NULL)
     {
@@ -11157,7 +11107,7 @@ static int HOPEvalAssignValueExprCb(
         *outIsConst = 0;
         return 0;
     }
-    if (ast->nodes[lhsExprNode].kind == HOPAst_IDENT) {
+    if (ast->nodes[lhsExprNode].kind == H2Ast_IDENT) {
         if (SliceEqCStr(
                 p->currentFile->source,
                 ast->nodes[lhsExprNode].dataStart,
@@ -11168,44 +11118,43 @@ static int HOPEvalAssignValueExprCb(
             *outIsConst = 1;
             return 0;
         }
-        int32_t topVarIndex = HOPEvalFindCurrentTopVarBySlice(
+        int32_t topVarIndex = H2EvalFindCurrentTopVarBySlice(
             p, p->currentFile, ast->nodes[lhsExprNode].dataStart, ast->nodes[lhsExprNode].dataEnd);
         if (topVarIndex >= 0) {
-            HOPEvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
+            H2EvalTopVar* topVar = &p->topVars[(uint32_t)topVarIndex];
             topVar->value = *inValue;
-            topVar->state = HOPEvalTopConstState_READY;
+            topVar->state = H2EvalTopConstState_READY;
             *outValue = *inValue;
             *outIsConst = 1;
             return 0;
         }
     }
-    if (ast->nodes[lhsExprNode].kind == HOPAst_INDEX
-        && (ast->nodes[lhsExprNode].flags & 0x7u) == 0u)
+    if (ast->nodes[lhsExprNode].kind == H2Ast_INDEX && (ast->nodes[lhsExprNode].flags & 0x7u) == 0u)
     {
-        int32_t       baseNode = ast->nodes[lhsExprNode].firstChild;
-        int32_t       indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
-        HOPCTFEValue  baseValue;
-        HOPCTFEValue  indexValue;
-        HOPEvalArray* array;
-        int           baseIsConst = 0;
-        int           indexIsConst = 0;
-        int64_t       index = 0;
+        int32_t      baseNode = ast->nodes[lhsExprNode].firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        H2CTFEValue  baseValue;
+        H2CTFEValue  indexValue;
+        H2EvalArray* array;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
         if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
-            || HOPEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || H2EvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
         {
             return -1;
         }
-        if (!baseIsConst || !indexIsConst || HOPCTFEValueToInt64(&indexValue, &index) != 0) {
+        if (!baseIsConst || !indexIsConst || H2CTFEValueToInt64(&indexValue, &index) != 0) {
             *outIsConst = 0;
             return 0;
         }
-        array = HOPEvalValueAsArray(&baseValue);
+        array = H2EvalValueAsArray(&baseValue);
         if (array == NULL) {
-            array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&baseValue));
+            array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&baseValue));
         }
         if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
             array->elems[(uint32_t)index] = *inValue;
@@ -11214,22 +11163,22 @@ static int HOPEvalAssignValueExprCb(
             return 0;
         }
         {
-            HOPCTFEValue* targetValue = HOPEvalValueReferenceTarget(&baseValue);
-            int32_t       baseTypeCode = HOPEvalTypeCode_INVALID;
-            int64_t       byteValue = 0;
+            H2CTFEValue* targetValue = H2EvalValueReferenceTarget(&baseValue);
+            int32_t      baseTypeCode = H2EvalTypeCode_INVALID;
+            int64_t      byteValue = 0;
             if (targetValue == NULL) {
-                targetValue = (HOPCTFEValue*)HOPEvalValueTargetOrSelf(&baseValue);
+                targetValue = (H2CTFEValue*)H2EvalValueTargetOrSelf(&baseValue);
             }
-            if (targetValue != NULL && targetValue->kind == HOPCTFEValue_STRING
-                && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
-                && baseTypeCode == HOPEvalTypeCode_STR_PTR && index >= 0
+            if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
+                && H2EvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
+                && baseTypeCode == H2EvalTypeCode_STR_PTR && index >= 0
                 && (uint64_t)index < (uint64_t)targetValue->s.len
-                && HOPCTFEValueToInt64(inValue, &byteValue) == 0 && byteValue >= 0
+                && H2CTFEValueToInt64(inValue, &byteValue) == 0 && byteValue >= 0
                 && byteValue <= 255)
             {
                 ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
-                HOPEvalValueSetInt(outValue, byteValue);
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
+                H2EvalValueSetInt(outValue, byteValue);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_U8);
                 *outIsConst = 1;
                 return 0;
             }
@@ -11241,19 +11190,19 @@ static int HOPEvalAssignValueExprCb(
     return 0;
 }
 
-static int HOPEvalMatchPatternCb(
-    void*               ctx,
-    HOPCTFEExecCtx*     execCtx,
-    const HOPCTFEValue* subjectValue,
-    int32_t             labelExprNode,
-    int*                outMatched) {
-    HOPEvalProgram*      p = (HOPEvalProgram*)ctx;
-    HOPEvalTaggedEnum*   tagged;
-    const HOPAstNode*    labelNode;
-    const HOPParsedFile* enumFile = NULL;
-    int32_t              enumNode = -1;
-    int32_t              variantNode = -1;
-    uint32_t             tagIndex = 0;
+static int H2EvalMatchPatternCb(
+    void*              ctx,
+    H2CTFEExecCtx*     execCtx,
+    const H2CTFEValue* subjectValue,
+    int32_t            labelExprNode,
+    int*               outMatched) {
+    H2EvalProgram*      p = (H2EvalProgram*)ctx;
+    H2EvalTaggedEnum*   tagged;
+    const H2AstNode*    labelNode;
+    const H2ParsedFile* enumFile = NULL;
+    int32_t             enumNode = -1;
+    int32_t             variantNode = -1;
+    uint32_t            tagIndex = 0;
     (void)execCtx;
     if (outMatched != NULL) {
         *outMatched = 0;
@@ -11263,24 +11212,24 @@ static int HOPEvalMatchPatternCb(
     {
         return -1;
     }
-    tagged = HOPEvalValueAsTaggedEnum(HOPEvalValueTargetOrSelf(subjectValue));
+    tagged = H2EvalValueAsTaggedEnum(H2EvalValueTargetOrSelf(subjectValue));
     if (tagged == NULL) {
         return 0;
     }
     labelNode = &p->currentFile->ast.nodes[labelExprNode];
-    if (labelNode->kind != HOPAst_FIELD_EXPR || labelNode->firstChild < 0
-        || p->currentFile->ast.nodes[labelNode->firstChild].kind != HOPAst_IDENT)
+    if (labelNode->kind != H2Ast_FIELD_EXPR || labelNode->firstChild < 0
+        || p->currentFile->ast.nodes[labelNode->firstChild].kind != H2Ast_IDENT)
     {
         return 0;
     }
-    enumNode = HOPEvalFindNamedEnumDecl(
+    enumNode = H2EvalFindNamedEnumDecl(
         p,
         p->currentFile,
         p->currentFile->ast.nodes[labelNode->firstChild].dataStart,
         p->currentFile->ast.nodes[labelNode->firstChild].dataEnd,
         &enumFile);
     if (enumNode < 0 || enumFile == NULL
-        || !HOPEvalFindEnumVariant(
+        || !H2EvalFindEnumVariant(
             enumFile,
             enumNode,
             p->currentFile->source,
@@ -11297,68 +11246,65 @@ static int HOPEvalMatchPatternCb(
 }
 
 typedef struct {
-    HOPEvalProgram*      p;
-    const HOPParsedFile* file;
-} HOPEvalMirLowerConstCtx;
+    H2EvalProgram*      p;
+    const H2ParsedFile* file;
+} H2EvalMirLowerConstCtx;
 
-static int HOPEvalMirLowerConstExpr(
-    void* _Nullable ctx,
-    int32_t exprNode,
-    HOPMirConst* _Nonnull outValue,
-    HOPDiag* _Nullable diag) {
-    HOPEvalMirLowerConstCtx* lowerCtx = (HOPEvalMirLowerConstCtx*)ctx;
-    HOPCTFEValue             value;
-    int32_t                  typeNode;
-    int                      rc;
+static int H2EvalMirLowerConstExpr(
+    void* _Nullable ctx, int32_t exprNode, H2MirConst* _Nonnull outValue, H2Diag* _Nullable diag) {
+    H2EvalMirLowerConstCtx* lowerCtx = (H2EvalMirLowerConstCtx*)ctx;
+    H2CTFEValue             value;
+    int32_t                 typeNode;
+    int                     rc;
     (void)diag;
     if (lowerCtx == NULL || lowerCtx->p == NULL || lowerCtx->file == NULL || outValue == NULL
         || exprNode < 0 || (uint32_t)exprNode >= lowerCtx->file->ast.len)
     {
         return -1;
     }
-    if (lowerCtx->file->ast.nodes[exprNode].kind != HOPAst_TYPE_VALUE) {
+    if (lowerCtx->file->ast.nodes[exprNode].kind != H2Ast_TYPE_VALUE) {
         return 0;
     }
     typeNode = ASTFirstChild(&lowerCtx->file->ast, exprNode);
-    rc = HOPEvalTypeValueFromTypeNode(lowerCtx->p, lowerCtx->file, typeNode, &value);
+    rc = H2EvalTypeValueFromTypeNode(lowerCtx->p, lowerCtx->file, typeNode, &value);
     if (rc < 0) {
         return -1;
     }
-    if (rc == 0 || value.kind != HOPCTFEValue_TYPE) {
+    if (rc == 0 || value.kind != H2CTFEValue_TYPE) {
         return 0;
     }
-    outValue->kind = HOPMirConst_TYPE;
+    outValue->kind = H2MirConst_TYPE;
     outValue->bits = value.typeTag;
     outValue->bytes.ptr = (const char*)value.s.bytes;
     outValue->bytes.len = value.s.len;
     return 1;
 }
 
-HOP_API_END
+H2_API_END
 #include "evaluator_mir.inc"
-HOP_API_BEGIN
+H2_API_BEGIN
 
-static int HOPEvalInvokeFunction(
-    HOPEvalProgram* p,
-    int32_t         fnIndex,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t              argCount,
-    const HOPEvalContext* callContext,
-    HOPCTFEValue*         outValue,
-    int*                  outDidReturn) {
-    const HOPEvalFunction* fn;
-    const HOPAst*          ast;
-    HOPCTFEExecBinding*    paramBindings = NULL;
-    HOPCTFEExecEnv         paramFrame;
-    HOPCTFEExecCtx         execCtx;
-    const HOPParsedFile*   savedFile;
-    HOPCTFEExecCtx*        savedExecCtx;
-    const HOPEvalContext*  savedContext;
-    int                    isConst = 0;
-    int                    rc;
-    int32_t                child;
-    uint32_t               paramIndex = 0;
-    uint32_t               fixedCount = 0;
+static int H2EvalInvokeFunction(
+    H2EvalProgram* p,
+    int32_t        fnIndex,
+    const H2CTFEValue* _Nullable args,
+    uint32_t             argCount,
+    const H2EvalContext* callContext,
+    H2CTFEValue*         outValue,
+    int*                 outDidReturn) {
+    const H2EvalFunction* fn;
+    const H2Ast*          ast;
+    H2CTFEExecBinding*    paramBindings = NULL;
+    H2CTFEExecEnv         paramFrame;
+    H2CTFEExecCtx         execCtx;
+    const H2ParsedFile*   savedFile;
+    H2CTFEExecCtx*        savedExecCtx;
+    const H2EvalContext*  savedContext;
+    int                   isConst = 0;
+    int                   rc;
+    int32_t               child;
+    uint32_t              paramIndex = 0;
+    uint32_t              fixedCount = 0;
 
     if (p == NULL || outValue == NULL || outDidReturn == NULL || (argCount > 0 && args == NULL)
         || fnIndex < 0 || (uint32_t)fnIndex >= p->funcLen)
@@ -11391,7 +11337,7 @@ static int HOPEvalInvokeFunction(
                 ast->nodes[fn->fnNode].end,
                 "evaluator backend call arity mismatch");
         }
-        concatRc = HOPEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+        concatRc = H2EvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
         if (concatRc < 0) {
             return -1;
         }
@@ -11417,7 +11363,7 @@ static int HOPEvalInvokeFunction(
                 ast->nodes[fn->fnNode].end,
                 "evaluator backend call arity mismatch");
         }
-        copyRc = HOPEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+        copyRc = H2EvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
         if (copyRc < 0) {
             return -1;
         }
@@ -11434,48 +11380,48 @@ static int HOPEvalInvokeFunction(
     }
 
     if (fn->paramCount > 0) {
-        paramBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+        paramBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
             p->arena,
-            sizeof(HOPCTFEExecBinding) * fn->paramCount,
-            (uint32_t)_Alignof(HOPCTFEExecBinding));
+            sizeof(H2CTFEExecBinding) * fn->paramCount,
+            (uint32_t)_Alignof(H2CTFEExecBinding));
         if (paramBindings == NULL) {
             return ErrorSimple("out of memory");
         }
     }
     child = ASTFirstChild(ast, fn->fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             if (paramBindings == NULL) {
                 return ErrorSimple("out of memory");
             }
-            int32_t      paramTypeNode = ASTFirstChild(ast, child);
-            HOPCTFEValue boundValue;
+            int32_t     paramTypeNode = ASTFirstChild(ast, child);
+            H2CTFEValue boundValue;
             if (fn->isVariadic && paramIndex + 1u == fn->paramCount) {
-                HOPEvalArray* packArray;
-                uint32_t      packLen = argCount - fixedCount;
-                packArray = HOPEvalAllocArrayView(
+                H2EvalArray* packArray;
+                uint32_t     packLen = argCount - fixedCount;
+                packArray = H2EvalAllocArrayView(
                     p, fn->file, paramTypeNode, paramTypeNode, NULL, packLen);
                 if (packArray == NULL) {
                     return ErrorSimple("out of memory");
                 }
                 if (packLen > 0) {
                     uint32_t i;
-                    packArray->elems = (HOPCTFEValue*)HOPArenaAlloc(
-                        p->arena, sizeof(HOPCTFEValue) * packLen, (uint32_t)_Alignof(HOPCTFEValue));
+                    packArray->elems = (H2CTFEValue*)H2ArenaAlloc(
+                        p->arena, sizeof(H2CTFEValue) * packLen, (uint32_t)_Alignof(H2CTFEValue));
                     if (packArray->elems == NULL) {
                         return ErrorSimple("out of memory");
                     }
-                    memset(packArray->elems, 0, sizeof(HOPCTFEValue) * packLen);
+                    memset(packArray->elems, 0, sizeof(H2CTFEValue) * packLen);
                     for (i = 0; i < packLen; i++) {
                         packArray->elems[i] = args[fixedCount + i];
                     }
                 }
-                HOPEvalValueSetArray(&boundValue, fn->file, paramTypeNode, packArray);
+                H2EvalValueSetArray(&boundValue, fn->file, paramTypeNode, packArray);
             } else {
                 boundValue = args[paramIndex];
                 if (paramTypeNode >= 0
-                    && HOPEvalCoerceValueToTypeNode(p, fn->file, paramTypeNode, &boundValue) != 0)
+                    && H2EvalCoerceValueToTypeNode(p, fn->file, paramTypeNode, &boundValue) != 0)
                 {
                     return -1;
                 }
@@ -11503,26 +11449,26 @@ static int HOPEvalInvokeFunction(
     execCtx.src.ptr = fn->file->source;
     execCtx.src.len = fn->file->sourceLen;
     execCtx.env = &paramFrame;
-    execCtx.evalExpr = HOPEvalExecExprCb;
+    execCtx.evalExpr = H2EvalExecExprCb;
     execCtx.evalExprCtx = p;
-    execCtx.evalExprForType = HOPEvalExecExprForTypeCb;
+    execCtx.evalExprForType = H2EvalExecExprForTypeCb;
     execCtx.evalExprForTypeCtx = p;
-    execCtx.zeroInit = HOPEvalZeroInitCb;
+    execCtx.zeroInit = H2EvalZeroInitCb;
     execCtx.zeroInitCtx = p;
-    execCtx.assignExpr = HOPEvalAssignExprCb;
+    execCtx.assignExpr = H2EvalAssignExprCb;
     execCtx.assignExprCtx = p;
-    execCtx.assignValueExpr = HOPEvalAssignValueExprCb;
+    execCtx.assignValueExpr = H2EvalAssignValueExprCb;
     execCtx.assignValueExprCtx = p;
-    execCtx.matchPattern = HOPEvalMatchPatternCb;
+    execCtx.matchPattern = H2EvalMatchPatternCb;
     execCtx.matchPatternCtx = p;
-    execCtx.forInIndex = HOPEvalForInIndexCb;
+    execCtx.forInIndex = H2EvalForInIndexCb;
     execCtx.forInIndexCtx = p;
-    execCtx.forInIter = HOPEvalForInIterCb;
+    execCtx.forInIter = H2EvalForInIterCb;
     execCtx.forInIterCtx = p;
     execCtx.pendingReturnExprNode = -1;
-    execCtx.forIterLimit = HOPCTFE_EXEC_DEFAULT_FOR_LIMIT;
+    execCtx.forIterLimit = H2CTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
-    HOPCTFEExecResetReason(&execCtx);
+    H2CTFEExecResetReason(&execCtx);
 
     savedFile = p->currentFile;
     savedExecCtx = p->currentExecCtx;
@@ -11532,7 +11478,7 @@ static int HOPEvalInvokeFunction(
     p->currentContext = callContext;
     p->callStack[p->callDepth++] = (uint32_t)fnIndex;
 
-    rc = HOPEvalTryMirInvokeFunction(
+    rc = H2EvalTryMirInvokeFunction(
         p, fn, fnIndex, args, argCount, outValue, outDidReturn, &isConst);
 
     p->callDepth--;
@@ -11557,11 +11503,11 @@ static int HOPEvalInvokeFunction(
         return ErrorEvalUnsupported(fn->file->path, fn->file->source, errStart, errEnd, reason);
     }
     if (!*outDidReturn) {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     } else if (fn->hasReturnType) {
-        int32_t returnTypeNode = HOPEvalFunctionReturnTypeNode(fn);
+        int32_t returnTypeNode = H2EvalFunctionReturnTypeNode(fn);
         if (returnTypeNode >= 0
-            && HOPEvalCoerceValueToTypeNode(p, fn->file, returnTypeNode, outValue) != 0)
+            && H2EvalCoerceValueToTypeNode(p, fn->file, returnTypeNode, outValue) != 0)
         {
             return -1;
         }
@@ -11569,35 +11515,35 @@ static int HOPEvalInvokeFunction(
     return 0;
 }
 
-static int HOPEvalInvokeFunctionRef(
-    HOPEvalProgram*     p,
-    const HOPCTFEValue* calleeValue,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst) {
-    uint32_t               fnIndex = 0;
-    uint32_t               mirFnIndex = 0;
-    int                    didReturn = 0;
-    const HOPEvalFunction* fn;
+static int H2EvalInvokeFunctionRef(
+    H2EvalProgram*     p,
+    const H2CTFEValue* calleeValue,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
+    uint32_t              fnIndex = 0;
+    uint32_t              mirFnIndex = 0;
+    int                   didReturn = 0;
+    const H2EvalFunction* fn;
     if (p == NULL || calleeValue == NULL || outValue == NULL || outIsConst == NULL
         || (argCount > 0 && args == NULL))
     {
         return 0;
     }
-    if (HOPMirValueAsFunctionRef(calleeValue, &mirFnIndex)) {
-        HOPMirExecEnv env = { 0 };
-        int           mirIsConst = 0;
+    if (H2MirValueAsFunctionRef(calleeValue, &mirFnIndex)) {
+        H2MirExecEnv env = { 0 };
+        int          mirIsConst = 0;
         if (p->currentMirExecCtx == NULL || p->currentMirExecCtx->mirProgram == NULL
             || mirFnIndex >= p->currentMirExecCtx->mirProgram->funcLen)
         {
             return 0;
         }
-        HOPEvalMirInitExecEnv(p, p->currentFile, &env, p->currentMirExecCtx);
-        if (!HOPMirProgramNeedsDynamicResolution(p->currentMirExecCtx->mirProgram)) {
-            HOPMirExecEnvDisableDynamicResolution(&env);
+        H2EvalMirInitExecEnv(p, p->currentFile, &env, p->currentMirExecCtx);
+        if (!H2MirProgramNeedsDynamicResolution(p->currentMirExecCtx->mirProgram)) {
+            H2MirExecEnvDisableDynamicResolution(&env);
         }
-        if (HOPMirEvalFunction(
+        if (H2MirEvalFunction(
                 p->arena,
                 p->currentMirExecCtx->mirProgram,
                 mirFnIndex,
@@ -11610,14 +11556,14 @@ static int HOPEvalInvokeFunctionRef(
         {
             return -1;
         }
-        HOPEvalMirAdaptOutValue(p->currentMirExecCtx, outValue, &mirIsConst);
-        if (mirIsConst && outValue->kind == HOPCTFEValue_INVALID) {
-            HOPEvalValueSetNull(outValue);
+        H2EvalMirAdaptOutValue(p->currentMirExecCtx, outValue, &mirIsConst);
+        if (mirIsConst && outValue->kind == H2CTFEValue_INVALID) {
+            H2EvalValueSetNull(outValue);
         }
         *outIsConst = mirIsConst;
         return 1;
     }
-    if (!HOPEvalValueIsFunctionRef(calleeValue, &fnIndex) || fnIndex >= p->funcLen) {
+    if (!H2EvalValueIsFunctionRef(calleeValue, &fnIndex) || fnIndex >= p->funcLen) {
         return 0;
     }
     fn = &p->funcs[fnIndex];
@@ -11625,80 +11571,80 @@ static int HOPEvalInvokeFunctionRef(
         return 0;
     }
     {
-        HOPEvalTemplateBindingState savedBinding;
-        HOPEvalSaveTemplateBinding(p, &savedBinding);
-        (void)HOPEvalBindActiveTemplateForMirCall(p, NULL, NULL, NULL, fn, args, argCount);
-        if (HOPEvalInvokeFunction(
+        H2EvalTemplateBindingState savedBinding;
+        H2EvalSaveTemplateBinding(p, &savedBinding);
+        (void)H2EvalBindActiveTemplateForMirCall(p, NULL, NULL, NULL, fn, args, argCount);
+        if (H2EvalInvokeFunction(
                 p, (int32_t)fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
             != 0)
         {
-            HOPEvalRestoreTemplateBinding(p, &savedBinding);
+            H2EvalRestoreTemplateBinding(p, &savedBinding);
             return -1;
         }
-        HOPEvalRestoreTemplateBinding(p, &savedBinding);
+        H2EvalRestoreTemplateBinding(p, &savedBinding);
     }
     if (!didReturn) {
         if (fn->hasReturnType) {
             *outIsConst = 0;
             return 1;
         }
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     }
     *outIsConst = 1;
     return 1;
 }
 
-static int HOPEvalEvalTopVar(
-    HOPEvalProgram* p, uint32_t topVarIndex, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalTopVar*       topVar;
-    const HOPParsedFile* savedFile;
-    HOPCTFEExecCtx*      savedExecCtx;
-    HOPCTFEExecCtx       execCtx;
-    HOPCTFEValue         value;
-    int                  isConst = 0;
-    int                  rc;
+static int H2EvalEvalTopVar(
+    H2EvalProgram* p, uint32_t topVarIndex, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalTopVar*       topVar;
+    const H2ParsedFile* savedFile;
+    H2CTFEExecCtx*      savedExecCtx;
+    H2CTFEExecCtx       execCtx;
+    H2CTFEValue         value;
+    int                 isConst = 0;
+    int                 rc;
     if (p == NULL || outValue == NULL || outIsConst == NULL || topVarIndex >= p->topVarLen) {
         return -1;
     }
     topVar = &p->topVars[topVarIndex];
-    if (topVar->state == HOPEvalTopConstState_READY) {
+    if (topVar->state == H2EvalTopConstState_READY) {
         *outValue = topVar->value;
         *outIsConst = 1;
         return 0;
     }
-    if (topVar->state == HOPEvalTopConstState_VISITING
-        || topVar->state == HOPEvalTopConstState_FAILED)
+    if (topVar->state == H2EvalTopConstState_VISITING
+        || topVar->state == H2EvalTopConstState_FAILED)
     {
         *outIsConst = 0;
         return 0;
     }
 
-    topVar->state = HOPEvalTopConstState_VISITING;
+    topVar->state = H2EvalTopConstState_VISITING;
     memset(&execCtx, 0, sizeof(execCtx));
     execCtx.arena = p->arena;
     execCtx.ast = &topVar->file->ast;
     execCtx.src.ptr = topVar->file->source;
     execCtx.src.len = topVar->file->sourceLen;
-    execCtx.evalExpr = HOPEvalExecExprCb;
+    execCtx.evalExpr = H2EvalExecExprCb;
     execCtx.evalExprCtx = p;
-    execCtx.evalExprForType = HOPEvalExecExprForTypeCb;
+    execCtx.evalExprForType = H2EvalExecExprForTypeCb;
     execCtx.evalExprForTypeCtx = p;
-    execCtx.zeroInit = HOPEvalZeroInitCb;
+    execCtx.zeroInit = H2EvalZeroInitCb;
     execCtx.zeroInitCtx = p;
-    execCtx.assignExpr = HOPEvalAssignExprCb;
+    execCtx.assignExpr = H2EvalAssignExprCb;
     execCtx.assignExprCtx = p;
-    execCtx.assignValueExpr = HOPEvalAssignValueExprCb;
+    execCtx.assignValueExpr = H2EvalAssignValueExprCb;
     execCtx.assignValueExprCtx = p;
-    execCtx.matchPattern = HOPEvalMatchPatternCb;
+    execCtx.matchPattern = H2EvalMatchPatternCb;
     execCtx.matchPatternCtx = p;
-    execCtx.forInIndex = HOPEvalForInIndexCb;
+    execCtx.forInIndex = H2EvalForInIndexCb;
     execCtx.forInIndexCtx = p;
-    execCtx.forInIter = HOPEvalForInIterCb;
+    execCtx.forInIter = H2EvalForInIterCb;
     execCtx.forInIterCtx = p;
     execCtx.pendingReturnExprNode = -1;
-    execCtx.forIterLimit = HOPCTFE_EXEC_DEFAULT_FOR_LIMIT;
+    execCtx.forIterLimit = H2CTFE_EXEC_DEFAULT_FOR_LIMIT;
     execCtx.skipConstBlocks = 1u;
-    HOPCTFEExecResetReason(&execCtx);
+    H2CTFEExecResetReason(&execCtx);
 
     savedFile = p->currentFile;
     savedExecCtx = p->currentExecCtx;
@@ -11706,7 +11652,7 @@ static int HOPEvalEvalTopVar(
     p->currentExecCtx = &execCtx;
     {
         int mirSupported = 0;
-        rc = HOPEvalTryMirEvalTopInit(
+        rc = H2EvalTryMirEvalTopInit(
             p,
             topVar->file,
             topVar->initExprNode,
@@ -11719,7 +11665,7 @@ static int HOPEvalEvalTopVar(
             &isConst,
             &mirSupported);
         if (rc == 0 && !mirSupported && topVar->initExprNode < 0 && topVar->declTypeNode >= 0) {
-            rc = HOPEvalTryMirZeroInitType(
+            rc = H2EvalTryMirZeroInitType(
                 p,
                 topVar->file,
                 topVar->declTypeNode,
@@ -11733,89 +11679,89 @@ static int HOPEvalEvalTopVar(
     p->currentFile = savedFile;
 
     if (rc != 0) {
-        topVar->state = HOPEvalTopConstState_FAILED;
+        topVar->state = H2EvalTopConstState_FAILED;
         return -1;
     }
     if (!isConst) {
-        topVar->state = HOPEvalTopConstState_FAILED;
+        topVar->state = H2EvalTopConstState_FAILED;
         *outIsConst = 0;
         return 0;
     }
     topVar->value = value;
-    topVar->state = HOPEvalTopConstState_READY;
+    topVar->state = H2EvalTopConstState_READY;
     *outValue = value;
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalEvalTopConst(
-    HOPEvalProgram* p, uint32_t topConstIndex, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalTopConst*     topConst;
-    const HOPParsedFile* savedFile;
-    HOPCTFEExecCtx*      savedExecCtx;
-    HOPCTFEExecCtx       constExecCtx;
-    HOPCTFEValue         value;
-    int                  isConst = 0;
-    int                  rc;
+static int H2EvalEvalTopConst(
+    H2EvalProgram* p, uint32_t topConstIndex, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalTopConst*     topConst;
+    const H2ParsedFile* savedFile;
+    H2CTFEExecCtx*      savedExecCtx;
+    H2CTFEExecCtx       constExecCtx;
+    H2CTFEValue         value;
+    int                 isConst = 0;
+    int                 rc;
     if (p == NULL || outValue == NULL || outIsConst == NULL || topConstIndex >= p->topConstLen) {
         return -1;
     }
     topConst = &p->topConsts[topConstIndex];
-    if (topConst->state == HOPEvalTopConstState_READY) {
+    if (topConst->state == H2EvalTopConstState_READY) {
         *outValue = topConst->value;
         *outIsConst = 1;
         return 0;
     }
-    if (topConst->state == HOPEvalTopConstState_VISITING
-        || topConst->state == HOPEvalTopConstState_FAILED)
+    if (topConst->state == H2EvalTopConstState_VISITING
+        || topConst->state == H2EvalTopConstState_FAILED)
     {
         *outIsConst = 0;
         return 0;
     }
     if (topConst->initExprNode < 0) {
-        topConst->state = HOPEvalTopConstState_FAILED;
+        topConst->state = H2EvalTopConstState_FAILED;
         *outIsConst = 0;
         return 0;
     }
 
-    topConst->state = HOPEvalTopConstState_VISITING;
+    topConst->state = H2EvalTopConstState_VISITING;
     memset(&constExecCtx, 0, sizeof(constExecCtx));
     constExecCtx.arena = p->arena;
     constExecCtx.ast = &topConst->file->ast;
     constExecCtx.src.ptr = topConst->file->source;
     constExecCtx.src.len = topConst->file->sourceLen;
-    constExecCtx.evalExpr = HOPEvalExecExprCb;
+    constExecCtx.evalExpr = H2EvalExecExprCb;
     constExecCtx.evalExprCtx = p;
-    constExecCtx.evalExprForType = HOPEvalExecExprForTypeCb;
+    constExecCtx.evalExprForType = H2EvalExecExprForTypeCb;
     constExecCtx.evalExprForTypeCtx = p;
-    constExecCtx.zeroInit = HOPEvalZeroInitCb;
+    constExecCtx.zeroInit = H2EvalZeroInitCb;
     constExecCtx.zeroInitCtx = p;
-    constExecCtx.assignExpr = HOPEvalAssignExprCb;
+    constExecCtx.assignExpr = H2EvalAssignExprCb;
     constExecCtx.assignExprCtx = p;
-    constExecCtx.assignValueExpr = HOPEvalAssignValueExprCb;
+    constExecCtx.assignValueExpr = H2EvalAssignValueExprCb;
     constExecCtx.assignValueExprCtx = p;
-    constExecCtx.matchPattern = HOPEvalMatchPatternCb;
+    constExecCtx.matchPattern = H2EvalMatchPatternCb;
     constExecCtx.matchPatternCtx = p;
-    constExecCtx.forInIndex = HOPEvalForInIndexCb;
+    constExecCtx.forInIndex = H2EvalForInIndexCb;
     constExecCtx.forInIndexCtx = p;
-    constExecCtx.forInIter = HOPEvalForInIterCb;
+    constExecCtx.forInIter = H2EvalForInIterCb;
     constExecCtx.forInIterCtx = p;
     constExecCtx.pendingReturnExprNode = -1;
-    constExecCtx.forIterLimit = HOPCTFE_EXEC_DEFAULT_FOR_LIMIT;
+    constExecCtx.forIterLimit = H2CTFE_EXEC_DEFAULT_FOR_LIMIT;
     constExecCtx.skipConstBlocks = 1u;
-    HOPCTFEExecResetReason(&constExecCtx);
+    H2CTFEExecResetReason(&constExecCtx);
 
     savedFile = p->currentFile;
     savedExecCtx = p->currentExecCtx;
     p->currentFile = topConst->file;
     p->currentExecCtx = &constExecCtx;
     {
-        rc = HOPEvalTypeValueFromExprNode(
+        rc = H2EvalTypeValueFromExprNode(
             p, topConst->file, &topConst->file->ast, topConst->initExprNode, &value);
         if (rc < 0) {
             p->currentExecCtx = savedExecCtx;
             p->currentFile = savedFile;
-            topConst->state = HOPEvalTopConstState_FAILED;
+            topConst->state = H2EvalTopConstState_FAILED;
             return -1;
         }
         if (rc > 0) {
@@ -11823,7 +11769,7 @@ static int HOPEvalEvalTopConst(
             isConst = 1;
         } else {
             int mirSupported = 0;
-            rc = HOPEvalTryMirEvalTopInit(
+            rc = H2EvalTryMirEvalTopInit(
                 p,
                 topConst->file,
                 topConst->initExprNode,
@@ -11841,60 +11787,60 @@ static int HOPEvalEvalTopConst(
     p->currentFile = savedFile;
 
     if (rc != 0) {
-        topConst->state = HOPEvalTopConstState_FAILED;
+        topConst->state = H2EvalTopConstState_FAILED;
         return -1;
     }
     if (!isConst) {
-        topConst->state = HOPEvalTopConstState_FAILED;
+        topConst->state = H2EvalTopConstState_FAILED;
         *outIsConst = 0;
         return 0;
     }
 
     topConst->value = value;
-    topConst->state = HOPEvalTopConstState_READY;
+    topConst->state = H2EvalTopConstState_READY;
     *outValue = value;
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalResolveIdent(
-    void*         ctx,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*   p = (HOPEvalProgram*)ctx;
-    const HOPPackage* currentPkg;
+static int H2EvalResolveIdent(
+    void*        ctx,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*   p = (H2EvalProgram*)ctx;
+    const H2Package* currentPkg;
     (void)diag;
     if (p == NULL || outValue == NULL || outIsConst == NULL || p->currentExecCtx == NULL
         || p->currentFile == NULL)
     {
         return -1;
     }
-    currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
+    currentPkg = H2EvalFindPackageByFile(p, p->currentFile);
     {
-        HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+        H2CTFEExecBinding* binding = H2EvalFindBinding(
             p->currentExecCtx, p->currentFile, nameStart, nameEnd);
         if (binding != NULL) {
             *outValue = binding->value;
             if (binding->typeNode >= 0) {
-                int32_t typeCode = HOPEvalTypeCode_INVALID;
-                if (!HOPEvalValueGetRuntimeTypeCode(outValue, &typeCode)
-                    && HOPEvalTypeCodeFromTypeNode(p->currentFile, binding->typeNode, &typeCode))
+                int32_t typeCode = H2EvalTypeCode_INVALID;
+                if (!H2EvalValueGetRuntimeTypeCode(outValue, &typeCode)
+                    && H2EvalTypeCodeFromTypeNode(p->currentFile, binding->typeNode, &typeCode))
                 {
-                    HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, typeCode);
                 }
             }
             *outIsConst = 1;
             return 0;
         }
     }
-    if (HOPCTFEExecEnvLookup(p->currentExecCtx, nameStart, nameEnd, outValue)) {
+    if (H2CTFEExecEnvLookup(p->currentExecCtx, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
     }
-    if (HOPEvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
+    if (H2EvalMirLookupLocalValue(p, nameStart, nameEnd, outValue)) {
         *outIsConst = 1;
         return 0;
     }
@@ -11908,20 +11854,20 @@ static int HOPEvalResolveIdent(
             p->activeTemplateParamFile->source,
             p->activeTemplateParamNameStart,
             p->activeTemplateParamNameEnd)
-        && p->activeTemplateTypeValue.kind == HOPCTFEValue_TYPE)
+        && p->activeTemplateTypeValue.kind == H2CTFEValue_TYPE)
     {
         *outValue = p->activeTemplateTypeValue;
         *outIsConst = 1;
         return 0;
     }
     {
-        int32_t typeCode = HOPEvalTypeCode_INVALID;
-        if (HOPEvalBuiltinTypeCode(p->currentFile->source, nameStart, nameEnd, &typeCode)) {
-            HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+        int32_t typeCode = H2EvalTypeCode_INVALID;
+        if (H2EvalBuiltinTypeCode(p->currentFile->source, nameStart, nameEnd, &typeCode)) {
+            H2EvalValueSetSimpleTypeValue(outValue, typeCode);
             *outIsConst = 1;
             return 0;
         }
-        if (HOPEvalResolveTypeValueName(p, p->currentFile, nameStart, nameEnd, outValue) > 0) {
+        if (H2EvalResolveTypeValueName(p, p->currentFile, nameStart, nameEnd, outValue) > 0) {
             *outIsConst = 1;
             return 0;
         }
@@ -11930,7 +11876,7 @@ static int HOPEvalResolveIdent(
         if (currentPkg != NULL) {
             uint32_t i;
             for (i = 0; i < currentPkg->importLen; i++) {
-                const HOPImportRef* imp = &currentPkg->imports[i];
+                const H2ImportRef* imp = &currentPkg->imports[i];
                 if (imp->bindName == NULL || imp->target == NULL) {
                     continue;
                 }
@@ -11943,7 +11889,7 @@ static int HOPEvalResolveIdent(
                 {
                     int pkgIndex = FindPackageIndex(p->loader, imp->target);
                     if (pkgIndex >= 0) {
-                        HOPEvalValueSetPackageRef(outValue, (uint32_t)pkgIndex);
+                        H2EvalValueSetPackageRef(outValue, (uint32_t)pkgIndex);
                         *outIsConst = 1;
                         return 0;
                     }
@@ -11954,19 +11900,19 @@ static int HOPEvalResolveIdent(
     {
         int32_t topVarIndex =
             currentPkg != NULL
-                ? HOPEvalFindTopVarBySliceInPackage(
+                ? H2EvalFindTopVarBySliceInPackage(
                       p, currentPkg, p->currentFile, nameStart, nameEnd)
-                : HOPEvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
+                : H2EvalFindTopVarBySlice(p, p->currentFile, nameStart, nameEnd);
         if (topVarIndex >= 0) {
             int isConst = 0;
-            if (HOPEvalEvalTopVar(p, (uint32_t)topVarIndex, outValue, &isConst) != 0) {
+            if (H2EvalEvalTopVar(p, (uint32_t)topVarIndex, outValue, &isConst) != 0) {
                 return -1;
             }
             if (isConst) {
                 *outIsConst = 1;
                 return 0;
             }
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -11978,19 +11924,19 @@ static int HOPEvalResolveIdent(
     {
         int32_t topConstIndex =
             currentPkg != NULL
-                ? HOPEvalFindTopConstBySliceInPackage(
+                ? H2EvalFindTopConstBySliceInPackage(
                       p, currentPkg, p->currentFile, nameStart, nameEnd)
-                : HOPEvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
+                : H2EvalFindTopConstBySlice(p, p->currentFile, nameStart, nameEnd);
         if (topConstIndex >= 0) {
             int isConst = 0;
-            if (HOPEvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
+            if (H2EvalEvalTopConst(p, (uint32_t)topConstIndex, outValue, &isConst) != 0) {
                 return -1;
             }
             if (isConst) {
                 *outIsConst = 1;
                 return 0;
             }
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -12002,24 +11948,24 @@ static int HOPEvalResolveIdent(
     {
         int32_t fnIndex =
             currentPkg != NULL
-                ? HOPEvalFindAnyFunctionBySliceInPackage(
+                ? H2EvalFindAnyFunctionBySliceInPackage(
                       p, currentPkg, p->currentFile, nameStart, nameEnd)
-                : HOPEvalFindAnyFunctionBySlice(p, p->currentFile, nameStart, nameEnd);
+                : H2EvalFindAnyFunctionBySlice(p, p->currentFile, nameStart, nameEnd);
         if (fnIndex >= 0) {
             if (p->currentMirExecCtx != NULL && p->currentMirExecCtx->evalToMir != NULL
                 && (uint32_t)fnIndex < p->currentMirExecCtx->evalToMirLen
                 && p->currentMirExecCtx->evalToMir[(uint32_t)fnIndex] != UINT32_MAX)
             {
-                HOPMirValueSetFunctionRef(
+                H2MirValueSetFunctionRef(
                     outValue, p->currentMirExecCtx->evalToMir[(uint32_t)fnIndex]);
             } else {
-                HOPEvalValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+                H2EvalValueSetFunctionRef(outValue, (uint32_t)fnIndex);
             }
             *outIsConst = 1;
             return 0;
         }
         if (fnIndex == -2) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -12028,24 +11974,24 @@ static int HOPEvalResolveIdent(
             return 0;
         }
     }
-    HOPCTFEExecSetReason(
+    H2CTFEExecSetReason(
         p->currentExecCtx, nameStart, nameEnd, "identifier is not available in evaluator backend");
     *outIsConst = 0;
     return 0;
 }
 
-static int HOPEvalResolveCallMirPre(
+static int H2EvalResolveCallMirPre(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
-    uint32_t      nameStart,
-    uint32_t      nameEnd,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram* p = (HOPEvalProgram*)ctx;
-    int32_t         callNode = -1;
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
+    uint32_t     nameStart,
+    uint32_t     nameEnd,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram* p = (H2EvalProgram*)ctx;
+    int32_t        callNode = -1;
     (void)function;
     (void)nameStart;
     (void)nameEnd;
@@ -12053,29 +11999,29 @@ static int HOPEvalResolveCallMirPre(
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (!HOPEvalMirResolveCallNode(program, inst, &callNode)
-        || !HOPEvalMirCallNodeIsLazyBuiltin(p, callNode))
+    if (!H2EvalMirResolveCallNode(program, inst, &callNode)
+        || !H2EvalMirCallNodeIsLazyBuiltin(p, callNode))
     {
         return 0;
     }
-    if (HOPEvalExecExprCb(p, callNode, outValue, outIsConst) != 0) {
+    if (H2EvalExecExprCb(p, callNode, outValue, outIsConst) != 0) {
         return -1;
     }
     return 1;
 }
 
-static int HOPEvalExpandMirSpreadLastArgs(
-    HOPEvalProgram* p,
-    const HOPMirInst* _Nullable inst,
-    const HOPEvalFunction* fn,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t             argCount,
-    const HOPCTFEValue** outArgs,
-    uint32_t*            outArgCount) {
-    const HOPEvalArray* spreadArray;
-    HOPCTFEValue*       expandedArgs;
-    uint32_t            prefixCount;
-    uint32_t            i;
+static int H2EvalExpandMirSpreadLastArgs(
+    H2EvalProgram* p,
+    const H2MirInst* _Nullable inst,
+    const H2EvalFunction* fn,
+    const H2CTFEValue* _Nullable args,
+    uint32_t            argCount,
+    const H2CTFEValue** outArgs,
+    uint32_t*           outArgCount) {
+    const H2EvalArray* spreadArray;
+    H2CTFEValue*       expandedArgs;
+    uint32_t           prefixCount;
+    uint32_t           i;
     if (outArgs != NULL) {
         *outArgs = args;
     }
@@ -12087,13 +12033,13 @@ static int HOPEvalExpandMirSpreadLastArgs(
     {
         return -1;
     }
-    if (inst == NULL || !fn->isVariadic || !HOPMirCallTokHasSpreadLast(inst->tok)) {
+    if (inst == NULL || !fn->isVariadic || !H2MirCallTokHasSpreadLast(inst->tok)) {
         return 1;
     }
     if (argCount == 0u) {
         return 0;
     }
-    spreadArray = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&args[argCount - 1u]));
+    spreadArray = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&args[argCount - 1u]));
     if (spreadArray == NULL || spreadArray->len > UINT32_MAX - (argCount - 1u)) {
         return 0;
     }
@@ -12101,47 +12047,47 @@ static int HOPEvalExpandMirSpreadLastArgs(
         return -1;
     }
     prefixCount = argCount - 1u;
-    expandedArgs = (HOPCTFEValue*)HOPArenaAlloc(
+    expandedArgs = (H2CTFEValue*)H2ArenaAlloc(
         p->arena,
-        sizeof(HOPCTFEValue) * (prefixCount + spreadArray->len),
-        (uint32_t)_Alignof(HOPCTFEValue));
+        sizeof(H2CTFEValue) * (prefixCount + spreadArray->len),
+        (uint32_t)_Alignof(H2CTFEValue));
     if (expandedArgs == NULL) {
         return ErrorSimple("out of memory");
     }
     for (i = 0; i < prefixCount; i++) {
         expandedArgs[i] = args[i];
-        HOPEvalAnnotateUntypedLiteralValue(&expandedArgs[i]);
+        H2EvalAnnotateUntypedLiteralValue(&expandedArgs[i]);
     }
     for (i = 0; i < spreadArray->len; i++) {
         expandedArgs[prefixCount + i] = spreadArray->elems[i];
-        HOPEvalAnnotateUntypedLiteralValue(&expandedArgs[prefixCount + i]);
+        H2EvalAnnotateUntypedLiteralValue(&expandedArgs[prefixCount + i]);
     }
     *outArgs = expandedArgs;
     *outArgCount = prefixCount + spreadArray->len;
     return 1;
 }
 
-static int HOPEvalResolveCallMir(
+static int H2EvalResolveCallMir(
     void* ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag) {
-    HOPEvalProgram*        p = (HOPEvalProgram*)ctx;
-    int32_t                fnIndex = -1;
-    const HOPEvalFunction* fn;
-    int                    didReturn = 0;
-    int                    isReflectKind = 0;
-    int                    isReflectIsAlias = 0;
-    int                    isReflectTypeName = 0;
-    int                    isReflectBase = 0;
-    int                    isTypeOf = 0;
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag) {
+    H2EvalProgram*        p = (H2EvalProgram*)ctx;
+    int32_t               fnIndex = -1;
+    const H2EvalFunction* fn;
+    int                   didReturn = 0;
+    int                   isReflectKind = 0;
+    int                   isReflectIsAlias = 0;
+    int                   isReflectTypeName = 0;
+    int                   isReflectBase = 0;
+    int                   isTypeOf = 0;
     (void)program;
     (void)function;
     (void)inst;
@@ -12153,31 +12099,31 @@ static int HOPEvalResolveCallMir(
         return -1;
     }
 
-    isReflectKind = HOPEvalNameEqLiteralOrPkgBuiltin(
+    isReflectKind = H2EvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "kind", "reflect");
-    isReflectIsAlias = HOPEvalNameEqLiteralOrPkgBuiltin(
+    isReflectIsAlias = H2EvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "is_alias", "reflect");
-    isReflectTypeName = HOPEvalNameEqLiteralOrPkgBuiltin(
+    isReflectTypeName = H2EvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "type_name", "reflect");
-    isReflectBase = HOPEvalNameEqLiteralOrPkgBuiltin(
+    isReflectBase = H2EvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "base", "reflect");
     isTypeOf = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof");
 
     if (argCount == 1 && isReflectKind) {
         int32_t kind = 0;
-        if (HOPEvalTypeKindOfValue(&args[0], &kind)) {
-            HOPEvalValueSetInt(outValue, kind);
+        if (H2EvalTypeKindOfValue(&args[0], &kind)) {
+            H2EvalValueSetInt(outValue, kind);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 1 && isReflectIsAlias) {
         int32_t kind = 0;
-        if (HOPEvalTypeKindOfValue(&args[0], &kind)) {
-            outValue->kind = HOPCTFEValue_BOOL;
+        if (H2EvalTypeKindOfValue(&args[0], &kind)) {
+            outValue->kind = H2CTFEValue_BOOL;
             outValue->i64 = 0;
             outValue->f64 = 0.0;
-            outValue->b = kind == HOPEvalTypeKind_ALIAS ? 1u : 0u;
+            outValue->b = kind == H2EvalTypeKind_ALIAS ? 1u : 0u;
             outValue->typeTag = 0;
             outValue->s.bytes = NULL;
             outValue->s.len = 0;
@@ -12186,20 +12132,20 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 1 && isReflectTypeName) {
-        if (HOPEvalTypeNameOfValue((HOPCTFEValue*)&args[0], outValue)) {
+        if (H2EvalTypeNameOfValue((H2CTFEValue*)&args[0], outValue)) {
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 1 && isReflectBase) {
-        HOPEvalReflectedType* rt = HOPEvalValueAsReflectedType(&args[0]);
-        if (rt != NULL && rt->kind == HOPEvalReflectType_NAMED
-            && rt->namedKind == HOPEvalTypeKind_ALIAS && rt->file != NULL && rt->nodeId >= 0
+        H2EvalReflectedType* rt = H2EvalValueAsReflectedType(&args[0]);
+        if (rt != NULL && rt->kind == H2EvalReflectType_NAMED
+            && rt->namedKind == H2EvalTypeKind_ALIAS && rt->file != NULL && rt->nodeId >= 0
             && (uint32_t)rt->nodeId < rt->file->ast.len)
         {
             int32_t baseTypeNode = ASTFirstChild(&rt->file->ast, rt->nodeId);
             if (baseTypeNode >= 0
-                && HOPEvalTypeValueFromTypeNode(p, rt->file, baseTypeNode, outValue) > 0)
+                && H2EvalTypeValueFromTypeNode(p, rt->file, baseTypeNode, outValue) > 0)
             {
                 *outIsConst = 1;
                 return 0;
@@ -12207,62 +12153,62 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "ptr")) {
-        HOPEvalReflectedType* rt;
-        if (args[0].kind == HOPCTFEValue_TYPE) {
-            rt = (HOPEvalReflectedType*)HOPArenaAlloc(
-                p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+        H2EvalReflectedType* rt;
+        if (args[0].kind == H2CTFEValue_TYPE) {
+            rt = (H2EvalReflectedType*)H2ArenaAlloc(
+                p->arena, sizeof(H2EvalReflectedType), (uint32_t)_Alignof(H2EvalReflectedType));
             if (rt == NULL) {
                 return ErrorSimple("out of memory");
             }
             memset(rt, 0, sizeof(*rt));
-            rt->kind = HOPEvalReflectType_PTR;
-            rt->namedKind = HOPEvalTypeKind_POINTER;
+            rt->kind = H2EvalReflectType_PTR;
+            rt->namedKind = H2EvalTypeKind_POINTER;
             rt->elemType = args[0];
-            HOPEvalValueSetReflectedTypeValue(outValue, rt);
+            H2EvalValueSetReflectedTypeValue(outValue, rt);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "slice")) {
-        HOPEvalReflectedType* rt;
-        if (args[0].kind == HOPCTFEValue_TYPE) {
-            rt = (HOPEvalReflectedType*)HOPArenaAlloc(
-                p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+        H2EvalReflectedType* rt;
+        if (args[0].kind == H2CTFEValue_TYPE) {
+            rt = (H2EvalReflectedType*)H2ArenaAlloc(
+                p->arena, sizeof(H2EvalReflectedType), (uint32_t)_Alignof(H2EvalReflectedType));
             if (rt == NULL) {
                 return ErrorSimple("out of memory");
             }
             memset(rt, 0, sizeof(*rt));
-            rt->kind = HOPEvalReflectType_SLICE;
-            rt->namedKind = HOPEvalTypeKind_SLICE;
+            rt->kind = H2EvalReflectType_SLICE;
+            rt->namedKind = H2EvalTypeKind_SLICE;
             rt->elemType = args[0];
-            HOPEvalValueSetReflectedTypeValue(outValue, rt);
+            H2EvalValueSetReflectedTypeValue(outValue, rt);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "array")) {
-        int64_t               arrayLen = 0;
-        HOPEvalReflectedType* rt;
-        if (args[0].kind == HOPCTFEValue_TYPE && HOPCTFEValueToInt64(&args[1], &arrayLen) == 0
+        int64_t              arrayLen = 0;
+        H2EvalReflectedType* rt;
+        if (args[0].kind == H2CTFEValue_TYPE && H2CTFEValueToInt64(&args[1], &arrayLen) == 0
             && arrayLen >= 0 && arrayLen <= (int64_t)UINT32_MAX)
         {
-            rt = (HOPEvalReflectedType*)HOPArenaAlloc(
-                p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+            rt = (H2EvalReflectedType*)H2ArenaAlloc(
+                p->arena, sizeof(H2EvalReflectedType), (uint32_t)_Alignof(H2EvalReflectedType));
             if (rt == NULL) {
                 return ErrorSimple("out of memory");
             }
             memset(rt, 0, sizeof(*rt));
-            rt->kind = HOPEvalReflectType_ARRAY;
-            rt->namedKind = HOPEvalTypeKind_ARRAY;
+            rt->kind = H2EvalReflectType_ARRAY;
+            rt->namedKind = H2EvalTypeKind_ARRAY;
             rt->arrayLen = (uint32_t)arrayLen;
             rt->elemType = args[0];
-            HOPEvalValueSetReflectedTypeValue(outValue, rt);
+            H2EvalValueSetReflectedTypeValue(outValue, rt);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "concat")) {
-        int concatRc = HOPEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
+        int concatRc = H2EvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
         if (concatRc < 0) {
             return -1;
         }
@@ -12272,7 +12218,7 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 2 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "copy")) {
-        int copyRc = HOPEvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
+        int copyRc = H2EvalValueCopyBuiltin(p->arena, &args[0], &args[1], outValue);
         if (copyRc < 0) {
             return -1;
         }
@@ -12282,10 +12228,10 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 1 && isTypeOf) {
-        int32_t           typeCode = HOPEvalTypeCode_INVALID;
-        HOPEvalAggregate* agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(&args[0]));
-        if (args[0].kind == HOPCTFEValue_TYPE) {
-            HOPEvalValueSetSimpleTypeValue(outValue, HOPEvalTypeCode_TYPE);
+        int32_t          typeCode = H2EvalTypeCode_INVALID;
+        H2EvalAggregate* agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&args[0]));
+        if (args[0].kind == H2CTFEValue_TYPE) {
+            H2EvalValueSetSimpleTypeValue(outValue, H2EvalTypeCode_TYPE);
             *outIsConst = 1;
             return 0;
         }
@@ -12294,60 +12240,60 @@ static int HOPEvalResolveCallMir(
         {
             uint8_t namedKind = 0;
             switch (agg->file->ast.nodes[agg->nodeId].kind) {
-                case HOPAst_STRUCT: namedKind = HOPEvalTypeKind_STRUCT; break;
-                case HOPAst_UNION:  namedKind = HOPEvalTypeKind_UNION; break;
-                case HOPAst_ENUM:   namedKind = HOPEvalTypeKind_ENUM; break;
-                default:            break;
+                case H2Ast_STRUCT: namedKind = H2EvalTypeKind_STRUCT; break;
+                case H2Ast_UNION:  namedKind = H2EvalTypeKind_UNION; break;
+                case H2Ast_ENUM:   namedKind = H2EvalTypeKind_ENUM; break;
+                default:           break;
             }
             if (namedKind != 0
-                && HOPEvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue) > 0)
+                && H2EvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue) > 0)
             {
                 *outIsConst = 1;
                 return 0;
             }
         }
-        if (HOPEvalTypeCodeFromValue(&args[0], &typeCode)) {
-            HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+        if (H2EvalTypeCodeFromValue(&args[0], &typeCode)) {
+            H2EvalValueSetSimpleTypeValue(outValue, typeCode);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "len")) {
-        const HOPCTFEValue* value = HOPEvalValueTargetOrSelf(&args[0]);
-        if (value->kind == HOPCTFEValue_STRING) {
-            HOPEvalValueSetInt(outValue, (int64_t)value->s.len);
+        const H2CTFEValue* value = H2EvalValueTargetOrSelf(&args[0]);
+        if (value->kind == H2CTFEValue_STRING) {
+            H2EvalValueSetInt(outValue, (int64_t)value->s.len);
             *outIsConst = 1;
             return 0;
         }
-        if (value->kind == HOPCTFEValue_ARRAY) {
-            HOPEvalValueSetInt(outValue, (int64_t)value->s.len);
+        if (value->kind == H2CTFEValue_ARRAY) {
+            H2EvalValueSetInt(outValue, (int64_t)value->s.len);
             *outIsConst = 1;
             return 0;
         }
-        if (value->kind == HOPCTFEValue_NULL) {
-            HOPEvalValueSetInt(outValue, 0);
+        if (value->kind == H2CTFEValue_NULL) {
+            H2EvalValueSetInt(outValue, 0);
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "cstr")) {
-        const HOPCTFEValue* value = HOPEvalValueTargetOrSelf(&args[0]);
-        if (value->kind == HOPCTFEValue_STRING) {
+        const H2CTFEValue* value = H2EvalValueTargetOrSelf(&args[0]);
+        if (value->kind == H2CTFEValue_STRING) {
             *outValue = *value;
             *outIsConst = 1;
             return 0;
         }
     }
     if (argCount > 0) {
-        const HOPCTFEValue* baseValue = HOPEvalValueTargetOrSelf(&args[0]);
-        HOPEvalAggregate*   agg = HOPEvalValueAsAggregate(baseValue);
-        HOPCTFEValue        fieldValue;
+        const H2CTFEValue* baseValue = H2EvalValueTargetOrSelf(&args[0]);
+        H2EvalAggregate*   agg = H2EvalValueAsAggregate(baseValue);
+        H2CTFEValue        fieldValue;
         if (agg != NULL
-            && HOPEvalAggregateGetFieldValue(
+            && H2EvalAggregateGetFieldValue(
                 agg, p->currentFile->source, nameStart, nameEnd, &fieldValue)
-            && HOPEvalValueIsInvokableFunctionRef(&fieldValue))
+            && H2EvalValueIsInvokableFunctionRef(&fieldValue))
         {
-            int invoked = HOPEvalInvokeFunctionRef(
+            int invoked = H2EvalInvokeFunctionRef(
                 p, &fieldValue, args + 1u, argCount - 1u, outValue, outIsConst);
             if (invoked < 0) {
                 return -1;
@@ -12358,7 +12304,7 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "print")) {
-        if (args[0].kind == HOPCTFEValue_STRING) {
+        if (args[0].kind == H2CTFEValue_STRING) {
             if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
                 if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
                     return ErrorSimple("failed to write print output");
@@ -12366,7 +12312,7 @@ static int HOPEvalResolveCallMir(
             }
             fputc('\n', stdout);
             fflush(stdout);
-            HOPEvalValueSetNull(outValue);
+            H2EvalValueSetNull(outValue);
             *outIsConst = 1;
             return 0;
         }
@@ -12374,21 +12320,21 @@ static int HOPEvalResolveCallMir(
     if ((argCount == 1 || argCount == 2)
         && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "free"))
     {
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
     }
     if (program != NULL && inst != NULL && argCount > 0) {
-        int32_t           callNode = -1;
-        const HOPPackage* targetPkg = NULL;
-        if (HOPEvalMirResolveCallNode(program, inst, &callNode)) {
-            targetPkg = HOPEvalMirResolveQualifiedImportCallTargetPkg(p, callNode);
+        int32_t          callNode = -1;
+        const H2Package* targetPkg = NULL;
+        if (H2EvalMirResolveCallNode(program, inst, &callNode)) {
+            targetPkg = H2EvalMirResolveQualifiedImportCallTargetPkg(p, callNode);
         }
         if (targetPkg != NULL) {
-            fnIndex = HOPEvalResolveFunctionBySlice(
+            fnIndex = H2EvalResolveFunctionBySlice(
                 p, targetPkg, p->currentFile, nameStart, nameEnd, args + 1u, argCount - 1u);
             if (fnIndex == -2) {
-                HOPCTFEExecSetReason(
+                H2CTFEExecSetReason(
                     p->currentExecCtx,
                     nameStart,
                     nameEnd,
@@ -12404,16 +12350,16 @@ static int HOPEvalResolveCallMir(
     }
     if (fnIndex < 0 && argCount > 0) {
         uint32_t pkgIndex = 0;
-        if (HOPEvalValueIsPackageRef(&args[0], &pkgIndex)) {
-            const HOPPackage* targetPkg = NULL;
+        if (H2EvalValueIsPackageRef(&args[0], &pkgIndex)) {
+            const H2Package* targetPkg = NULL;
             if (p->loader == NULL || pkgIndex >= p->loader->packageLen) {
                 return -1;
             }
             targetPkg = &p->loader->packages[pkgIndex];
-            fnIndex = HOPEvalResolveFunctionBySlice(
+            fnIndex = H2EvalResolveFunctionBySlice(
                 p, targetPkg, p->currentFile, nameStart, nameEnd, args + 1, argCount - 1u);
             if (fnIndex == -2) {
-                HOPCTFEExecSetReason(
+                H2CTFEExecSetReason(
                     p->currentExecCtx,
                     nameStart,
                     nameEnd,
@@ -12428,21 +12374,21 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (fnIndex < 0) {
-        HOPCTFEValue calleeValue;
-        int          calleeIsConst = 0;
-        const char*  savedReason = p->currentExecCtx->nonConstReason;
-        uint32_t     savedStart = p->currentExecCtx->nonConstStart;
-        uint32_t     savedEnd = p->currentExecCtx->nonConstEnd;
-        if (HOPEvalResolveIdent(
+        H2CTFEValue calleeValue;
+        int         calleeIsConst = 0;
+        const char* savedReason = p->currentExecCtx->nonConstReason;
+        uint32_t    savedStart = p->currentExecCtx->nonConstStart;
+        uint32_t    savedEnd = p->currentExecCtx->nonConstEnd;
+        if (H2EvalResolveIdent(
                 p, nameStart, nameEnd, &calleeValue, &calleeIsConst, p->currentExecCtx->diag)
             != 0)
         {
             return -1;
         }
-        if (calleeIsConst && HOPEvalValueIsInvokableFunctionRef(&calleeValue)) {
-            const HOPParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
-            int32_t              savedExpectedTypeNode = p->activeCallExpectedTypeNode;
-            int                  invoked;
+        if (calleeIsConst && H2EvalValueIsInvokableFunctionRef(&calleeValue)) {
+            const H2ParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+            int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+            int                 invoked;
             if (program != NULL && function != NULL && inst != NULL
                 && p->activeCallExpectedTypeFile == NULL && p->currentMirExecCtx != NULL)
             {
@@ -12453,13 +12399,13 @@ static int HOPEvalResolveCallMir(
                     instIndex = (uint32_t)(inst - program->insts);
                 }
                 if (instIndex != UINT32_MAX && instIndex + 1u < program->instLen
-                    && program->insts[instIndex + 1u].op == HOPMirOp_LOCAL_STORE)
+                    && program->insts[instIndex + 1u].op == H2MirOp_LOCAL_STORE)
                 {
                     uint32_t localSlot = program->insts[instIndex + 1u].aux;
                     if (localSlot < function->localCount
                         && function->localStart + localSlot < program->localLen)
                     {
-                        const HOPMirLocal* local =
+                        const H2MirLocal* local =
                             &program->locals[function->localStart + localSlot];
                         if (local->typeRef < program->typeLen
                             && program->types[local->typeRef].sourceRef
@@ -12474,7 +12420,7 @@ static int HOPEvalResolveCallMir(
                     }
                 }
             }
-            invoked = HOPEvalInvokeFunctionRef(
+            invoked = H2EvalInvokeFunctionRef(
                 p, &calleeValue, args, argCount, outValue, outIsConst);
             p->activeCallExpectedTypeFile = savedExpectedTypeFile;
             p->activeCallExpectedTypeNode = savedExpectedTypeNode;
@@ -12490,17 +12436,17 @@ static int HOPEvalResolveCallMir(
         p->currentExecCtx->nonConstEnd = savedEnd;
     }
     if (fnIndex < 0) {
-        fnIndex = HOPEvalResolveFunctionBySlice(
+        fnIndex = H2EvalResolveFunctionBySlice(
             p, NULL, p->currentFile, nameStart, nameEnd, args, argCount);
     }
     if (fnIndex == -2) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             p->currentExecCtx, nameStart, nameEnd, "call target is ambiguous in evaluator backend");
         *outIsConst = 0;
         return 0;
     }
     if (fnIndex < 0) {
-        HOPCTFEExecSetReason(
+        H2CTFEExecSetReason(
             p->currentExecCtx,
             nameStart,
             nameEnd,
@@ -12510,15 +12456,15 @@ static int HOPEvalResolveCallMir(
     }
     fn = &p->funcs[fnIndex];
     {
-        const HOPCTFEValue* invokeArgs = args;
-        uint32_t            invokeArgCount = argCount;
-        int                 expandRc = HOPEvalExpandMirSpreadLastArgs(
+        const H2CTFEValue* invokeArgs = args;
+        uint32_t           invokeArgCount = argCount;
+        int                expandRc = H2EvalExpandMirSpreadLastArgs(
             p, inst, fn, args, argCount, &invokeArgs, &invokeArgCount);
         if (expandRc < 0) {
             return -1;
         }
         if (expandRc == 0) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -12530,8 +12476,8 @@ static int HOPEvalResolveCallMir(
         argCount = invokeArgCount;
     }
 
-    if (p->callDepth >= HOP_EVAL_CALL_MAX_DEPTH) {
-        HOPCTFEExecSetReason(
+    if (p->callDepth >= H2_EVAL_CALL_MAX_DEPTH) {
+        H2CTFEExecSetReason(
             p->currentExecCtx, nameStart, nameEnd, "evaluator backend call depth limit exceeded");
         *outIsConst = 0;
         return 0;
@@ -12540,7 +12486,7 @@ static int HOPEvalResolveCallMir(
         uint32_t i;
         for (i = 0; i < p->callDepth; i++) {
             if (p->callStack[i] == (uint32_t)fnIndex) {
-                HOPCTFEExecSetReason(
+                H2CTFEExecSetReason(
                     p->currentExecCtx,
                     nameStart,
                     nameEnd,
@@ -12552,21 +12498,21 @@ static int HOPEvalResolveCallMir(
     }
 
     {
-        HOPEvalTemplateBindingState savedBinding;
-        HOPEvalSaveTemplateBinding(p, &savedBinding);
-        (void)HOPEvalBindActiveTemplateForMirCall(p, program, function, inst, fn, args, argCount);
-        if (HOPEvalInvokeFunction(
+        H2EvalTemplateBindingState savedBinding;
+        H2EvalSaveTemplateBinding(p, &savedBinding);
+        (void)H2EvalBindActiveTemplateForMirCall(p, program, function, inst, fn, args, argCount);
+        if (H2EvalInvokeFunction(
                 p, fnIndex, args, argCount, p->currentContext, outValue, &didReturn)
             != 0)
         {
-            HOPEvalRestoreTemplateBinding(p, &savedBinding);
+            H2EvalRestoreTemplateBinding(p, &savedBinding);
             return -1;
         }
-        HOPEvalRestoreTemplateBinding(p, &savedBinding);
+        H2EvalRestoreTemplateBinding(p, &savedBinding);
     }
     if (!didReturn) {
         if (fn->hasReturnType) {
-            HOPCTFEExecSetReason(
+            H2CTFEExecSetReason(
                 p->currentExecCtx,
                 nameStart,
                 nameEnd,
@@ -12574,31 +12520,31 @@ static int HOPEvalResolveCallMir(
             *outIsConst = 0;
             return 0;
         }
-        HOPEvalValueSetNull(outValue);
+        H2EvalValueSetNull(outValue);
     }
     *outIsConst = 1;
     return 0;
 }
 
-static int HOPEvalResolveCall(
+static int H2EvalResolveCall(
     void*    ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPCTFEValue* _Nullable args,
-    uint32_t      argCount,
-    HOPCTFEValue* outValue,
-    int*          outIsConst,
-    HOPDiag* _Nullable diag) {
-    return HOPEvalResolveCallMir(
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
+    H2Diag* _Nullable diag) {
+    return H2EvalResolveCallMir(
         ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
 }
 
-static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue, int* outIsConst) {
-    HOPEvalProgram*   p = (HOPEvalProgram*)ctx;
-    const HOPAst*     ast;
-    const HOPAstNode* n;
-    HOPDiag           diag = { 0 };
-    int               rc;
+static int H2EvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst) {
+    H2EvalProgram*   p = (H2EvalProgram*)ctx;
+    const H2Ast*     ast;
+    const H2AstNode* n;
+    H2Diag           diag = { 0 };
+    int              rc;
 
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
@@ -12608,7 +12554,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         return -1;
     }
     n = &ast->nodes[exprNode];
-    while (n->kind == HOPAst_CALL_ARG) {
+    while (n->kind == H2Ast_CALL_ARG) {
         exprNode = n->firstChild;
         if (exprNode < 0 || (uint32_t)exprNode >= ast->len) {
             return -1;
@@ -12616,70 +12562,69 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         n = &ast->nodes[exprNode];
     }
 
-    if (n->kind == HOPAst_COMPOUND_LIT) {
-        return HOPEvalEvalCompoundLiteral(
+    if (n->kind == H2Ast_COMPOUND_LIT) {
+        return H2EvalEvalCompoundLiteral(
             p, exprNode, p->currentFile, p->currentFile, -1, outValue, outIsConst);
     }
 
-    if (n->kind == HOPAst_NEW) {
-        return HOPEvalEvalNewExpr(p, exprNode, NULL, -1, outValue, outIsConst);
+    if (n->kind == H2Ast_NEW) {
+        return H2EvalEvalNewExpr(p, exprNode, NULL, -1, outValue, outIsConst);
     }
 
-    if (n->kind == HOPAst_CALL_WITH_CONTEXT) {
-        int32_t               callNode = n->firstChild;
-        int32_t               overlayNode = callNode >= 0 ? ast->nodes[callNode].nextSibling : -1;
-        const HOPEvalContext* savedContext;
-        HOPEvalContext        overlayContext;
-        int                   overlayRc;
+    if (n->kind == H2Ast_CALL_WITH_CONTEXT) {
+        int32_t              callNode = n->firstChild;
+        int32_t              overlayNode = callNode >= 0 ? ast->nodes[callNode].nextSibling : -1;
+        const H2EvalContext* savedContext;
+        H2EvalContext        overlayContext;
+        int                  overlayRc;
         if (callNode < 0 || (uint32_t)callNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        overlayRc = HOPEvalBuildContextOverlay(p, overlayNode, &overlayContext, p->currentFile);
+        overlayRc = H2EvalBuildContextOverlay(p, overlayNode, &overlayContext, p->currentFile);
         if (overlayRc != 1) {
             *outIsConst = 0;
             return overlayRc < 0 ? -1 : 0;
         }
         savedContext = p->currentContext;
         p->currentContext = &overlayContext;
-        rc = HOPEvalExecExprCb(p, callNode, outValue, outIsConst);
+        rc = H2EvalExecExprCb(p, callNode, outValue, outIsConst);
         p->currentContext = savedContext;
         return rc;
     }
 
-    if (n->kind == HOPAst_SIZEOF) {
-        int32_t      childNode = n->firstChild;
-        uint64_t     sizeBytes = 0;
-        HOPCTFEValue childValue;
-        int          childIsConst = 0;
+    if (n->kind == H2Ast_SIZEOF) {
+        int32_t     childNode = n->firstChild;
+        uint64_t    sizeBytes = 0;
+        H2CTFEValue childValue;
+        int         childIsConst = 0;
         if (childNode < 0 || (uint32_t)childNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
         if (n->flags == 1u) {
-            if (!HOPEvalTypeNodeSize(p->currentFile, childNode, &sizeBytes, 0)) {
+            if (!H2EvalTypeNodeSize(p->currentFile, childNode, &sizeBytes, 0)) {
                 *outIsConst = 0;
                 return 0;
             }
         } else {
-            if (HOPEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+            if (H2EvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
                 return -1;
             }
             if (!childIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (childValue.kind == HOPCTFEValue_BOOL) {
+            if (childValue.kind == H2CTFEValue_BOOL) {
                 sizeBytes = 1u;
-            } else if (childValue.kind == HOPCTFEValue_INT || childValue.kind == HOPCTFEValue_FLOAT)
-            {
+            } else if (childValue.kind == H2CTFEValue_INT || childValue.kind == H2CTFEValue_FLOAT) {
                 sizeBytes = 8u;
-            } else if (childValue.kind == HOPCTFEValue_STRING) {
+            } else if (childValue.kind == H2CTFEValue_STRING) {
                 sizeBytes = (uint64_t)(sizeof(void*) * 2u);
-            } else if (childValue.kind == HOPCTFEValue_ARRAY) {
+            } else if (childValue.kind == H2CTFEValue_ARRAY) {
                 sizeBytes = (uint64_t)childValue.s.len * 8u;
             } else if (
-                childValue.kind == HOPCTFEValue_REFERENCE || childValue.kind == HOPCTFEValue_NULL)
+                childValue.kind == H2CTFEValue_REFERENCE || childValue.kind == H2CTFEValue_NULL)
             {
                 sizeBytes = (uint64_t)sizeof(void*);
             } else {
@@ -12687,59 +12632,59 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 return 0;
             }
         }
-        HOPEvalValueSetInt(outValue, (int64_t)sizeBytes);
+        H2EvalValueSetInt(outValue, (int64_t)sizeBytes);
         *outIsConst = 1;
         return 0;
     }
 
-    if (n->kind == HOPAst_INDEX && (n->flags & HOPAstFlag_INDEX_SLICE) != 0u) {
-        int32_t             baseNode = n->firstChild;
-        int32_t             extraNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
-        HOPCTFEValue        baseValue;
-        const HOPCTFEValue* targetValue;
-        HOPEvalArray*       array;
-        HOPEvalArray*       view;
-        HOPCTFEValue        startValue;
-        HOPCTFEValue        endValue;
-        int                 baseIsConst = 0;
-        int                 startIsConst = 0;
-        int                 endIsConst = 0;
-        int64_t             start = 0;
-        int64_t             end = -1;
-        uint32_t            startIndex;
-        uint32_t            endIndex;
+    if (n->kind == H2Ast_INDEX && (n->flags & H2AstFlag_INDEX_SLICE) != 0u) {
+        int32_t            baseNode = n->firstChild;
+        int32_t            extraNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        H2CTFEValue        baseValue;
+        const H2CTFEValue* targetValue;
+        H2EvalArray*       array;
+        H2EvalArray*       view;
+        H2CTFEValue        startValue;
+        H2CTFEValue        endValue;
+        int                baseIsConst = 0;
+        int                startIsConst = 0;
+        int                endIsConst = 0;
+        int64_t            start = 0;
+        int64_t            end = -1;
+        uint32_t           startIndex;
+        uint32_t           endIndex;
         if (baseNode < 0 || (uint32_t)baseNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
+        if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
             return -1;
         }
         if (!baseIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        targetValue = HOPEvalValueTargetOrSelf(&baseValue);
-        array = HOPEvalValueAsArray(targetValue);
-        if ((n->flags & HOPAstFlag_INDEX_HAS_START) != 0u) {
+        targetValue = H2EvalValueTargetOrSelf(&baseValue);
+        array = H2EvalValueAsArray(targetValue);
+        if ((n->flags & H2AstFlag_INDEX_HAS_START) != 0u) {
             if (extraNode < 0 || (uint32_t)extraNode >= ast->len
-                || HOPEvalExecExprCb(p, extraNode, &startValue, &startIsConst) != 0)
+                || H2EvalExecExprCb(p, extraNode, &startValue, &startIsConst) != 0)
             {
                 return extraNode < 0 ? 0 : -1;
             }
-            if (!startIsConst || HOPCTFEValueToInt64(&startValue, &start) != 0 || start < 0) {
+            if (!startIsConst || H2CTFEValueToInt64(&startValue, &start) != 0 || start < 0) {
                 *outIsConst = 0;
                 return 0;
             }
             extraNode = ast->nodes[extraNode].nextSibling;
         }
-        if ((n->flags & HOPAstFlag_INDEX_HAS_END) != 0u) {
+        if ((n->flags & H2AstFlag_INDEX_HAS_END) != 0u) {
             if (extraNode < 0 || (uint32_t)extraNode >= ast->len
-                || HOPEvalExecExprCb(p, extraNode, &endValue, &endIsConst) != 0)
+                || H2EvalExecExprCb(p, extraNode, &endValue, &endIsConst) != 0)
             {
                 return extraNode < 0 ? 0 : -1;
             }
-            if (!endIsConst || HOPCTFEValueToInt64(&endValue, &end) != 0 || end < 0) {
+            if (!endIsConst || H2CTFEValueToInt64(&endValue, &end) != 0 || end < 0) {
                 *outIsConst = 0;
                 return 0;
             }
@@ -12749,8 +12694,8 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 0;
             return 0;
         }
-        if (array == NULL && targetValue->kind == HOPCTFEValue_STRING) {
-            int32_t currentTypeCode = HOPEvalTypeCode_INVALID;
+        if (array == NULL && targetValue->kind == H2CTFEValue_STRING) {
+            int32_t currentTypeCode = H2EvalTypeCode_INVALID;
             startIndex = (uint32_t)start;
             endIndex = end >= 0 ? (uint32_t)end : targetValue->s.len;
             if (startIndex > endIndex || endIndex > targetValue->s.len) {
@@ -12761,10 +12706,10 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             outValue->s.bytes =
                 targetValue->s.bytes != NULL ? targetValue->s.bytes + startIndex : NULL;
             outValue->s.len = endIndex - startIndex;
-            if (!HOPEvalValueGetRuntimeTypeCode(targetValue, &currentTypeCode)) {
-                currentTypeCode = HOPEvalTypeCode_STR_REF;
+            if (!H2EvalValueGetRuntimeTypeCode(targetValue, &currentTypeCode)) {
+                currentTypeCode = H2EvalTypeCode_STR_REF;
             }
-            HOPEvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
+            H2EvalValueSetRuntimeTypeCode(outValue, currentTypeCode);
             *outIsConst = 1;
             return 0;
         }
@@ -12778,9 +12723,9 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 0;
             return 0;
         }
-        view = HOPEvalAllocArrayView(
+        view = H2EvalAllocArrayView(
             p,
-            targetValue->kind == HOPCTFEValue_ARRAY ? array->file : p->currentFile,
+            targetValue->kind == H2CTFEValue_ARRAY ? array->file : p->currentFile,
             exprNode,
             array->elemTypeNode,
             array->elems + startIndex,
@@ -12789,35 +12734,35 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             return ErrorSimple("out of memory");
         }
         {
-            HOPCTFEValue viewValue;
-            HOPEvalValueSetArray(&viewValue, p->currentFile, exprNode, view);
-            return HOPEvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
+            H2CTFEValue viewValue;
+            H2EvalValueSetArray(&viewValue, p->currentFile, exprNode, view);
+            return H2EvalAllocReferencedValue(p, &viewValue, outValue, outIsConst);
         }
     }
 
-    if (n->kind == HOPAst_INDEX && (n->flags & 0x7u) == 0u) {
-        int32_t       baseNode = n->firstChild;
-        int32_t       indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
-        HOPCTFEValue  baseValue;
-        HOPCTFEValue  indexValue;
-        HOPEvalArray* array;
-        int           baseIsConst = 0;
-        int           indexIsConst = 0;
-        int64_t       index = 0;
+    if (n->kind == H2Ast_INDEX && (n->flags & 0x7u) == 0u) {
+        int32_t      baseNode = n->firstChild;
+        int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+        H2CTFEValue  baseValue;
+        H2CTFEValue  indexValue;
+        H2EvalArray* array;
+        int          baseIsConst = 0;
+        int          indexIsConst = 0;
+        int64_t      index = 0;
         if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
             goto index_fallback;
         }
-        if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
-            || HOPEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+        if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+            || H2EvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
         {
             return -1;
         }
-        if (!baseIsConst || !indexIsConst || HOPCTFEValueToInt64(&indexValue, &index) != 0) {
+        if (!baseIsConst || !indexIsConst || H2CTFEValueToInt64(&indexValue, &index) != 0) {
             goto index_fallback;
         }
-        array = HOPEvalValueAsArray(&baseValue);
+        array = H2EvalValueAsArray(&baseValue);
         if (array == NULL) {
-            array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&baseValue));
+            array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&baseValue));
         }
         if (array != NULL && index >= 0 && (uint64_t)index < (uint64_t)array->len) {
             *outValue = array->elems[(uint32_t)index];
@@ -12825,12 +12770,12 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             return 0;
         }
         {
-            const HOPCTFEValue* targetValue = HOPEvalValueTargetOrSelf(&baseValue);
-            if (targetValue->kind == HOPCTFEValue_STRING && index >= 0
+            const H2CTFEValue* targetValue = H2EvalValueTargetOrSelf(&baseValue);
+            if (targetValue->kind == H2CTFEValue_STRING && index >= 0
                 && (uint64_t)index < (uint64_t)targetValue->s.len)
             {
-                HOPEvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[(uint32_t)index]);
-                HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
+                H2EvalValueSetInt(outValue, (int64_t)targetValue->s.bytes[(uint32_t)index]);
+                H2EvalValueSetRuntimeTypeCode(outValue, H2EvalTypeCode_U8);
                 *outIsConst = 1;
                 return 0;
             }
@@ -12841,30 +12786,30 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
     index_fallback:;
     }
 
-    if (n->kind == HOPAst_FIELD_EXPR) {
-        int32_t           baseNode = n->firstChild;
-        HOPCTFEValue      baseValue;
-        int               baseIsConst = 0;
-        HOPEvalAggregate* agg = NULL;
+    if (n->kind == H2Ast_FIELD_EXPR) {
+        int32_t          baseNode = n->firstChild;
+        H2CTFEValue      baseValue;
+        int              baseIsConst = 0;
+        H2EvalAggregate* agg = NULL;
         if (baseNode < 0 || (uint32_t)baseNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        if (ast->nodes[baseNode].kind == HOPAst_IDENT) {
+        if (ast->nodes[baseNode].kind == H2Ast_IDENT) {
             if (SliceEqCStr(
                     p->currentFile->source,
                     ast->nodes[baseNode].dataStart,
                     ast->nodes[baseNode].dataEnd,
                     "context")
-                && HOPEvalCurrentContextField(
+                && H2EvalCurrentContextField(
                     p, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
             {
                 *outIsConst = 1;
                 return 0;
             }
-            const HOPParsedFile* enumFile = NULL;
-            int32_t              enumNode = -1;
-            enumNode = HOPEvalFindNamedEnumDecl(
+            const H2ParsedFile* enumFile = NULL;
+            int32_t             enumNode = -1;
+            enumNode = H2EvalFindNamedEnumDecl(
                 p,
                 p->currentFile,
                 ast->nodes[baseNode].dataStart,
@@ -12873,7 +12818,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             if (enumNode >= 0 && enumFile != NULL) {
                 int32_t  variantNode = -1;
                 uint32_t tagIndex = 0;
-                if (HOPEvalFindEnumVariant(
+                if (H2EvalFindEnumVariant(
                         enumFile,
                         enumNode,
                         p->currentFile->source,
@@ -12882,14 +12827,14 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         &variantNode,
                         &tagIndex))
                 {
-                    const HOPAstNode* variantField = &enumFile->ast.nodes[variantNode];
-                    int32_t           valueNode = ASTFirstChild(&enumFile->ast, variantNode);
-                    if (valueNode >= 0 && enumFile->ast.nodes[valueNode].kind != HOPAst_FIELD
-                        && !HOPEvalEnumHasPayloadVariants(enumFile, enumNode))
+                    const H2AstNode* variantField = &enumFile->ast.nodes[variantNode];
+                    int32_t          valueNode = ASTFirstChild(&enumFile->ast, variantNode);
+                    if (valueNode >= 0 && enumFile->ast.nodes[valueNode].kind != H2Ast_FIELD
+                        && !H2EvalEnumHasPayloadVariants(enumFile, enumNode))
                     {
-                        HOPCTFEValue enumValue;
-                        int          enumIsConst = 0;
-                        if (HOPEvalExecExprInFileWithType(
+                        H2CTFEValue enumValue;
+                        int         enumIsConst = 0;
+                        if (H2EvalExecExprInFileWithType(
                                 p,
                                 enumFile,
                                 p->currentExecCtx != NULL ? p->currentExecCtx->env : NULL,
@@ -12910,7 +12855,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         *outIsConst = 1;
                         return 0;
                     }
-                    HOPEvalValueSetTaggedEnum(
+                    H2EvalValueSetTaggedEnum(
                         p,
                         outValue,
                         enumFile,
@@ -12924,7 +12869,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
             }
         }
-        if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
+        if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
             return -1;
         }
         if (!baseIsConst) {
@@ -12932,56 +12877,56 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             return 0;
         }
         {
-            const HOPCTFEValue* targetValue = HOPEvalValueTargetOrSelf(&baseValue);
-            const HOPCTFEValue* payload = NULL;
-            HOPEvalTaggedEnum*  tagged = HOPEvalValueAsTaggedEnum(targetValue);
-            if (targetValue->kind == HOPCTFEValue_OPTIONAL
-                && HOPEvalOptionalPayload(targetValue, &payload) && targetValue->b != 0u
+            const H2CTFEValue* targetValue = H2EvalValueTargetOrSelf(&baseValue);
+            const H2CTFEValue* payload = NULL;
+            H2EvalTaggedEnum*  tagged = H2EvalValueAsTaggedEnum(targetValue);
+            if (targetValue->kind == H2CTFEValue_OPTIONAL
+                && H2EvalOptionalPayload(targetValue, &payload) && targetValue->b != 0u
                 && payload != NULL)
             {
-                targetValue = HOPEvalValueTargetOrSelf(payload);
-                tagged = HOPEvalValueAsTaggedEnum(targetValue);
+                targetValue = H2EvalValueTargetOrSelf(payload);
+                tagged = H2EvalValueAsTaggedEnum(targetValue);
             }
             if (SliceEqCStr(p->currentFile->source, n->dataStart, n->dataEnd, "len")
-                && (targetValue->kind == HOPCTFEValue_STRING
-                    || targetValue->kind == HOPCTFEValue_ARRAY
-                    || targetValue->kind == HOPCTFEValue_NULL))
+                && (targetValue->kind == H2CTFEValue_STRING
+                    || targetValue->kind == H2CTFEValue_ARRAY
+                    || targetValue->kind == H2CTFEValue_NULL))
             {
-                HOPEvalValueSetInt(outValue, (int64_t)targetValue->s.len);
+                H2EvalValueSetInt(outValue, (int64_t)targetValue->s.len);
                 *outIsConst = 1;
                 return 0;
             }
             if (SliceEqCStr(p->currentFile->source, n->dataStart, n->dataEnd, "cstr")
-                && targetValue->kind == HOPCTFEValue_STRING)
+                && targetValue->kind == H2CTFEValue_STRING)
             {
                 *outValue = *targetValue;
                 *outIsConst = 1;
                 return 0;
             }
             if (tagged != NULL && tagged->payload != NULL
-                && HOPEvalAggregateGetFieldValue(
+                && H2EvalAggregateGetFieldValue(
                     tagged->payload, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
             {
                 *outIsConst = 1;
                 return 0;
             }
         }
-        agg = HOPEvalValueAsAggregate(&baseValue);
+        agg = H2EvalValueAsAggregate(&baseValue);
         if (agg == NULL) {
-            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(&baseValue));
+            agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&baseValue));
         }
         if (agg == NULL) {
-            const HOPCTFEValue* targetValue = HOPEvalValueTargetOrSelf(&baseValue);
-            const HOPCTFEValue* payload = NULL;
-            if (targetValue->kind == HOPCTFEValue_OPTIONAL
-                && HOPEvalOptionalPayload(targetValue, &payload) && targetValue->b != 0u
+            const H2CTFEValue* targetValue = H2EvalValueTargetOrSelf(&baseValue);
+            const H2CTFEValue* payload = NULL;
+            if (targetValue->kind == H2CTFEValue_OPTIONAL
+                && H2EvalOptionalPayload(targetValue, &payload) && targetValue->b != 0u
                 && payload != NULL)
             {
-                agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(payload));
+                agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(payload));
             }
         }
         if (agg != NULL
-            && HOPEvalAggregateGetFieldValue(
+            && H2EvalAggregateGetFieldValue(
                 agg, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
         {
             *outIsConst = 1;
@@ -12989,84 +12934,83 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    if (n->kind == HOPAst_UNARY && (HOPTokenKind)n->op == HOPTok_AND) {
-        int32_t       childNode = n->firstChild;
-        HOPCTFEValue  childValue;
-        HOPCTFEValue* fieldValuePtr;
-        int           childIsConst = 0;
+    if (n->kind == H2Ast_UNARY && (H2TokenKind)n->op == H2Tok_AND) {
+        int32_t      childNode = n->firstChild;
+        H2CTFEValue  childValue;
+        H2CTFEValue* fieldValuePtr;
+        int          childIsConst = 0;
         if (childNode >= 0 && (uint32_t)childNode < ast->len
-            && ast->nodes[childNode].kind == HOPAst_IDENT)
+            && ast->nodes[childNode].kind == H2Ast_IDENT)
         {
-            HOPCTFEExecBinding* binding = HOPEvalFindBinding(
+            H2CTFEExecBinding* binding = H2EvalFindBinding(
                 p->currentExecCtx,
                 p->currentFile,
                 ast->nodes[childNode].dataStart,
                 ast->nodes[childNode].dataEnd);
             if (binding != NULL) {
-                HOPEvalValueSetReference(outValue, &binding->value);
+                H2EvalValueSetReference(outValue, &binding->value);
                 *outIsConst = 1;
                 return 0;
             }
             {
-                int32_t topVarIndex = HOPEvalFindCurrentTopVarBySlice(
+                int32_t topVarIndex = H2EvalFindCurrentTopVarBySlice(
                     p,
                     p->currentFile,
                     ast->nodes[childNode].dataStart,
                     ast->nodes[childNode].dataEnd);
-                HOPCTFEValue topVarValue;
-                int          topVarIsConst = 0;
+                H2CTFEValue topVarValue;
+                int         topVarIsConst = 0;
                 if (topVarIndex >= 0
-                    && HOPEvalEvalTopVar(p, (uint32_t)topVarIndex, &topVarValue, &topVarIsConst)
-                           == 0
+                    && H2EvalEvalTopVar(p, (uint32_t)topVarIndex, &topVarValue, &topVarIsConst) == 0
                     && topVarIsConst)
                 {
-                    HOPEvalValueSetReference(outValue, &p->topVars[(uint32_t)topVarIndex].value);
+                    H2EvalValueSetReference(outValue, &p->topVars[(uint32_t)topVarIndex].value);
                     *outIsConst = 1;
                     return 0;
                 }
             }
         }
         if (childNode >= 0 && (uint32_t)childNode < ast->len
-            && ast->nodes[childNode].kind == HOPAst_FIELD_EXPR)
+            && ast->nodes[childNode].kind == H2Ast_FIELD_EXPR)
         {
-            fieldValuePtr = HOPEvalResolveFieldExprValuePtr(p, p->currentExecCtx, childNode);
+            fieldValuePtr = H2EvalResolveFieldExprValuePtr(p, p->currentExecCtx, childNode);
             if (fieldValuePtr != NULL) {
-                HOPEvalValueSetReference(outValue, fieldValuePtr);
+                H2EvalValueSetReference(outValue, fieldValuePtr);
                 *outIsConst = 1;
                 return 0;
             }
         }
         if (childNode >= 0 && (uint32_t)childNode < ast->len
-            && ast->nodes[childNode].kind == HOPAst_INDEX
+            && ast->nodes[childNode].kind == H2Ast_INDEX
             && (ast->nodes[childNode].flags & 0x7u) == 0u)
         {
-            int32_t       baseNode = ast->nodes[childNode].firstChild;
-            int32_t       indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
-            HOPCTFEValue  baseValue;
-            HOPCTFEValue  indexValue;
-            HOPEvalArray* array;
-            int           baseIsConst = 0;
-            int           indexIsConst = 0;
-            int64_t       index = 0;
+            int32_t      baseNode = ast->nodes[childNode].firstChild;
+            int32_t      indexNode = baseNode >= 0 ? ast->nodes[baseNode].nextSibling : -1;
+            H2CTFEValue  baseValue;
+            H2CTFEValue  indexValue;
+            H2EvalArray* array;
+            int          baseIsConst = 0;
+            int          indexIsConst = 0;
+            int64_t      index = 0;
             if (baseNode < 0 || indexNode < 0 || ast->nodes[indexNode].nextSibling >= 0) {
                 goto unary_addr_fallback;
             }
-            if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
-                || HOPEvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
+            if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0
+                || H2EvalExecExprCb(p, indexNode, &indexValue, &indexIsConst) != 0)
             {
                 return -1;
             }
-            if (!baseIsConst || !indexIsConst || HOPCTFEValueToInt64(&indexValue, &index) != 0) {
+            if (!baseIsConst || !indexIsConst || H2CTFEValueToInt64(&indexValue, &index) != 0) {
                 goto unary_addr_fallback;
             }
-            array = HOPEvalValueAsArray(&baseValue);
+            array = H2EvalValueAsArray(&baseValue);
             if (array == NULL) {
-                array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&baseValue));
+                array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&baseValue));
             }
             if (array == NULL || index < 0 || (uint64_t)index >= (uint64_t)array->len) {
                 goto unary_addr_fallback;
             }
-            HOPEvalValueSetReference(outValue, &array->elems[(uint32_t)index]);
+            H2EvalValueSetReference(outValue, &array->elems[(uint32_t)index]);
             *outIsConst = 1;
             return 0;
         unary_addr_fallback:;
@@ -13075,15 +13019,15 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+        if (H2EvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
             return -1;
         }
         if (!childIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        if (childValue.kind == HOPCTFEValue_AGGREGATE || childValue.kind == HOPCTFEValue_NULL
-            || childValue.kind == HOPCTFEValue_ARRAY)
+        if (childValue.kind == H2CTFEValue_AGGREGATE || childValue.kind == H2CTFEValue_NULL
+            || childValue.kind == H2CTFEValue_ARRAY)
         {
             *outValue = childValue;
             *outIsConst = 1;
@@ -13091,23 +13035,23 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    if (n->kind == HOPAst_UNARY && (HOPTokenKind)n->op == HOPTok_MUL) {
-        int32_t       childNode = n->firstChild;
-        HOPCTFEValue  childValue;
-        HOPCTFEValue* target;
-        int           childIsConst = 0;
+    if (n->kind == H2Ast_UNARY && (H2TokenKind)n->op == H2Tok_MUL) {
+        int32_t      childNode = n->firstChild;
+        H2CTFEValue  childValue;
+        H2CTFEValue* target;
+        int          childIsConst = 0;
         if (childNode < 0 || (uint32_t)childNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+        if (H2EvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
             return -1;
         }
         if (!childIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        target = HOPEvalValueReferenceTarget(&childValue);
+        target = H2EvalValueReferenceTarget(&childValue);
         if (target != NULL) {
             *outValue = *target;
             *outIsConst = 1;
@@ -13115,24 +13059,24 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    if (n->kind == HOPAst_UNWRAP) {
-        int32_t             childNode = n->firstChild;
-        HOPCTFEValue        childValue;
-        const HOPCTFEValue* payload = NULL;
-        int                 childIsConst = 0;
+    if (n->kind == H2Ast_UNWRAP) {
+        int32_t            childNode = n->firstChild;
+        H2CTFEValue        childValue;
+        const H2CTFEValue* payload = NULL;
+        int                childIsConst = 0;
         if (childNode < 0 || (uint32_t)childNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+        if (H2EvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
             return -1;
         }
         if (!childIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        if (!HOPEvalOptionalPayload(&childValue, &payload)) {
-            if (childValue.kind == HOPCTFEValue_NULL) {
+        if (!H2EvalOptionalPayload(&childValue, &payload)) {
+            if (childValue.kind == H2CTFEValue_NULL) {
                 return ErrorSimple("unwrap of empty optional in evaluator backend");
             }
             *outValue = childValue;
@@ -13147,10 +13091,10 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         return 0;
     }
 
-    if (n->kind == HOPAst_TUPLE_EXPR || n->kind == HOPAst_EXPR_LIST) {
-        HOPCTFEValue elems[256];
-        uint32_t     elemCount = AstListCount(ast, exprNode);
-        uint32_t     i;
+    if (n->kind == H2Ast_TUPLE_EXPR || n->kind == H2Ast_EXPR_LIST) {
+        H2CTFEValue elems[256];
+        uint32_t    elemCount = AstListCount(ast, exprNode);
+        uint32_t    i;
         if (elemCount == 0 || elemCount > 256u) {
             *outIsConst = 0;
             return 0;
@@ -13158,7 +13102,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         for (i = 0; i < elemCount; i++) {
             int32_t itemNode = AstListItemAt(ast, exprNode, i);
             int     elemIsConst = 0;
-            if (itemNode < 0 || HOPEvalExecExprCb(p, itemNode, &elems[i], &elemIsConst) != 0) {
+            if (itemNode < 0 || H2EvalExecExprCb(p, itemNode, &elems[i], &elemIsConst) != 0) {
                 return itemNode < 0 ? 0 : -1;
             }
             if (!elemIsConst) {
@@ -13166,13 +13110,13 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 return 0;
             }
         }
-        return HOPEvalAllocTupleValue(
+        return H2EvalAllocTupleValue(
             p, p->currentFile, exprNode, elems, elemCount, outValue, outIsConst);
     }
 
-    if (n->kind == HOPAst_TYPE_VALUE) {
+    if (n->kind == H2Ast_TYPE_VALUE) {
         int32_t typeNode = ASTFirstChild(ast, exprNode);
-        int     rc = HOPEvalTypeValueFromTypeNode(p, p->currentFile, typeNode, outValue);
+        int     rc = H2EvalTypeValueFromTypeNode(p, p->currentFile, typeNode, outValue);
         if (rc < 0) {
             return -1;
         }
@@ -13184,23 +13128,23 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         return 0;
     }
 
-    if (n->kind == HOPAst_UNARY) {
-        int32_t      childNode = n->firstChild;
-        HOPCTFEValue childValue;
-        int          childIsConst = 0;
-        int          handled = 0;
+    if (n->kind == H2Ast_UNARY) {
+        int32_t     childNode = n->firstChild;
+        H2CTFEValue childValue;
+        int         childIsConst = 0;
+        int         handled = 0;
         if (childNode < 0 || (uint32_t)childNode >= ast->len) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
+        if (H2EvalExecExprCb(p, childNode, &childValue, &childIsConst) != 0) {
             return -1;
         }
         if (!childIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        handled = HOPEvalEvalUnary((HOPTokenKind)n->op, &childValue, outValue, outIsConst);
+        handled = H2EvalEvalUnary((H2TokenKind)n->op, &childValue, outValue, outIsConst);
         if (handled < 0) {
             return -1;
         }
@@ -13209,20 +13153,20 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    if (n->kind == HOPAst_BINARY && (HOPTokenKind)n->op != HOPTok_ASSIGN) {
-        int32_t      lhsNode = n->firstChild;
-        int32_t      rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
-        HOPCTFEValue lhsValue;
-        HOPCTFEValue rhsValue;
-        int          lhsIsConst = 0;
-        int          rhsIsConst = 0;
-        int          handled = 0;
+    if (n->kind == H2Ast_BINARY && (H2TokenKind)n->op != H2Tok_ASSIGN) {
+        int32_t     lhsNode = n->firstChild;
+        int32_t     rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
+        H2CTFEValue lhsValue;
+        H2CTFEValue rhsValue;
+        int         lhsIsConst = 0;
+        int         rhsIsConst = 0;
+        int         handled = 0;
         if (lhsNode < 0 || rhsNode < 0 || ast->nodes[rhsNode].nextSibling >= 0) {
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, lhsNode, &lhsValue, &lhsIsConst) != 0
-            || HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0)
+        if (H2EvalExecExprCb(p, lhsNode, &lhsValue, &lhsIsConst) != 0
+            || H2EvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0)
         {
             return -1;
         }
@@ -13230,8 +13174,8 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 0;
             return 0;
         }
-        handled = HOPEvalEvalBinary(
-            p, (HOPTokenKind)n->op, &lhsValue, &rhsValue, outValue, outIsConst);
+        handled = H2EvalEvalBinary(
+            p, (H2TokenKind)n->op, &lhsValue, &rhsValue, outValue, outIsConst);
         if (handled < 0) {
             return -1;
         }
@@ -13240,53 +13184,53 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    if (n->kind == HOPAst_CALL) {
+    if (n->kind == H2Ast_CALL) {
         int32_t calleeNode = n->firstChild;
         if (calleeNode < 0 || (uint32_t)calleeNode >= ast->len) {
             if (p->currentExecCtx != NULL) {
-                HOPCTFEExecSetReasonNode(
+                H2CTFEExecSetReasonNode(
                     p->currentExecCtx, exprNode, "call expression is malformed");
             }
             *outIsConst = 0;
             return 0;
         }
-        if (ast->nodes[calleeNode].kind == HOPAst_IDENT
+        if (ast->nodes[calleeNode].kind == H2Ast_IDENT
             && SliceEqCStr(
                 p->currentFile->source,
                 ast->nodes[calleeNode].dataStart,
                 ast->nodes[calleeNode].dataEnd,
                 "typeof"))
         {
-            HOPCTFEExecBinding*  binding = NULL;
-            const HOPParsedFile* localTypeFile = NULL;
-            int32_t              argNode = ast->nodes[calleeNode].nextSibling;
-            int32_t              argExprNode = argNode;
-            int32_t              localTypeNode = -1;
-            int32_t              visibleLocalTypeNode = -1;
-            HOPCTFEValue         argValue;
-            int                  argIsConst = 0;
-            int32_t              typeCode = HOPEvalTypeCode_INVALID;
+            H2CTFEExecBinding*  binding = NULL;
+            const H2ParsedFile* localTypeFile = NULL;
+            int32_t             argNode = ast->nodes[calleeNode].nextSibling;
+            int32_t             argExprNode = argNode;
+            int32_t             localTypeNode = -1;
+            int32_t             visibleLocalTypeNode = -1;
+            H2CTFEValue         argValue;
+            int                 argIsConst = 0;
+            int32_t             typeCode = H2EvalTypeCode_INVALID;
             if (argNode < 0 || ast->nodes[argNode].nextSibling >= 0) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (ast->nodes[argNode].kind == HOPAst_CALL_ARG) {
+            if (ast->nodes[argNode].kind == H2Ast_CALL_ARG) {
                 argExprNode = ast->nodes[argNode].firstChild;
             }
             if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (ast->nodes[argExprNode].kind == HOPAst_IDENT) {
-                binding = HOPEvalFindBinding(
+            if (ast->nodes[argExprNode].kind == H2Ast_IDENT) {
+                binding = H2EvalFindBinding(
                     p->currentExecCtx,
                     p->currentFile,
                     ast->nodes[argExprNode].dataStart,
                     ast->nodes[argExprNode].dataEnd);
                 if (binding != NULL && binding->typeNode >= 0
-                    && !HOPEvalTypeNodeIsAnytype(p->currentFile, binding->typeNode))
+                    && !H2EvalTypeNodeIsAnytype(p->currentFile, binding->typeNode))
                 {
-                    rc = HOPEvalTypeValueFromTypeNode(
+                    rc = H2EvalTypeValueFromTypeNode(
                         p, p->currentFile, binding->typeNode, outValue);
                     if (rc < 0) {
                         return -1;
@@ -13296,16 +13240,16 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         return 0;
                     }
                 }
-                if (HOPEvalFindVisibleLocalTypeNodeByName(
+                if (H2EvalFindVisibleLocalTypeNodeByName(
                         p->currentFile,
                         ast->nodes[argExprNode].start,
                         ast->nodes[argExprNode].dataStart,
                         ast->nodes[argExprNode].dataEnd,
                         &visibleLocalTypeNode)
                     && visibleLocalTypeNode >= 0
-                    && !HOPEvalTypeNodeIsAnytype(p->currentFile, visibleLocalTypeNode))
+                    && !H2EvalTypeNodeIsAnytype(p->currentFile, visibleLocalTypeNode))
                 {
-                    rc = HOPEvalTypeValueFromTypeNode(
+                    rc = H2EvalTypeValueFromTypeNode(
                         p, p->currentFile, visibleLocalTypeNode, outValue);
                     if (rc < 0) {
                         return -1;
@@ -13315,16 +13259,16 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         return 0;
                     }
                 }
-                if (HOPEvalMirLookupLocalTypeNode(
+                if (H2EvalMirLookupLocalTypeNode(
                         p,
                         ast->nodes[argExprNode].dataStart,
                         ast->nodes[argExprNode].dataEnd,
                         &localTypeFile,
                         &localTypeNode)
                     && localTypeFile != NULL && localTypeNode >= 0
-                    && !HOPEvalTypeNodeIsAnytype(localTypeFile, localTypeNode))
+                    && !H2EvalTypeNodeIsAnytype(localTypeFile, localTypeNode))
                 {
-                    rc = HOPEvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue);
+                    rc = H2EvalTypeValueFromTypeNode(p, localTypeFile, localTypeNode, outValue);
                     if (rc < 0) {
                         return -1;
                     }
@@ -13334,51 +13278,50 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     }
                 }
             }
-            rc = HOPEvalTypeValueFromExprNode(p, p->currentFile, ast, argExprNode, outValue);
+            rc = H2EvalTypeValueFromExprNode(p, p->currentFile, ast, argExprNode, outValue);
             if (rc < 0) {
                 return -1;
             }
             if (rc > 0) {
-                if (outValue->kind == HOPCTFEValue_TYPE) {
-                    HOPEvalValueSetSimpleTypeValue(outValue, HOPEvalTypeCode_TYPE);
+                if (outValue->kind == H2CTFEValue_TYPE) {
+                    H2EvalValueSetSimpleTypeValue(outValue, H2EvalTypeCode_TYPE);
                 }
                 *outIsConst = 1;
                 return 0;
             }
-            if (ast->nodes[argExprNode].kind == HOPAst_CAST) {
+            if (ast->nodes[argExprNode].kind == H2Ast_CAST) {
                 int32_t typeNode = ast->nodes[argExprNode].firstChild;
                 typeNode = typeNode >= 0 ? ast->nodes[typeNode].nextSibling : -1;
                 if (typeNode >= 0
-                    && HOPEvalTypeCodeFromTypeNode(p->currentFile, typeNode, &typeCode))
+                    && H2EvalTypeCodeFromTypeNode(p->currentFile, typeNode, &typeCode))
                 {
-                    HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+                    H2EvalValueSetSimpleTypeValue(outValue, typeCode);
                     *outIsConst = 1;
                     return 0;
                 }
             }
-            if (HOPEvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
+            if (H2EvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
                 return -1;
             }
             if (!argIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            HOPEvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
+            H2EvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
             {
-                HOPEvalAggregate* agg = HOPEvalValueAsAggregate(
-                    HOPEvalValueTargetOrSelf(&argValue));
+                H2EvalAggregate* agg = H2EvalValueAsAggregate(H2EvalValueTargetOrSelf(&argValue));
                 if (agg != NULL && agg->file != NULL && agg->nodeId >= 0
                     && (uint32_t)agg->nodeId < agg->file->ast.len)
                 {
                     uint8_t namedKind = 0;
                     switch (agg->file->ast.nodes[agg->nodeId].kind) {
-                        case HOPAst_STRUCT: namedKind = HOPEvalTypeKind_STRUCT; break;
-                        case HOPAst_UNION:  namedKind = HOPEvalTypeKind_UNION; break;
-                        case HOPAst_ENUM:   namedKind = HOPEvalTypeKind_ENUM; break;
-                        default:            break;
+                        case H2Ast_STRUCT: namedKind = H2EvalTypeKind_STRUCT; break;
+                        case H2Ast_UNION:  namedKind = H2EvalTypeKind_UNION; break;
+                        case H2Ast_ENUM:   namedKind = H2EvalTypeKind_ENUM; break;
+                        default:           break;
                     }
                     if (namedKind != 0
-                        && HOPEvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue)
+                        && H2EvalMakeNamedTypeValue(p, agg->file, agg->nodeId, namedKind, outValue)
                                > 0)
                     {
                         *outIsConst = 1;
@@ -13386,16 +13329,16 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     }
                 }
             }
-            if (!HOPEvalTypeCodeFromValue(&argValue, &typeCode)) {
+            if (!H2EvalTypeCodeFromValue(&argValue, &typeCode)) {
                 *outIsConst = 0;
                 return 0;
             }
-            HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+            H2EvalValueSetSimpleTypeValue(outValue, typeCode);
             *outIsConst = 1;
             return 0;
         }
-        if (ast->nodes[calleeNode].kind == HOPAst_IDENT
-            && HOPEvalNameEqLiteralOrPkgBuiltin(
+        if (ast->nodes[calleeNode].kind == H2Ast_IDENT
+            && H2EvalNameEqLiteralOrPkgBuiltin(
                 p->currentFile->source,
                 ast->nodes[calleeNode].dataStart,
                 ast->nodes[calleeNode].dataEnd,
@@ -13408,12 +13351,12 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 *outIsConst = 0;
                 return 0;
             }
-            if (ast->nodes[operandNode].kind == HOPAst_CALL_ARG) {
+            if (ast->nodes[operandNode].kind == H2Ast_CALL_ARG) {
                 operandNode = ast->nodes[operandNode].firstChild;
             }
             if (operandNode < 0 || (uint32_t)operandNode >= ast->len) {
                 if (p->currentExecCtx != NULL) {
-                    HOPCTFEExecSetReason(
+                    H2CTFEExecSetReason(
                         p->currentExecCtx,
                         ast->nodes[argNode].start,
                         ast->nodes[argNode].end,
@@ -13422,7 +13365,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 *outIsConst = 0;
                 return 0;
             }
-            HOPEvalValueSetSpan(
+            H2EvalValueSetSpan(
                 p->currentFile,
                 ast->nodes[operandNode].start,
                 ast->nodes[operandNode].end,
@@ -13430,36 +13373,36 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 1;
             return 0;
         }
-        if (calleeNode >= 0 && ast->nodes[calleeNode].kind == HOPAst_FIELD_EXPR) {
-            const HOPAstNode* callee = &ast->nodes[calleeNode];
-            int32_t           baseNode = callee->firstChild;
-            int32_t           argNode = ast->nodes[calleeNode].nextSibling;
-            HOPCTFEValue      calleeValue;
-            int               calleeIsConst = 0;
-            if (HOPEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
+        if (calleeNode >= 0 && ast->nodes[calleeNode].kind == H2Ast_FIELD_EXPR) {
+            const H2AstNode* callee = &ast->nodes[calleeNode];
+            int32_t          baseNode = callee->firstChild;
+            int32_t          argNode = ast->nodes[calleeNode].nextSibling;
+            H2CTFEValue      calleeValue;
+            int              calleeIsConst = 0;
+            if (H2EvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                 return -1;
             }
-            if (calleeIsConst && HOPEvalValueIsInvokableFunctionRef(&calleeValue)) {
-                uint32_t      argCount = 0;
-                HOPCTFEValue* args = NULL;
-                int collectRc = HOPEvalCollectCallArgs(p, ast, argNode, &args, &argCount, NULL);
+            if (calleeIsConst && H2EvalValueIsInvokableFunctionRef(&calleeValue)) {
+                uint32_t     argCount = 0;
+                H2CTFEValue* args = NULL;
+                int collectRc = H2EvalCollectCallArgs(p, ast, argNode, &args, &argCount, NULL);
                 if (collectRc <= 0) {
                     *outIsConst = 0;
                     return collectRc < 0 ? -1 : 0;
                 }
                 {
-                    const HOPParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
-                    int32_t              savedExpectedTypeNode = p->activeCallExpectedTypeNode;
-                    const HOPParsedFile* inferredExpectedTypeFile = NULL;
-                    int32_t              inferredExpectedTypeNode = -1;
-                    int                  invoked;
+                    const H2ParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                    int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                    const H2ParsedFile* inferredExpectedTypeFile = NULL;
+                    int32_t             inferredExpectedTypeNode = -1;
+                    int                 invoked;
                     if (p->expectedCallExprFile == p->currentFile
                         && p->expectedCallExprNode == exprNode)
                     {
                         p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
                         p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
                     } else if (
-                        HOPEvalFindExpectedTypeForCallExpr(
+                        H2EvalFindExpectedTypeForCallExpr(
                             p->currentFile,
                             exprNode,
                             &inferredExpectedTypeFile,
@@ -13468,7 +13411,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         p->activeCallExpectedTypeFile = inferredExpectedTypeFile;
                         p->activeCallExpectedTypeNode = inferredExpectedTypeNode;
                     }
-                    invoked = HOPEvalInvokeFunctionRef(
+                    invoked = H2EvalInvokeFunctionRef(
                         p, &calleeValue, args, argCount, outValue, outIsConst);
                     p->activeCallExpectedTypeFile = savedExpectedTypeFile;
                     p->activeCallExpectedTypeNode = savedExpectedTypeNode;
@@ -13481,7 +13424,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
             }
             if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
-                && ast->nodes[baseNode].kind == HOPAst_IDENT
+                && ast->nodes[baseNode].kind == H2Ast_IDENT
                 && SliceEqCStr(
                     p->currentFile->source,
                     callee->dataStart,
@@ -13494,12 +13437,12 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     "builtin"))
             {
                 int32_t operandNode = argNode;
-                if (ast->nodes[operandNode].kind == HOPAst_CALL_ARG) {
+                if (ast->nodes[operandNode].kind == H2Ast_CALL_ARG) {
                     operandNode = ast->nodes[operandNode].firstChild;
                 }
                 if (operandNode < 0 || (uint32_t)operandNode >= ast->len) {
                     if (p->currentExecCtx != NULL) {
-                        HOPCTFEExecSetReason(
+                        H2CTFEExecSetReason(
                             p->currentExecCtx,
                             ast->nodes[argNode].start,
                             ast->nodes[argNode].end,
@@ -13508,7 +13451,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     *outIsConst = 0;
                     return 0;
                 }
-                HOPEvalValueSetSpan(
+                H2EvalValueSetSpan(
                     p->currentFile,
                     ast->nodes[operandNode].start,
                     ast->nodes[operandNode].end,
@@ -13517,7 +13460,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 return 0;
             }
             if (baseNode >= 0 && argNode >= 0 && ast->nodes[argNode].nextSibling < 0
-                && ast->nodes[baseNode].kind == HOPAst_IDENT
+                && ast->nodes[baseNode].kind == H2Ast_IDENT
                 && SliceEqCStr(p->currentFile->source, callee->dataStart, callee->dataEnd, "exit")
                 && SliceEqCStr(
                     p->currentFile->source,
@@ -13525,15 +13468,15 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     ast->nodes[baseNode].dataEnd,
                     "platform"))
             {
-                HOPCTFEValue argValue;
-                int          argIsConst = 0;
-                int64_t      exitCode = 0;
-                if (HOPEvalExecExprCb(p, argNode, &argValue, &argIsConst) != 0) {
+                H2CTFEValue argValue;
+                int         argIsConst = 0;
+                int64_t     exitCode = 0;
+                if (H2EvalExecExprCb(p, argNode, &argValue, &argIsConst) != 0) {
                     return -1;
                 }
-                if (!argIsConst || HOPCTFEValueToInt64(&argValue, &exitCode) != 0) {
+                if (!argIsConst || H2CTFEValueToInt64(&argValue, &exitCode) != 0) {
                     if (p->currentExecCtx != NULL) {
-                        HOPCTFEExecSetReason(
+                        H2CTFEExecSetReason(
                             p->currentExecCtx,
                             ast->nodes[argNode].start,
                             ast->nodes[argNode].end,
@@ -13544,11 +13487,11 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
                 p->exitCalled = 1;
                 p->exitCode = (int)(exitCode & 255);
-                HOPEvalValueSetNull(outValue);
+                H2EvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;
             }
-            if (baseNode >= 0 && argNode >= 0 && ast->nodes[baseNode].kind == HOPAst_IDENT
+            if (baseNode >= 0 && argNode >= 0 && ast->nodes[baseNode].kind == H2Ast_IDENT
                 && SliceEqCStr(
                     p->currentFile->source,
                     ast->nodes[baseNode].dataStart,
@@ -13557,26 +13500,26 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 && SliceEqCStr(
                     p->currentFile->source, callee->dataStart, callee->dataEnd, "console_log"))
             {
-                int32_t      flagsNode = ast->nodes[argNode].nextSibling;
-                int32_t      extraNode = flagsNode >= 0 ? ast->nodes[flagsNode].nextSibling : -1;
-                int32_t      messageExpr = ASTFirstChild(ast, argNode);
-                int32_t      flagsExpr = ASTFirstChild(ast, flagsNode);
-                HOPCTFEValue messageValue;
-                HOPCTFEValue flagsValue;
-                int          messageIsConst = 0;
-                int          flagsIsConst = 0;
+                int32_t     flagsNode = ast->nodes[argNode].nextSibling;
+                int32_t     extraNode = flagsNode >= 0 ? ast->nodes[flagsNode].nextSibling : -1;
+                int32_t     messageExpr = ASTFirstChild(ast, argNode);
+                int32_t     flagsExpr = ASTFirstChild(ast, flagsNode);
+                H2CTFEValue messageValue;
+                H2CTFEValue flagsValue;
+                int         messageIsConst = 0;
+                int         flagsIsConst = 0;
                 if (flagsNode < 0 || extraNode >= 0 || messageExpr < 0 || flagsExpr < 0) {
                     *outIsConst = 0;
                     return 0;
                 }
-                if (HOPEvalExecExprCb(p, messageExpr, &messageValue, &messageIsConst) != 0
-                    || HOPEvalExecExprCb(p, flagsExpr, &flagsValue, &flagsIsConst) != 0)
+                if (H2EvalExecExprCb(p, messageExpr, &messageValue, &messageIsConst) != 0
+                    || H2EvalExecExprCb(p, flagsExpr, &flagsValue, &flagsIsConst) != 0)
                 {
                     return -1;
                 }
-                if (!messageIsConst || messageValue.kind != HOPCTFEValue_STRING || !flagsIsConst) {
+                if (!messageIsConst || messageValue.kind != H2CTFEValue_STRING || !flagsIsConst) {
                     if (p->currentExecCtx != NULL) {
-                        HOPCTFEExecSetReason(
+                        H2CTFEExecSetReason(
                             p->currentExecCtx,
                             ast->nodes[messageExpr].start,
                             ast->nodes[flagsExpr].end,
@@ -13594,71 +13537,71 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
                 fputc('\n', stdout);
                 fflush(stdout);
-                HOPEvalValueSetNull(outValue);
+                H2EvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;
             }
             if (baseNode >= 0) {
-                uint32_t      extraArgCount = 0;
-                HOPCTFEValue* args = NULL;
-                HOPCTFEValue* extraArgs = NULL;
-                HOPCTFEValue  baseValue;
-                int           baseIsConst = 0;
-                int           collectRc;
-                if (HOPEvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
+                uint32_t     extraArgCount = 0;
+                H2CTFEValue* args = NULL;
+                H2CTFEValue* extraArgs = NULL;
+                H2CTFEValue  baseValue;
+                int          baseIsConst = 0;
+                int          collectRc;
+                if (H2EvalExecExprCb(p, baseNode, &baseValue, &baseIsConst) != 0) {
                     return -1;
                 }
                 if (baseIsConst) {
-                    collectRc = HOPEvalCollectCallArgs(
+                    collectRc = H2EvalCollectCallArgs(
                         p, ast, argNode, &extraArgs, &extraArgCount, NULL);
                     if (collectRc <= 0) {
                         *outIsConst = 0;
                         return collectRc < 0 ? -1 : 0;
                     }
-                    args = (HOPCTFEValue*)HOPArenaAlloc(
+                    args = (H2CTFEValue*)H2ArenaAlloc(
                         p->arena,
-                        sizeof(HOPCTFEValue) * (extraArgCount + 1u),
-                        (uint32_t)_Alignof(HOPCTFEValue));
+                        sizeof(H2CTFEValue) * (extraArgCount + 1u),
+                        (uint32_t)_Alignof(H2CTFEValue));
                     if (args == NULL) {
                         return ErrorSimple("out of memory");
                     }
                     args[0] = baseValue;
                     if (extraArgCount > 0 && extraArgs != NULL) {
-                        memcpy(args + 1u, extraArgs, sizeof(HOPCTFEValue) * extraArgCount);
+                        memcpy(args + 1u, extraArgs, sizeof(H2CTFEValue) * extraArgCount);
                     }
 
                     if (extraArgCount == 0
                         && SliceEqCStr(
                             p->currentFile->source, callee->dataStart, callee->dataEnd, "len")
-                        && (HOPEvalValueTargetOrSelf(&baseValue)->kind == HOPCTFEValue_STRING
-                            || HOPEvalValueTargetOrSelf(&baseValue)->kind == HOPCTFEValue_ARRAY
-                            || HOPEvalValueTargetOrSelf(&baseValue)->kind == HOPCTFEValue_NULL))
+                        && (H2EvalValueTargetOrSelf(&baseValue)->kind == H2CTFEValue_STRING
+                            || H2EvalValueTargetOrSelf(&baseValue)->kind == H2CTFEValue_ARRAY
+                            || H2EvalValueTargetOrSelf(&baseValue)->kind == H2CTFEValue_NULL))
                     {
-                        HOPEvalValueSetInt(
-                            outValue, (int64_t)HOPEvalValueTargetOrSelf(&baseValue)->s.len);
+                        H2EvalValueSetInt(
+                            outValue, (int64_t)H2EvalValueTargetOrSelf(&baseValue)->s.len);
                         *outIsConst = 1;
                         return 0;
                     }
                     if (extraArgCount == 0
                         && SliceEqCStr(
                             p->currentFile->source, callee->dataStart, callee->dataEnd, "cstr")
-                        && HOPEvalValueTargetOrSelf(&baseValue)->kind == HOPCTFEValue_STRING)
+                        && H2EvalValueTargetOrSelf(&baseValue)->kind == H2CTFEValue_STRING)
                     {
-                        *outValue = *HOPEvalValueTargetOrSelf(&baseValue);
+                        *outValue = *H2EvalValueTargetOrSelf(&baseValue);
                         *outIsConst = 1;
                         return 0;
                     }
 
                     {
-                        const HOPParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
-                        int32_t              savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                        const H2ParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                        int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
                         if (p->expectedCallExprFile == p->currentFile
                             && p->expectedCallExprNode == exprNode)
                         {
                             p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
                             p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
                         }
-                        if (HOPEvalResolveCall(
+                        if (H2EvalResolveCall(
                                 p,
                                 callee->dataStart,
                                 callee->dataEnd,
@@ -13679,7 +13622,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     if (!*outIsConst && p->currentExecCtx != NULL
                         && p->currentExecCtx->nonConstReason == NULL)
                     {
-                        HOPCTFEExecSetReasonNode(
+                        H2CTFEExecSetReasonNode(
                             p->currentExecCtx,
                             exprNode,
                             "qualified call target is not supported by evaluator backend");
@@ -13688,7 +13631,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
             }
             if (p->currentExecCtx != NULL) {
-                HOPCTFEExecSetReasonNode(
+                H2CTFEExecSetReasonNode(
                     p->currentExecCtx,
                     exprNode,
                     "qualified call target is not supported by evaluator backend");
@@ -13696,21 +13639,21 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             *outIsConst = 0;
             return 0;
         }
-        if (ast->nodes[calleeNode].kind == HOPAst_IDENT) {
-            int32_t       argNode = ast->nodes[calleeNode].nextSibling;
-            uint32_t      argCount = 0;
-            HOPCTFEValue* args = NULL;
-            HOPCTFEValue  tempArgs[256];
-            int32_t       directFnIndex = -1;
-            HOPCTFEValue  calleeValue;
-            int           calleeIsConst = 0;
-            int           calleeMayResolveByNameWithoutValue = 0;
-            int32_t       scanNode;
-            uint32_t      rawArgCount = 0;
+        if (ast->nodes[calleeNode].kind == H2Ast_IDENT) {
+            int32_t      argNode = ast->nodes[calleeNode].nextSibling;
+            uint32_t     argCount = 0;
+            H2CTFEValue* args = NULL;
+            H2CTFEValue  tempArgs[256];
+            int32_t      directFnIndex = -1;
+            H2CTFEValue  calleeValue;
+            int          calleeIsConst = 0;
+            int          calleeMayResolveByNameWithoutValue = 0;
+            int32_t      scanNode;
+            uint32_t     rawArgCount = 0;
             for (scanNode = argNode; scanNode >= 0; scanNode = ast->nodes[scanNode].nextSibling) {
                 rawArgCount++;
             }
-            directFnIndex = HOPEvalResolveFunctionBySlice(
+            directFnIndex = H2EvalResolveFunctionBySlice(
                 p,
                 NULL,
                 p->currentFile,
@@ -13720,17 +13663,17 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 rawArgCount);
             scanNode = argNode;
             while (scanNode >= 0) {
-                HOPCTFEValue         argValue;
-                int                  argIsConst = 0;
-                int32_t              argExprNode = scanNode;
-                int32_t              paramTypeNode = -1;
-                const HOPParsedFile* paramTypeFile = p->currentFile;
-                if (ast->nodes[scanNode].kind == HOPAst_CALL_ARG) {
+                H2CTFEValue         argValue;
+                int                 argIsConst = 0;
+                int32_t             argExprNode = scanNode;
+                int32_t             paramTypeNode = -1;
+                const H2ParsedFile* paramTypeFile = p->currentFile;
+                if (ast->nodes[scanNode].kind == H2Ast_CALL_ARG) {
                     argExprNode = ast->nodes[scanNode].firstChild;
                 }
                 if (argExprNode < 0 || (uint32_t)argExprNode >= ast->len) {
                     if (p->currentExecCtx != NULL) {
-                        HOPCTFEExecSetReason(
+                        H2CTFEExecSetReason(
                             p->currentExecCtx,
                             ast->nodes[scanNode].start,
                             ast->nodes[scanNode].end,
@@ -13740,19 +13683,19 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     return 0;
                 }
                 if (directFnIndex >= 0) {
-                    const HOPEvalFunction* directFn = &p->funcs[(uint32_t)directFnIndex];
-                    uint32_t               fixedCount =
+                    const H2EvalFunction* directFn = &p->funcs[(uint32_t)directFnIndex];
+                    uint32_t              fixedCount =
                         directFn->isVariadic && directFn->paramCount > 0
                             ? directFn->paramCount - 1u
                             : directFn->paramCount;
-                    if (!(ast->nodes[scanNode].kind == HOPAst_CALL_ARG
-                          && (ast->nodes[scanNode].flags & HOPAstFlag_CALL_ARG_SPREAD) != 0)
+                    if (!(ast->nodes[scanNode].kind == H2Ast_CALL_ARG
+                          && (ast->nodes[scanNode].flags & H2AstFlag_CALL_ARG_SPREAD) != 0)
                         && (!directFn->isVariadic || argCount < fixedCount))
                     {
-                        paramTypeNode = HOPEvalFunctionParamTypeNodeAt(directFn, argCount);
+                        paramTypeNode = H2EvalFunctionParamTypeNodeAt(directFn, argCount);
                         paramTypeFile = directFn->file;
                         if (paramTypeNode >= 0
-                            && directFn->file->ast.nodes[paramTypeNode].kind == HOPAst_TYPE_NAME
+                            && directFn->file->ast.nodes[paramTypeNode].kind == H2Ast_TYPE_NAME
                             && SliceEqCStr(
                                 directFn->file->source,
                                 directFn->file->ast.nodes[paramTypeNode].dataStart,
@@ -13764,36 +13707,36 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     }
                 }
                 if (paramTypeNode >= 0) {
-                    if (HOPEvalExecExprWithTypeNode(
+                    if (H2EvalExecExprWithTypeNode(
                             p, argExprNode, paramTypeFile, paramTypeNode, &argValue, &argIsConst)
                         != 0)
                     {
                         return -1;
                     }
-                } else if (HOPEvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
+                } else if (H2EvalExecExprCb(p, argExprNode, &argValue, &argIsConst) != 0) {
                     return -1;
                 }
                 if (!argIsConst) {
                     *outIsConst = 0;
                     return 0;
                 }
-                if (paramTypeNode >= 0 && HOPEvalExprIsAnytypePackIndex(p, ast, argExprNode)
-                    && !HOPEvalValueMatchesExpectedTypeNode(
+                if (paramTypeNode >= 0 && H2EvalExprIsAnytypePackIndex(p, ast, argExprNode)
+                    && !H2EvalValueMatchesExpectedTypeNode(
                         p, paramTypeFile, paramTypeNode, &argValue))
                 {
                     if (p->currentExecCtx != NULL) {
-                        HOPCTFEExecSetReasonNode(
+                        H2CTFEExecSetReasonNode(
                             p->currentExecCtx, argExprNode, "anytype pack element type mismatch");
                     }
                     *outIsConst = 0;
                     return 0;
                 }
-                HOPEvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
-                if (ast->nodes[scanNode].kind == HOPAst_CALL_ARG
-                    && (ast->nodes[scanNode].flags & HOPAstFlag_CALL_ARG_SPREAD) != 0)
+                H2EvalAnnotateValueTypeFromExpr(p->currentFile, ast, argExprNode, &argValue);
+                if (ast->nodes[scanNode].kind == H2Ast_CALL_ARG
+                    && (ast->nodes[scanNode].flags & H2AstFlag_CALL_ARG_SPREAD) != 0)
                 {
-                    HOPEvalArray* array = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&argValue));
-                    uint32_t      i;
+                    H2EvalArray* array = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&argValue));
+                    uint32_t     i;
                     if (array == NULL) {
                         *outIsConst = 0;
                         return 0;
@@ -13813,15 +13756,15 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 scanNode = ast->nodes[scanNode].nextSibling;
             }
             if (argCount > 0) {
-                args = (HOPCTFEValue*)HOPArenaAlloc(
-                    p->arena, sizeof(HOPCTFEValue) * argCount, (uint32_t)_Alignof(HOPCTFEValue));
+                args = (H2CTFEValue*)H2ArenaAlloc(
+                    p->arena, sizeof(H2CTFEValue) * argCount, (uint32_t)_Alignof(H2CTFEValue));
                 if (args == NULL) {
                     return ErrorSimple("out of memory");
                 }
-                memcpy(args, tempArgs, sizeof(HOPCTFEValue) * argCount);
+                memcpy(args, tempArgs, sizeof(H2CTFEValue) * argCount);
             }
             {
-                int32_t resolvedFnIndex = HOPEvalResolveFunctionBySlice(
+                int32_t resolvedFnIndex = H2EvalResolveFunctionBySlice(
                     p,
                     NULL,
                     p->currentFile,
@@ -13834,12 +13777,12 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
             }
             if (directFnIndex >= 0 && argCount > 0) {
-                (void)HOPEvalReorderFixedCallArgsByName(
+                (void)H2EvalReorderFixedCallArgsByName(
                     p, &p->funcs[(uint32_t)directFnIndex], ast, argNode, args, argCount, 0u);
             }
             calleeMayResolveByNameWithoutValue =
                 directFnIndex >= 0
-                || HOPEvalNameIsLazyTypeBuiltin(
+                || H2EvalNameIsLazyTypeBuiltin(
                     p->currentFile->source,
                     ast->nodes[calleeNode].dataStart,
                     ast->nodes[calleeNode].dataEnd)
@@ -13869,22 +13812,22 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 uint32_t savedStart =
                     p->currentExecCtx != NULL ? p->currentExecCtx->nonConstStart : 0;
                 uint32_t savedEnd = p->currentExecCtx != NULL ? p->currentExecCtx->nonConstEnd : 0;
-                if (HOPEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
+                if (H2EvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                     return -1;
                 }
-                if (calleeIsConst && HOPEvalValueIsInvokableFunctionRef(&calleeValue)) {
-                    const HOPParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
-                    int32_t              savedExpectedTypeNode = p->activeCallExpectedTypeNode;
-                    const HOPParsedFile* inferredExpectedTypeFile = NULL;
-                    int32_t              inferredExpectedTypeNode = -1;
-                    int                  invoked;
+                if (calleeIsConst && H2EvalValueIsInvokableFunctionRef(&calleeValue)) {
+                    const H2ParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                    int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                    const H2ParsedFile* inferredExpectedTypeFile = NULL;
+                    int32_t             inferredExpectedTypeNode = -1;
+                    int                 invoked;
                     if (p->expectedCallExprFile == p->currentFile
                         && p->expectedCallExprNode == exprNode)
                     {
                         p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
                         p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
                     } else if (
-                        HOPEvalFindExpectedTypeForCallExpr(
+                        H2EvalFindExpectedTypeForCallExpr(
                             p->currentFile,
                             exprNode,
                             &inferredExpectedTypeFile,
@@ -13893,7 +13836,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         p->activeCallExpectedTypeFile = inferredExpectedTypeFile;
                         p->activeCallExpectedTypeNode = inferredExpectedTypeNode;
                     }
-                    invoked = HOPEvalInvokeFunctionRef(
+                    invoked = H2EvalInvokeFunctionRef(
                         p, &calleeValue, args, argCount, outValue, outIsConst);
                     p->activeCallExpectedTypeFile = savedExpectedTypeFile;
                     p->activeCallExpectedTypeNode = savedExpectedTypeNode;
@@ -13911,15 +13854,15 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                 }
             }
             {
-                const HOPParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
-                int32_t              savedExpectedTypeNode = p->activeCallExpectedTypeNode;
+                const H2ParsedFile* savedExpectedTypeFile = p->activeCallExpectedTypeFile;
+                int32_t             savedExpectedTypeNode = p->activeCallExpectedTypeNode;
                 if (p->expectedCallExprFile == p->currentFile
                     && p->expectedCallExprNode == exprNode)
                 {
                     p->activeCallExpectedTypeFile = p->expectedCallTypeFile;
                     p->activeCallExpectedTypeNode = p->expectedCallTypeNode;
                 }
-                if (HOPEvalResolveCall(
+                if (H2EvalResolveCall(
                         p,
                         ast->nodes[calleeNode].dataStart,
                         ast->nodes[calleeNode].dataEnd,
@@ -13940,50 +13883,50 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             if (!*outIsConst && p->currentExecCtx != NULL
                 && p->currentExecCtx->nonConstReason == NULL)
             {
-                HOPCTFEExecSetReasonNode(
+                H2CTFEExecSetReasonNode(
                     p->currentExecCtx, exprNode, "call is not supported by evaluator backend");
             }
             return 0;
         }
     }
-    if (n->kind == HOPAst_CAST) {
+    if (n->kind == H2Ast_CAST) {
         int32_t  valueNode = n->firstChild;
         int32_t  typeNode = valueNode >= 0 ? ast->nodes[valueNode].nextSibling : -1;
         int32_t  extraNode = typeNode >= 0 ? ast->nodes[typeNode].nextSibling : -1;
         char     aliasTargetKind = '\0';
         uint64_t aliasTag = 0;
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
-            && HOPEvalResolveSimpleAliasCastTarget(
+            && H2EvalResolveSimpleAliasCastTarget(
                 p, p->currentFile, typeNode, &aliasTargetKind, &aliasTag))
         {
-            HOPCTFEValue inValue;
-            int          inIsConst = 0;
-            if (HOPEvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
+            H2CTFEValue inValue;
+            int         inIsConst = 0;
+            if (H2EvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
                 return -1;
             }
             if (!inIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (aliasTargetKind == 'i' && inValue.kind == HOPCTFEValue_INT) {
+            if (aliasTargetKind == 'i' && inValue.kind == H2CTFEValue_INT) {
                 *outValue = inValue;
                 outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
-            if (aliasTargetKind == 'f' && inValue.kind == HOPCTFEValue_FLOAT) {
+            if (aliasTargetKind == 'f' && inValue.kind == H2CTFEValue_FLOAT) {
                 *outValue = inValue;
                 outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
-            if (aliasTargetKind == 'b' && inValue.kind == HOPCTFEValue_BOOL) {
+            if (aliasTargetKind == 'b' && inValue.kind == H2CTFEValue_BOOL) {
                 *outValue = inValue;
                 outValue->typeTag = aliasTag;
                 *outIsConst = 1;
                 return 0;
             }
-            if (aliasTargetKind == 's' && inValue.kind == HOPCTFEValue_STRING) {
+            if (aliasTargetKind == 's' && inValue.kind == H2CTFEValue_STRING) {
                 *outValue = inValue;
                 outValue->typeTag = aliasTag;
                 *outIsConst = 1;
@@ -13991,147 +13934,147 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
             }
         }
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0) {
-            HOPCTFEValue         inValue;
-            int                  inIsConst = 0;
-            const HOPParsedFile* aliasFile = NULL;
-            int32_t              aliasNode = -1;
-            int32_t              aliasTargetNode = -1;
-            HOPEvalArray*        tuple;
-            if (HOPEvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
+            H2CTFEValue         inValue;
+            int                 inIsConst = 0;
+            const H2ParsedFile* aliasFile = NULL;
+            int32_t             aliasNode = -1;
+            int32_t             aliasTargetNode = -1;
+            H2EvalArray*        tuple;
+            if (H2EvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
                 return -1;
             }
             if (!inIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            if (HOPEvalResolveAliasCastTargetNode(
+            if (H2EvalResolveAliasCastTargetNode(
                     p, p->currentFile, typeNode, &aliasFile, &aliasNode, &aliasTargetNode)
                 && aliasFile != NULL && aliasNode >= 0 && aliasTargetNode >= 0)
             {
-                tuple = HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&inValue));
-                if (tuple != NULL && aliasFile->ast.nodes[aliasTargetNode].kind == HOPAst_TYPE_TUPLE
+                tuple = H2EvalValueAsArray(H2EvalValueTargetOrSelf(&inValue));
+                if (tuple != NULL && aliasFile->ast.nodes[aliasTargetNode].kind == H2Ast_TYPE_TUPLE
                     && AstListCount(&aliasFile->ast, aliasTargetNode) == tuple->len)
                 {
                     *outValue = inValue;
-                    outValue->typeTag = HOPEvalMakeAliasTag(aliasFile, aliasNode);
+                    outValue->typeTag = H2EvalMakeAliasTag(aliasFile, aliasNode);
                     *outIsConst = 1;
                     return 0;
                 }
             }
         }
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0) {
-            HOPCTFEValue inValue;
-            int          inIsConst = 0;
-            int32_t      targetTypeCode = HOPEvalTypeCode_INVALID;
-            uint64_t     nullTypeTag = 0;
-            if (HOPEvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
+            H2CTFEValue inValue;
+            int         inIsConst = 0;
+            int32_t     targetTypeCode = H2EvalTypeCode_INVALID;
+            uint64_t    nullTypeTag = 0;
+            if (H2EvalExecExprCb(p, valueNode, &inValue, &inIsConst) != 0) {
                 return -1;
             }
             if (!inIsConst) {
                 *outIsConst = 0;
                 return 0;
             }
-            (void)HOPEvalTypeCodeFromTypeNode(p->currentFile, typeNode, &targetTypeCode);
-            if (inValue.kind == HOPCTFEValue_NULL
-                && HOPEvalResolveNullCastTypeTag(p->currentFile, typeNode, &nullTypeTag))
+            (void)H2EvalTypeCodeFromTypeNode(p->currentFile, typeNode, &targetTypeCode);
+            if (inValue.kind == H2CTFEValue_NULL
+                && H2EvalResolveNullCastTypeTag(p->currentFile, typeNode, &nullTypeTag))
             {
                 *outValue = inValue;
                 outValue->typeTag = nullTypeTag;
-                if (targetTypeCode == HOPEvalTypeCode_RAWPTR) {
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                if (targetTypeCode == H2EvalTypeCode_RAWPTR) {
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                 }
                 *outIsConst = 1;
                 return 0;
             }
-            if (targetTypeCode == HOPEvalTypeCode_RAWPTR
-                && (inValue.kind == HOPCTFEValue_REFERENCE || inValue.kind == HOPCTFEValue_STRING))
+            if (targetTypeCode == H2EvalTypeCode_RAWPTR
+                && (inValue.kind == H2CTFEValue_REFERENCE || inValue.kind == H2CTFEValue_STRING))
             {
                 *outValue = inValue;
-                HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                 *outIsConst = 1;
                 return 0;
             }
-            if (targetTypeCode == HOPEvalTypeCode_BOOL) {
-                outValue->kind = HOPCTFEValue_BOOL;
+            if (targetTypeCode == H2EvalTypeCode_BOOL) {
+                outValue->kind = H2CTFEValue_BOOL;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                if (inValue.kind == HOPCTFEValue_BOOL) {
+                if (inValue.kind == H2CTFEValue_BOOL) {
                     outValue->b = inValue.b ? 1u : 0u;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_INT) {
+                if (inValue.kind == H2CTFEValue_INT) {
                     outValue->b = inValue.i64 != 0 ? 1u : 0u;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_FLOAT) {
+                if (inValue.kind == H2CTFEValue_FLOAT) {
                     outValue->b = inValue.f64 != 0.0 ? 1u : 0u;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_STRING) {
+                if (inValue.kind == H2CTFEValue_STRING) {
                     outValue->b = 1u;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_NULL) {
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                if (inValue.kind == H2CTFEValue_NULL) {
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
             }
-            if (targetTypeCode == HOPEvalTypeCode_F32 || targetTypeCode == HOPEvalTypeCode_F64) {
-                outValue->kind = HOPCTFEValue_FLOAT;
+            if (targetTypeCode == H2EvalTypeCode_F32 || targetTypeCode == H2EvalTypeCode_F64) {
+                outValue->kind = H2CTFEValue_FLOAT;
                 outValue->i64 = 0;
                 outValue->f64 = 0.0;
                 outValue->b = 0;
                 outValue->s.bytes = NULL;
                 outValue->s.len = 0;
-                if (inValue.kind == HOPCTFEValue_FLOAT) {
+                if (inValue.kind == H2CTFEValue_FLOAT) {
                     outValue->f64 = inValue.f64;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_INT) {
+                if (inValue.kind == H2CTFEValue_INT) {
                     outValue->f64 = (double)inValue.i64;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_BOOL) {
+                if (inValue.kind == H2CTFEValue_BOOL) {
                     outValue->f64 = inValue.b ? 1.0 : 0.0;
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
-                if (inValue.kind == HOPCTFEValue_NULL) {
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                if (inValue.kind == H2CTFEValue_NULL) {
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
             }
-            if (targetTypeCode == HOPEvalTypeCode_U8 || targetTypeCode == HOPEvalTypeCode_U16
-                || targetTypeCode == HOPEvalTypeCode_U32 || targetTypeCode == HOPEvalTypeCode_U64
-                || targetTypeCode == HOPEvalTypeCode_UINT || targetTypeCode == HOPEvalTypeCode_I8
-                || targetTypeCode == HOPEvalTypeCode_I16 || targetTypeCode == HOPEvalTypeCode_I32
-                || targetTypeCode == HOPEvalTypeCode_I64 || targetTypeCode == HOPEvalTypeCode_INT)
+            if (targetTypeCode == H2EvalTypeCode_U8 || targetTypeCode == H2EvalTypeCode_U16
+                || targetTypeCode == H2EvalTypeCode_U32 || targetTypeCode == H2EvalTypeCode_U64
+                || targetTypeCode == H2EvalTypeCode_UINT || targetTypeCode == H2EvalTypeCode_I8
+                || targetTypeCode == H2EvalTypeCode_I16 || targetTypeCode == H2EvalTypeCode_I32
+                || targetTypeCode == H2EvalTypeCode_I64 || targetTypeCode == H2EvalTypeCode_INT)
             {
                 int64_t asInt = 0;
                 int     canCast = 1;
-                if (inValue.kind == HOPCTFEValue_INT) {
+                if (inValue.kind == H2CTFEValue_INT) {
                     asInt = inValue.i64;
-                } else if (inValue.kind == HOPCTFEValue_BOOL) {
+                } else if (inValue.kind == H2CTFEValue_BOOL) {
                     asInt = inValue.b ? 1 : 0;
-                } else if (inValue.kind == HOPCTFEValue_FLOAT) {
+                } else if (inValue.kind == H2CTFEValue_FLOAT) {
                     if (inValue.f64 != inValue.f64 || inValue.f64 > (double)INT64_MAX
                         || inValue.f64 < (double)INT64_MIN)
                     {
@@ -14139,34 +14082,34 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                         return 0;
                     }
                     asInt = (int64_t)inValue.f64;
-                } else if (inValue.kind == HOPCTFEValue_NULL) {
+                } else if (inValue.kind == H2CTFEValue_NULL) {
                     asInt = 0;
                 } else {
                     canCast = 0;
                 }
                 if (canCast) {
-                    HOPEvalValueSetInt(outValue, asInt);
-                    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
+                    H2EvalValueSetInt(outValue, asInt);
+                    H2EvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
                     *outIsConst = 1;
                     return 0;
                 }
             }
-            if ((p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_REF
-                 || p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_MUTREF
-                 || p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_PTR)
-                && inValue.kind == HOPCTFEValue_REFERENCE)
+            if ((p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_MUTREF
+                 || p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_PTR)
+                && inValue.kind == H2CTFEValue_REFERENCE)
             {
                 *outValue = inValue;
                 *outIsConst = 1;
                 return 0;
             }
-            if ((p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_REF
-                 || p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_MUTREF
-                 || p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_PTR)
+            if ((p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_MUTREF
+                 || p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_PTR)
                 && p->currentFile->ast.nodes[typeNode].firstChild >= 0
                 && (uint32_t)p->currentFile->ast.nodes[typeNode].firstChild < ast->len
                 && p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild].kind
-                       == HOPAst_TYPE_NAME
+                       == H2Ast_TYPE_NAME
                 && SliceEqCStr(
                     p->currentFile->source,
                     p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
@@ -14174,23 +14117,23 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
                         .dataEnd,
                     "str")
-                && inValue.kind == HOPCTFEValue_STRING)
+                && inValue.kind == H2CTFEValue_STRING)
             {
                 *outValue = inValue;
-                HOPEvalValueSetRuntimeTypeCode(
+                H2EvalValueSetRuntimeTypeCode(
                     outValue,
-                    p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_REF
-                        ? HOPEvalTypeCode_STR_REF
-                        : HOPEvalTypeCode_STR_PTR);
+                    p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_REF
+                        ? H2EvalTypeCode_STR_REF
+                        : H2EvalTypeCode_STR_PTR);
                 *outIsConst = 1;
                 return 0;
             }
-            if ((p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_REF
-                 || p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_PTR)
+            if ((p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_REF
+                 || p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_PTR)
                 && p->currentFile->ast.nodes[typeNode].firstChild >= 0
                 && (uint32_t)p->currentFile->ast.nodes[typeNode].firstChild < ast->len
                 && p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild].kind
-                       == HOPAst_TYPE_NAME
+                       == H2Ast_TYPE_NAME
                 && SliceEqCStr(
                     p->currentFile->source,
                     p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
@@ -14198,14 +14141,14 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
                     p->currentFile->ast.nodes[p->currentFile->ast.nodes[typeNode].firstChild]
                         .dataEnd,
                     "str")
-                && HOPEvalValueAsArray(HOPEvalValueTargetOrSelf(&inValue)) != NULL)
+                && H2EvalValueAsArray(H2EvalValueTargetOrSelf(&inValue)) != NULL)
             {
-                rc = HOPEvalStringValueFromArrayBytes(
+                rc = H2EvalStringValueFromArrayBytes(
                     p->arena,
                     &inValue,
-                    p->currentFile->ast.nodes[typeNode].kind == HOPAst_TYPE_REF
-                        ? HOPEvalTypeCode_STR_REF
-                        : HOPEvalTypeCode_STR_PTR,
+                    p->currentFile->ast.nodes[typeNode].kind == H2Ast_TYPE_REF
+                        ? H2EvalTypeCode_STR_REF
+                        : H2EvalTypeCode_STR_PTR,
                     outValue);
                 if (rc < 0) {
                     return -1;
@@ -14218,27 +14161,27 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         }
     }
 
-    rc = HOPCTFEEvalExprEx(
+    rc = H2CTFEEvalExprEx(
         p->arena,
         ast,
-        (HOPStrView){ p->currentFile->source, p->currentFile->sourceLen },
+        (H2StrView){ p->currentFile->source, p->currentFile->sourceLen },
         exprNode,
-        HOPEvalResolveIdent,
-        HOPEvalResolveCall,
+        H2EvalResolveIdent,
+        H2EvalResolveCall,
         p,
-        HOPEvalMirMakeTuple,
+        H2EvalMirMakeTuple,
         p,
-        HOPEvalMirIndexValue,
+        H2EvalMirIndexValue,
         p,
-        HOPEvalMirAggGetField,
+        H2EvalMirAggGetField,
         p,
-        HOPEvalMirAggAddrField,
+        H2EvalMirAggAddrField,
         p,
         outValue,
         outIsConst,
         &diag);
     if (rc != 0) {
-        if (diag.code != HOPDiag_NONE) {
+        if (diag.code != H2Diag_NONE) {
             PrintHOPDiag(p->currentFile->path, p->currentFile->source, &diag, 1);
         } else {
             ErrorEvalUnsupported(
@@ -14251,7 +14194,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, HOPCTFEValue* outValue
         return -1;
     }
     if (!*outIsConst && p->currentExecCtx != NULL && p->currentExecCtx->nonConstReason == NULL) {
-        HOPCTFEExecSetReasonNode(
+        H2CTFEExecSetReasonNode(
             p->currentExecCtx, exprNode, "expression is not supported by evaluator backend");
     }
     return 0;
@@ -14262,18 +14205,18 @@ int RunProgramEval(
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild) {
-    HOPPackageLoader loader;
-    HOPPackage*      entryPkg;
-    HOPEvalProgram   program;
-    HOPEvalFunction* mainFn = NULL;
-    uint32_t         i;
-    int32_t          mainIndex = -1;
-    uint8_t          arenaMem[32 * 1024];
-    HOPArena         arena;
-    HOPCTFEValue     retValue;
-    HOPCTFEValue     noArgsValue;
-    int              didReturn = 0;
-    int              rc = -1;
+    H2PackageLoader loader;
+    H2Package*      entryPkg;
+    H2EvalProgram   program;
+    H2EvalFunction* mainFn = NULL;
+    uint32_t        i;
+    int32_t         mainIndex = -1;
+    uint8_t         arenaMem[32 * 1024];
+    H2Arena         arena;
+    H2CTFEValue     retValue;
+    H2CTFEValue     noArgsValue;
+    int             didReturn = 0;
+    int             rc = -1;
 
     if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
@@ -14285,27 +14228,27 @@ int RunProgramEval(
         return -1;
     }
 
-    HOPArenaInit(&arena, arenaMem, (uint32_t)sizeof(arenaMem));
-    HOPArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    H2ArenaInit(&arena, arenaMem, (uint32_t)sizeof(arenaMem));
+    H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
     memset(&program, 0, sizeof(program));
     program.arena = &arena;
     program.loader = &loader;
     program.entryPkg = entryPkg;
-    HOPEvalValueSetInt(&program.rootContext.allocator, 1);
-    HOPEvalValueSetInt(&program.rootContext.tempAllocator, 2);
-    HOPEvalValueSetInt(&program.rootContext.logger, 3);
+    H2EvalValueSetInt(&program.rootContext.allocator, 1);
+    H2EvalValueSetInt(&program.rootContext.tempAllocator, 2);
+    H2EvalValueSetInt(&program.rootContext.logger, 3);
     program.currentContext = NULL;
-    if (HOPEvalCollectFunctions(&program) != 0) {
+    if (H2EvalCollectFunctions(&program) != 0) {
         goto end;
     }
-    if (HOPEvalCollectTopConsts(&program) != 0) {
+    if (H2EvalCollectTopConsts(&program) != 0) {
         goto end;
     }
-    if (HOPEvalCollectTopVars(&program) != 0) {
+    if (H2EvalCollectTopVars(&program) != 0) {
         goto end;
     }
     for (i = 0; i < program.funcLen; i++) {
-        HOPEvalFunction* fn = &program.funcs[i];
+        H2EvalFunction* fn = &program.funcs[i];
         if (fn->paramCount == 0
             && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "main"))
         {
@@ -14331,8 +14274,8 @@ int RunProgramEval(
         goto end;
     }
 
-    HOPEvalValueSetNull(&noArgsValue);
-    if (HOPEvalInvokeFunction(
+    H2EvalValueSetNull(&noArgsValue);
+    if (H2EvalInvokeFunction(
             &program, mainIndex, &noArgsValue, 0, &program.rootContext, &retValue, &didReturn)
         != 0)
     {
@@ -14344,9 +14287,9 @@ end:
     free(program.funcs);
     free(program.topConsts);
     free(program.topVars);
-    HOPArenaDispose(&arena);
+    H2ArenaDispose(&arena);
     FreeLoader(&loader);
     return rc;
 }
 
-HOP_API_END
+H2_API_END

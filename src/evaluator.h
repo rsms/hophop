@@ -1,7 +1,7 @@
 #pragma once
 #include "libhop.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 int RunProgramEval(
     const char* entryPath,
@@ -9,4 +9,4 @@ int RunProgramEval(
     const char* _Nullable archTarget,
     int testingBuild);
 
-HOP_API_END
+H2_API_END

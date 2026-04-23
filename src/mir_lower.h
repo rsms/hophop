@@ -1,31 +1,31 @@
 #pragma once
 #include "mir.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-int HOPMirLowerExprAsFunction(
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    nodeId,
-    HOPMirProgram* _Nonnull outProgram,
+int H2MirLowerExprAsFunction(
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   nodeId,
+    H2MirProgram* _Nonnull outProgram,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
-int HOPMirLowerAppendExprAsFunction(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    const HOPAst* _Nonnull ast,
-    HOPStrView src,
-    int32_t    nodeId,
-    int32_t    resultTypeNode,
+    H2Diag* _Nullable diag);
+int H2MirLowerAppendExprAsFunction(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   nodeId,
+    int32_t   resultTypeNode,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
-    HOPDiag* _Nullable diag);
-int HOPMirLowerAppendInst(
-    HOPMirProgramBuilder* _Nonnull builder,
-    HOPArena* _Nonnull arena,
-    HOPStrView src,
-    const HOPMirInst* _Nonnull in,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
+int H2MirLowerAppendInst(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    H2StrView src,
+    const H2MirInst* _Nonnull in,
+    H2Diag* _Nullable diag);
 
-HOP_API_END
+H2_API_END

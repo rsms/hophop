@@ -25,15 +25,15 @@
 #include "hop_internal.h"
 #include "typecheck/internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 static int EnsureMirFunctionRefTypeRef(
-    HOPArena* arena, HOPMirProgram* program, uint32_t functionIndex, uint32_t* _Nonnull outTypeRef);
+    H2Arena* arena, H2MirProgram* program, uint32_t functionIndex, uint32_t* _Nonnull outTypeRef);
 
-static int FindFunctionBodyNode(const HOPParsedFile* file, int32_t fnNode) {
+static int FindFunctionBodyNode(const H2ParsedFile* file, int32_t fnNode) {
     int32_t child = ASTFirstChild(&file->ast, fnNode);
     while (child >= 0) {
-        if (file->ast.nodes[child].kind == HOPAst_BLOCK) {
+        if (file->ast.nodes[child].kind == H2Ast_BLOCK) {
             return child;
         }
         child = ASTNextSibling(&file->ast, child);
@@ -42,10 +42,10 @@ static int FindFunctionBodyNode(const HOPParsedFile* file, int32_t fnNode) {
 }
 
 static int ErrorMirUnsupported(
-    const HOPParsedFile* file,
-    const HOPAstNode*    node,
-    const char*          kind,
-    const HOPDiag* _Nullable diag) {
+    const H2ParsedFile* file,
+    const H2AstNode*    node,
+    const char*         kind,
+    const H2Diag* _Nullable diag) {
     uint32_t    start = node != NULL ? node->start : 0u;
     uint32_t    end = node != NULL ? node->end : 0u;
     const char* detail = diag != NULL && diag->detail != NULL ? diag->detail : "not supported";
@@ -64,69 +64,69 @@ static int ErrorMirUnsupported(
 }
 
 typedef enum {
-    HOPMirDeclKind_NONE = 0,
-    HOPMirDeclKind_FN,
-    HOPMirDeclKind_CONST,
-    HOPMirDeclKind_VAR,
-} HOPMirDeclKind;
+    H2MirDeclKind_NONE = 0,
+    H2MirDeclKind_FN,
+    H2MirDeclKind_CONST,
+    H2MirDeclKind_VAR,
+} H2MirDeclKind;
 
 typedef struct {
-    const HOPPackage* pkg;
-    const char*       src;
-    uint32_t          nameStart;
-    uint32_t          nameEnd;
-    uint32_t          functionIndex;
-    uint8_t           kind;
-} HOPMirResolvedDecl;
+    const H2Package* pkg;
+    const char*      src;
+    uint32_t         nameStart;
+    uint32_t         nameEnd;
+    uint32_t         functionIndex;
+    uint8_t          kind;
+} H2MirResolvedDecl;
 
 typedef struct {
-    HOPMirResolvedDecl* _Nullable v;
+    H2MirResolvedDecl* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} HOPMirResolvedDeclMap;
+} H2MirResolvedDeclMap;
 
 typedef struct {
-    const HOPPackage*    pkg;
-    const HOPParsedFile* file;
-    uint32_t             tcFnIndex;
-    uint32_t             mirFnIndex;
-} HOPMirTcFunctionDecl;
+    const H2Package*    pkg;
+    const H2ParsedFile* file;
+    uint32_t            tcFnIndex;
+    uint32_t            mirFnIndex;
+} H2MirTcFunctionDecl;
 
 typedef struct {
-    HOPMirTcFunctionDecl* _Nullable v;
+    H2MirTcFunctionDecl* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} HOPMirTcFunctionMap;
+} H2MirTcFunctionMap;
 
-static const HOPSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end);
+static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end);
 static int PatchMirFunctionTypeRefsFromTC(
-    HOPArena*               arena,
-    const HOPPackageLoader* loader,
-    HOPMirProgramBuilder*   builder,
-    const HOPPackage*       pkg,
-    const HOPParsedFile*    file,
-    const HOPTypeCheckCtx*  tc,
-    uint32_t                tcFnIndex,
-    uint32_t                mirFnIndex);
+    H2Arena*               arena,
+    const H2PackageLoader* loader,
+    H2MirProgramBuilder*   builder,
+    const H2Package*       pkg,
+    const H2ParsedFile*    file,
+    const H2TypeCheckCtx*  tc,
+    uint32_t               tcFnIndex,
+    uint32_t               mirFnIndex);
 
 static int AddMirResolvedDecl(
-    HOPMirResolvedDeclMap* map,
-    const HOPPackage*      pkg,
-    const char*            src,
-    uint32_t               nameStart,
-    uint32_t               nameEnd,
-    uint32_t               functionIndex,
-    HOPMirDeclKind         kind) {
+    H2MirResolvedDeclMap* map,
+    const H2Package*      pkg,
+    const char*           src,
+    uint32_t              nameStart,
+    uint32_t              nameEnd,
+    uint32_t              functionIndex,
+    H2MirDeclKind         kind) {
     if (map == NULL || pkg == NULL || src == NULL || nameEnd <= nameStart
-        || kind == HOPMirDeclKind_NONE)
+        || kind == H2MirDeclKind_NONE)
     {
         return -1;
     }
-    if (EnsureCap((void**)&map->v, &map->cap, map->len + 1u, sizeof(HOPMirResolvedDecl)) != 0) {
+    if (EnsureCap((void**)&map->v, &map->cap, map->len + 1u, sizeof(H2MirResolvedDecl)) != 0) {
         return -1;
     }
-    map->v[map->len++] = (HOPMirResolvedDecl){
+    map->v[map->len++] = (H2MirResolvedDecl){
         .pkg = pkg,
         .src = src,
         .nameStart = nameStart,
@@ -138,11 +138,11 @@ static int AddMirResolvedDecl(
 }
 
 static int AddMirTcFunctionDecl(
-    HOPMirTcFunctionMap* map,
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    uint32_t             tcFnIndex,
-    uint32_t             mirFnIndex) {
+    H2MirTcFunctionMap* map,
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    uint32_t            tcFnIndex,
+    uint32_t            mirFnIndex) {
     uint32_t i;
     if (map == NULL || pkg == NULL || file == NULL || tcFnIndex == UINT32_MAX
         || mirFnIndex == UINT32_MAX)
@@ -155,10 +155,10 @@ static int AddMirTcFunctionDecl(
             return 0;
         }
     }
-    if (EnsureCap((void**)&map->v, &map->cap, map->len + 1u, sizeof(HOPMirTcFunctionDecl)) != 0) {
+    if (EnsureCap((void**)&map->v, &map->cap, map->len + 1u, sizeof(H2MirTcFunctionDecl)) != 0) {
         return -1;
     }
-    map->v[map->len++] = (HOPMirTcFunctionDecl){
+    map->v[map->len++] = (H2MirTcFunctionDecl){
         .pkg = pkg,
         .file = file,
         .tcFnIndex = tcFnIndex,
@@ -168,10 +168,10 @@ static int AddMirTcFunctionDecl(
 }
 
 static int FindMirTcFunctionDecl(
-    const HOPMirTcFunctionMap* map,
-    const HOPPackage*          pkg,
-    const HOPParsedFile*       file,
-    uint32_t                   tcFnIndex,
+    const H2MirTcFunctionMap* map,
+    const H2Package*          pkg,
+    const H2ParsedFile*       file,
+    uint32_t                  tcFnIndex,
     uint32_t* _Nonnull outMirFnIndex) {
     uint32_t i;
     if (outMirFnIndex != NULL) {
@@ -190,10 +190,10 @@ static int FindMirTcFunctionDecl(
 }
 
 static int FindMirTcFunctionByMirIndex(
-    const HOPMirTcFunctionMap* map,
-    const HOPPackage*          pkg,
-    const HOPParsedFile*       file,
-    uint32_t                   mirFnIndex,
+    const H2MirTcFunctionMap* map,
+    const H2Package*          pkg,
+    const H2ParsedFile*       file,
+    uint32_t                  mirFnIndex,
     uint32_t* _Nonnull outTcFnIndex) {
     uint32_t i;
     if (outTcFnIndex != NULL) {
@@ -212,14 +212,14 @@ static int FindMirTcFunctionByMirIndex(
 }
 
 static int32_t FindTypecheckFunctionByDeclNode(
-    const HOPTypeCheckCtx* tc, int32_t declNode, int wantTemplateInstance) {
+    const H2TypeCheckCtx* tc, int32_t declNode, int wantTemplateInstance) {
     uint32_t i;
     if (tc == NULL || declNode < 0) {
         return -1;
     }
     for (i = 0; i < tc->funcLen; i++) {
-        const HOPTCFunction* fn = &tc->funcs[i];
-        int isInstance = (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) != 0 ? 1 : 0;
+        const H2TCFunction* fn = &tc->funcs[i];
+        int isInstance = (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0 ? 1 : 0;
         if (fn->declNode == declNode && isInstance == wantTemplateInstance) {
             return (int32_t)i;
         }
@@ -240,10 +240,10 @@ static int MirNameIsBuiltinTypeValue(const char* src, uint32_t start, uint32_t e
 }
 
 static int MirTypecheckFunctionHasTypeParamName(
-    const HOPTypeCheckCtx* tc, uint32_t tcFnIndex, const char* src, uint32_t start, uint32_t end) {
-    const HOPTCFunction* fn;
-    int32_t              declNode;
-    int32_t              child;
+    const H2TypeCheckCtx* tc, uint32_t tcFnIndex, const char* src, uint32_t start, uint32_t end) {
+    const H2TCFunction* fn;
+    int32_t             declNode;
+    int32_t             child;
     if (tc == NULL || src == NULL || tcFnIndex >= tc->funcLen) {
         return 0;
     }
@@ -254,9 +254,9 @@ static int MirTypecheckFunctionHasTypeParamName(
     }
     child = tc->ast->nodes[declNode].firstChild;
     while (child >= 0) {
-        const HOPAstNode* n = &tc->ast->nodes[child];
-        if (n->kind == HOPAst_TYPE_PARAM
-            && HOPNameEqSlice(tc->src, n->dataStart, n->dataEnd, start, end))
+        const H2AstNode* n = &tc->ast->nodes[child];
+        if (n->kind == H2Ast_TYPE_PARAM
+            && H2NameEqSlice(tc->src, n->dataStart, n->dataEnd, start, end))
         {
             return 1;
         }
@@ -266,12 +266,12 @@ static int MirTypecheckFunctionHasTypeParamName(
 }
 
 static int MirNameIsTypeValue(
-    const HOPPackage*      pkg,
-    const HOPTypeCheckCtx* tc,
-    uint32_t               tcFnIndex,
-    const char*            src,
-    uint32_t               start,
-    uint32_t               end) {
+    const H2Package*      pkg,
+    const H2TypeCheckCtx* tc,
+    uint32_t              tcFnIndex,
+    const char*           src,
+    uint32_t              start,
+    uint32_t              end) {
     if (src == NULL || end <= start) {
         return 0;
     }
@@ -285,79 +285,79 @@ static int MirNameIsTypeValue(
 }
 
 static int MirBuiltinTypeRefFromTC(
-    const HOPTypeCheckCtx* tc, int32_t typeId, HOPMirTypeRef* outTypeRef) {
-    const HOPTCType* t;
+    const H2TypeCheckCtx* tc, int32_t typeId, H2MirTypeRef* outTypeRef) {
+    const H2TCType* t;
     if (tc == NULL || outTypeRef == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
         return 0;
     }
     t = &tc->types[typeId];
-    if (t->kind != HOPTCType_BUILTIN) {
+    if (t->kind != H2TCType_BUILTIN) {
         return 0;
     }
-    *outTypeRef = (HOPMirTypeRef){ .astNode = UINT32_MAX, .sourceRef = UINT32_MAX };
+    *outTypeRef = (H2MirTypeRef){ .astNode = UINT32_MAX, .sourceRef = UINT32_MAX };
     switch (t->builtin) {
-        case HOPBuiltin_BOOL:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_BOOL);
+        case H2Builtin_BOOL:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_BOOL);
             return 1;
-        case HOPBuiltin_U8:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_U8);
+        case H2Builtin_U8:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_U8);
             return 1;
-        case HOPBuiltin_I8:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_I8);
+        case H2Builtin_I8:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_I8);
             return 1;
-        case HOPBuiltin_U16:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_U16);
+        case H2Builtin_U16:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_U16);
             return 1;
-        case HOPBuiltin_I16:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_I16);
+        case H2Builtin_I16:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_I16);
             return 1;
-        case HOPBuiltin_U32:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_U32);
+        case H2Builtin_U32:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_U32);
             return 1;
-        case HOPBuiltin_I32:
-        case HOPBuiltin_USIZE:
-        case HOPBuiltin_ISIZE:
-            outTypeRef->flags = HOPMirTypeScalar_I32;
-            outTypeRef->aux = HOPMirTypeAuxMakeScalarInt(HOPMirIntKind_I32);
+        case H2Builtin_I32:
+        case H2Builtin_USIZE:
+        case H2Builtin_ISIZE:
+            outTypeRef->flags = H2MirTypeScalar_I32;
+            outTypeRef->aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_I32);
             return 1;
-        case HOPBuiltin_U64:
-        case HOPBuiltin_I64:    outTypeRef->flags = HOPMirTypeScalar_I64; return 1;
-        case HOPBuiltin_F32:    outTypeRef->flags = HOPMirTypeScalar_F32; return 1;
-        case HOPBuiltin_F64:    outTypeRef->flags = HOPMirTypeScalar_F64; return 1;
-        case HOPBuiltin_TYPE:
-        case HOPBuiltin_RAWPTR: outTypeRef->flags = HOPMirTypeFlag_OPAQUE_PTR; return 1;
-        default:                return 0;
+        case H2Builtin_U64:
+        case H2Builtin_I64:    outTypeRef->flags = H2MirTypeScalar_I64; return 1;
+        case H2Builtin_F32:    outTypeRef->flags = H2MirTypeScalar_F32; return 1;
+        case H2Builtin_F64:    outTypeRef->flags = H2MirTypeScalar_F64; return 1;
+        case H2Builtin_TYPE:
+        case H2Builtin_RAWPTR: outTypeRef->flags = H2MirTypeFlag_OPAQUE_PTR; return 1;
+        default:               return 0;
     }
 }
 
-static int MirAstNodeIsTypeNodeForSearch(HOPAstKind kind) {
-    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
-        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
-        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
-        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_TUPLE || kind == HOPAst_TYPE_ANON_STRUCT
-        || kind == HOPAst_TYPE_ANON_UNION;
+static int MirAstNodeIsTypeNodeForSearch(H2AstKind kind) {
+    return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
+        || kind == H2Ast_TYPE_MUTREF || kind == H2Ast_TYPE_ARRAY || kind == H2Ast_TYPE_VARRAY
+        || kind == H2Ast_TYPE_SLICE || kind == H2Ast_TYPE_MUTSLICE || kind == H2Ast_TYPE_OPTIONAL
+        || kind == H2Ast_TYPE_FN || kind == H2Ast_TYPE_TUPLE || kind == H2Ast_TYPE_ANON_STRUCT
+        || kind == H2Ast_TYPE_ANON_UNION;
 }
 
 static int32_t MirFunctionTypeParamIndexByTypeNode(
-    const HOPAst* ast, HOPStrView src, int32_t fnNode, int32_t typeNode) {
+    const H2Ast* ast, H2StrView src, int32_t fnNode, int32_t typeNode) {
     int32_t child;
     int32_t index = 0;
     if (ast == NULL || fnNode < 0 || typeNode < 0 || (uint32_t)fnNode >= ast->len
-        || (uint32_t)typeNode >= ast->len || ast->nodes[typeNode].kind != HOPAst_TYPE_NAME
+        || (uint32_t)typeNode >= ast->len || ast->nodes[typeNode].kind != H2Ast_TYPE_NAME
         || ast->nodes[typeNode].firstChild >= 0)
     {
         return -1;
     }
     child = ast->nodes[fnNode].firstChild;
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
-            if (HOPNameEqSlice(
+        if (ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
+            if (H2NameEqSlice(
                     src,
                     ast->nodes[child].dataStart,
                     ast->nodes[child].dataEnd,
@@ -374,64 +374,61 @@ static int32_t MirFunctionTypeParamIndexByTypeNode(
 }
 
 static int EnsureMirBuilderTypeRefFromTC(
-    HOPMirProgramBuilder*  builder,
-    const HOPTypeCheckCtx* tc,
-    uint32_t               sourceRef,
-    int32_t                typeId,
-    uint32_t*              outTypeRef) {
-    uint32_t      i;
-    HOPMirTypeRef typeRef = { 0 };
+    H2MirProgramBuilder*  builder,
+    const H2TypeCheckCtx* tc,
+    uint32_t              sourceRef,
+    int32_t               typeId,
+    uint32_t*             outTypeRef) {
+    uint32_t     i;
+    H2MirTypeRef typeRef = { 0 };
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
     }
     if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0) {
         return 0;
     }
-    typeId = HOPTCResolveAliasBaseType((HOPTypeCheckCtx*)tc, typeId);
+    typeId = H2TCResolveAliasBaseType((H2TypeCheckCtx*)tc, typeId);
     if (typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
         return 0;
     }
     if (MirBuiltinTypeRefFromTC(tc, typeId, &typeRef)) {
-        return HOPMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+        return H2MirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
     }
     for (i = 0; i < tc->ast->len; i++) {
         int32_t resolved = -1;
         if (!MirAstNodeIsTypeNodeForSearch(tc->ast->nodes[i].kind)) {
             continue;
         }
-        if (HOPTCResolveTypeNode((HOPTypeCheckCtx*)tc, (int32_t)i, &resolved) == 0
+        if (H2TCResolveTypeNode((H2TypeCheckCtx*)tc, (int32_t)i, &resolved) == 0
             && resolved == typeId)
         {
-            typeRef = (HOPMirTypeRef){ .astNode = i, .sourceRef = sourceRef };
-            return HOPMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+            typeRef = (H2MirTypeRef){ .astNode = i, .sourceRef = sourceRef };
+            return H2MirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
         }
     }
     return 0;
 }
 
 static int EnsureMirBuilderBuiltinTypeRefFromTC(
-    HOPMirProgramBuilder*  builder,
-    const HOPTypeCheckCtx* tc,
-    int32_t                typeId,
-    uint32_t*              outTypeRef) {
-    HOPMirTypeRef typeRef = { 0 };
+    H2MirProgramBuilder* builder, const H2TypeCheckCtx* tc, int32_t typeId, uint32_t* outTypeRef) {
+    H2MirTypeRef typeRef = { 0 };
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
     }
     if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0) {
         return 0;
     }
-    typeId = HOPTCResolveAliasBaseType((HOPTypeCheckCtx*)tc, typeId);
+    typeId = H2TCResolveAliasBaseType((H2TypeCheckCtx*)tc, typeId);
     if (typeId < 0 || (uint32_t)typeId >= tc->typeLen) {
         return 0;
     }
     if (!MirBuiltinTypeRefFromTC(tc, typeId, &typeRef)) {
         return 0;
     }
-    return HOPMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+    return H2MirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
 }
 
-static int32_t MirFindTCNamedTypeIndex(const HOPTypeCheckCtx* tc, int32_t typeId) {
+static int32_t MirFindTCNamedTypeIndex(const H2TypeCheckCtx* tc, int32_t typeId) {
     uint32_t i;
     if (tc == NULL || typeId < 0) {
         return -1;
@@ -444,40 +441,40 @@ static int32_t MirFindTCNamedTypeIndex(const HOPTypeCheckCtx* tc, int32_t typeId
     return -1;
 }
 
-static int MirBuiltinTypeNodeMatchesTC(const HOPTypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
-    const HOPAstNode* n;
+static int MirBuiltinTypeNodeMatchesTC(const H2TypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
+    const H2AstNode* n;
     if (tc == NULL || typeId < 0 || (uint32_t)typeId >= tc->typeLen || nodeId < 0
-        || (uint32_t)nodeId >= tc->ast->len || tc->types[typeId].kind != HOPTCType_BUILTIN)
+        || (uint32_t)nodeId >= tc->ast->len || tc->types[typeId].kind != H2TCType_BUILTIN)
     {
         return 0;
     }
     n = &tc->ast->nodes[nodeId];
-    if (n->kind != HOPAst_TYPE_NAME || n->firstChild >= 0) {
+    if (n->kind != H2Ast_TYPE_NAME || n->firstChild >= 0) {
         return 0;
     }
     switch (tc->types[typeId].builtin) {
-        case HOPBuiltin_BOOL: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "bool");
-        case HOPBuiltin_U8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u8");
-        case HOPBuiltin_U16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u16");
-        case HOPBuiltin_U32:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u32");
-        case HOPBuiltin_U64:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u64");
-        case HOPBuiltin_I8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i8");
-        case HOPBuiltin_I16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i16");
-        case HOPBuiltin_I32:
+        case H2Builtin_BOOL: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "bool");
+        case H2Builtin_U8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u8");
+        case H2Builtin_U16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u16");
+        case H2Builtin_U32:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u32");
+        case H2Builtin_U64:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "u64");
+        case H2Builtin_I8:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i8");
+        case H2Builtin_I16:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i16");
+        case H2Builtin_I32:
             return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i32")
                 || SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "int");
-        case HOPBuiltin_I64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i64");
-        case HOPBuiltin_USIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "usize");
-        case HOPBuiltin_ISIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "isize");
-        case HOPBuiltin_TYPE:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "type");
-        case HOPBuiltin_RAWPTR: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "rawptr");
-        case HOPBuiltin_F32:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f32");
-        case HOPBuiltin_F64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f64");
-        default:                return 0;
+        case H2Builtin_I64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "i64");
+        case H2Builtin_USIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "usize");
+        case H2Builtin_ISIZE:  return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "isize");
+        case H2Builtin_TYPE:   return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "type");
+        case H2Builtin_RAWPTR: return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "rawptr");
+        case H2Builtin_F32:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f32");
+        case H2Builtin_F64:    return SliceEqCStr(tc->src.ptr, n->dataStart, n->dataEnd, "f64");
+        default:               return 0;
     }
 }
 
-static int MirTypeNodeMatchesTCType(const HOPTypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
+static int MirTypeNodeMatchesTCType(const H2TypeCheckCtx* tc, int32_t typeId, int32_t nodeId) {
     int32_t  namedIndex;
     int32_t  child;
     uint16_t argIndex;
@@ -486,16 +483,16 @@ static int MirTypeNodeMatchesTCType(const HOPTypeCheckCtx* tc, int32_t typeId, i
     {
         return 0;
     }
-    if (tc->types[typeId].kind == HOPTCType_BUILTIN) {
+    if (tc->types[typeId].kind == H2TCType_BUILTIN) {
         return MirBuiltinTypeNodeMatchesTC(tc, typeId, nodeId);
     }
-    if (tc->types[typeId].kind != HOPTCType_NAMED) {
+    if (tc->types[typeId].kind != H2TCType_NAMED) {
         return 0;
     }
-    if (tc->ast->nodes[nodeId].kind != HOPAst_TYPE_NAME) {
+    if (tc->ast->nodes[nodeId].kind != H2Ast_TYPE_NAME) {
         return 0;
     }
-    if (!HOPNameEqSlice(
+    if (!H2NameEqSlice(
             tc->src,
             tc->types[typeId].nameStart,
             tc->types[typeId].nameEnd,
@@ -526,18 +523,18 @@ static int MirTypeNodeMatchesTCType(const HOPTypeCheckCtx* tc, int32_t typeId, i
 }
 
 static int EnsureMirBuilderNamedTypeRefFromTC(
-    HOPMirProgramBuilder*  builder,
-    const HOPTypeCheckCtx* tc,
-    uint32_t               sourceRef,
-    int32_t                typeId,
-    uint32_t*              outTypeRef) {
-    uint32_t      i;
-    HOPMirTypeRef typeRef = { 0 };
+    H2MirProgramBuilder*  builder,
+    const H2TypeCheckCtx* tc,
+    uint32_t              sourceRef,
+    int32_t               typeId,
+    uint32_t*             outTypeRef) {
+    uint32_t     i;
+    H2MirTypeRef typeRef = { 0 };
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
     }
     if (builder == NULL || tc == NULL || outTypeRef == NULL || typeId < 0
-        || (uint32_t)typeId >= tc->typeLen || tc->types[typeId].kind != HOPTCType_NAMED)
+        || (uint32_t)typeId >= tc->typeLen || tc->types[typeId].kind != H2TCType_NAMED)
     {
         return 0;
     }
@@ -546,22 +543,22 @@ static int EnsureMirBuilderNamedTypeRefFromTC(
             continue;
         }
         if (MirTypeNodeMatchesTCType(tc, typeId, (int32_t)i)) {
-            typeRef = (HOPMirTypeRef){ .astNode = i, .sourceRef = sourceRef };
-            return HOPMirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+            typeRef = (H2MirTypeRef){ .astNode = i, .sourceRef = sourceRef };
+            return H2MirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
         }
     }
     return 0;
 }
 
 static int PatchMirFunctionTypeRefsFromTC(
-    HOPArena*               arena,
-    const HOPPackageLoader* loader,
-    HOPMirProgramBuilder*   builder,
-    const HOPPackage*       pkg,
-    const HOPParsedFile*    file,
-    const HOPTypeCheckCtx*  tc,
-    uint32_t                tcFnIndex,
-    uint32_t                mirFnIndex) {
+    H2Arena*               arena,
+    const H2PackageLoader* loader,
+    H2MirProgramBuilder*   builder,
+    const H2Package*       pkg,
+    const H2ParsedFile*    file,
+    const H2TypeCheckCtx*  tc,
+    uint32_t               tcFnIndex,
+    uint32_t               mirFnIndex) {
     uint32_t sourceRef;
     uint32_t localStart;
     uint32_t paramCount;
@@ -595,7 +592,7 @@ static int PatchMirFunctionTypeRefsFromTC(
     localStart = builder->funcs[mirFnIndex].localStart;
     paramCount = builder->funcs[mirFnIndex].paramCount;
     if (tcTemplateArgCount > 0 && builder->funcs[mirFnIndex].typeRef < builder->typeLen) {
-        const HOPMirTypeRef* retTypeRef = &builder->types[builder->funcs[mirFnIndex].typeRef];
+        const H2MirTypeRef* retTypeRef = &builder->types[builder->funcs[mirFnIndex].typeRef];
         if (retTypeRef->astNode < tc->ast->len) {
             int32_t paramIndex = MirFunctionTypeParamIndexByTypeNode(
                 tc->ast, tc->src, tc->funcs[tcFnIndex].declNode, (int32_t)retTypeRef->astNode);
@@ -624,7 +621,7 @@ static int PatchMirFunctionTypeRefsFromTC(
         {
             int32_t tcParamType = tc->funcParamTypes[tcParamTypeStart + i];
             if (tcTemplateArgCount > 0 && builder->locals[localIndex].typeRef < builder->typeLen) {
-                const HOPMirTypeRef* localTypeRef =
+                const H2MirTypeRef* localTypeRef =
                     &builder->types[builder->locals[localIndex].typeRef];
                 if (localTypeRef->astNode < tc->ast->len) {
                     int32_t paramIndex = MirFunctionTypeParamIndexByTypeNode(
@@ -656,28 +653,28 @@ static int PatchMirFunctionTypeRefsFromTC(
     return 0;
 }
 
-static int32_t FindVarLikeTypeNode(const HOPAst* ast, int32_t nodeId) {
+static int32_t FindVarLikeTypeNode(const H2Ast* ast, int32_t nodeId) {
     int32_t child;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return -1;
     }
     child = ast->nodes[nodeId].firstChild;
-    if (child >= 0 && ast->nodes[child].kind == HOPAst_NAME_LIST) {
+    if (child >= 0 && ast->nodes[child].kind == H2Ast_NAME_LIST) {
         child = ast->nodes[child].nextSibling;
     }
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_TYPE_NAME || ast->nodes[child].kind == HOPAst_TYPE_PTR
-            || ast->nodes[child].kind == HOPAst_TYPE_REF
-            || ast->nodes[child].kind == HOPAst_TYPE_MUTREF
-            || ast->nodes[child].kind == HOPAst_TYPE_ARRAY
-            || ast->nodes[child].kind == HOPAst_TYPE_VARRAY
-            || ast->nodes[child].kind == HOPAst_TYPE_SLICE
-            || ast->nodes[child].kind == HOPAst_TYPE_MUTSLICE
-            || ast->nodes[child].kind == HOPAst_TYPE_OPTIONAL
-            || ast->nodes[child].kind == HOPAst_TYPE_FN
-            || ast->nodes[child].kind == HOPAst_TYPE_ANON_STRUCT
-            || ast->nodes[child].kind == HOPAst_TYPE_ANON_UNION
-            || ast->nodes[child].kind == HOPAst_TYPE_TUPLE)
+        if (ast->nodes[child].kind == H2Ast_TYPE_NAME || ast->nodes[child].kind == H2Ast_TYPE_PTR
+            || ast->nodes[child].kind == H2Ast_TYPE_REF
+            || ast->nodes[child].kind == H2Ast_TYPE_MUTREF
+            || ast->nodes[child].kind == H2Ast_TYPE_ARRAY
+            || ast->nodes[child].kind == H2Ast_TYPE_VARRAY
+            || ast->nodes[child].kind == H2Ast_TYPE_SLICE
+            || ast->nodes[child].kind == H2Ast_TYPE_MUTSLICE
+            || ast->nodes[child].kind == H2Ast_TYPE_OPTIONAL
+            || ast->nodes[child].kind == H2Ast_TYPE_FN
+            || ast->nodes[child].kind == H2Ast_TYPE_ANON_STRUCT
+            || ast->nodes[child].kind == H2Ast_TYPE_ANON_UNION
+            || ast->nodes[child].kind == H2Ast_TYPE_TUPLE)
         {
             return child;
         }
@@ -686,29 +683,28 @@ static int32_t FindVarLikeTypeNode(const HOPAst* ast, int32_t nodeId) {
     return -1;
 }
 
-static int32_t FindFnReturnTypeNode(const HOPAst* ast, int32_t fnNode) {
+static int32_t FindFnReturnTypeNode(const H2Ast* ast, int32_t fnNode) {
     int32_t child;
     if (ast == NULL || fnNode < 0 || (uint32_t)fnNode >= ast->len) {
         return -1;
     }
     child = ast->nodes[fnNode].firstChild;
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_TYPE_NAME || ast->nodes[child].kind == HOPAst_TYPE_PTR
-            || ast->nodes[child].kind == HOPAst_TYPE_REF
-            || ast->nodes[child].kind == HOPAst_TYPE_MUTREF
-            || ast->nodes[child].kind == HOPAst_TYPE_ARRAY
-            || ast->nodes[child].kind == HOPAst_TYPE_VARRAY
-            || ast->nodes[child].kind == HOPAst_TYPE_SLICE
-            || ast->nodes[child].kind == HOPAst_TYPE_MUTSLICE
-            || ast->nodes[child].kind == HOPAst_TYPE_OPTIONAL
-            || ast->nodes[child].kind == HOPAst_TYPE_FN
-            || ast->nodes[child].kind == HOPAst_TYPE_TUPLE
-            || ast->nodes[child].kind == HOPAst_TYPE_ANON_STRUCT
-            || ast->nodes[child].kind == HOPAst_TYPE_ANON_UNION)
+        if (ast->nodes[child].kind == H2Ast_TYPE_NAME || ast->nodes[child].kind == H2Ast_TYPE_PTR
+            || ast->nodes[child].kind == H2Ast_TYPE_REF
+            || ast->nodes[child].kind == H2Ast_TYPE_MUTREF
+            || ast->nodes[child].kind == H2Ast_TYPE_ARRAY
+            || ast->nodes[child].kind == H2Ast_TYPE_VARRAY
+            || ast->nodes[child].kind == H2Ast_TYPE_SLICE
+            || ast->nodes[child].kind == H2Ast_TYPE_MUTSLICE
+            || ast->nodes[child].kind == H2Ast_TYPE_OPTIONAL
+            || ast->nodes[child].kind == H2Ast_TYPE_FN || ast->nodes[child].kind == H2Ast_TYPE_TUPLE
+            || ast->nodes[child].kind == H2Ast_TYPE_ANON_STRUCT
+            || ast->nodes[child].kind == H2Ast_TYPE_ANON_UNION)
         {
             return child;
         }
-        if (ast->nodes[child].kind == HOPAst_BLOCK) {
+        if (ast->nodes[child].kind == H2Ast_BLOCK) {
             break;
         }
         child = ast->nodes[child].nextSibling;
@@ -717,9 +713,9 @@ static int32_t FindFnReturnTypeNode(const HOPAst* ast, int32_t fnNode) {
 }
 
 static int DeclHasDirective(
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    const char*          name,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    const char*         name,
     int32_t* _Nullable outDirectiveNode) {
     int32_t firstDirective = -1;
     int32_t lastDirective = -1;
@@ -750,23 +746,23 @@ static int DeclHasDirective(
 }
 
 static int AppendMirForeignImportDecl(
-    HOPMirProgramBuilder* builder,
-    HOPArena*             arena,
-    const HOPParsedFile*  file,
-    int32_t               nodeId,
-    uint32_t*             outFunctionIndex) {
-    const HOPAst*     ast = &file->ast;
-    const HOPAstNode* n = &ast->nodes[nodeId];
-    HOPMirSourceRef   sourceRef = { .src = { file->source, file->sourceLen } };
-    HOPMirFunction    fn = { 0 };
-    uint32_t          sourceIndex = 0;
-    int32_t           typeNode = -1;
-    int32_t           child;
+    H2MirProgramBuilder* builder,
+    H2Arena*             arena,
+    const H2ParsedFile*  file,
+    int32_t              nodeId,
+    uint32_t*            outFunctionIndex) {
+    const H2Ast*     ast = &file->ast;
+    const H2AstNode* n = &ast->nodes[nodeId];
+    H2MirSourceRef   sourceRef = { .src = { file->source, file->sourceLen } };
+    H2MirFunction    fn = { 0 };
+    uint32_t         sourceIndex = 0;
+    int32_t          typeNode = -1;
+    int32_t          child;
     if (builder == NULL || arena == NULL || file == NULL || outFunctionIndex == NULL) {
         return -1;
     }
     *outFunctionIndex = UINT32_MAX;
-    if (HOPMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
+    if (H2MirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
         return -1;
     }
     fn.nameStart = n->dataStart;
@@ -774,30 +770,30 @@ static int AppendMirForeignImportDecl(
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
     typeNode =
-        n->kind == HOPAst_FN ? FindFnReturnTypeNode(ast, nodeId) : FindVarLikeTypeNode(ast, nodeId);
+        n->kind == H2Ast_FN ? FindFnReturnTypeNode(ast, nodeId) : FindVarLikeTypeNode(ast, nodeId);
     if (typeNode >= 0) {
-        HOPMirTypeRef typeRef = {
+        H2MirTypeRef typeRef = {
             .astNode = (uint32_t)typeNode,
             .sourceRef = sourceIndex,
             .flags = 0,
             .aux = 0,
         };
-        if (HOPMirProgramBuilderAddType(builder, &typeRef, &fn.typeRef) != 0) {
+        if (H2MirProgramBuilderAddType(builder, &typeRef, &fn.typeRef) != 0) {
             return -1;
         }
     }
-    if (HOPMirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
+    if (H2MirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
         return -1;
     }
-    if (n->kind == HOPAst_FN) {
+    if (n->kind == H2Ast_FN) {
         child = n->firstChild;
         while (child >= 0) {
-            if (ast->nodes[child].kind == HOPAst_PARAM) {
-                HOPMirLocal   local = { 0 };
-                HOPMirTypeRef typeRef = { 0 };
-                int32_t       paramTypeNode = ast->nodes[child].firstChild;
+            if (ast->nodes[child].kind == H2Ast_PARAM) {
+                H2MirLocal   local = { 0 };
+                H2MirTypeRef typeRef = { 0 };
+                int32_t      paramTypeNode = ast->nodes[child].firstChild;
                 local.typeRef = UINT32_MAX;
-                local.flags = HOPMirLocalFlag_PARAM | HOPMirLocalFlag_MUTABLE;
+                local.flags = H2MirLocalFlag_PARAM | H2MirLocalFlag_MUTABLE;
                 local.nameStart = ast->nodes[child].dataStart;
                 local.nameEnd = ast->nodes[child].dataEnd;
                 if (paramTypeNode >= 0) {
@@ -805,36 +801,36 @@ static int AppendMirForeignImportDecl(
                     typeRef.sourceRef = sourceIndex;
                     typeRef.flags = 0;
                     typeRef.aux = 0;
-                    if (HOPMirProgramBuilderAddType(builder, &typeRef, &local.typeRef) != 0) {
+                    if (H2MirProgramBuilderAddType(builder, &typeRef, &local.typeRef) != 0) {
                         return -1;
                     }
                 }
-                if (HOPMirProgramBuilderAddLocal(builder, &local, NULL) != 0) {
+                if (H2MirProgramBuilderAddLocal(builder, &local, NULL) != 0) {
                     return -1;
                 }
                 builder->funcs[*outFunctionIndex].paramCount++;
-                if ((ast->nodes[child].flags & HOPAstFlag_PARAM_VARIADIC) != 0u) {
-                    builder->funcs[*outFunctionIndex].flags |= HOPMirFunctionFlag_VARIADIC;
+                if ((ast->nodes[child].flags & H2AstFlag_PARAM_VARIADIC) != 0u) {
+                    builder->funcs[*outFunctionIndex].flags |= H2MirFunctionFlag_VARIADIC;
                 }
             }
             child = ast->nodes[child].nextSibling;
         }
     }
-    return HOPMirProgramBuilderEndFunction(builder);
+    return H2MirProgramBuilderEndFunction(builder);
 }
 
 static int AppendMirPlaybitEntryHookWrapper(
-    HOPMirProgramBuilder* builder,
-    HOPArena*             arena,
-    const HOPParsedFile*  file,
-    int32_t               nodeId,
-    uint32_t              entryMainFunctionIndex,
-    uint32_t*             outFunctionIndex) {
-    const HOPAst*     ast;
-    const HOPAstNode* n;
-    HOPMirFunction    fn = { 0 };
-    HOPMirSourceRef   sourceRef = { 0 };
-    uint32_t          sourceIndex = 0;
+    H2MirProgramBuilder* builder,
+    H2Arena*             arena,
+    const H2ParsedFile*  file,
+    int32_t              nodeId,
+    uint32_t             entryMainFunctionIndex,
+    uint32_t*            outFunctionIndex) {
+    const H2Ast*     ast;
+    const H2AstNode* n;
+    H2MirFunction    fn = { 0 };
+    H2MirSourceRef   sourceRef = { 0 };
+    uint32_t         sourceIndex = 0;
     if (builder == NULL || arena == NULL || file == NULL || outFunctionIndex == NULL || nodeId < 0
         || (uint32_t)nodeId >= file->ast.len)
     {
@@ -843,21 +839,21 @@ static int AppendMirPlaybitEntryHookWrapper(
     *outFunctionIndex = UINT32_MAX;
     ast = &file->ast;
     n = &ast->nodes[nodeId];
-    sourceRef.src = (HOPStrView){ file->source, file->sourceLen };
-    if (HOPMirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
+    sourceRef.src = (H2StrView){ file->source, file->sourceLen };
+    if (H2MirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
         return -1;
     }
     fn.nameStart = n->dataStart;
     fn.nameEnd = n->dataEnd;
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
-    if (HOPMirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
+    if (H2MirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
         return -1;
     }
-    if (HOPMirProgramBuilderAppendInst(
+    if (H2MirProgramBuilderAppendInst(
             builder,
-            &(HOPMirInst){
-                .op = HOPMirOp_CALL_FN,
+            &(H2MirInst){
+                .op = H2MirOp_CALL_FN,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = entryMainFunctionIndex,
@@ -865,10 +861,10 @@ static int AppendMirPlaybitEntryHookWrapper(
                 .end = n->end,
             })
             != 0
-        || HOPMirProgramBuilderAppendInst(
+        || H2MirProgramBuilderAppendInst(
                builder,
-               &(HOPMirInst){
-                   .op = HOPMirOp_DROP,
+               &(H2MirInst){
+                   .op = H2MirOp_DROP,
                    .tok = 0u,
                    ._reserved = 0u,
                    .aux = 0u,
@@ -876,10 +872,10 @@ static int AppendMirPlaybitEntryHookWrapper(
                    .end = n->end,
                })
                != 0
-        || HOPMirProgramBuilderAppendInst(
+        || H2MirProgramBuilderAppendInst(
                builder,
-               &(HOPMirInst){
-                   .op = HOPMirOp_RETURN_VOID,
+               &(H2MirInst){
+                   .op = H2MirOp_RETURN_VOID,
                    .tok = 0u,
                    ._reserved = 0u,
                    .aux = 0u,
@@ -890,22 +886,22 @@ static int AppendMirPlaybitEntryHookWrapper(
     {
         return -1;
     }
-    return HOPMirProgramBuilderEndFunction(builder);
+    return H2MirProgramBuilderEndFunction(builder);
 }
 
-static const HOPMirResolvedDecl* _Nullable FindMirResolvedDeclBySlice(
-    const HOPMirResolvedDeclMap* map,
-    const HOPPackage*            pkg,
-    const char*                  src,
-    uint32_t                     nameStart,
-    uint32_t                     nameEnd,
-    HOPMirDeclKind               kind) {
+static const H2MirResolvedDecl* _Nullable FindMirResolvedDeclBySlice(
+    const H2MirResolvedDeclMap* map,
+    const H2Package*            pkg,
+    const char*                 src,
+    uint32_t                    nameStart,
+    uint32_t                    nameEnd,
+    H2MirDeclKind               kind) {
     uint32_t i;
     if (map == NULL || pkg == NULL || src == NULL || nameEnd <= nameStart) {
         return NULL;
     }
     for (i = 0; i < map->len; i++) {
-        const HOPMirResolvedDecl* entry = &map->v[i];
+        const H2MirResolvedDecl* entry = &map->v[i];
         if (entry->pkg != pkg || entry->kind != (uint8_t)kind) {
             continue;
         }
@@ -916,11 +912,8 @@ static const HOPMirResolvedDecl* _Nullable FindMirResolvedDeclBySlice(
     return NULL;
 }
 
-static const HOPMirResolvedDecl* _Nullable FindMirResolvedDeclByCStr(
-    const HOPMirResolvedDeclMap* map,
-    const HOPPackage*            pkg,
-    const char*                  name,
-    HOPMirDeclKind               kind) {
+static const H2MirResolvedDecl* _Nullable FindMirResolvedDeclByCStr(
+    const H2MirResolvedDeclMap* map, const H2Package* pkg, const char* name, H2MirDeclKind kind) {
     uint32_t i;
     size_t   nameLen;
     if (map == NULL || pkg == NULL || name == NULL) {
@@ -928,7 +921,7 @@ static const HOPMirResolvedDecl* _Nullable FindMirResolvedDeclByCStr(
     }
     nameLen = strlen(name);
     for (i = 0; i < map->len; i++) {
-        const HOPMirResolvedDecl* entry = &map->v[i];
+        const H2MirResolvedDecl* entry = &map->v[i];
         if (entry->pkg != pkg || entry->kind != (uint8_t)kind) {
             continue;
         }
@@ -941,38 +934,37 @@ static const HOPMirResolvedDecl* _Nullable FindMirResolvedDeclByCStr(
     return NULL;
 }
 
-static const HOPMirResolvedDecl* _Nullable FindMirResolvedValueBySlice(
-    const HOPMirResolvedDeclMap* map,
-    const HOPPackage*            pkg,
-    const char*                  src,
-    uint32_t                     nameStart,
-    uint32_t                     nameEnd) {
-    const HOPMirResolvedDecl* entry = FindMirResolvedDeclBySlice(
-        map, pkg, src, nameStart, nameEnd, HOPMirDeclKind_CONST);
+static const H2MirResolvedDecl* _Nullable FindMirResolvedValueBySlice(
+    const H2MirResolvedDeclMap* map,
+    const H2Package*            pkg,
+    const char*                 src,
+    uint32_t                    nameStart,
+    uint32_t                    nameEnd) {
+    const H2MirResolvedDecl* entry = FindMirResolvedDeclBySlice(
+        map, pkg, src, nameStart, nameEnd, H2MirDeclKind_CONST);
     if (entry != NULL) {
         return entry;
     }
-    return FindMirResolvedDeclBySlice(map, pkg, src, nameStart, nameEnd, HOPMirDeclKind_VAR);
+    return FindMirResolvedDeclBySlice(map, pkg, src, nameStart, nameEnd, H2MirDeclKind_VAR);
 }
 
-static const HOPMirResolvedDecl* _Nullable FindMirResolvedValueByCStr(
-    const HOPMirResolvedDeclMap* map, const HOPPackage* pkg, const char* name) {
-    const HOPMirResolvedDecl* entry = FindMirResolvedDeclByCStr(
-        map, pkg, name, HOPMirDeclKind_CONST);
+static const H2MirResolvedDecl* _Nullable FindMirResolvedValueByCStr(
+    const H2MirResolvedDeclMap* map, const H2Package* pkg, const char* name) {
+    const H2MirResolvedDecl* entry = FindMirResolvedDeclByCStr(map, pkg, name, H2MirDeclKind_CONST);
     if (entry != NULL) {
         return entry;
     }
-    return FindMirResolvedDeclByCStr(map, pkg, name, HOPMirDeclKind_VAR);
+    return FindMirResolvedDeclByCStr(map, pkg, name, H2MirDeclKind_VAR);
 }
 
-static int MirAstDeclHasTypeParams(const HOPAst* ast, int32_t nodeId) {
+static int MirAstDeclHasTypeParams(const H2Ast* ast, int32_t nodeId) {
     int32_t child;
     if (ast == NULL || nodeId < 0 || (uint32_t)nodeId >= ast->len) {
         return 0;
     }
     child = ast->nodes[nodeId].firstChild;
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        if (ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
             return 1;
         }
         child = ast->nodes[child].nextSibling;
@@ -981,33 +973,33 @@ static int MirAstDeclHasTypeParams(const HOPAst* ast, int32_t nodeId) {
 }
 
 static int AppendMirDeclsFromFile(
-    const HOPPackageLoader* loader,
-    const HOPPackage*       entryPkg,
-    HOPMirProgramBuilder*   builder,
-    HOPArena*               arena,
-    const HOPPackage*       pkg,
-    const HOPParsedFile*    file,
-    HOPMirResolvedDeclMap* _Nullable declMap,
-    HOPMirTcFunctionMap* _Nullable tcFnMap) {
-    int32_t          child = ASTFirstChild(&file->ast, file->ast.root);
-    HOPTypeCheckCtx* tc = file->hasTypecheckCtx ? (HOPTypeCheckCtx*)file->typecheckCtx : NULL;
+    const H2PackageLoader* loader,
+    const H2Package*       entryPkg,
+    H2MirProgramBuilder*   builder,
+    H2Arena*               arena,
+    const H2Package*       pkg,
+    const H2ParsedFile*    file,
+    H2MirResolvedDeclMap* _Nullable declMap,
+    H2MirTcFunctionMap* _Nullable tcFnMap) {
+    int32_t         child = ASTFirstChild(&file->ast, file->ast.root);
+    H2TypeCheckCtx* tc = file->hasTypecheckCtx ? (H2TypeCheckCtx*)file->typecheckCtx : NULL;
     while (child >= 0) {
-        const HOPAstNode* n = &file->ast.nodes[child];
-        if (n->kind == HOPAst_FN) {
-            uint32_t      outFunctionIndex = UINT32_MAX;
-            int32_t       bodyNode;
-            int32_t       wasmImportNode = -1;
-            HOPDiag       diag = { 0 };
-            int           supported = 0;
-            HOPStrView    src = { file->source, file->sourceLen };
-            const HOPAst* ast = &file->ast;
+        const H2AstNode* n = &file->ast.nodes[child];
+        if (n->kind == H2Ast_FN) {
+            uint32_t     outFunctionIndex = UINT32_MAX;
+            int32_t      bodyNode;
+            int32_t      wasmImportNode = -1;
+            H2Diag       diag = { 0 };
+            int          supported = 0;
+            H2StrView    src = { file->source, file->sourceLen };
+            const H2Ast* ast = &file->ast;
             if (MirAstDeclHasTypeParams(ast, child)) {
                 child = ASTNextSibling(ast, child);
                 continue;
             }
             bodyNode = FindFunctionBodyNode(file, child);
             if (bodyNode >= 0) {
-                if (HOPMirLowerAppendSimpleFunction(
+                if (H2MirLowerAppendSimpleFunction(
                         builder,
                         arena,
                         ast,
@@ -1032,7 +1024,7 @@ static int AppendMirDeclsFromFile(
                            n->dataStart,
                            n->dataEnd,
                            outFunctionIndex,
-                           HOPMirDeclKind_FN)
+                           H2MirDeclKind_FN)
                            != 0)
                 {
                     return ErrorSimple("out of memory");
@@ -1050,12 +1042,12 @@ static int AppendMirDeclsFromFile(
             } else if (
                 loader != NULL && entryPkg != NULL && loader->selectedPlatformPkg == pkg
                 && loader->platformTarget != NULL
-                && StrEq(loader->platformTarget, HOP_PLAYBIT_PLATFORM_TARGET)
-                && SliceEqCStr(file->source, n->dataStart, n->dataEnd, HOP_PLAYBIT_ENTRY_HOOK_NAME))
+                && StrEq(loader->platformTarget, H2_PLAYBIT_PLATFORM_TARGET)
+                && SliceEqCStr(file->source, n->dataStart, n->dataEnd, H2_PLAYBIT_ENTRY_HOOK_NAME))
             {
-                const HOPMirResolvedDecl* entryMain =
+                const H2MirResolvedDecl* entryMain =
                     declMap != NULL
-                        ? FindMirResolvedDeclByCStr(declMap, entryPkg, "main", HOPMirDeclKind_FN)
+                        ? FindMirResolvedDeclByCStr(declMap, entryPkg, "main", H2MirDeclKind_FN)
                         : NULL;
                 uint32_t wrapperFunctionIndex = UINT32_MAX;
                 if (entryMain == NULL) {
@@ -1080,7 +1072,7 @@ static int AppendMirDeclsFromFile(
                            n->dataStart,
                            n->dataEnd,
                            wrapperFunctionIndex,
-                           HOPMirDeclKind_FN)
+                           H2MirDeclKind_FN)
                            != 0)
                 {
                     return ErrorSimple("out of memory");
@@ -1098,35 +1090,35 @@ static int AppendMirDeclsFromFile(
                            n->dataStart,
                            n->dataEnd,
                            outFunctionIndex,
-                           HOPMirDeclKind_FN)
+                           H2MirDeclKind_FN)
                            != 0)
                 {
                     return ErrorSimple("out of memory");
                 }
             }
-        } else if (n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) {
-            const HOPAst* ast = &file->ast;
-            const char*   kindName = n->kind == HOPAst_CONST ? "top-level const" : "top-level var";
-            int32_t       firstChild = ASTFirstChild(ast, child);
-            HOPStrView    src = { file->source, file->sourceLen };
-            HOPDiag       diag = { 0 };
-            int           supported = 0;
-            if (firstChild >= 0 && ast->nodes[firstChild].kind == HOPAst_NAME_LIST) {
+        } else if (n->kind == H2Ast_VAR || n->kind == H2Ast_CONST) {
+            const H2Ast* ast = &file->ast;
+            const char*  kindName = n->kind == H2Ast_CONST ? "top-level const" : "top-level var";
+            int32_t      firstChild = ASTFirstChild(ast, child);
+            H2StrView    src = { file->source, file->sourceLen };
+            H2Diag       diag = { 0 };
+            int          supported = 0;
+            if (firstChild >= 0 && ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
                 uint32_t i;
                 uint32_t nameCount = AstListCount(ast, firstChild);
                 for (i = 0; i < nameCount; i++) {
-                    uint32_t          outFunctionIndex = UINT32_MAX;
-                    int32_t           nameNode = AstListItemAt(ast, firstChild, i);
-                    const HOPAstNode* nameAst =
+                    uint32_t         outFunctionIndex = UINT32_MAX;
+                    int32_t          nameNode = AstListItemAt(ast, firstChild, i);
+                    const H2AstNode* nameAst =
                         (nameNode >= 0 && (uint32_t)nameNode < ast->len)
                             ? &ast->nodes[nameNode]
                             : NULL;
                     if (nameAst == NULL) {
                         return ErrorMirUnsupported(file, n, kindName, NULL);
                     }
-                    diag = (HOPDiag){ 0 };
+                    diag = (H2Diag){ 0 };
                     supported = 0;
-                    if (HOPMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
                             builder,
                             arena,
                             ast,
@@ -1152,7 +1144,7 @@ static int AppendMirDeclsFromFile(
                                nameAst->dataStart,
                                nameAst->dataEnd,
                                outFunctionIndex,
-                               n->kind == HOPAst_CONST ? HOPMirDeclKind_CONST : HOPMirDeclKind_VAR)
+                               n->kind == H2Ast_CONST ? H2MirDeclKind_CONST : H2MirDeclKind_VAR)
                                != 0)
                     {
                         return ErrorSimple("out of memory");
@@ -1168,7 +1160,7 @@ static int AppendMirDeclsFromFile(
                         return ErrorSimple("out of memory");
                     }
                 } else {
-                    if (HOPMirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
                             builder,
                             arena,
                             ast,
@@ -1195,7 +1187,7 @@ static int AppendMirDeclsFromFile(
                            n->dataStart,
                            n->dataEnd,
                            outFunctionIndex,
-                           n->kind == HOPAst_CONST ? HOPMirDeclKind_CONST : HOPMirDeclKind_VAR)
+                           n->kind == H2Ast_CONST ? H2MirDeclKind_CONST : H2MirDeclKind_VAR)
                            != 0)
                 {
                     return ErrorSimple("out of memory");
@@ -1208,14 +1200,14 @@ static int AppendMirDeclsFromFile(
 }
 
 static int AppendMirTemplateInstancesFromFile(
-    const HOPPackageLoader* loader,
-    HOPMirProgramBuilder*   builder,
-    HOPArena*               arena,
-    const HOPPackage*       pkg,
-    const HOPParsedFile*    file,
-    HOPMirTcFunctionMap*    tcFnMap) {
-    HOPTypeCheckCtx* tc =
-        file != NULL && file->hasTypecheckCtx ? (HOPTypeCheckCtx*)file->typecheckCtx : NULL;
+    const H2PackageLoader* loader,
+    H2MirProgramBuilder*   builder,
+    H2Arena*               arena,
+    const H2Package*       pkg,
+    const H2ParsedFile*    file,
+    H2MirTcFunctionMap*    tcFnMap) {
+    H2TypeCheckCtx* tc =
+        file != NULL && file->hasTypecheckCtx ? (H2TypeCheckCtx*)file->typecheckCtx : NULL;
     uint32_t i;
     if (loader == NULL || builder == NULL || arena == NULL || pkg == NULL || file == NULL
         || tcFnMap == NULL || tc == NULL)
@@ -1223,12 +1215,12 @@ static int AppendMirTemplateInstancesFromFile(
         return 0;
     }
     for (i = 0; i < tc->funcLen; i++) {
-        const HOPTCFunction* fn = &tc->funcs[i];
-        uint32_t             outFunctionIndex = UINT32_MAX;
-        int32_t              bodyNode;
-        HOPDiag              diag = { 0 };
-        int                  supported = 0;
-        if ((fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0 || fn->defNode < 0) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        uint32_t            outFunctionIndex = UINT32_MAX;
+        int32_t             bodyNode;
+        H2Diag              diag = { 0 };
+        int                 supported = 0;
+        if ((fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0 || fn->defNode < 0) {
             continue;
         }
         if (i >= tc->funcUsedCap || tc->funcUsed[i] == 0u) {
@@ -1241,11 +1233,11 @@ static int AppendMirTemplateInstancesFromFile(
         if (bodyNode < 0) {
             continue;
         }
-        if (HOPMirLowerAppendSimpleFunction(
+        if (H2MirLowerAppendSimpleFunction(
                 builder,
                 arena,
                 &file->ast,
-                (HOPStrView){ file->source, file->sourceLen },
+                (H2StrView){ file->source, file->sourceLen },
                 fn->declNode,
                 bodyNode,
                 &outFunctionIndex,
@@ -1273,17 +1265,17 @@ static int AppendMirTemplateInstancesFromFile(
 }
 
 static int AppendMirSelectedPlatformNamedImportDeclsFromFile(
-    HOPMirProgramBuilder* builder,
-    HOPArena*             arena,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  file,
-    const char*           name,
-    HOPMirResolvedDeclMap* _Nullable declMap) {
+    H2MirProgramBuilder* builder,
+    H2Arena*             arena,
+    const H2Package*     pkg,
+    const H2ParsedFile*  file,
+    const char*          name,
+    H2MirResolvedDeclMap* _Nullable declMap) {
     int32_t child = ASTFirstChild(&file->ast, file->ast.root);
     while (child >= 0) {
-        const HOPAstNode* n = &file->ast.nodes[child];
-        int32_t           wasmImportNode = -1;
-        if (n->kind == HOPAst_FN && name != NULL
+        const H2AstNode* n = &file->ast.nodes[child];
+        int32_t          wasmImportNode = -1;
+        if (n->kind == H2Ast_FN && name != NULL
             && SliceEqCStr(file->source, n->dataStart, n->dataEnd, name)
             && DeclHasDirective(file, child, "wasm_import", &wasmImportNode))
         {
@@ -1299,7 +1291,7 @@ static int AppendMirSelectedPlatformNamedImportDeclsFromFile(
                        n->dataStart,
                        n->dataEnd,
                        outFunctionIndex,
-                       HOPMirDeclKind_FN)
+                       H2MirDeclKind_FN)
                        != 0)
             {
                 return ErrorSimple("out of memory");
@@ -1311,21 +1303,21 @@ static int AppendMirSelectedPlatformNamedImportDeclsFromFile(
 }
 
 static int AppendMirSelectedPlatformPanicDeclsFromFile(
-    HOPMirProgramBuilder* builder,
-    HOPArena*             arena,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  file,
-    HOPMirResolvedDeclMap* _Nullable declMap) {
+    H2MirProgramBuilder* builder,
+    H2Arena*             arena,
+    const H2Package*     pkg,
+    const H2ParsedFile*  file,
+    H2MirResolvedDeclMap* _Nullable declMap) {
     return AppendMirSelectedPlatformNamedImportDeclsFromFile(
         builder, arena, pkg, file, "panic", declMap);
 }
 
 static int AppendMirSelectedPlatformConsoleLogDeclsFromFile(
-    HOPMirProgramBuilder* builder,
-    HOPArena*             arena,
-    const HOPPackage*     pkg,
-    const HOPParsedFile*  file,
-    HOPMirResolvedDeclMap* _Nullable declMap) {
+    H2MirProgramBuilder* builder,
+    H2Arena*             arena,
+    const H2Package*     pkg,
+    const H2ParsedFile*  file,
+    H2MirResolvedDeclMap* _Nullable declMap) {
     return AppendMirSelectedPlatformNamedImportDeclsFromFile(
         builder, arena, pkg, file, "console_log", declMap);
 }
@@ -1334,8 +1326,7 @@ static int IsPlatformImportPath(const char* _Nullable path) {
     return path != NULL && (StrEq(path, "platform") || strncmp(path, "platform/", 9u) == 0);
 }
 
-static int IsSelectedPlatformImportPath(
-    const HOPPackageLoader* loader, const char* _Nullable path) {
+static int IsSelectedPlatformImportPath(const H2PackageLoader* loader, const char* _Nullable path) {
     size_t prefixLen = 9u;
     if (loader == NULL || loader->platformTarget == NULL || path == NULL) {
         return 0;
@@ -1347,7 +1338,7 @@ static int IsSelectedPlatformImportPath(
         && StrEq(path + prefixLen, loader->platformTarget);
 }
 
-int PackageHasPlatformImport(const HOPPackage* _Nullable pkg) {
+int PackageHasPlatformImport(const H2Package* _Nullable pkg) {
     uint32_t importIndex;
     if (pkg == NULL) {
         return 0;
@@ -1367,8 +1358,8 @@ static int ShouldSkipPackageMirImportPath(const char* _Nullable path) {
                 || strncmp(path, "builtin/", 8u) == 0 || strncmp(path, "reflect/", 8u) == 0));
 }
 
-static const HOPPackage* _Nullable EffectiveMirImportTargetPackage(
-    const HOPPackageLoader* loader, const HOPImportRef* imp) {
+static const H2Package* _Nullable EffectiveMirImportTargetPackage(
+    const H2PackageLoader* loader, const H2ImportRef* imp) {
     if (imp == NULL) {
         return NULL;
     }
@@ -1381,13 +1372,13 @@ static const HOPPackage* _Nullable EffectiveMirImportTargetPackage(
 }
 
 static int BuildEntryPackageMirOrderVisit(
-    const HOPPackageLoader* loader,
-    uint32_t                pkgIndex,
-    uint8_t*                state,
-    uint32_t*               order,
-    uint32_t*               orderLen) {
-    const HOPPackage* pkg = &loader->packages[pkgIndex];
-    uint32_t          i;
+    const H2PackageLoader* loader,
+    uint32_t               pkgIndex,
+    uint8_t*               state,
+    uint32_t*              order,
+    uint32_t*              orderLen) {
+    const H2Package* pkg = &loader->packages[pkgIndex];
+    uint32_t         i;
     if (state[pkgIndex] == 2u) {
         return 0;
     }
@@ -1414,15 +1405,15 @@ static int BuildEntryPackageMirOrderVisit(
     return 0;
 }
 
-int PackageUsesPlatformImport(const HOPPackageLoader* loader);
+int PackageUsesPlatformImport(const H2PackageLoader* loader);
 
 static int BuildEntryPackageMirOrder(
-    const HOPPackageLoader* loader,
-    const HOPPackage*       entryPkg,
-    int                     includeSelectedPlatform,
-    uint32_t*               outOrder,
-    uint32_t                outOrderCap,
-    uint32_t*               outOrderLen) {
+    const H2PackageLoader* loader,
+    const H2Package*       entryPkg,
+    int                    includeSelectedPlatform,
+    uint32_t*              outOrder,
+    uint32_t               outOrderCap,
+    uint32_t*              outOrderLen) {
     uint8_t* state = NULL;
     int      entryPkgIndex;
     int      rc = -1;
@@ -1457,35 +1448,35 @@ static int BuildEntryPackageMirOrder(
     return rc;
 }
 
-void FreeForeignLinkageInfo(HOPForeignLinkageInfo* info) {
-    uint32_t                i;
-    HOPForeignLinkageEntry* entries;
+void FreeForeignLinkageInfo(H2ForeignLinkageInfo* info) {
+    uint32_t               i;
+    H2ForeignLinkageEntry* entries;
     if (info == NULL || info->entries == NULL) {
         if (info != NULL) {
-            *info = (HOPForeignLinkageInfo){ 0 };
+            *info = (H2ForeignLinkageInfo){ 0 };
         }
         return;
     }
-    entries = (HOPForeignLinkageEntry*)(uintptr_t)info->entries;
+    entries = (H2ForeignLinkageEntry*)(uintptr_t)info->entries;
     for (i = 0; i < info->len; i++) {
         free(entries[i].arg0.bytes);
         free(entries[i].arg1.bytes);
     }
     free(entries);
-    *info = (HOPForeignLinkageInfo){ 0 };
+    *info = (H2ForeignLinkageInfo){ 0 };
 }
 
 static int ForeignLinkageBuilderAppend(
-    HOPForeignLinkageBuilder* b, const HOPForeignLinkageEntry* entry) {
-    HOPForeignLinkageEntry* newEntries;
-    uint32_t                newCap;
+    H2ForeignLinkageBuilder* b, const H2ForeignLinkageEntry* entry) {
+    H2ForeignLinkageEntry* newEntries;
+    uint32_t               newCap;
     if (b == NULL || entry == NULL) {
         return -1;
     }
     if (b->len >= b->cap) {
         newCap = b->cap >= 8u ? b->cap * 2u : 8u;
-        newEntries = (HOPForeignLinkageEntry*)realloc(
-            b->entries, sizeof(HOPForeignLinkageEntry) * newCap);
+        newEntries = (H2ForeignLinkageEntry*)realloc(
+            b->entries, sizeof(H2ForeignLinkageEntry) * newCap);
         if (newEntries == NULL) {
             return -1;
         }
@@ -1496,44 +1487,44 @@ static int ForeignLinkageBuilderAppend(
     return 0;
 }
 
-static void ForeignLinkageBuilderFree(HOPForeignLinkageBuilder* b) {
+static void ForeignLinkageBuilderFree(H2ForeignLinkageBuilder* b) {
     if (b == NULL) {
         return;
     }
-    FreeForeignLinkageInfo((HOPForeignLinkageInfo*)b);
+    FreeForeignLinkageInfo((H2ForeignLinkageInfo*)b);
     b->cap = 0;
 }
 
 static int BuildMirForeignLinkageInfo(
-    const HOPPackageLoader*      loader,
-    const HOPMirResolvedDeclMap* declMap,
-    HOPForeignLinkageInfo*       outInfo,
-    HOPDiag* _Nullable diag) {
-    HOPForeignLinkageBuilder b = { 0 };
-    uint32_t                 pkgIndex;
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* declMap,
+    H2ForeignLinkageInfo*       outInfo,
+    H2Diag* _Nullable diag) {
+    H2ForeignLinkageBuilder b = { 0 };
+    uint32_t                pkgIndex;
     if (outInfo == NULL) {
         return -1;
     }
-    *outInfo = (HOPForeignLinkageInfo){ 0 };
+    *outInfo = (H2ForeignLinkageInfo){ 0 };
     if (loader == NULL || declMap == NULL) {
         return 0;
     }
     for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-            const HOPParsedFile* file = &pkg->files[fileIndex];
-            int32_t              child = ASTFirstChild(&file->ast, file->ast.root);
+            const H2ParsedFile* file = &pkg->files[fileIndex];
+            int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
             while (child >= 0) {
-                const HOPAstNode* decl = &file->ast.nodes[child];
-                int32_t           cImportNode = -1;
-                int32_t           wasmImportNode = -1;
-                int32_t           exportNode = -1;
+                const H2AstNode* decl = &file->ast.nodes[child];
+                int32_t          cImportNode = -1;
+                int32_t          wasmImportNode = -1;
+                int32_t          exportNode = -1;
                 if (DeclHasDirective(file, child, "c_import", &cImportNode)) {
                     if (diag != NULL) {
-                        *diag = (HOPDiag){
-                            .code = HOPDiag_WASM_BACKEND_UNSUPPORTED_MIR,
-                            .type = HOPDiagTypeOfCode(HOPDiag_WASM_BACKEND_UNSUPPORTED_MIR),
+                        *diag = (H2Diag){
+                            .code = H2Diag_WASM_BACKEND_UNSUPPORTED_MIR,
+                            .type = H2DiagTypeOfCode(H2Diag_WASM_BACKEND_UNSUPPORTED_MIR),
                             .start = file->ast.nodes[cImportNode].start,
                             .end = file->ast.nodes[cImportNode].end,
                             .detail = "@c_import is not supported by the direct Wasm backend",
@@ -1543,42 +1534,42 @@ static int BuildMirForeignLinkageInfo(
                     return -1;
                 }
                 if (DeclHasDirective(file, child, "wasm_import", &wasmImportNode)) {
-                    int32_t                   arg0 = DirectiveArgAt(&file->ast, wasmImportNode, 0u);
-                    int32_t                   arg1 = DirectiveArgAt(&file->ast, wasmImportNode, 1u);
-                    const HOPMirResolvedDecl* resolved = NULL;
-                    HOPForeignLinkageEntry    entry = { 0 };
-                    HOPStringLitErr           litErr = { 0 };
+                    int32_t                  arg0 = DirectiveArgAt(&file->ast, wasmImportNode, 0u);
+                    int32_t                  arg1 = DirectiveArgAt(&file->ast, wasmImportNode, 1u);
+                    const H2MirResolvedDecl* resolved = NULL;
+                    H2ForeignLinkageEntry    entry = { 0 };
+                    H2StringLitErr           litErr = { 0 };
                     if (arg0 < 0 || arg1 < 0) {
                         ForeignLinkageBuilderFree(&b);
                         return -1;
                     }
-                    if (decl->kind == HOPAst_FN) {
+                    if (decl->kind == H2Ast_FN) {
                         resolved = FindMirResolvedDeclBySlice(
                             declMap,
                             pkg,
                             file->source,
                             decl->dataStart,
                             decl->dataEnd,
-                            HOPMirDeclKind_FN);
-                        entry.kind = HOPForeignLinkage_WASM_IMPORT_FN;
-                    } else if (decl->kind == HOPAst_CONST) {
+                            H2MirDeclKind_FN);
+                        entry.kind = H2ForeignLinkage_WASM_IMPORT_FN;
+                    } else if (decl->kind == H2Ast_CONST) {
                         resolved = FindMirResolvedDeclBySlice(
                             declMap,
                             pkg,
                             file->source,
                             decl->dataStart,
                             decl->dataEnd,
-                            HOPMirDeclKind_CONST);
-                        entry.kind = HOPForeignLinkage_WASM_IMPORT_CONST;
-                    } else if (decl->kind == HOPAst_VAR) {
+                            H2MirDeclKind_CONST);
+                        entry.kind = H2ForeignLinkage_WASM_IMPORT_CONST;
+                    } else if (decl->kind == H2Ast_VAR) {
                         resolved = FindMirResolvedDeclBySlice(
                             declMap,
                             pkg,
                             file->source,
                             decl->dataStart,
                             decl->dataEnd,
-                            HOPMirDeclKind_VAR);
-                        entry.kind = HOPForeignLinkage_WASM_IMPORT_VAR;
+                            H2MirDeclKind_VAR);
+                        entry.kind = H2ForeignLinkage_WASM_IMPORT_VAR;
                     }
                     if (resolved == NULL) {
                         child = ASTNextSibling(&file->ast, child);
@@ -1587,12 +1578,12 @@ static int BuildMirForeignLinkageInfo(
                     entry.functionIndex = resolved->functionIndex;
                     entry.start = file->ast.nodes[wasmImportNode].start;
                     entry.end = file->ast.nodes[wasmImportNode].end;
-                    if (loader->selectedPlatformPkg == pkg && decl->kind == HOPAst_FN
+                    if (loader->selectedPlatformPkg == pkg && decl->kind == H2Ast_FN
                         && SliceEqCStr(file->source, decl->dataStart, decl->dataEnd, "panic"))
                     {
-                        entry.flags = HOPForeignLinkageFlag_PLATFORM_PANIC;
+                        entry.flags = H2ForeignLinkageFlag_PLATFORM_PANIC;
                     }
-                    if (HOPDecodeStringLiteralMalloc(
+                    if (H2DecodeStringLiteralMalloc(
                             file->source,
                             file->ast.nodes[arg0].start,
                             file->ast.nodes[arg0].end,
@@ -1600,7 +1591,7 @@ static int BuildMirForeignLinkageInfo(
                             &entry.arg0.len,
                             &litErr)
                             != 0
-                        || HOPDecodeStringLiteralMalloc(
+                        || H2DecodeStringLiteralMalloc(
                                file->source,
                                file->ast.nodes[arg1].start,
                                file->ast.nodes[arg1].end,
@@ -1616,24 +1607,24 @@ static int BuildMirForeignLinkageInfo(
                         return -1;
                     }
                 } else if (
-                    DeclHasDirective(file, child, "export", &exportNode) && decl->kind == HOPAst_FN)
+                    DeclHasDirective(file, child, "export", &exportNode) && decl->kind == H2Ast_FN)
                 {
-                    int32_t                   arg0 = DirectiveArgAt(&file->ast, exportNode, 0u);
-                    const HOPMirResolvedDecl* resolved = FindMirResolvedDeclBySlice(
+                    int32_t                  arg0 = DirectiveArgAt(&file->ast, exportNode, 0u);
+                    const H2MirResolvedDecl* resolved = FindMirResolvedDeclBySlice(
                         declMap,
                         pkg,
                         file->source,
                         decl->dataStart,
                         decl->dataEnd,
-                        HOPMirDeclKind_FN);
-                    HOPForeignLinkageEntry entry = { 0 };
-                    HOPStringLitErr        litErr = { 0 };
+                        H2MirDeclKind_FN);
+                    H2ForeignLinkageEntry entry = { 0 };
+                    H2StringLitErr        litErr = { 0 };
                     if (arg0 >= 0 && resolved != NULL) {
-                        entry.kind = HOPForeignLinkage_EXPORT_FN;
+                        entry.kind = H2ForeignLinkage_EXPORT_FN;
                         entry.functionIndex = resolved->functionIndex;
                         entry.start = file->ast.nodes[exportNode].start;
                         entry.end = file->ast.nodes[exportNode].end;
-                        if (HOPDecodeStringLiteralMalloc(
+                        if (H2DecodeStringLiteralMalloc(
                                 file->source,
                                 file->ast.nodes[arg0].start,
                                 file->ast.nodes[arg0].end,
@@ -1658,11 +1649,11 @@ static int BuildMirForeignLinkageInfo(
     return 0;
 }
 
-static const HOPParsedFile* _Nullable FindLoaderFileByMirSource(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    uint32_t                sourceRef,
-    const HOPPackage** _Nullable outPkg) {
+static const H2ParsedFile* _Nullable FindLoaderFileByMirSource(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    uint32_t               sourceRef,
+    const H2Package** _Nullable outPkg) {
     uint32_t pkgIndex;
     if (outPkg != NULL) {
         *outPkg = NULL;
@@ -1671,8 +1662,8 @@ static const HOPParsedFile* _Nullable FindLoaderFileByMirSource(
         return NULL;
     }
     for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &loader->packages[pkgIndex];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
             if (pkg->files[fileIndex].source == program->sources[sourceRef].src.ptr
                 && pkg->files[fileIndex].sourceLen == program->sources[sourceRef].src.len)
@@ -1688,17 +1679,17 @@ static const HOPParsedFile* _Nullable FindLoaderFileByMirSource(
 }
 
 static int DecodeNewExprNodes(
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    int32_t*             outTypeNode,
-    int32_t*             outCountNode,
-    int32_t*             outInitNode,
-    int32_t*             outAllocNode) {
-    const HOPAstNode* n;
-    int32_t           nextNode;
-    int               hasCount;
-    int               hasInit;
-    int               hasAlloc;
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    int32_t*            outTypeNode,
+    int32_t*            outCountNode,
+    int32_t*            outInitNode,
+    int32_t*            outAllocNode) {
+    const H2AstNode* n;
+    int32_t          nextNode;
+    int              hasCount;
+    int              hasInit;
+    int              hasAlloc;
     if (outTypeNode != NULL) {
         *outTypeNode = -1;
     }
@@ -1715,12 +1706,12 @@ static int DecodeNewExprNodes(
         return 0;
     }
     n = &file->ast.nodes[nodeId];
-    if (n->kind != HOPAst_NEW) {
+    if (n->kind != H2Ast_NEW) {
         return 0;
     }
-    hasCount = (n->flags & HOPAstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & HOPAstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & HOPAstFlag_NEW_HAS_ALLOC) != 0;
+    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
     if (outTypeNode == NULL || outCountNode == NULL || outInitNode == NULL || outAllocNode == NULL)
     {
         return 0;
@@ -1797,23 +1788,23 @@ static int ParseMirIntLiteral(const char* src, uint32_t start, uint32_t end, int
     return 1;
 }
 
-static const HOPSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end);
+static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end);
 
 static int ResolvePackageEnumVariantConstValue(
-    const HOPPackage* pkg,
-    const char*       typeSrc,
-    uint32_t          typeStart,
-    uint32_t          typeEnd,
-    const char*       memberSrc,
-    uint32_t          memberStart,
-    uint32_t          memberEnd,
-    int64_t*          outValue) {
-    const HOPSymbolDecl* decl;
-    const HOPParsedFile* file;
-    const HOPAst*        ast;
-    int32_t              variantNode;
-    int64_t              nextValue = 0;
+    const H2Package* pkg,
+    const char*      typeSrc,
+    uint32_t         typeStart,
+    uint32_t         typeEnd,
+    const char*      memberSrc,
+    uint32_t         memberStart,
+    uint32_t         memberEnd,
+    int64_t*         outValue) {
+    const H2SymbolDecl* decl;
+    const H2ParsedFile* file;
+    const H2Ast*        ast;
+    int32_t             variantNode;
+    int64_t             nextValue = 0;
     if (outValue != NULL) {
         *outValue = 0;
     }
@@ -1821,7 +1812,7 @@ static int ResolvePackageEnumVariantConstValue(
         return 0;
     }
     decl = FindPackageTypeDeclBySlice(pkg, typeSrc, typeStart, typeEnd);
-    if (decl == NULL || decl->kind != HOPAst_ENUM || decl->fileIndex >= pkg->fileLen
+    if (decl == NULL || decl->kind != H2Ast_ENUM || decl->fileIndex >= pkg->fileLen
         || decl->nodeId < 0)
     {
         return 0;
@@ -1833,28 +1824,28 @@ static int ResolvePackageEnumVariantConstValue(
     }
     variantNode = ast->nodes[decl->nodeId].firstChild;
     if (variantNode >= 0
-        && (ast->nodes[variantNode].kind == HOPAst_TYPE_NAME
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_PTR
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_REF
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_MUTREF
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_ARRAY
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_VARRAY
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_SLICE
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_MUTSLICE
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_OPTIONAL
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_FN
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_TUPLE
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_ANON_STRUCT
-            || ast->nodes[variantNode].kind == HOPAst_TYPE_ANON_UNION))
+        && (ast->nodes[variantNode].kind == H2Ast_TYPE_NAME
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_PTR
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_REF
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_MUTREF
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_ARRAY
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_VARRAY
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_SLICE
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_MUTSLICE
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_OPTIONAL
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_FN
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_TUPLE
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_ANON_STRUCT
+            || ast->nodes[variantNode].kind == H2Ast_TYPE_ANON_UNION))
     {
         variantNode = ast->nodes[variantNode].nextSibling;
     }
     while (variantNode >= 0) {
-        const HOPAstNode* variant = &ast->nodes[variantNode];
-        int64_t           value = nextValue;
-        int32_t           child = variant->firstChild;
-        if (variant->kind == HOPAst_FIELD) {
-            while (child >= 0 && ast->nodes[child].kind == HOPAst_FIELD) {
+        const H2AstNode* variant = &ast->nodes[variantNode];
+        int64_t          value = nextValue;
+        int32_t          child = variant->firstChild;
+        if (variant->kind == H2Ast_FIELD) {
+            while (child >= 0 && ast->nodes[child].kind == H2Ast_FIELD) {
                 child = ast->nodes[child].nextSibling;
             }
             if (child >= 0
@@ -1882,51 +1873,48 @@ static int ResolvePackageEnumVariantConstValue(
 }
 
 static uint32_t FindMirSourceRefByText(
-    const HOPMirProgram* program, const char* src, uint32_t srcLen);
+    const H2MirProgram* program, const char* src, uint32_t srcLen);
 static int FindMirTypeRefByAstNode(
-    const HOPMirProgram* program, uint32_t sourceRef, int32_t astNode, uint32_t* outTypeRef);
+    const H2MirProgram* program, uint32_t sourceRef, int32_t astNode, uint32_t* outTypeRef);
 static int AppendMirInst(
-    HOPMirInst* outInsts, uint32_t outCap, uint32_t* outLen, const HOPMirInst* inst);
-static int MirTypeNodeKind(HOPAstKind kind);
+    H2MirInst* outInsts, uint32_t outCap, uint32_t* outLen, const H2MirInst* inst);
+static int MirTypeNodeKind(H2AstKind kind);
 static int ResolveMirAggregateTypeRefForTypeNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPParsedFile*    file,
-    int32_t                 typeNode,
-    uint32_t*               outTypeRef);
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2ParsedFile*    file,
+    int32_t                typeNode,
+    uint32_t*              outTypeRef);
 static int EnsureMirAstTypeRef(
-    HOPArena*               arena,
-    const HOPPackageLoader* loader,
-    HOPMirProgram*          program,
-    uint32_t                astNode,
-    uint32_t                sourceRef,
+    H2Arena*               arena,
+    const H2PackageLoader* loader,
+    H2MirProgram*          program,
+    uint32_t               astNode,
+    uint32_t               sourceRef,
     uint32_t* _Nonnull outTypeRef);
 static int EnsureMirScalarTypeRef(
-    HOPArena*        arena,
-    HOPMirProgram*   program,
-    HOPMirTypeScalar scalar,
-    uint32_t* _Nonnull outTypeRef);
+    H2Arena* arena, H2MirProgram* program, H2MirTypeScalar scalar, uint32_t* _Nonnull outTypeRef);
 
-static uint32_t MirIntKindByteWidth(HOPMirIntKind intKind) {
+static uint32_t MirIntKindByteWidth(H2MirIntKind intKind) {
     switch (intKind) {
-        case HOPMirIntKind_U8:
-        case HOPMirIntKind_I8:
-        case HOPMirIntKind_BOOL: return 1u;
-        case HOPMirIntKind_U16:
-        case HOPMirIntKind_I16:  return 2u;
-        case HOPMirIntKind_U32:
-        case HOPMirIntKind_I32:  return 4u;
-        default:                 return 0u;
+        case H2MirIntKind_U8:
+        case H2MirIntKind_I8:
+        case H2MirIntKind_BOOL: return 1u;
+        case H2MirIntKind_U16:
+        case H2MirIntKind_I16:  return 2u;
+        case H2MirIntKind_U32:
+        case H2MirIntKind_I32:  return 4u;
+        default:                return 0u;
     }
 }
 
 static int ResolveMirAllocNewPointeeTypeRef(
-    const HOPPackageLoader* loader,
-    HOPArena*               arena,
-    HOPMirProgram*          program,
-    const HOPParsedFile*    file,
-    const HOPMirInst*       allocInst,
-    uint32_t*               outTypeRef) {
+    const H2PackageLoader* loader,
+    H2Arena*               arena,
+    H2MirProgram*          program,
+    const H2ParsedFile*    file,
+    const H2MirInst*       allocInst,
+    uint32_t*              outTypeRef) {
     int32_t  typeNode = -1;
     int32_t  countNode = -1;
     int32_t  initNode = -1;
@@ -1958,29 +1946,29 @@ static int ResolveMirAllocNewPointeeTypeRef(
 }
 
 static int EnsureMirIntConst(
-    HOPArena* arena, HOPMirProgram* program, int64_t value, uint32_t* _Nonnull outIndex) {
-    HOPMirConst* newConsts;
-    uint32_t     i;
+    H2Arena* arena, H2MirProgram* program, int64_t value, uint32_t* _Nonnull outIndex) {
+    H2MirConst* newConsts;
+    uint32_t    i;
     if (arena == NULL || program == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_INT && (int64_t)program->consts[i].bits == value)
+        if (program->consts[i].kind == H2MirConst_INT && (int64_t)program->consts[i].bits == value)
         {
             *outIndex = i;
             return 0;
         }
     }
-    newConsts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    newConsts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (newConsts == NULL) {
         return -1;
     }
     if (program->constLen != 0u) {
-        memcpy(newConsts, program->consts, sizeof(HOPMirConst) * program->constLen);
+        memcpy(newConsts, program->consts, sizeof(H2MirConst) * program->constLen);
     }
-    newConsts[program->constLen] = (HOPMirConst){
-        .kind = HOPMirConst_INT,
+    newConsts[program->constLen] = (H2MirConst){
+        .kind = H2MirConst_INT,
         .aux = 0u,
         .bits = (uint64_t)value,
         .bytes = { 0 },
@@ -1990,59 +1978,58 @@ static int EnsureMirIntConst(
     return 0;
 }
 
-static int EnsureMirNullConst(
-    HOPArena* arena, HOPMirProgram* program, uint32_t* _Nonnull outIndex) {
-    HOPMirConst* newConsts;
-    uint32_t     i;
+static int EnsureMirNullConst(H2Arena* arena, H2MirProgram* program, uint32_t* _Nonnull outIndex) {
+    H2MirConst* newConsts;
+    uint32_t    i;
     if (arena == NULL || program == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_NULL) {
+        if (program->consts[i].kind == H2MirConst_NULL) {
             *outIndex = i;
             return 0;
         }
     }
-    newConsts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    newConsts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (newConsts == NULL) {
         return -1;
     }
     if (program->constLen != 0u) {
-        memcpy(newConsts, program->consts, sizeof(HOPMirConst) * program->constLen);
+        memcpy(newConsts, program->consts, sizeof(H2MirConst) * program->constLen);
     }
     newConsts[program->constLen] =
-        (HOPMirConst){ .kind = HOPMirConst_NULL, .aux = 0u, .bits = 0u, .bytes = { 0 } };
+        (H2MirConst){ .kind = H2MirConst_NULL, .aux = 0u, .bits = 0u, .bytes = { 0 } };
     program->consts = newConsts;
     *outIndex = program->constLen++;
     return 0;
 }
 
 static int EnsureMirBoolConst(
-    HOPArena* arena, HOPMirProgram* program, bool value, uint32_t* _Nonnull outIndex) {
-    HOPMirConst* newConsts;
-    uint32_t     i;
+    H2Arena* arena, H2MirProgram* program, bool value, uint32_t* _Nonnull outIndex) {
+    H2MirConst* newConsts;
+    uint32_t    i;
     if (arena == NULL || program == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_BOOL
+        if (program->consts[i].kind == H2MirConst_BOOL
             && ((program->consts[i].bits != 0u) == value))
         {
             *outIndex = i;
             return 0;
         }
     }
-    newConsts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    newConsts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (newConsts == NULL) {
         return -1;
     }
     if (program->constLen != 0u) {
-        memcpy(newConsts, program->consts, sizeof(HOPMirConst) * program->constLen);
+        memcpy(newConsts, program->consts, sizeof(H2MirConst) * program->constLen);
     }
-    newConsts[program->constLen] = (HOPMirConst){
-        .kind = HOPMirConst_BOOL,
+    newConsts[program->constLen] = (H2MirConst){
+        .kind = H2MirConst_BOOL,
         .aux = 0u,
         .bits = value ? 1u : 0u,
         .bytes = { 0 },
@@ -2053,14 +2040,14 @@ static int EnsureMirBoolConst(
 }
 
 static int EnsureMirStringConst(
-    HOPArena* arena, HOPMirProgram* program, HOPStrView value, uint32_t* _Nonnull outIndex) {
-    HOPMirConst* newConsts;
-    uint32_t     i;
+    H2Arena* arena, H2MirProgram* program, H2StrView value, uint32_t* _Nonnull outIndex) {
+    H2MirConst* newConsts;
+    uint32_t    i;
     if (arena == NULL || program == NULL || outIndex == NULL) {
         return -1;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_STRING
+        if (program->consts[i].kind == H2MirConst_STRING
             && program->consts[i].bytes.len == value.len
             && (value.len == 0u || memcmp(program->consts[i].bytes.ptr, value.ptr, value.len) == 0))
         {
@@ -2068,46 +2055,46 @@ static int EnsureMirStringConst(
             return 0;
         }
     }
-    newConsts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    newConsts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (newConsts == NULL) {
         return -1;
     }
     if (program->constLen != 0u) {
-        memcpy(newConsts, program->consts, sizeof(HOPMirConst) * program->constLen);
+        memcpy(newConsts, program->consts, sizeof(H2MirConst) * program->constLen);
     }
     newConsts[program->constLen] =
-        (HOPMirConst){ .kind = HOPMirConst_STRING, .aux = 0u, .bits = 0u, .bytes = value };
+        (H2MirConst){ .kind = H2MirConst_STRING, .aux = 0u, .bits = 0u, .bytes = value };
     program->consts = newConsts;
     *outIndex = program->constLen++;
     return 0;
 }
 
 static int EnsureMirFunctionConst(
-    HOPArena* arena, HOPMirProgram* program, uint32_t functionIndex, uint32_t* _Nonnull outIndex) {
-    HOPMirConst* newConsts;
-    uint32_t     i;
+    H2Arena* arena, H2MirProgram* program, uint32_t functionIndex, uint32_t* _Nonnull outIndex) {
+    H2MirConst* newConsts;
+    uint32_t    i;
     if (arena == NULL || program == NULL || outIndex == NULL || functionIndex >= program->funcLen) {
         return -1;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_FUNCTION
+        if (program->consts[i].kind == H2MirConst_FUNCTION
             && program->consts[i].aux == functionIndex)
         {
             *outIndex = i;
             return 0;
         }
     }
-    newConsts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    newConsts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (newConsts == NULL) {
         return -1;
     }
     if (program->constLen != 0u) {
-        memcpy(newConsts, program->consts, sizeof(HOPMirConst) * program->constLen);
+        memcpy(newConsts, program->consts, sizeof(H2MirConst) * program->constLen);
     }
-    newConsts[program->constLen] = (HOPMirConst){
-        .kind = HOPMirConst_FUNCTION,
+    newConsts[program->constLen] = (H2MirConst){
+        .kind = H2MirConst_FUNCTION,
         .aux = functionIndex,
         .bits = functionIndex,
         .bytes = { 0 },
@@ -2118,13 +2105,13 @@ static int EnsureMirFunctionConst(
 }
 
 static bool MirSourceSliceEq(
-    const HOPMirProgram* program,
-    uint32_t             sourceRefA,
-    uint32_t             startA,
-    uint32_t             endA,
-    uint32_t             sourceRefB,
-    uint32_t             startB,
-    uint32_t             endB) {
+    const H2MirProgram* program,
+    uint32_t            sourceRefA,
+    uint32_t            startA,
+    uint32_t            endA,
+    uint32_t            sourceRefB,
+    uint32_t            startB,
+    uint32_t            endB) {
     uint32_t len;
     if (program == NULL || sourceRefA >= program->sourceLen || sourceRefB >= program->sourceLen
         || endA < startA || endB < startB)
@@ -2146,7 +2133,7 @@ static bool MirSourceSliceEq(
 }
 
 static uint32_t FindMirSourceRefByText(
-    const HOPMirProgram* program, const char* src, uint32_t srcLen) {
+    const H2MirProgram* program, const char* src, uint32_t srcLen) {
     uint32_t i;
     if (program == NULL || src == NULL) {
         return UINT32_MAX;
@@ -2162,7 +2149,7 @@ static uint32_t FindMirSourceRefByText(
 }
 
 static int FindMirTypeRefByAstNode(
-    const HOPMirProgram* program, uint32_t sourceRef, int32_t astNode, uint32_t* outTypeRef) {
+    const H2MirProgram* program, uint32_t sourceRef, int32_t astNode, uint32_t* outTypeRef) {
     uint32_t i;
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
@@ -2182,12 +2169,12 @@ static int FindMirTypeRefByAstNode(
 }
 
 static int FindMirFieldByOwnerAndSlice(
-    const HOPMirProgram* program,
-    uint32_t             ownerTypeRef,
-    uint32_t             sourceRef,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    uint32_t*            outFieldIndex) {
+    const H2MirProgram* program,
+    uint32_t            ownerTypeRef,
+    uint32_t            sourceRef,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    uint32_t*           outFieldIndex) {
     uint32_t i;
     if (outFieldIndex != NULL) {
         *outFieldIndex = UINT32_MAX;
@@ -2216,7 +2203,7 @@ static int FindMirFieldByOwnerAndSlice(
 }
 
 static int FindMirPseudoFieldByName(
-    const HOPMirProgram* program, const char* name, uint32_t* outFieldIndex) {
+    const H2MirProgram* program, const char* name, uint32_t* outFieldIndex) {
     uint32_t i;
     size_t   nameLen = 0u;
     if (outFieldIndex != NULL) {
@@ -2251,12 +2238,12 @@ static int FindMirPseudoFieldByName(
 }
 
 static int FindMirFunctionLocalBySlice(
-    const HOPMirProgram*  program,
-    const HOPMirFunction* fn,
-    const char*           src,
-    uint32_t              nameStart,
-    uint32_t              nameEnd,
-    uint32_t*             outLocalIndex) {
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    const char*          src,
+    uint32_t             nameStart,
+    uint32_t             nameEnd,
+    uint32_t*            outLocalIndex) {
     uint32_t i;
     uint32_t nameLen;
     if (outLocalIndex != NULL) {
@@ -2269,7 +2256,7 @@ static int FindMirFunctionLocalBySlice(
     }
     nameLen = nameEnd - nameStart;
     for (i = 0; i < fn->localCount; i++) {
-        const HOPMirLocal* local = &program->locals[fn->localStart + i];
+        const H2MirLocal* local = &program->locals[fn->localStart + i];
         if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
             && memcmp(src + local->nameStart, src + nameStart, nameLen) == 0)
         {
@@ -2281,10 +2268,10 @@ static int FindMirFunctionLocalBySlice(
 }
 
 static int CountMirAllocNewCountExprInsts(
-    const HOPParsedFile* file, int32_t exprNode, uint32_t* _Nonnull outCount) {
-    const HOPAstNode* n;
-    uint32_t          leftCount = 0u;
-    uint32_t          rightCount = 0u;
+    const H2ParsedFile* file, int32_t exprNode, uint32_t* _Nonnull outCount) {
+    const H2AstNode* n;
+    uint32_t         leftCount = 0u;
+    uint32_t         rightCount = 0u;
     if (outCount != NULL) {
         *outCount = 0u;
     }
@@ -2293,15 +2280,15 @@ static int CountMirAllocNewCountExprInsts(
     }
     n = &file->ast.nodes[exprNode];
     switch (n->kind) {
-        case HOPAst_INT:
-        case HOPAst_IDENT: *outCount = 1u; return 1;
-        case HOPAst_UNARY:
+        case H2Ast_INT:
+        case H2Ast_IDENT: *outCount = 1u; return 1;
+        case H2Ast_UNARY:
             if (!CountMirAllocNewCountExprInsts(file, n->firstChild, &leftCount)) {
                 return 0;
             }
             *outCount = leftCount + 1u;
             return 1;
-        case HOPAst_BINARY: {
+        case H2Ast_BINARY: {
             int32_t rhsNode = ASTNextSibling(&file->ast, n->firstChild);
             if (!CountMirAllocNewCountExprInsts(file, n->firstChild, &leftCount) || rhsNode < 0
                 || !CountMirAllocNewCountExprInsts(file, rhsNode, &rightCount))
@@ -2316,8 +2303,8 @@ static int CountMirAllocNewCountExprInsts(
 }
 
 static int CountMirAllocNewAllocExprInsts(
-    const HOPParsedFile* file, int32_t exprNode, uint32_t* _Nonnull outCount) {
-    const HOPAstNode* n;
+    const H2ParsedFile* file, int32_t exprNode, uint32_t* _Nonnull outCount) {
+    const H2AstNode* n;
     if (outCount != NULL) {
         *outCount = 0u;
     }
@@ -2326,21 +2313,21 @@ static int CountMirAllocNewAllocExprInsts(
     }
     n = &file->ast.nodes[exprNode];
     switch (n->kind) {
-        case HOPAst_IDENT:
-        case HOPAst_NULL:  *outCount = 1u; return 1;
-        case HOPAst_CAST:  {
+        case H2Ast_IDENT:
+        case H2Ast_NULL:  *outCount = 1u; return 1;
+        case H2Ast_CAST:  {
             int32_t lhsNode = n->firstChild;
             if (lhsNode < 0 || (uint32_t)lhsNode >= file->ast.len) {
                 return 0;
             }
             return CountMirAllocNewAllocExprInsts(file, lhsNode, outCount);
         }
-        case HOPAst_FIELD_EXPR: {
+        case H2Ast_FIELD_EXPR: {
             int32_t baseNode = n->firstChild;
             if (baseNode < 0 || (uint32_t)baseNode >= file->ast.len) {
                 return 0;
             }
-            if (file->ast.nodes[baseNode].kind == HOPAst_IDENT
+            if (file->ast.nodes[baseNode].kind == H2Ast_IDENT
                 && SliceEqCStr(
                     file->source,
                     file->ast.nodes[baseNode].dataStart,
@@ -2359,16 +2346,16 @@ static int CountMirAllocNewAllocExprInsts(
 }
 
 static int LowerMirAllocNewCountExpr(
-    const HOPMirProgram*  program,
-    HOPMirProgram*        mutableProgram,
-    const HOPMirFunction* fn,
-    const HOPParsedFile*  file,
-    int32_t               exprNode,
-    HOPArena*             arena,
-    HOPMirInst*           outInsts,
-    uint32_t              outCap,
-    uint32_t*             outLen) {
-    const HOPAstNode* n;
+    const H2MirProgram*  program,
+    H2MirProgram*        mutableProgram,
+    const H2MirFunction* fn,
+    const H2ParsedFile*  file,
+    int32_t              exprNode,
+    H2Arena*             arena,
+    H2MirInst*           outInsts,
+    uint32_t             outCap,
+    uint32_t*            outLen) {
+    const H2AstNode* n;
     if (outLen != NULL) {
         *outLen = 0u;
     }
@@ -2380,7 +2367,7 @@ static int LowerMirAllocNewCountExpr(
     }
     n = &file->ast.nodes[exprNode];
     switch (n->kind) {
-        case HOPAst_INT: {
+        case H2Ast_INT: {
             int64_t  value = 0;
             uint32_t constIndex = UINT32_MAX;
             if (outCap < 1u || !ParseMirIntLiteral(file->source, n->dataStart, n->dataEnd, &value)
@@ -2388,8 +2375,8 @@ static int LowerMirAllocNewCountExpr(
             {
                 return 0;
             }
-            outInsts[0] = (HOPMirInst){
-                .op = HOPMirOp_PUSH_CONST,
+            outInsts[0] = (H2MirInst){
+                .op = H2MirOp_PUSH_CONST,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = constIndex,
@@ -2399,7 +2386,7 @@ static int LowerMirAllocNewCountExpr(
             *outLen = 1u;
             return 1;
         }
-        case HOPAst_IDENT: {
+        case H2Ast_IDENT: {
             uint32_t localIndex = UINT32_MAX;
             if (outCap < 1u
                 || !FindMirFunctionLocalBySlice(
@@ -2407,8 +2394,8 @@ static int LowerMirAllocNewCountExpr(
             {
                 return 0;
             }
-            outInsts[0] = (HOPMirInst){
-                .op = HOPMirOp_LOCAL_LOAD,
+            outInsts[0] = (H2MirInst){
+                .op = H2MirOp_LOCAL_LOAD,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = localIndex,
@@ -2418,7 +2405,7 @@ static int LowerMirAllocNewCountExpr(
             *outLen = 1u;
             return 1;
         }
-        case HOPAst_UNARY: {
+        case H2Ast_UNARY: {
             uint32_t innerLen = 0u;
             if (!LowerMirAllocNewCountExpr(
                     program,
@@ -2434,8 +2421,8 @@ static int LowerMirAllocNewCountExpr(
             {
                 return 0;
             }
-            outInsts[innerLen] = (HOPMirInst){
-                .op = HOPMirOp_UNARY,
+            outInsts[innerLen] = (H2MirInst){
+                .op = H2MirOp_UNARY,
                 .tok = (uint16_t)n->op,
                 ._reserved = 0u,
                 .aux = 0u,
@@ -2445,7 +2432,7 @@ static int LowerMirAllocNewCountExpr(
             *outLen = innerLen + 1u;
             return 1;
         }
-        case HOPAst_BINARY: {
+        case H2Ast_BINARY: {
             uint32_t leftLen = 0u;
             uint32_t rightLen = 0u;
             int32_t  rhsNode = ASTNextSibling(&file->ast, n->firstChild);
@@ -2474,8 +2461,8 @@ static int LowerMirAllocNewCountExpr(
             {
                 return 0;
             }
-            outInsts[leftLen + rightLen] = (HOPMirInst){
-                .op = HOPMirOp_BINARY,
+            outInsts[leftLen + rightLen] = (H2MirInst){
+                .op = H2MirOp_BINARY,
                 .tok = (uint16_t)n->op,
                 ._reserved = 0u,
                 .aux = 0u,
@@ -2490,11 +2477,11 @@ static int LowerMirAllocNewCountExpr(
 }
 
 static int FindCompoundFieldValueNodeBySlice(
-    const HOPParsedFile* file,
-    int32_t              initNode,
-    uint32_t             nameStart,
-    uint32_t             nameEnd,
-    int32_t*             outValueNode) {
+    const H2ParsedFile* file,
+    int32_t             initNode,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int32_t*            outValueNode) {
     int32_t child;
     if (outValueNode != NULL) {
         *outValueNode = -1;
@@ -2511,15 +2498,15 @@ static int FindCompoundFieldValueNodeBySlice(
         child = file->ast.nodes[child].nextSibling;
     }
     while (child >= 0) {
-        const HOPAstNode* field = &file->ast.nodes[child];
-        if (field->kind == HOPAst_COMPOUND_FIELD && field->dataEnd >= field->dataStart
+        const H2AstNode* field = &file->ast.nodes[child];
+        if (field->kind == H2Ast_COMPOUND_FIELD && field->dataEnd >= field->dataStart
             && field->dataEnd - field->dataStart == nameEnd - nameStart
             && memcmp(
                    file->source + field->dataStart, file->source + nameStart, nameEnd - nameStart)
                    == 0)
         {
             *outValueNode = field->firstChild;
-            return *outValueNode >= 0 || (field->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u;
+            return *outValueNode >= 0 || (field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0u;
         }
         child = field->nextSibling;
     }
@@ -2527,7 +2514,7 @@ static int FindCompoundFieldValueNodeBySlice(
 }
 
 static int FindCompoundFieldValueNodeByText(
-    const HOPParsedFile* file, int32_t initNode, const char* name, int32_t* outValueNode) {
+    const H2ParsedFile* file, int32_t initNode, const char* name, int32_t* outValueNode) {
     int32_t child;
     size_t  nameLen = 0u;
     if (outValueNode != NULL) {
@@ -2548,13 +2535,13 @@ static int FindCompoundFieldValueNodeByText(
         child = file->ast.nodes[child].nextSibling;
     }
     while (child >= 0) {
-        const HOPAstNode* field = &file->ast.nodes[child];
-        if (field->kind == HOPAst_COMPOUND_FIELD && field->dataEnd >= field->dataStart
+        const H2AstNode* field = &file->ast.nodes[child];
+        if (field->kind == H2Ast_COMPOUND_FIELD && field->dataEnd >= field->dataStart
             && (size_t)(field->dataEnd - field->dataStart) == nameLen
             && memcmp(file->source + field->dataStart, name, nameLen) == 0)
         {
             *outValueNode = field->firstChild;
-            return *outValueNode >= 0 || (field->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u;
+            return *outValueNode >= 0 || (field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0u;
         }
         child = field->nextSibling;
     }
@@ -2562,13 +2549,13 @@ static int FindCompoundFieldValueNodeByText(
 }
 
 static int AppendMirBinaryInst(
-    HOPMirInst* outInsts, uint32_t outCap, uint32_t* outLen, HOPTokenKind tok) {
+    H2MirInst* outInsts, uint32_t outCap, uint32_t* outLen, H2TokenKind tok) {
     return AppendMirInst(
         outInsts,
         outCap,
         outLen,
-        &(HOPMirInst){
-            .op = HOPMirOp_BINARY,
+        &(H2MirInst){
+            .op = H2MirOp_BINARY,
             .tok = (uint16_t)tok,
             ._reserved = 0u,
             .aux = 0u,
@@ -2578,20 +2565,20 @@ static int AppendMirBinaryInst(
 }
 
 static int AppendMirIntConstInst(
-    HOPArena*      arena,
-    HOPMirProgram* program,
-    HOPMirInst*    outInsts,
-    uint32_t       outCap,
-    uint32_t*      outLen,
-    int64_t        value) {
+    H2Arena*      arena,
+    H2MirProgram* program,
+    H2MirInst*    outInsts,
+    uint32_t      outCap,
+    uint32_t*     outLen,
+    int64_t       value) {
     uint32_t constIndex = UINT32_MAX;
     return EnsureMirIntConst(arena, program, value, &constIndex) == 0
         && AppendMirInst(
                outInsts,
                outCap,
                outLen,
-               &(HOPMirInst){
-                   .op = HOPMirOp_PUSH_CONST,
+               &(H2MirInst){
+                   .op = H2MirOp_PUSH_CONST,
                    .tok = 0u,
                    ._reserved = 0u,
                    .aux = constIndex,
@@ -2600,16 +2587,16 @@ static int AppendMirIntConstInst(
                });
 }
 
-static int MirStaticTypeByteSize(const HOPMirProgram* program, uint32_t typeRefIndex) {
-    const HOPMirTypeRef* typeRef;
-    uint32_t             i;
-    uint32_t             offset = 0u;
-    uint32_t             maxAlign = 1u;
+static int MirStaticTypeByteSize(const H2MirProgram* program, uint32_t typeRefIndex) {
+    const H2MirTypeRef* typeRef;
+    uint32_t            i;
+    uint32_t            offset = 0u;
+    uint32_t            maxAlign = 1u;
     if (program == NULL || typeRefIndex == UINT32_MAX || typeRefIndex >= program->typeLen) {
         return -1;
     }
     typeRef = &program->types[typeRefIndex];
-    if (HOPMirTypeRefIsAggregate(typeRef)) {
+    if (H2MirTypeRefIsAggregate(typeRef)) {
         for (i = 0; i < program->fieldLen; i++) {
             int fieldSize;
             int fieldAlign;
@@ -2619,10 +2606,10 @@ static int MirStaticTypeByteSize(const HOPMirProgram* program, uint32_t typeRefI
             if (program->fields[i].typeRef >= program->typeLen) {
                 return -1;
             }
-            if (HOPMirTypeRefIsVArrayView(&program->types[program->fields[i].typeRef])) {
+            if (H2MirTypeRefIsVArrayView(&program->types[program->fields[i].typeRef])) {
                 fieldSize = 0;
                 fieldAlign = 1;
-            } else if (HOPMirTypeRefIsStrObj(&program->types[program->fields[i].typeRef])) {
+            } else if (H2MirTypeRefIsStrObj(&program->types[program->fields[i].typeRef])) {
                 fieldSize = 8;
                 fieldAlign = 4;
             } else {
@@ -2640,48 +2627,48 @@ static int MirStaticTypeByteSize(const HOPMirProgram* program, uint32_t typeRefI
         }
         return (int)(maxAlign > 1u ? ((offset + (maxAlign - 1u)) & ~(maxAlign - 1u)) : offset);
     }
-    if (HOPMirTypeRefIsStrObj(typeRef) || HOPMirTypeRefIsStrRef(typeRef)
-        || HOPMirTypeRefIsSliceView(typeRef) || HOPMirTypeRefIsAggSliceView(typeRef))
+    if (H2MirTypeRefIsStrObj(typeRef) || H2MirTypeRefIsStrRef(typeRef)
+        || H2MirTypeRefIsSliceView(typeRef) || H2MirTypeRefIsAggSliceView(typeRef))
     {
         return 8;
     }
-    if (HOPMirTypeRefIsFixedArray(typeRef)) {
-        return (int)(MirIntKindByteWidth(HOPMirTypeRefIntKind(typeRef))
-                     * HOPMirTypeRefFixedArrayCount(typeRef));
+    if (H2MirTypeRefIsFixedArray(typeRef)) {
+        return (int)(MirIntKindByteWidth(H2MirTypeRefIntKind(typeRef))
+                     * H2MirTypeRefFixedArrayCount(typeRef));
     }
-    if (HOPMirTypeRefIsFixedArrayView(typeRef) || HOPMirTypeRefIsStrPtr(typeRef)
-        || HOPMirTypeRefIsOpaquePtr(typeRef) || HOPMirTypeRefIsU8Ptr(typeRef)
-        || HOPMirTypeRefIsI8Ptr(typeRef) || HOPMirTypeRefIsU16Ptr(typeRef)
-        || HOPMirTypeRefIsI16Ptr(typeRef) || HOPMirTypeRefIsU32Ptr(typeRef)
-        || HOPMirTypeRefIsI32Ptr(typeRef) || HOPMirTypeRefIsFuncRef(typeRef))
+    if (H2MirTypeRefIsFixedArrayView(typeRef) || H2MirTypeRefIsStrPtr(typeRef)
+        || H2MirTypeRefIsOpaquePtr(typeRef) || H2MirTypeRefIsU8Ptr(typeRef)
+        || H2MirTypeRefIsI8Ptr(typeRef) || H2MirTypeRefIsU16Ptr(typeRef)
+        || H2MirTypeRefIsI16Ptr(typeRef) || H2MirTypeRefIsU32Ptr(typeRef)
+        || H2MirTypeRefIsI32Ptr(typeRef) || H2MirTypeRefIsFuncRef(typeRef))
     {
         return 4;
     }
-    if (HOPMirTypeRefScalarKind(typeRef) == HOPMirTypeScalar_I32) {
-        return (int)MirIntKindByteWidth(HOPMirTypeRefIntKind(typeRef));
+    if (H2MirTypeRefScalarKind(typeRef) == H2MirTypeScalar_I32) {
+        return (int)MirIntKindByteWidth(H2MirTypeRefIntKind(typeRef));
     }
     return -1;
 }
 
 static int LowerMirVarSizeAllocNewSizeExpr(
-    const HOPMirProgram*  program,
-    HOPMirProgram*        mutableProgram,
-    const HOPMirFunction* fn,
-    const HOPParsedFile*  file,
-    const HOPMirInst*     allocInst,
-    uint32_t              pointeeTypeRef,
-    HOPArena*             arena,
-    HOPMirInst*           outInsts,
-    uint32_t              outCap,
-    uint32_t*             outLen) {
-    int32_t              typeNode = -1;
-    int32_t              countNode = -1;
-    int32_t              initNode = -1;
-    int32_t              allocNode = -1;
-    uint32_t             len = 0u;
-    uint32_t             i;
-    const HOPMirTypeRef* pointee;
-    int                  hasDynamic = 0;
+    const H2MirProgram*  program,
+    H2MirProgram*        mutableProgram,
+    const H2MirFunction* fn,
+    const H2ParsedFile*  file,
+    const H2MirInst*     allocInst,
+    uint32_t             pointeeTypeRef,
+    H2Arena*             arena,
+    H2MirInst*           outInsts,
+    uint32_t             outCap,
+    uint32_t*            outLen) {
+    int32_t             typeNode = -1;
+    int32_t             countNode = -1;
+    int32_t             initNode = -1;
+    int32_t             allocNode = -1;
+    uint32_t            len = 0u;
+    uint32_t            i;
+    const H2MirTypeRef* pointee;
+    int                 hasDynamic = 0;
     if (outLen != NULL) {
         *outLen = 0u;
     }
@@ -2693,7 +2680,7 @@ static int LowerMirVarSizeAllocNewSizeExpr(
         return 0;
     }
     pointee = &program->types[pointeeTypeRef];
-    if (HOPMirTypeRefIsStrObj(pointee)) {
+    if (H2MirTypeRefIsStrObj(pointee)) {
         int32_t lenNode = -1;
         if (initNode < 0 || !FindCompoundFieldValueNodeByText(file, initNode, "len", &lenNode)) {
             /* caller handles unsupported shape */
@@ -2702,14 +2689,14 @@ static int LowerMirVarSizeAllocNewSizeExpr(
         if (!LowerMirAllocNewCountExpr(
                 program, mutableProgram, fn, file, lenNode, arena, outInsts, outCap, &len)
             || !AppendMirIntConstInst(arena, mutableProgram, outInsts, outCap, &len, 9)
-            || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_ADD))
+            || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_ADD))
         {
             return 0;
         }
         *outLen = len;
         return 1;
     }
-    if (!HOPMirTypeRefIsAggregate(pointee)) {
+    if (!H2MirTypeRefIsAggregate(pointee)) {
         return 0;
     }
     if (!AppendMirIntConstInst(
@@ -2723,11 +2710,11 @@ static int LowerMirVarSizeAllocNewSizeExpr(
         return 0;
     }
     for (i = 0; i < program->fieldLen; i++) {
-        const HOPMirField*   fieldRef;
-        const HOPMirTypeRef* fieldType;
-        int32_t              valueNode = -1;
-        uint32_t             elemSize;
-        uint32_t             align;
+        const H2MirField*   fieldRef;
+        const H2MirTypeRef* fieldType;
+        int32_t             valueNode = -1;
+        uint32_t            elemSize;
+        uint32_t            align;
         if (program->fields[i].ownerTypeRef != pointeeTypeRef) {
             continue;
         }
@@ -2736,7 +2723,7 @@ static int LowerMirVarSizeAllocNewSizeExpr(
             return 0;
         }
         fieldType = &program->types[fieldRef->typeRef];
-        if (HOPMirTypeRefIsStrObj(fieldType)) {
+        if (H2MirTypeRefIsStrObj(fieldType)) {
             char     pathBuf[128];
             uint32_t baseLen;
             int32_t  valueNode = -1;
@@ -2777,37 +2764,37 @@ static int LowerMirVarSizeAllocNewSizeExpr(
                 return 0;
             }
             if (!AppendMirIntConstInst(arena, mutableProgram, outInsts, outCap, &len, 1)
-                || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_ADD)
-                || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_ADD))
+                || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_ADD)
+                || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_ADD))
             {
                 return 0;
             }
             continue;
         }
-        if (!HOPMirTypeRefIsVArrayView(fieldType)) {
+        if (!H2MirTypeRefIsVArrayView(fieldType)) {
             continue;
         }
         hasDynamic = 1;
-        elemSize = MirIntKindByteWidth(HOPMirTypeRefIntKind(fieldType));
+        elemSize = MirIntKindByteWidth(H2MirTypeRefIntKind(fieldType));
         align = elemSize >= 4u ? 4u : elemSize;
         if (align > 1u
             && (!AppendMirIntConstInst(
                     arena, mutableProgram, outInsts, outCap, &len, (int64_t)(align - 1u))
-                || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_ADD)
+                || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_ADD)
                 || !AppendMirIntConstInst(
                     arena, mutableProgram, outInsts, outCap, &len, -(int64_t)align)
-                || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_AND)))
+                || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_AND)))
         {
             return 0;
         }
-        if (HOPMirTypeRefVArrayCountField(fieldType) == UINT32_MAX
-            || HOPMirTypeRefVArrayCountField(fieldType) >= program->fieldLen)
+        if (H2MirTypeRefVArrayCountField(fieldType) == UINT32_MAX
+            || H2MirTypeRefVArrayCountField(fieldType) >= program->fieldLen)
         {
             return 0;
         }
         {
-            const HOPMirField* countField =
-                &program->fields[HOPMirTypeRefVArrayCountField(fieldType)];
+            const H2MirField* countField =
+                &program->fields[H2MirTypeRefVArrayCountField(fieldType)];
             int32_t  countValueNode = -1;
             uint32_t countExprLen = 0u;
             if (!FindCompoundFieldValueNodeBySlice(
@@ -2830,11 +2817,11 @@ static int LowerMirVarSizeAllocNewSizeExpr(
         if (elemSize > 1u
             && (!AppendMirIntConstInst(
                     arena, mutableProgram, outInsts, outCap, &len, (int64_t)elemSize)
-                || !AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_MUL)))
+                || !AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_MUL)))
         {
             return 0;
         }
-        if (!AppendMirBinaryInst(outInsts, outCap, &len, HOPTok_ADD)) {
+        if (!AppendMirBinaryInst(outInsts, outCap, &len, H2Tok_ADD)) {
             return 0;
         }
     }
@@ -2846,19 +2833,19 @@ static int LowerMirVarSizeAllocNewSizeExpr(
 }
 
 static int CountMirVarSizeAllocNewSizeExpr(
-    const HOPMirProgram* program,
-    const HOPParsedFile* file,
-    const HOPMirInst*    allocInst,
-    uint32_t             pointeeTypeRef,
-    uint32_t*            outCount) {
-    int32_t              typeNode = -1;
-    int32_t              countNode = -1;
-    int32_t              initNode = -1;
-    int32_t              allocNode = -1;
-    uint32_t             count = 0u;
-    uint32_t             i;
-    int                  hasDynamic = 0;
-    const HOPMirTypeRef* pointee;
+    const H2MirProgram* program,
+    const H2ParsedFile* file,
+    const H2MirInst*    allocInst,
+    uint32_t            pointeeTypeRef,
+    uint32_t*           outCount) {
+    int32_t             typeNode = -1;
+    int32_t             countNode = -1;
+    int32_t             initNode = -1;
+    int32_t             allocNode = -1;
+    uint32_t            count = 0u;
+    uint32_t            i;
+    int                 hasDynamic = 0;
+    const H2MirTypeRef* pointee;
     if (outCount != NULL) {
         *outCount = 0u;
     }
@@ -2870,7 +2857,7 @@ static int CountMirVarSizeAllocNewSizeExpr(
         return 0;
     }
     pointee = &program->types[pointeeTypeRef];
-    if (HOPMirTypeRefIsStrObj(pointee)) {
+    if (H2MirTypeRefIsStrObj(pointee)) {
         int32_t  lenNode = -1;
         uint32_t exprCount = 0u;
         if (initNode < 0 || !FindCompoundFieldValueNodeByText(file, initNode, "len", &lenNode)
@@ -2881,13 +2868,13 @@ static int CountMirVarSizeAllocNewSizeExpr(
         *outCount = exprCount + 2u;
         return 1;
     }
-    if (!HOPMirTypeRefIsAggregate(pointee)) {
+    if (!H2MirTypeRefIsAggregate(pointee)) {
         return 0;
     }
     count = 1u;
     for (i = 0; i < program->fieldLen; i++) {
-        const HOPMirField*   fieldRef;
-        const HOPMirTypeRef* fieldType;
+        const H2MirField*   fieldRef;
+        const H2MirTypeRef* fieldType;
         if (program->fields[i].ownerTypeRef != pointeeTypeRef) {
             continue;
         }
@@ -2896,7 +2883,7 @@ static int CountMirVarSizeAllocNewSizeExpr(
             return 0;
         }
         fieldType = &program->types[fieldRef->typeRef];
-        if (HOPMirTypeRefIsStrObj(fieldType)) {
+        if (H2MirTypeRefIsStrObj(fieldType)) {
             char     pathBuf[128];
             uint32_t baseLen;
             int32_t  valueNode = -1;
@@ -2928,12 +2915,12 @@ static int CountMirVarSizeAllocNewSizeExpr(
             count += 3u;
             continue;
         }
-        if (HOPMirTypeRefIsVArrayView(fieldType)) {
-            const HOPMirField* countField;
-            int32_t            countValueNode = -1;
-            uint32_t           exprCount = 0u;
-            uint32_t           elemSize = MirIntKindByteWidth(HOPMirTypeRefIntKind(fieldType));
-            uint32_t           countFieldRef = HOPMirTypeRefVArrayCountField(fieldType);
+        if (H2MirTypeRefIsVArrayView(fieldType)) {
+            const H2MirField* countField;
+            int32_t           countValueNode = -1;
+            uint32_t          exprCount = 0u;
+            uint32_t          elemSize = MirIntKindByteWidth(H2MirTypeRefIntKind(fieldType));
+            uint32_t          countFieldRef = H2MirTypeRefVArrayCountField(fieldType);
             hasDynamic = 1;
             if (countFieldRef == UINT32_MAX || countFieldRef >= program->fieldLen || initNode < 0) {
                 return 0;
@@ -2966,16 +2953,16 @@ static int CountMirVarSizeAllocNewSizeExpr(
 }
 
 static int LowerMirAllocNewAllocExpr(
-    const HOPMirProgram*  program,
-    HOPMirProgram*        mutableProgram,
-    const HOPMirFunction* fn,
-    const HOPParsedFile*  file,
-    int32_t               exprNode,
-    HOPArena*             arena,
-    HOPMirInst*           outInsts,
-    uint32_t              outCap,
-    uint32_t*             outLen) {
-    const HOPAstNode* n;
+    const H2MirProgram*  program,
+    H2MirProgram*        mutableProgram,
+    const H2MirFunction* fn,
+    const H2ParsedFile*  file,
+    int32_t              exprNode,
+    H2Arena*             arena,
+    H2MirInst*           outInsts,
+    uint32_t             outCap,
+    uint32_t*            outLen) {
+    const H2AstNode* n;
     if (outLen != NULL) {
         *outLen = 0u;
     }
@@ -2987,15 +2974,15 @@ static int LowerMirAllocNewAllocExpr(
     }
     n = &file->ast.nodes[exprNode];
     switch (n->kind) {
-        case HOPAst_IDENT: {
+        case H2Ast_IDENT: {
             uint32_t localIndex = UINT32_MAX;
             if (!FindMirFunctionLocalBySlice(
                     program, fn, file->source, n->dataStart, n->dataEnd, &localIndex))
             {
                 return 0;
             }
-            outInsts[0] = (HOPMirInst){
-                .op = HOPMirOp_LOCAL_LOAD,
+            outInsts[0] = (H2MirInst){
+                .op = H2MirOp_LOCAL_LOAD,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = localIndex,
@@ -3005,13 +2992,13 @@ static int LowerMirAllocNewAllocExpr(
             *outLen = 1u;
             return 1;
         }
-        case HOPAst_NULL: {
+        case H2Ast_NULL: {
             uint32_t constIndex = UINT32_MAX;
             if (EnsureMirNullConst(arena, mutableProgram, &constIndex) != 0) {
                 return 0;
             }
-            outInsts[0] = (HOPMirInst){
-                .op = HOPMirOp_PUSH_CONST,
+            outInsts[0] = (H2MirInst){
+                .op = H2MirOp_PUSH_CONST,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = constIndex,
@@ -3021,14 +3008,14 @@ static int LowerMirAllocNewAllocExpr(
             *outLen = 1u;
             return 1;
         }
-        case HOPAst_CAST:
+        case H2Ast_CAST:
             return LowerMirAllocNewAllocExpr(
                 program, mutableProgram, fn, file, n->firstChild, arena, outInsts, outCap, outLen);
-        case HOPAst_FIELD_EXPR: {
+        case H2Ast_FIELD_EXPR: {
             int32_t  baseNode = n->firstChild;
-            uint32_t field = HOPMirContextField_INVALID;
+            uint32_t field = H2MirContextField_INVALID;
             if (baseNode < 0 || (uint32_t)baseNode >= file->ast.len
-                || file->ast.nodes[baseNode].kind != HOPAst_IDENT
+                || file->ast.nodes[baseNode].kind != H2Ast_IDENT
                 || !SliceEqCStr(
                     file->source,
                     file->ast.nodes[baseNode].dataStart,
@@ -3038,14 +3025,14 @@ static int LowerMirAllocNewAllocExpr(
                 return 0;
             }
             if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "allocator")) {
-                field = HOPMirContextField_ALLOCATOR;
+                field = H2MirContextField_ALLOCATOR;
             } else if (SliceEqCStr(file->source, n->dataStart, n->dataEnd, "temp_allocator")) {
-                field = HOPMirContextField_TEMP_ALLOCATOR;
+                field = H2MirContextField_TEMP_ALLOCATOR;
             } else {
                 return 0;
             }
-            outInsts[0] = (HOPMirInst){
-                .op = HOPMirOp_CTX_GET,
+            outInsts[0] = (H2MirInst){
+                .op = H2MirOp_CTX_GET,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = field,
@@ -3060,7 +3047,7 @@ static int LowerMirAllocNewAllocExpr(
 }
 
 static int AppendMirInst(
-    HOPMirInst* outInsts, uint32_t outCap, uint32_t* _Nonnull ioLen, const HOPMirInst* inst) {
+    H2MirInst* outInsts, uint32_t outCap, uint32_t* _Nonnull ioLen, const H2MirInst* inst) {
     if (outInsts == NULL || ioLen == NULL || inst == NULL || *ioLen >= outCap) {
         return 0;
     }
@@ -3069,73 +3056,73 @@ static int AppendMirInst(
     return 1;
 }
 
-static uint32_t MirInitOwnerTypeRefForType(const HOPMirProgram* program, uint32_t typeRef) {
+static uint32_t MirInitOwnerTypeRefForType(const H2MirProgram* program, uint32_t typeRef) {
     if (program == NULL || typeRef >= program->typeLen) {
         return UINT32_MAX;
     }
-    if (HOPMirTypeRefIsAggregate(&program->types[typeRef])) {
+    if (H2MirTypeRefIsAggregate(&program->types[typeRef])) {
         return typeRef;
     }
-    if (HOPMirTypeRefIsOpaquePtr(&program->types[typeRef])) {
-        return HOPMirTypeRefOpaquePointeeTypeRef(&program->types[typeRef]);
+    if (H2MirTypeRefIsOpaquePtr(&program->types[typeRef])) {
+        return H2MirTypeRefOpaquePointeeTypeRef(&program->types[typeRef]);
     }
     return UINT32_MAX;
 }
 
-static int MirTypeNodeKind(HOPAstKind kind) {
-    return IsFnReturnTypeNodeKind(kind) || kind == HOPAst_TYPE_ANON_STRUCT
-        || kind == HOPAst_TYPE_ANON_UNION;
+static int MirTypeNodeKind(H2AstKind kind) {
+    return IsFnReturnTypeNodeKind(kind) || kind == H2Ast_TYPE_ANON_STRUCT
+        || kind == H2Ast_TYPE_ANON_UNION;
 }
 
 static int LowerMirHeapInitValueExpr(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    HOPMirProgram*          mutableProgram,
-    const HOPMirFunction*   fn,
-    const HOPParsedFile*    fnFile,
-    const HOPParsedFile*    exprFile,
-    int32_t                 exprNode,
-    HOPArena*               arena,
-    uint32_t                currentLocalIndex,
-    uint32_t                currentOwnerTypeRef,
-    uint32_t                expectedTypeRef,
-    HOPMirInst*             outInsts,
-    uint32_t                outCap,
-    uint32_t*               outLen,
-    uint32_t*               outTypeRef);
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    H2MirProgram*          mutableProgram,
+    const H2MirFunction*   fn,
+    const H2ParsedFile*    fnFile,
+    const H2ParsedFile*    exprFile,
+    int32_t                exprNode,
+    H2Arena*               arena,
+    uint32_t               currentLocalIndex,
+    uint32_t               currentOwnerTypeRef,
+    uint32_t               expectedTypeRef,
+    H2MirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    uint32_t*              outTypeRef);
 
-static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirTypeRef*    typeRef,
-    const HOPParsedFile** _Nullable outFile,
+static const H2AstNode* _Nullable ResolveMirAggregateDeclNode(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirTypeRef*    typeRef,
+    const H2ParsedFile** _Nullable outFile,
     uint32_t* _Nullable outSourceRef);
 
 static int EnsureMirAggregateFieldRef(
-    HOPArena*      arena,
-    HOPMirProgram* program,
-    uint32_t       nameStart,
-    uint32_t       nameEnd,
-    uint32_t       sourceRef,
-    uint32_t       ownerTypeRef,
-    uint32_t       typeRef,
+    H2Arena*      arena,
+    H2MirProgram* program,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    uint32_t      sourceRef,
+    uint32_t      ownerTypeRef,
+    uint32_t      typeRef,
     uint32_t* _Nonnull outFieldRef);
 
-static const HOPSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end);
+static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end);
 
 static int ResolveMirAggregateTypeRefForTypeNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPParsedFile*    file,
-    int32_t                 typeNode,
-    uint32_t*               outTypeRef) {
-    const HOPPackage*    pkg = NULL;
-    const HOPAstNode*    node;
-    const HOPSymbolDecl* decl;
-    const HOPParsedFile* declFile;
-    uint32_t             sourceRef;
-    uint32_t             declSourceRef;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2ParsedFile*    file,
+    int32_t                typeNode,
+    uint32_t*              outTypeRef) {
+    const H2Package*    pkg = NULL;
+    const H2AstNode*    node;
+    const H2SymbolDecl* decl;
+    const H2ParsedFile* declFile;
+    uint32_t            sourceRef;
+    uint32_t            declSourceRef;
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
     }
@@ -3149,12 +3136,12 @@ static int ResolveMirAggregateTypeRefForTypeNode(
         return 0;
     }
     if (FindMirTypeRefByAstNode(program, sourceRef, typeNode, outTypeRef)
-        && *outTypeRef < program->typeLen && HOPMirTypeRefIsAggregate(&program->types[*outTypeRef]))
+        && *outTypeRef < program->typeLen && H2MirTypeRefIsAggregate(&program->types[*outTypeRef]))
     {
         return 1;
     }
     node = &file->ast.nodes[typeNode];
-    if (node->kind != HOPAst_TYPE_NAME) {
+    if (node->kind != H2Ast_TYPE_NAME) {
         return 0;
     }
     if (FindLoaderFileByMirSource(loader, program, sourceRef, &pkg) == NULL || pkg == NULL) {
@@ -3171,7 +3158,7 @@ static int ResolveMirAggregateTypeRefForTypeNode(
     }
     if (!FindMirTypeRefByAstNode(program, declSourceRef, decl->nodeId, outTypeRef)
         || *outTypeRef >= program->typeLen
-        || !HOPMirTypeRefIsAggregate(&program->types[*outTypeRef]))
+        || !H2MirTypeRefIsAggregate(&program->types[*outTypeRef]))
     {
         return 0;
     }
@@ -3179,18 +3166,18 @@ static int ResolveMirAggregateTypeRefForTypeNode(
 }
 
 static int FindMirFieldByOwnerAndSlicePromotedDepth(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    uint32_t                ownerTypeRef,
-    uint32_t                sourceRef,
-    uint32_t                nameStart,
-    uint32_t                nameEnd,
-    uint32_t                depth,
-    uint32_t*               outFieldIndex) {
-    const HOPParsedFile* typeFile = NULL;
-    const HOPAstNode*    structNode;
-    uint32_t             typeSourceRef = UINT32_MAX;
-    int32_t              fieldNode;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    uint32_t               ownerTypeRef,
+    uint32_t               sourceRef,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t               depth,
+    uint32_t*              outFieldIndex) {
+    const H2ParsedFile* typeFile = NULL;
+    const H2AstNode*    structNode;
+    uint32_t            typeSourceRef = UINT32_MAX;
+    int32_t             fieldNode;
     if (FindMirFieldByOwnerAndSlice(
             program, ownerTypeRef, sourceRef, nameStart, nameEnd, outFieldIndex))
     {
@@ -3201,19 +3188,19 @@ static int FindMirFieldByOwnerAndSlicePromotedDepth(
     }
     structNode = ResolveMirAggregateDeclNode(
         loader, program, &program->types[ownerTypeRef], &typeFile, &typeSourceRef);
-    if (structNode == NULL || typeFile == NULL || structNode->kind != HOPAst_STRUCT) {
+    if (structNode == NULL || typeFile == NULL || structNode->kind != H2Ast_STRUCT) {
         return 0;
     }
     fieldNode = structNode->firstChild;
     while (fieldNode >= 0) {
-        const HOPAstNode* fieldDecl = &typeFile->ast.nodes[fieldNode];
-        uint32_t          embeddedFieldIndex = UINT32_MAX;
-        uint32_t          embeddedTypeRef;
-        if (fieldDecl->kind != HOPAst_FIELD) {
+        const H2AstNode* fieldDecl = &typeFile->ast.nodes[fieldNode];
+        uint32_t         embeddedFieldIndex = UINT32_MAX;
+        uint32_t         embeddedTypeRef;
+        if (fieldDecl->kind != H2Ast_FIELD) {
             fieldNode = fieldDecl->nextSibling;
             continue;
         }
-        if ((fieldDecl->flags & HOPAstFlag_FIELD_EMBEDDED) == 0u
+        if ((fieldDecl->flags & H2AstFlag_FIELD_EMBEDDED) == 0u
             || !FindMirFieldByOwnerAndSlice(
                 program,
                 ownerTypeRef,
@@ -3244,13 +3231,13 @@ static int FindMirFieldByOwnerAndSlicePromotedDepth(
 }
 
 static int FindMirFieldByOwnerAndSlicePromoted(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    uint32_t                ownerTypeRef,
-    uint32_t                sourceRef,
-    uint32_t                nameStart,
-    uint32_t                nameEnd,
-    uint32_t*               outFieldIndex) {
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    uint32_t               ownerTypeRef,
+    uint32_t               sourceRef,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t*              outFieldIndex) {
     if (outFieldIndex != NULL) {
         *outFieldIndex = UINT32_MAX;
     }
@@ -3262,21 +3249,21 @@ static int FindMirFieldByOwnerAndSlicePromoted(
 }
 
 static int LowerMirHeapInitValueBySlice(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirFunction*   fn,
-    const HOPParsedFile*    fnFile,
-    const HOPParsedFile*    exprFile,
-    uint32_t                nameStart,
-    uint32_t                nameEnd,
-    uint32_t                start,
-    uint32_t                end,
-    uint32_t                currentLocalIndex,
-    uint32_t                currentOwnerTypeRef,
-    HOPMirInst*             outInsts,
-    uint32_t                outCap,
-    uint32_t*               outLen,
-    uint32_t*               outTypeRef) {
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirFunction*   fn,
+    const H2ParsedFile*    fnFile,
+    const H2ParsedFile*    exprFile,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    uint32_t               start,
+    uint32_t               end,
+    uint32_t               currentLocalIndex,
+    uint32_t               currentOwnerTypeRef,
+    H2MirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    uint32_t*              outTypeRef) {
     uint32_t localIndex = UINT32_MAX;
     uint32_t fieldIndex = UINT32_MAX;
     if (outLen == NULL || outTypeRef == NULL || loader == NULL || program == NULL || fn == NULL
@@ -3293,8 +3280,8 @@ static int LowerMirHeapInitValueBySlice(
                 outInsts,
                 outCap,
                 outLen,
-                &(HOPMirInst){
-                    .op = HOPMirOp_LOCAL_LOAD,
+                &(H2MirInst){
+                    .op = H2MirOp_LOCAL_LOAD,
                     .tok = 0u,
                     ._reserved = 0u,
                     .aux = localIndex,
@@ -3321,8 +3308,8 @@ static int LowerMirHeapInitValueBySlice(
                 outInsts,
                 outCap,
                 outLen,
-                &(HOPMirInst){
-                    .op = HOPMirOp_LOCAL_LOAD,
+                &(H2MirInst){
+                    .op = H2MirOp_LOCAL_LOAD,
                     .tok = 0u,
                     ._reserved = 0u,
                     .aux = currentLocalIndex,
@@ -3333,8 +3320,8 @@ static int LowerMirHeapInitValueBySlice(
                 outInsts,
                 outCap,
                 outLen,
-                &(HOPMirInst){
-                    .op = HOPMirOp_AGG_GET,
+                &(H2MirInst){
+                    .op = H2MirOp_AGG_GET,
                     .tok = 0u,
                     ._reserved = 0u,
                     .aux = fieldIndex,
@@ -3351,33 +3338,33 @@ static int LowerMirHeapInitValueBySlice(
 }
 
 static int LowerMirHeapInitCompoundLiteral(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    HOPMirProgram*          mutableProgram,
-    const HOPMirFunction*   fn,
-    const HOPParsedFile*    fnFile,
-    const HOPParsedFile*    exprFile,
-    int32_t                 exprNode,
-    HOPArena*               arena,
-    uint32_t                currentLocalIndex,
-    uint32_t                currentOwnerTypeRef,
-    uint32_t                expectedTypeRef,
-    HOPMirInst*             outInsts,
-    uint32_t                outCap,
-    uint32_t*               outLen,
-    uint32_t*               outTypeRef) {
-    const HOPAstNode* lit;
-    int32_t           child;
-    int32_t           typeNode = -1;
-    uint32_t          ownerTypeRef = expectedTypeRef;
-    uint32_t          exprSourceRef;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    H2MirProgram*          mutableProgram,
+    const H2MirFunction*   fn,
+    const H2ParsedFile*    fnFile,
+    const H2ParsedFile*    exprFile,
+    int32_t                exprNode,
+    H2Arena*               arena,
+    uint32_t               currentLocalIndex,
+    uint32_t               currentOwnerTypeRef,
+    uint32_t               expectedTypeRef,
+    H2MirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    uint32_t*              outTypeRef) {
+    const H2AstNode* lit;
+    int32_t          child;
+    int32_t          typeNode = -1;
+    uint32_t         ownerTypeRef = expectedTypeRef;
+    uint32_t         exprSourceRef;
     if (outLen == NULL || outTypeRef == NULL || program == NULL || exprFile == NULL || exprNode < 0
         || (uint32_t)exprNode >= exprFile->ast.len)
     {
         return 0;
     }
     lit = &exprFile->ast.nodes[exprNode];
-    if (lit->kind != HOPAst_COMPOUND_LIT) {
+    if (lit->kind != H2Ast_COMPOUND_LIT) {
         return 0;
     }
     child = lit->firstChild;
@@ -3393,8 +3380,7 @@ static int LowerMirHeapInitCompoundLiteral(
             return 0;
         }
     }
-    if (ownerTypeRef >= program->typeLen
-        || !HOPMirTypeRefIsAggregate(&program->types[ownerTypeRef]))
+    if (ownerTypeRef >= program->typeLen || !H2MirTypeRefIsAggregate(&program->types[ownerTypeRef]))
     {
         return 0;
     }
@@ -3402,8 +3388,8 @@ static int LowerMirHeapInitCompoundLiteral(
             outInsts,
             outCap,
             outLen,
-            &(HOPMirInst){
-                .op = HOPMirOp_AGG_ZERO,
+            &(H2MirInst){
+                .op = H2MirOp_AGG_ZERO,
                 .tok = 0u,
                 ._reserved = 0u,
                 .aux = ownerTypeRef,
@@ -3414,13 +3400,13 @@ static int LowerMirHeapInitCompoundLiteral(
         return 0;
     }
     while (child >= 0) {
-        const HOPAstNode* field = &exprFile->ast.nodes[child];
-        int32_t           valueNode = field->firstChild;
-        uint32_t          fieldIndex = UINT32_MAX;
-        uint32_t          fieldTypeRef = UINT32_MAX;
-        uint32_t          valueTypeRef = UINT32_MAX;
-        uint32_t          beforeLen;
-        if (field->kind != HOPAst_COMPOUND_FIELD || field->dataEnd < field->dataStart
+        const H2AstNode* field = &exprFile->ast.nodes[child];
+        int32_t          valueNode = field->firstChild;
+        uint32_t         fieldIndex = UINT32_MAX;
+        uint32_t         fieldTypeRef = UINT32_MAX;
+        uint32_t         valueTypeRef = UINT32_MAX;
+        uint32_t         beforeLen;
+        if (field->kind != H2Ast_COMPOUND_FIELD || field->dataEnd < field->dataStart
             || field->nextSibling == child)
         {
             return 0;
@@ -3460,7 +3446,7 @@ static int LowerMirHeapInitCompoundLiteral(
             {
                 return 0;
             }
-        } else if ((field->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
+        } else if ((field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
             if (!LowerMirHeapInitValueBySlice(
                     loader,
                     program,
@@ -3487,8 +3473,8 @@ static int LowerMirHeapInitCompoundLiteral(
                 outInsts,
                 outCap,
                 outLen,
-                &(HOPMirInst){
-                    .op = HOPMirOp_AGG_SET,
+                &(H2MirInst){
+                    .op = H2MirOp_AGG_SET,
                     .tok = 0u,
                     ._reserved = 0u,
                     .aux = fieldIndex,
@@ -3506,22 +3492,22 @@ static int LowerMirHeapInitCompoundLiteral(
 }
 
 static int LowerMirHeapInitValueExpr(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    HOPMirProgram*          mutableProgram,
-    const HOPMirFunction*   fn,
-    const HOPParsedFile*    fnFile,
-    const HOPParsedFile*    exprFile,
-    int32_t                 exprNode,
-    HOPArena*               arena,
-    uint32_t                currentLocalIndex,
-    uint32_t                currentOwnerTypeRef,
-    uint32_t                expectedTypeRef,
-    HOPMirInst*             outInsts,
-    uint32_t                outCap,
-    uint32_t*               outLen,
-    uint32_t*               outTypeRef) {
-    const HOPAstNode* n;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    H2MirProgram*          mutableProgram,
+    const H2MirFunction*   fn,
+    const H2ParsedFile*    fnFile,
+    const H2ParsedFile*    exprFile,
+    int32_t                exprNode,
+    H2Arena*               arena,
+    uint32_t               currentLocalIndex,
+    uint32_t               currentOwnerTypeRef,
+    uint32_t               expectedTypeRef,
+    H2MirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    uint32_t*              outTypeRef) {
+    const H2AstNode* n;
     if (outTypeRef != NULL) {
         *outTypeRef = UINT32_MAX;
     }
@@ -3533,7 +3519,7 @@ static int LowerMirHeapInitValueExpr(
     }
     n = &exprFile->ast.nodes[exprNode];
     switch (n->kind) {
-        case HOPAst_INT: {
+        case H2Ast_INT: {
             int64_t  value = 0;
             uint32_t constIndex = UINT32_MAX;
             if (!ParseMirIntLiteral(exprFile->source, n->dataStart, n->dataEnd, &value)
@@ -3542,8 +3528,8 @@ static int LowerMirHeapInitValueExpr(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_PUSH_CONST,
+                    &(H2MirInst){
+                        .op = H2MirOp_PUSH_CONST,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = constIndex,
@@ -3555,7 +3541,7 @@ static int LowerMirHeapInitValueExpr(
             }
             return 1;
         }
-        case HOPAst_BOOL: {
+        case H2Ast_BOOL: {
             uint32_t constIndex = UINT32_MAX;
             bool     value = SliceEqCStr(exprFile->source, n->dataStart, n->dataEnd, "true");
             if ((!value && !SliceEqCStr(exprFile->source, n->dataStart, n->dataEnd, "false"))
@@ -3564,8 +3550,8 @@ static int LowerMirHeapInitValueExpr(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_PUSH_CONST,
+                    &(H2MirInst){
+                        .op = H2MirOp_PUSH_CONST,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = constIndex,
@@ -3577,26 +3563,26 @@ static int LowerMirHeapInitValueExpr(
             }
             return 1;
         }
-        case HOPAst_STRING: {
-            uint8_t*        bytes = NULL;
-            uint32_t        len = 0u;
-            HOPStringLitErr litErr = { 0 };
-            uint32_t        constIndex = UINT32_MAX;
-            if (HOPDecodeStringLiteralArena(
+        case H2Ast_STRING: {
+            uint8_t*       bytes = NULL;
+            uint32_t       len = 0u;
+            H2StringLitErr litErr = { 0 };
+            uint32_t       constIndex = UINT32_MAX;
+            if (H2DecodeStringLiteralArena(
                     arena, exprFile->source, n->dataStart, n->dataEnd, &bytes, &len, &litErr)
                     != 0
                 || EnsureMirStringConst(
                        arena,
                        mutableProgram,
-                       (HOPStrView){ .ptr = (const char*)bytes, .len = len },
+                       (H2StrView){ .ptr = (const char*)bytes, .len = len },
                        &constIndex)
                        != 0
                 || !AppendMirInst(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_PUSH_CONST,
+                    &(H2MirInst){
+                        .op = H2MirOp_PUSH_CONST,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = constIndex,
@@ -3608,15 +3594,15 @@ static int LowerMirHeapInitValueExpr(
             }
             return 1;
         }
-        case HOPAst_NULL: {
+        case H2Ast_NULL: {
             uint32_t constIndex = UINT32_MAX;
             if (EnsureMirNullConst(arena, mutableProgram, &constIndex) != 0
                 || !AppendMirInst(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_PUSH_CONST,
+                    &(H2MirInst){
+                        .op = H2MirOp_PUSH_CONST,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = constIndex,
@@ -3628,7 +3614,7 @@ static int LowerMirHeapInitValueExpr(
             }
             return 1;
         }
-        case HOPAst_IDENT:
+        case H2Ast_IDENT:
             return LowerMirHeapInitValueBySlice(
                 loader,
                 program,
@@ -3645,7 +3631,7 @@ static int LowerMirHeapInitValueExpr(
                 outCap,
                 outLen,
                 outTypeRef);
-        case HOPAst_UNARY: {
+        case H2Ast_UNARY: {
             if (!LowerMirHeapInitValueExpr(
                     loader,
                     program,
@@ -3666,8 +3652,8 @@ static int LowerMirHeapInitValueExpr(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_UNARY,
+                    &(H2MirInst){
+                        .op = H2MirOp_UNARY,
                         .tok = (uint16_t)n->op,
                         ._reserved = 0u,
                         .aux = 0u,
@@ -3680,7 +3666,7 @@ static int LowerMirHeapInitValueExpr(
             *outTypeRef = UINT32_MAX;
             return 1;
         }
-        case HOPAst_BINARY: {
+        case H2Ast_BINARY: {
             int32_t  rhsNode = ASTNextSibling(&exprFile->ast, n->firstChild);
             uint32_t rhsTypeRef = UINT32_MAX;
             if (rhsNode < 0
@@ -3720,8 +3706,8 @@ static int LowerMirHeapInitValueExpr(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_BINARY,
+                    &(H2MirInst){
+                        .op = H2MirOp_BINARY,
                         .tok = (uint16_t)n->op,
                         ._reserved = 0u,
                         .aux = 0u,
@@ -3734,7 +3720,7 @@ static int LowerMirHeapInitValueExpr(
             *outTypeRef = UINT32_MAX;
             return 1;
         }
-        case HOPAst_FIELD_EXPR: {
+        case H2Ast_FIELD_EXPR: {
             uint32_t baseTypeRef = UINT32_MAX;
             uint32_t ownerTypeRef = UINT32_MAX;
             uint32_t fieldIndex = UINT32_MAX;
@@ -3773,8 +3759,8 @@ static int LowerMirHeapInitValueExpr(
                     outInsts,
                     outCap,
                     outLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_AGG_GET,
+                    &(H2MirInst){
+                        .op = H2MirOp_AGG_GET,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = fieldIndex,
@@ -3787,7 +3773,7 @@ static int LowerMirHeapInitValueExpr(
             *outTypeRef = program->fields[fieldIndex].typeRef;
             return 1;
         }
-        case HOPAst_COMPOUND_LIT:
+        case H2Ast_COMPOUND_LIT:
             return LowerMirHeapInitCompoundLiteral(
                 loader,
                 program,
@@ -3809,36 +3795,36 @@ static int LowerMirHeapInitValueExpr(
 }
 
 static int LowerMirAllocNewPostInitInsts(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    HOPMirProgram*          mutableProgram,
-    const HOPMirFunction*   fn,
-    const HOPParsedFile*    fnFile,
-    const HOPParsedFile*    typeFile,
-    const HOPParsedFile*    newFile,
-    const HOPMirInst*       allocInst,
-    const HOPMirInst*       storeInst,
-    uint32_t                pointeeTypeRef,
-    HOPArena*               arena,
-    HOPMirInst*             outInsts,
-    uint32_t                outCap,
-    uint32_t*               outLen,
-    bool*                   outClearedInitFlag) {
-    int32_t           typeNode = -1;
-    int32_t           countNode = -1;
-    int32_t           initNode = -1;
-    int32_t           allocNode = -1;
-    const HOPAstNode* structNode;
-    const HOPAstNode* astNode;
-    uint32_t          fieldSourceRef;
-    uint32_t          typeSourceRef = UINT32_MAX;
-    uint32_t          emittedLen = 0u;
-    uint32_t          localIndex = storeInst->aux;
-    bool              clearedInitFlag = false;
-    bool              explicitDirect[256] = { 0 };
-    uint32_t          directFieldIndices[256];
-    uint32_t          directFieldCount = 0u;
-    uint32_t          i;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    H2MirProgram*          mutableProgram,
+    const H2MirFunction*   fn,
+    const H2ParsedFile*    fnFile,
+    const H2ParsedFile*    typeFile,
+    const H2ParsedFile*    newFile,
+    const H2MirInst*       allocInst,
+    const H2MirInst*       storeInst,
+    uint32_t               pointeeTypeRef,
+    H2Arena*               arena,
+    H2MirInst*             outInsts,
+    uint32_t               outCap,
+    uint32_t*              outLen,
+    bool*                  outClearedInitFlag) {
+    int32_t          typeNode = -1;
+    int32_t          countNode = -1;
+    int32_t          initNode = -1;
+    int32_t          allocNode = -1;
+    const H2AstNode* structNode;
+    const H2AstNode* astNode;
+    uint32_t         fieldSourceRef;
+    uint32_t         typeSourceRef = UINT32_MAX;
+    uint32_t         emittedLen = 0u;
+    uint32_t         localIndex = storeInst->aux;
+    bool             clearedInitFlag = false;
+    bool             explicitDirect[256] = { 0 };
+    uint32_t         directFieldIndices[256];
+    uint32_t         directFieldCount = 0u;
+    uint32_t         i;
     if (outLen != NULL) {
         *outLen = 0u;
     }
@@ -3858,17 +3844,17 @@ static int LowerMirAllocNewPostInitInsts(
     }
     astNode = &newFile->ast.nodes[allocInst->aux];
     fieldSourceRef = FindMirSourceRefByText(program, newFile->source, newFile->sourceLen);
-    if (astNode->kind != HOPAst_NEW || fieldSourceRef == UINT32_MAX) {
+    if (astNode->kind != H2Ast_NEW || fieldSourceRef == UINT32_MAX) {
         return 0;
     }
-    if ((astNode->flags & HOPAstFlag_NEW_HAS_INIT) != 0u) {
-        const HOPAstNode* initLit;
-        int32_t           child;
+    if ((astNode->flags & H2AstFlag_NEW_HAS_INIT) != 0u) {
+        const H2AstNode* initLit;
+        int32_t          child;
         if (initNode < 0 || (uint32_t)initNode >= newFile->ast.len) {
             return 0;
         }
         initLit = &newFile->ast.nodes[initNode];
-        if (initLit->kind != HOPAst_COMPOUND_LIT) {
+        if (initLit->kind != H2Ast_COMPOUND_LIT) {
             return 0;
         }
         child = initLit->firstChild;
@@ -3878,18 +3864,18 @@ static int LowerMirAllocNewPostInitInsts(
             child = newFile->ast.nodes[child].nextSibling;
         }
         while (child >= 0) {
-            const HOPAstNode* field = &newFile->ast.nodes[child];
-            int32_t           valueNode = field->firstChild;
-            uint32_t          fieldIndex = UINT32_MAX;
-            uint32_t          fieldTypeRef = UINT32_MAX;
-            uint32_t          valueTypeRef = UINT32_MAX;
-            const char*       dot;
-            if (field->kind != HOPAst_COMPOUND_FIELD || field->dataEnd < field->dataStart) {
+            const H2AstNode* field = &newFile->ast.nodes[child];
+            int32_t          valueNode = field->firstChild;
+            uint32_t         fieldIndex = UINT32_MAX;
+            uint32_t         fieldTypeRef = UINT32_MAX;
+            uint32_t         valueTypeRef = UINT32_MAX;
+            const char*      dot;
+            if (field->kind != H2Ast_COMPOUND_FIELD || field->dataEnd < field->dataStart) {
                 return 0;
             }
             dot = memchr(
                 newFile->source + field->dataStart, '.', field->dataEnd - field->dataStart);
-            if (HOPMirTypeRefIsStrObj(&program->types[pointeeTypeRef])) {
+            if (H2MirTypeRefIsStrObj(&program->types[pointeeTypeRef])) {
                 uint32_t pseudoFieldRef = UINT32_MAX;
                 uint32_t expectedTypeRef = UINT32_MAX;
                 if (dot != NULL) {
@@ -3897,7 +3883,7 @@ static int LowerMirAllocNewPostInitInsts(
                 }
                 if (SliceEqCStr(newFile->source, field->dataStart, field->dataEnd, "len")) {
                     if (EnsureMirScalarTypeRef(
-                            arena, mutableProgram, HOPMirTypeScalar_I32, &expectedTypeRef)
+                            arena, mutableProgram, H2MirTypeScalar_I32, &expectedTypeRef)
                         != 0)
                     {
                         return 0;
@@ -3923,8 +3909,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_LOCAL_LOAD,
+                        &(H2MirInst){
+                            .op = H2MirOp_LOCAL_LOAD,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = localIndex,
@@ -3951,8 +3937,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_AGG_SET,
+                        &(H2MirInst){
+                            .op = H2MirOp_AGG_SET,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = pseudoFieldRef,
@@ -3963,8 +3949,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_DROP,
+                        &(H2MirInst){
+                            .op = H2MirOp_DROP,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = 0u,
@@ -4001,7 +3987,7 @@ static int LowerMirAllocNewPostInitInsts(
                 explicitDirect[directFieldCount] = true;
                 directFieldCount++;
                 if (program->fields[baseFieldRef].typeRef >= program->typeLen
-                    || !HOPMirTypeRefIsStrObj(
+                    || !H2MirTypeRefIsStrObj(
                         &program->types[program->fields[baseFieldRef].typeRef]))
                 {
                     return 0;
@@ -4013,7 +3999,7 @@ static int LowerMirAllocNewPostInitInsts(
                         "len"))
                 {
                     if (EnsureMirScalarTypeRef(
-                            arena, mutableProgram, HOPMirTypeScalar_I32, &expectedTypeRef)
+                            arena, mutableProgram, H2MirTypeScalar_I32, &expectedTypeRef)
                         != 0)
                     {
                         return 0;
@@ -4039,8 +4025,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_LOCAL_LOAD,
+                        &(H2MirInst){
+                            .op = H2MirOp_LOCAL_LOAD,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = localIndex,
@@ -4051,8 +4037,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_AGG_GET,
+                        &(H2MirInst){
+                            .op = H2MirOp_AGG_GET,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = baseFieldRef,
@@ -4079,8 +4065,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_AGG_SET,
+                        &(H2MirInst){
+                            .op = H2MirOp_AGG_SET,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = pseudoFieldRef,
@@ -4091,8 +4077,8 @@ static int LowerMirAllocNewPostInitInsts(
                         outInsts,
                         outCap,
                         &emittedLen,
-                        &(HOPMirInst){
-                            .op = HOPMirOp_DROP,
+                        &(H2MirInst){
+                            .op = H2MirOp_DROP,
                             .tok = 0u,
                             ._reserved = 0u,
                             .aux = 0u,
@@ -4129,8 +4115,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_LOCAL_LOAD,
+                    &(H2MirInst){
+                        .op = H2MirOp_LOCAL_LOAD,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = localIndex,
@@ -4160,7 +4146,7 @@ static int LowerMirAllocNewPostInitInsts(
                 {
                     return 0;
                 }
-            } else if ((field->flags & HOPAstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
+            } else if ((field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) != 0u) {
                 if (!LowerMirHeapInitValueBySlice(
                         loader,
                         program,
@@ -4187,8 +4173,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_AGG_SET,
+                    &(H2MirInst){
+                        .op = H2MirOp_AGG_SET,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = fieldIndex,
@@ -4199,8 +4185,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_DROP,
+                    &(H2MirInst){
+                        .op = H2MirOp_DROP,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = 0u,
@@ -4214,14 +4200,14 @@ static int LowerMirAllocNewPostInitInsts(
         }
         clearedInitFlag = true;
     }
-    if (!HOPMirTypeRefIsAggregate(&program->types[pointeeTypeRef])) {
+    if (!H2MirTypeRefIsAggregate(&program->types[pointeeTypeRef])) {
         *outLen = emittedLen;
         *outClearedInitFlag = clearedInitFlag;
         return emittedLen != 0u || clearedInitFlag;
     }
     structNode = ResolveMirAggregateDeclNode(
         loader, program, &program->types[pointeeTypeRef], &typeFile, &typeSourceRef);
-    if (structNode == NULL || structNode->kind != HOPAst_STRUCT) {
+    if (structNode == NULL || structNode->kind != H2Ast_STRUCT) {
         *outLen = emittedLen;
         *outClearedInitFlag = clearedInitFlag;
         return emittedLen != 0u || clearedInitFlag;
@@ -4239,15 +4225,15 @@ static int LowerMirAllocNewPostInitInsts(
     {
         int32_t fieldNode = structNode->firstChild;
         while (fieldNode >= 0) {
-            const HOPAstNode* fieldDecl = &typeFile->ast.nodes[fieldNode];
-            int32_t           typeChild;
-            int32_t           defaultExprNode;
-            uint32_t          fieldIndex = UINT32_MAX;
-            uint32_t          fieldTypeRef = UINT32_MAX;
-            uint32_t          valueTypeRef = UINT32_MAX;
-            bool              alreadyExplicit = false;
-            uint32_t          directIndex;
-            if (fieldDecl->kind != HOPAst_FIELD) {
+            const H2AstNode* fieldDecl = &typeFile->ast.nodes[fieldNode];
+            int32_t          typeChild;
+            int32_t          defaultExprNode;
+            uint32_t         fieldIndex = UINT32_MAX;
+            uint32_t         fieldTypeRef = UINT32_MAX;
+            uint32_t         valueTypeRef = UINT32_MAX;
+            bool             alreadyExplicit = false;
+            uint32_t         directIndex;
+            if (fieldDecl->kind != H2Ast_FIELD) {
                 fieldNode = fieldDecl->nextSibling;
                 continue;
             }
@@ -4285,8 +4271,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_LOCAL_LOAD,
+                    &(H2MirInst){
+                        .op = H2MirOp_LOCAL_LOAD,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = localIndex,
@@ -4313,8 +4299,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_AGG_SET,
+                    &(H2MirInst){
+                        .op = H2MirOp_AGG_SET,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = fieldIndex,
@@ -4325,8 +4311,8 @@ static int LowerMirAllocNewPostInitInsts(
                     outInsts,
                     outCap,
                     &emittedLen,
-                    &(HOPMirInst){
-                        .op = HOPMirOp_DROP,
+                    &(H2MirInst){
+                        .op = H2MirOp_DROP,
                         .tok = 0u,
                         ._reserved = 0u,
                         .aux = 0u,
@@ -4345,34 +4331,34 @@ static int LowerMirAllocNewPostInitInsts(
 }
 
 static int RewriteMirAllocNewInitExprs(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0u;
-    uint32_t        totalExtraLen = 0u;
-    uint32_t        funcIndex;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0u;
+    uint32_t       totalExtraLen = 0u;
+    uint32_t       funcIndex;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  fnFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  fnFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t pc;
         if (fnFile == NULL) {
             continue;
         }
         for (pc = 0u; pc + 1u < fn->instLen; pc++) {
-            const HOPMirInst*    allocInst = &program->insts[fn->instStart + pc];
-            const HOPMirInst*    storeInst = &program->insts[fn->instStart + pc + 1u];
-            const HOPMirLocal*   local;
-            uint32_t             pointeeTypeRef;
-            const HOPParsedFile* typeFile;
-            HOPMirInst*          tempInsts;
-            uint32_t             tempLen = 0u;
-            bool                 clearedInit = false;
-            uint32_t             tempCap;
-            if (allocInst->op != HOPMirOp_ALLOC_NEW || storeInst->op != HOPMirOp_LOCAL_STORE
+            const H2MirInst*    allocInst = &program->insts[fn->instStart + pc];
+            const H2MirInst*    storeInst = &program->insts[fn->instStart + pc + 1u];
+            const H2MirLocal*   local;
+            uint32_t            pointeeTypeRef;
+            const H2ParsedFile* typeFile;
+            H2MirInst*          tempInsts;
+            uint32_t            tempLen = 0u;
+            bool                clearedInit = false;
+            uint32_t            tempCap;
+            if (allocInst->op != H2MirOp_ALLOC_NEW || storeInst->op != H2MirOp_LOCAL_STORE
                 || storeInst->aux >= fn->localCount)
             {
                 continue;
@@ -4394,7 +4380,7 @@ static int RewriteMirAllocNewInitExprs(
                 continue;
             }
             tempCap = fnFile->ast.len * 8u + typeFile->ast.len * 4u + 64u;
-            tempInsts = tempCap != 0u ? (HOPMirInst*)malloc(sizeof(HOPMirInst) * tempCap) : NULL;
+            tempInsts = tempCap != 0u ? (H2MirInst*)malloc(sizeof(H2MirInst) * tempCap) : NULL;
             if (tempInsts == NULL) {
                 return -1;
             }
@@ -4425,20 +4411,20 @@ static int RewriteMirAllocNewInitExprs(
     if (totalExtraLen == 0u) {
         return 0;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  fnFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  fnFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t* insertCounts = NULL;
         uint32_t* pcMap = NULL;
@@ -4461,16 +4447,16 @@ static int RewriteMirAllocNewInitExprs(
         }
         if (fnFile != NULL) {
             for (pc = 0u; pc + 1u < fn->instLen; pc++) {
-                const HOPMirInst*    allocInst = &program->insts[fn->instStart + pc];
-                const HOPMirInst*    storeInst = &program->insts[fn->instStart + pc + 1u];
-                const HOPMirLocal*   local;
-                uint32_t             pointeeTypeRef;
-                const HOPParsedFile* typeFile;
-                HOPMirInst*          tempInsts;
-                uint32_t             tempLen = 0u;
-                bool                 cleared = false;
-                uint32_t             tempCap;
-                if (allocInst->op != HOPMirOp_ALLOC_NEW || storeInst->op != HOPMirOp_LOCAL_STORE
+                const H2MirInst*    allocInst = &program->insts[fn->instStart + pc];
+                const H2MirInst*    storeInst = &program->insts[fn->instStart + pc + 1u];
+                const H2MirLocal*   local;
+                uint32_t            pointeeTypeRef;
+                const H2ParsedFile* typeFile;
+                H2MirInst*          tempInsts;
+                uint32_t            tempLen = 0u;
+                bool                cleared = false;
+                uint32_t            tempCap;
+                if (allocInst->op != H2MirOp_ALLOC_NEW || storeInst->op != H2MirOp_LOCAL_STORE
                     || storeInst->aux >= fn->localCount)
                 {
                     continue;
@@ -4492,8 +4478,7 @@ static int RewriteMirAllocNewInitExprs(
                     continue;
                 }
                 tempCap = fnFile->ast.len * 8u + typeFile->ast.len * 4u + 64u;
-                tempInsts =
-                    tempCap != 0u ? (HOPMirInst*)malloc(sizeof(HOPMirInst) * tempCap) : NULL;
+                tempInsts = tempCap != 0u ? (H2MirInst*)malloc(sizeof(H2MirInst) * tempCap) : NULL;
                 if (tempInsts == NULL) {
                     free(insertCounts);
                     free(pcMap);
@@ -4532,25 +4517,25 @@ static int RewriteMirAllocNewInitExprs(
             delta += insertCounts[pc];
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            const HOPMirInst* srcInst = &program->insts[fn->instStart + pc];
+            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             insts[instOutLen] = *srcInst;
-            if (clearInit != NULL && clearInit[pc] && insts[instOutLen].op == HOPMirOp_ALLOC_NEW) {
-                insts[instOutLen].tok &= (uint16_t)~HOPAstFlag_NEW_HAS_INIT;
+            if (clearInit != NULL && clearInit[pc] && insts[instOutLen].op == H2MirOp_ALLOC_NEW) {
+                insts[instOutLen].tok &= (uint16_t)~H2AstFlag_NEW_HAS_INIT;
             }
-            if ((srcInst->op == HOPMirOp_JUMP || srcInst->op == HOPMirOp_JUMP_IF_FALSE)
+            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
             {
                 insts[instOutLen].aux = pcMap[srcInst->aux];
             }
             instOutLen++;
             if (insertCounts != NULL && insertCounts[pc] != 0u) {
-                const HOPMirInst*    allocInst = &program->insts[fn->instStart + pc - 1u];
-                const HOPMirInst*    storeInst = &program->insts[fn->instStart + pc];
-                const HOPMirLocal*   local;
-                uint32_t             pointeeTypeRef;
-                const HOPParsedFile* typeFile;
-                uint32_t             emittedLen = 0u;
-                HOPMirInst*          tempInsts = insts + instOutLen;
+                const H2MirInst*    allocInst = &program->insts[fn->instStart + pc - 1u];
+                const H2MirInst*    storeInst = &program->insts[fn->instStart + pc];
+                const H2MirLocal*   local;
+                uint32_t            pointeeTypeRef;
+                const H2ParsedFile* typeFile;
+                uint32_t            emittedLen = 0u;
+                H2MirInst*          tempInsts = insts + instOutLen;
                 local = &program->locals[fn->localStart + storeInst->aux];
                 pointeeTypeRef = MirInitOwnerTypeRefForType(program, local->typeRef);
                 if ((pointeeTypeRef == UINT32_MAX || pointeeTypeRef >= program->typeLen)
@@ -4602,43 +4587,43 @@ static int RewriteMirAllocNewInitExprs(
 }
 
 static int RewriteMirDynamicSliceAllocCounts(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0u;
-    uint32_t        totalExtraLen = 0u;
-    uint32_t        funcIndex;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0u;
+    uint32_t       totalExtraLen = 0u;
+    uint32_t       funcIndex;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t pc;
         if (ownerFile != NULL) {
             for (pc = 0u; pc < fn->instLen; pc++) {
-                const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-                const HOPMirInst* nextInst;
-                uint32_t          localTypeRef;
-                uint32_t          countInstLen = 0u;
-                int32_t           typeNode = -1;
-                int32_t           countNode = -1;
-                int32_t           initNode = -1;
-                int32_t           allocNode = -1;
-                if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_COUNT) == 0u
+                const H2MirInst* inst = &program->insts[fn->instStart + pc];
+                const H2MirInst* nextInst;
+                uint32_t         localTypeRef;
+                uint32_t         countInstLen = 0u;
+                int32_t          typeNode = -1;
+                int32_t          countNode = -1;
+                int32_t          initNode = -1;
+                int32_t          allocNode = -1;
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) == 0u
                     || pc + 1u >= fn->instLen || ownerFile->source == NULL)
                 {
                     continue;
                 }
                 nextInst = &program->insts[fn->instStart + pc + 1u];
-                if (nextInst->op != HOPMirOp_LOCAL_STORE || nextInst->aux >= fn->localCount) {
+                if (nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount) {
                     continue;
                 }
                 localTypeRef = program->locals[fn->localStart + nextInst->aux].typeRef;
                 if (localTypeRef >= program->typeLen
-                    || (!HOPMirTypeRefIsSliceView(&program->types[localTypeRef])
-                        && !HOPMirTypeRefIsAggSliceView(&program->types[localTypeRef])))
+                    || (!H2MirTypeRefIsSliceView(&program->types[localTypeRef])
+                        && !H2MirTypeRefIsAggSliceView(&program->types[localTypeRef])))
                 {
                     continue;
                 }
@@ -4661,20 +4646,20 @@ static int RewriteMirDynamicSliceAllocCounts(
     if (program->instLen + totalExtraLen < program->instLen) {
         return -1;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t* insertCounts = NULL;
         uint32_t* pcMap = NULL;
@@ -4694,26 +4679,26 @@ static int RewriteMirDynamicSliceAllocCounts(
         }
         if (ownerFile != NULL) {
             for (pc = 0u; pc < fn->instLen; pc++) {
-                const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-                const HOPMirInst* nextInst;
-                uint32_t          localTypeRef;
-                int32_t           typeNode = -1;
-                int32_t           countNode = -1;
-                int32_t           initNode = -1;
-                int32_t           allocNode = -1;
-                if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_COUNT) == 0u
+                const H2MirInst* inst = &program->insts[fn->instStart + pc];
+                const H2MirInst* nextInst;
+                uint32_t         localTypeRef;
+                int32_t          typeNode = -1;
+                int32_t          countNode = -1;
+                int32_t          initNode = -1;
+                int32_t          allocNode = -1;
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) == 0u
                     || pc + 1u >= fn->instLen || ownerFile->source == NULL)
                 {
                     continue;
                 }
                 nextInst = &program->insts[fn->instStart + pc + 1u];
-                if (nextInst->op != HOPMirOp_LOCAL_STORE || nextInst->aux >= fn->localCount) {
+                if (nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount) {
                     continue;
                 }
                 localTypeRef = program->locals[fn->localStart + nextInst->aux].typeRef;
                 if (localTypeRef >= program->typeLen
-                    || (!HOPMirTypeRefIsSliceView(&program->types[localTypeRef])
-                        && !HOPMirTypeRefIsAggSliceView(&program->types[localTypeRef])))
+                    || (!H2MirTypeRefIsSliceView(&program->types[localTypeRef])
+                        && !H2MirTypeRefIsAggSliceView(&program->types[localTypeRef])))
                 {
                     continue;
                 }
@@ -4734,7 +4719,7 @@ static int RewriteMirDynamicSliceAllocCounts(
             delta += insertCounts[pc];
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            const HOPMirInst* srcInst = &program->insts[fn->instStart + pc];
+            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             if (insertCounts != NULL && insertCounts[pc] != 0u) {
                 int32_t  typeNode = -1;
                 int32_t  countNode = -1;
@@ -4768,7 +4753,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 instOutLen += emittedLen;
             }
             insts[instOutLen] = *srcInst;
-            if ((srcInst->op == HOPMirOp_JUMP || srcInst->op == HOPMirOp_JUMP_IF_FALSE)
+            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
             {
                 insts[instOutLen].aux = pcMap[srcInst->aux];
@@ -4785,33 +4770,33 @@ static int RewriteMirDynamicSliceAllocCounts(
 }
 
 static int RewriteMirVarSizeAllocCounts(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0u;
-    uint32_t        totalExtraLen = 0u;
-    uint32_t        funcIndex;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0u;
+    uint32_t       totalExtraLen = 0u;
+    uint32_t       funcIndex;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t pc;
         if (ownerFile == NULL || ownerFile->source == NULL) {
             continue;
         }
         for (pc = 0u; pc + 1u < fn->instLen; pc++) {
-            const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-            const HOPMirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
-            uint32_t          localTypeRef;
-            uint32_t          pointeeTypeRef = UINT32_MAX;
-            uint32_t          countInstLen = 0u;
-            uint32_t          tempCap;
-            HOPMirInst*       tempInsts = NULL;
-            if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_COUNT) != 0u
-                || nextInst->op != HOPMirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
+            const H2MirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
+            uint32_t         localTypeRef;
+            uint32_t         pointeeTypeRef = UINT32_MAX;
+            uint32_t         countInstLen = 0u;
+            uint32_t         tempCap;
+            H2MirInst*       tempInsts = NULL;
+            if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u
+                || nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
             {
                 continue;
             }
@@ -4824,7 +4809,7 @@ static int RewriteMirVarSizeAllocCounts(
                 continue;
             }
             tempCap = ownerFile->ast.len * 8u + 64u;
-            tempInsts = tempCap != 0u ? (HOPMirInst*)malloc(sizeof(HOPMirInst) * tempCap) : NULL;
+            tempInsts = tempCap != 0u ? (H2MirInst*)malloc(sizeof(H2MirInst) * tempCap) : NULL;
             if (tempInsts == NULL) {
                 return -1;
             }
@@ -4853,20 +4838,20 @@ static int RewriteMirVarSizeAllocCounts(
     if (program->instLen + totalExtraLen < program->instLen) {
         return -1;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t* insertCounts = NULL;
         uint32_t* pcMap = NULL;
@@ -4889,14 +4874,14 @@ static int RewriteMirVarSizeAllocCounts(
         }
         if (ownerFile != NULL && ownerFile->source != NULL) {
             for (pc = 0u; pc + 1u < fn->instLen; pc++) {
-                const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-                const HOPMirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
-                uint32_t          localTypeRef;
-                uint32_t          pointeeTypeRef = UINT32_MAX;
-                uint32_t          tempCap;
-                HOPMirInst*       tempInsts = NULL;
-                if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_COUNT) != 0u
-                    || nextInst->op != HOPMirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
+                const H2MirInst* inst = &program->insts[fn->instStart + pc];
+                const H2MirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
+                uint32_t         localTypeRef;
+                uint32_t         pointeeTypeRef = UINT32_MAX;
+                uint32_t         tempCap;
+                H2MirInst*       tempInsts = NULL;
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u
+                    || nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
                 {
                     continue;
                 }
@@ -4909,8 +4894,7 @@ static int RewriteMirVarSizeAllocCounts(
                     continue;
                 }
                 tempCap = ownerFile->ast.len * 8u + 64u;
-                tempInsts =
-                    tempCap != 0u ? (HOPMirInst*)malloc(sizeof(HOPMirInst) * tempCap) : NULL;
+                tempInsts = tempCap != 0u ? (H2MirInst*)malloc(sizeof(H2MirInst) * tempCap) : NULL;
                 if (tempInsts == NULL) {
                     free(insertCounts);
                     free(pcMap);
@@ -4944,13 +4928,13 @@ static int RewriteMirVarSizeAllocCounts(
             delta += insertCounts[pc];
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            const HOPMirInst* srcInst = &program->insts[fn->instStart + pc];
+            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             if (insertCounts != NULL && insertCounts[pc] != 0u) {
-                const HOPMirInst* nextInst =
+                const H2MirInst* nextInst =
                     pc + 1u < fn->instLen ? &program->insts[fn->instStart + pc + 1u] : NULL;
                 uint32_t pointeeTypeRef = UINT32_MAX;
                 uint32_t emittedLen = 0u;
-                if (nextInst == NULL || nextInst->op != HOPMirOp_LOCAL_STORE
+                if (nextInst == NULL || nextInst->op != H2MirOp_LOCAL_STORE
                     || nextInst->aux >= fn->localCount)
                 {
                     free(insertCounts);
@@ -4991,9 +4975,9 @@ static int RewriteMirVarSizeAllocCounts(
             }
             insts[instOutLen] = *srcInst;
             if (setCount != NULL && setCount[pc] != 0u) {
-                insts[instOutLen].tok |= HOPAstFlag_NEW_HAS_COUNT;
+                insts[instOutLen].tok |= H2AstFlag_NEW_HAS_COUNT;
             }
-            if ((srcInst->op == HOPMirOp_JUMP || srcInst->op == HOPMirOp_JUMP_IF_FALSE)
+            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
             {
                 insts[instOutLen].aux = pcMap[srcInst->aux];
@@ -5011,31 +4995,31 @@ static int RewriteMirVarSizeAllocCounts(
 }
 
 static int RewriteMirAllocNewAllocExprs(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0u;
-    uint32_t        totalExtraLen = 0u;
-    uint32_t        funcIndex;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0u;
+    uint32_t       totalExtraLen = 0u;
+    uint32_t       funcIndex;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t pc;
         if (ownerFile == NULL || ownerFile->source == NULL) {
             continue;
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-            uint32_t          allocInstLen = 0u;
-            int32_t           typeNode = -1;
-            int32_t           countNode = -1;
-            int32_t           initNode = -1;
-            int32_t           allocNode = -1;
-            if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_ALLOC) == 0u) {
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
+            uint32_t         allocInstLen = 0u;
+            int32_t          typeNode = -1;
+            int32_t          countNode = -1;
+            int32_t          initNode = -1;
+            int32_t          allocNode = -1;
+            if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_ALLOC) == 0u) {
                 continue;
             }
             if (!DecodeNewExprNodes(
@@ -5054,20 +5038,20 @@ static int RewriteMirAllocNewAllocExprs(
     if (program->instLen + totalExtraLen < program->instLen) {
         return -1;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         uint32_t* insertCounts = NULL;
         uint32_t* pcMap = NULL;
@@ -5087,13 +5071,12 @@ static int RewriteMirAllocNewAllocExprs(
         }
         if (ownerFile != NULL && ownerFile->source != NULL) {
             for (pc = 0u; pc < fn->instLen; pc++) {
-                const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-                int32_t           typeNode = -1;
-                int32_t           countNode = -1;
-                int32_t           initNode = -1;
-                int32_t           allocNode = -1;
-                if (inst->op != HOPMirOp_ALLOC_NEW || (inst->tok & HOPAstFlag_NEW_HAS_ALLOC) == 0u)
-                {
+                const H2MirInst* inst = &program->insts[fn->instStart + pc];
+                int32_t          typeNode = -1;
+                int32_t          countNode = -1;
+                int32_t          initNode = -1;
+                int32_t          allocNode = -1;
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_ALLOC) == 0u) {
                     continue;
                 }
                 if (!DecodeNewExprNodes(
@@ -5113,7 +5096,7 @@ static int RewriteMirAllocNewAllocExprs(
             delta += insertCounts[pc];
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            const HOPMirInst* srcInst = &program->insts[fn->instStart + pc];
+            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             if (insertCounts != NULL && insertCounts[pc] != 0u) {
                 int32_t  typeNode = -1;
                 int32_t  countNode = -1;
@@ -5147,7 +5130,7 @@ static int RewriteMirAllocNewAllocExprs(
                 instOutLen += emittedLen;
             }
             insts[instOutLen] = *srcInst;
-            if ((srcInst->op == HOPMirOp_JUMP || srcInst->op == HOPMirOp_JUMP_IF_FALSE)
+            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
             {
                 insts[instOutLen].aux = pcMap[srcInst->aux];
@@ -5163,15 +5146,15 @@ static int RewriteMirAllocNewAllocExprs(
     return 0;
 }
 
-static const HOPImportSymbolRef* _Nullable FindImportValueSymbolBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const H2ImportSymbolRef* _Nullable FindImportValueSymbolBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL || src == NULL || end <= start) {
         return NULL;
     }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if (sym->isType || sym->isFunction) {
             continue;
         }
@@ -5183,15 +5166,15 @@ static const HOPImportSymbolRef* _Nullable FindImportValueSymbolBySlice(
     return NULL;
 }
 
-static const HOPImportSymbolRef* _Nullable FindImportFunctionSymbolBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const H2ImportSymbolRef* _Nullable FindImportFunctionSymbolBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL || src == NULL || end <= start) {
         return NULL;
     }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if (!sym->isFunction || sym->useWrapper) {
             continue;
         }
@@ -5203,15 +5186,15 @@ static const HOPImportSymbolRef* _Nullable FindImportFunctionSymbolBySlice(
     return NULL;
 }
 
-static const HOPMirResolvedDecl* _Nullable FindResolvedImportValueBySlice(
-    const HOPPackageLoader*      loader,
-    const HOPMirResolvedDeclMap* map,
-    const HOPPackage*            pkg,
-    const char*                  src,
-    uint32_t                     start,
-    uint32_t                     end) {
-    const HOPImportSymbolRef* sym = FindImportValueSymbolBySlice(pkg, src, start, end);
-    const HOPPackage*         depPkg;
+static const H2MirResolvedDecl* _Nullable FindResolvedImportValueBySlice(
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* map,
+    const H2Package*            pkg,
+    const char*                 src,
+    uint32_t                    start,
+    uint32_t                    end) {
+    const H2ImportSymbolRef* sym = FindImportValueSymbolBySlice(pkg, src, start, end);
+    const H2Package*         depPkg;
     if (sym == NULL || sym->importIndex >= pkg->importLen) {
         return NULL;
     }
@@ -5219,99 +5202,99 @@ static const HOPMirResolvedDecl* _Nullable FindResolvedImportValueBySlice(
     return depPkg != NULL ? FindMirResolvedValueByCStr(map, depPkg, sym->sourceName) : NULL;
 }
 
-static const HOPMirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
-    const HOPPackageLoader*      loader,
-    const HOPMirResolvedDeclMap* map,
-    const HOPPackage*            pkg,
-    const char*                  src,
-    uint32_t                     start,
-    uint32_t                     end) {
-    const HOPImportSymbolRef* sym = FindImportFunctionSymbolBySlice(pkg, src, start, end);
-    const HOPPackage*         depPkg;
+static const H2MirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* map,
+    const H2Package*            pkg,
+    const char*                 src,
+    uint32_t                    start,
+    uint32_t                    end) {
+    const H2ImportSymbolRef* sym = FindImportFunctionSymbolBySlice(pkg, src, start, end);
+    const H2Package*         depPkg;
     if (sym == NULL || sym->importIndex >= pkg->importLen) {
         return NULL;
     }
     depPkg = EffectiveMirImportTargetPackage(loader, &pkg->imports[sym->importIndex]);
     return depPkg != NULL
-             ? FindMirResolvedDeclByCStr(map, depPkg, sym->sourceName, HOPMirDeclKind_FN)
+             ? FindMirResolvedDeclByCStr(map, depPkg, sym->sourceName, H2MirDeclKind_FN)
              : NULL;
 }
 
-static int MirExprInstStackDelta(const HOPMirInst* inst, int32_t* outDelta) {
+static int MirExprInstStackDelta(const H2MirInst* inst, int32_t* outDelta) {
     uint32_t elemCount = 0;
     if (inst == NULL || outDelta == NULL) {
         return 0;
     }
     switch (inst->op) {
-        case HOPMirOp_PUSH_CONST:
-        case HOPMirOp_PUSH_INT:
-        case HOPMirOp_PUSH_FLOAT:
-        case HOPMirOp_PUSH_BOOL:
-        case HOPMirOp_PUSH_STRING:
-        case HOPMirOp_PUSH_NULL:
-        case HOPMirOp_LOAD_IDENT:
-        case HOPMirOp_LOCAL_LOAD:
-        case HOPMirOp_LOCAL_ADDR:
-        case HOPMirOp_ADDR_OF:
-        case HOPMirOp_AGG_ZERO:
-        case HOPMirOp_ARRAY_ZERO:
-        case HOPMirOp_CTX_GET:
-        case HOPMirOp_CTX_ADDR:        *outDelta = 1; return 1;
-        case HOPMirOp_UNARY:
-        case HOPMirOp_CAST:
-        case HOPMirOp_COERCE:
-        case HOPMirOp_SEQ_LEN:
-        case HOPMirOp_STR_CSTR:
-        case HOPMirOp_OPTIONAL_WRAP:
-        case HOPMirOp_OPTIONAL_UNWRAP:
-        case HOPMirOp_DEREF_LOAD:
-        case HOPMirOp_AGG_GET:
-        case HOPMirOp_AGG_ADDR:
-        case HOPMirOp_ARRAY_GET:
-        case HOPMirOp_ARRAY_ADDR:
-        case HOPMirOp_TAGGED_TAG:
-        case HOPMirOp_TAGGED_PAYLOAD:  *outDelta = 0; return 1;
-        case HOPMirOp_BINARY:
-        case HOPMirOp_INDEX:
-        case HOPMirOp_LOCAL_STORE:
-        case HOPMirOp_STORE_IDENT:
-        case HOPMirOp_DROP:
-        case HOPMirOp_ASSERT:
-        case HOPMirOp_CTX_SET:
-        case HOPMirOp_DEREF_STORE:
-        case HOPMirOp_ARRAY_SET:
-        case HOPMirOp_AGG_SET:         *outDelta = -1; return 1;
-        case HOPMirOp_CALL:
-        case HOPMirOp_CALL_FN:
-        case HOPMirOp_CALL_HOST:
-        case HOPMirOp_CALL_INDIRECT:
-            *outDelta = 1 - (int32_t)HOPMirCallArgCountFromTok(inst->tok);
+        case H2MirOp_PUSH_CONST:
+        case H2MirOp_PUSH_INT:
+        case H2MirOp_PUSH_FLOAT:
+        case H2MirOp_PUSH_BOOL:
+        case H2MirOp_PUSH_STRING:
+        case H2MirOp_PUSH_NULL:
+        case H2MirOp_LOAD_IDENT:
+        case H2MirOp_LOCAL_LOAD:
+        case H2MirOp_LOCAL_ADDR:
+        case H2MirOp_ADDR_OF:
+        case H2MirOp_AGG_ZERO:
+        case H2MirOp_ARRAY_ZERO:
+        case H2MirOp_CTX_GET:
+        case H2MirOp_CTX_ADDR:        *outDelta = 1; return 1;
+        case H2MirOp_UNARY:
+        case H2MirOp_CAST:
+        case H2MirOp_COERCE:
+        case H2MirOp_SEQ_LEN:
+        case H2MirOp_STR_CSTR:
+        case H2MirOp_OPTIONAL_WRAP:
+        case H2MirOp_OPTIONAL_UNWRAP:
+        case H2MirOp_DEREF_LOAD:
+        case H2MirOp_AGG_GET:
+        case H2MirOp_AGG_ADDR:
+        case H2MirOp_ARRAY_GET:
+        case H2MirOp_ARRAY_ADDR:
+        case H2MirOp_TAGGED_TAG:
+        case H2MirOp_TAGGED_PAYLOAD:  *outDelta = 0; return 1;
+        case H2MirOp_BINARY:
+        case H2MirOp_INDEX:
+        case H2MirOp_LOCAL_STORE:
+        case H2MirOp_STORE_IDENT:
+        case H2MirOp_DROP:
+        case H2MirOp_ASSERT:
+        case H2MirOp_CTX_SET:
+        case H2MirOp_DEREF_STORE:
+        case H2MirOp_ARRAY_SET:
+        case H2MirOp_AGG_SET:         *outDelta = -1; return 1;
+        case H2MirOp_CALL:
+        case H2MirOp_CALL_FN:
+        case H2MirOp_CALL_HOST:
+        case H2MirOp_CALL_INDIRECT:
+            *outDelta = 1 - (int32_t)H2MirCallArgCountFromTok(inst->tok);
             return 1;
-        case HOPMirOp_TUPLE_MAKE:
-        case HOPMirOp_AGG_MAKE:
+        case H2MirOp_TUPLE_MAKE:
+        case H2MirOp_AGG_MAKE:
             elemCount = (uint32_t)inst->tok;
             *outDelta = 1 - (int32_t)elemCount;
             return 1;
-        case HOPMirOp_SLICE_MAKE:
-            *outDelta = 0 - (((inst->tok & HOPAstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
-                      - (((inst->tok & HOPAstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
+        case H2MirOp_SLICE_MAKE:
+            *outDelta = 0 - (((inst->tok & H2AstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
+                      - (((inst->tok & H2AstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
             return 1;
-        case HOPMirOp_TAGGED_MAKE:   *outDelta = 0; return 1;
-        case HOPMirOp_RETURN:
-        case HOPMirOp_JUMP_IF_FALSE: *outDelta = -1; return 1;
-        case HOPMirOp_RETURN_VOID:
-        case HOPMirOp_LOCAL_ZERO:
-        case HOPMirOp_JUMP:          return ((*outDelta = 0), 1);
-        default:                     return 0;
+        case H2MirOp_TAGGED_MAKE:   *outDelta = 0; return 1;
+        case H2MirOp_RETURN:
+        case H2MirOp_JUMP_IF_FALSE: *outDelta = -1; return 1;
+        case H2MirOp_RETURN_VOID:
+        case H2MirOp_LOCAL_ZERO:
+        case H2MirOp_JUMP:          return ((*outDelta = 0), 1);
+        default:                    return 0;
     }
 }
 
 static int FindCallArgStartInFunction(
-    const HOPMirProgram*  program,
-    const HOPMirFunction* fn,
-    uint32_t              callIndex,
-    uint32_t              argCount,
-    uint32_t*             outArgStart) {
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             callIndex,
+    uint32_t             argCount,
+    uint32_t*            outArgStart) {
     int32_t  need = 0;
     uint32_t i;
     if (outArgStart != NULL) {
@@ -5340,11 +5323,11 @@ static int FindCallArgStartInFunction(
 }
 
 static int FindFirstCallArgEndInFunction(
-    const HOPMirProgram*  program,
-    const HOPMirFunction* fn,
-    uint32_t              callIndex,
-    uint32_t              argCount,
-    uint32_t*             outArgEnd) {
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             callIndex,
+    uint32_t             argCount,
+    uint32_t*            outArgEnd) {
     uint32_t argStart = UINT32_MAX;
     uint32_t i;
     int32_t  depth = 0;
@@ -5372,41 +5355,41 @@ static int FindFirstCallArgEndInFunction(
 }
 
 static uint32_t MirInstResultTypeRef(
-    const HOPMirProgram* program, const HOPMirFunction* fn, const HOPMirInst* inst) {
+    const H2MirProgram* program, const H2MirFunction* fn, const H2MirInst* inst) {
     if (program == NULL || fn == NULL || inst == NULL) {
         return UINT32_MAX;
     }
     switch (inst->op) {
-        case HOPMirOp_LOCAL_LOAD:
+        case H2MirOp_LOCAL_LOAD:
             return inst->aux < fn->localCount
                      ? program->locals[fn->localStart + inst->aux].typeRef
                      : UINT32_MAX;
-        case HOPMirOp_AGG_GET:
-        case HOPMirOp_AGG_ADDR:
+        case H2MirOp_AGG_GET:
+        case H2MirOp_AGG_ADDR:
             return inst->aux < program->fieldLen ? program->fields[inst->aux].typeRef : UINT32_MAX;
         default: return UINT32_MAX;
     }
 }
 
-static uint32_t MirAggregateOwnerTypeRef(const HOPMirProgram* program, uint32_t typeRef) {
+static uint32_t MirAggregateOwnerTypeRef(const H2MirProgram* program, uint32_t typeRef) {
     if (program == NULL || typeRef >= program->typeLen) {
         return UINT32_MAX;
     }
-    if (HOPMirTypeRefIsAggregate(&program->types[typeRef])) {
+    if (H2MirTypeRefIsAggregate(&program->types[typeRef])) {
         return typeRef;
     }
-    if (HOPMirTypeRefIsOpaquePtr(&program->types[typeRef])) {
-        return HOPMirTypeRefOpaquePointeeTypeRef(&program->types[typeRef]);
+    if (H2MirTypeRefIsOpaquePtr(&program->types[typeRef])) {
+        return H2MirTypeRefOpaquePointeeTypeRef(&program->types[typeRef]);
     }
     return UINT32_MAX;
 }
 
 static uint32_t FindMirFieldNamed(
-    const HOPMirProgram* program,
-    uint32_t             ownerTypeRef,
-    const char*          src,
-    uint32_t             start,
-    uint32_t             end) {
+    const H2MirProgram* program,
+    uint32_t            ownerTypeRef,
+    const char*         src,
+    uint32_t            start,
+    uint32_t            end) {
     uint32_t i;
     uint32_t nameLen;
     if (program == NULL || src == NULL || ownerTypeRef >= program->typeLen || end < start) {
@@ -5414,7 +5397,7 @@ static uint32_t FindMirFieldNamed(
     }
     nameLen = end - start;
     for (i = 0; i < program->fieldLen; i++) {
-        const HOPMirField* field = &program->fields[i];
+        const H2MirField* field = &program->fields[i];
         if (field->ownerTypeRef != ownerTypeRef || field->sourceRef >= program->sourceLen) {
             continue;
         }
@@ -5432,7 +5415,7 @@ static uint32_t FindMirFieldNamed(
 }
 
 static uint32_t FindMirFieldNamedAny(
-    const HOPMirProgram* program, const char* src, uint32_t start, uint32_t end) {
+    const H2MirProgram* program, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     uint32_t nameLen;
     if (program == NULL || src == NULL || end < start) {
@@ -5440,7 +5423,7 @@ static uint32_t FindMirFieldNamedAny(
     }
     nameLen = end - start;
     for (i = 0; i < program->fieldLen; i++) {
-        const HOPMirField* field = &program->fields[i];
+        const H2MirField* field = &program->fields[i];
         if (field->sourceRef >= program->sourceLen) {
             continue;
         }
@@ -5458,16 +5441,16 @@ static uint32_t FindMirFieldNamedAny(
 }
 
 static int EnsureMirHostRef(
-    HOPArena*      arena,
-    HOPMirProgram* program,
-    HOPMirHostKind kind,
-    uint32_t       flags,
-    uint32_t       target,
-    uint32_t       nameStart,
-    uint32_t       nameEnd,
+    H2Arena*      arena,
+    H2MirProgram* program,
+    H2MirHostKind kind,
+    uint32_t      flags,
+    uint32_t      target,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
     uint32_t* _Nonnull outIndex) {
-    uint32_t       i;
-    HOPMirHostRef* newHosts;
+    uint32_t      i;
+    H2MirHostRef* newHosts;
     if (arena == NULL || program == NULL || outIndex == NULL) {
         return -1;
     }
@@ -5479,15 +5462,15 @@ static int EnsureMirHostRef(
             return 0;
         }
     }
-    newHosts = (HOPMirHostRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirHostRef) * (program->hostLen + 1u), (uint32_t)_Alignof(HOPMirHostRef));
+    newHosts = (H2MirHostRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirHostRef) * (program->hostLen + 1u), (uint32_t)_Alignof(H2MirHostRef));
     if (newHosts == NULL) {
         return -1;
     }
     if (program->hostLen != 0u) {
-        memcpy(newHosts, program->hosts, sizeof(HOPMirHostRef) * program->hostLen);
+        memcpy(newHosts, program->hosts, sizeof(H2MirHostRef) * program->hostLen);
     }
-    newHosts[program->hostLen] = (HOPMirHostRef){
+    newHosts[program->hostLen] = (H2MirHostRef){
         .nameStart = nameStart,
         .nameEnd = nameEnd,
         .kind = kind,
@@ -5500,53 +5483,53 @@ static int EnsureMirHostRef(
 }
 
 static int FindMirStaticCallTarget(
-    const HOPMirTcFunctionMap* tcFnMap,
-    const HOPPackage*          ownerPkg,
-    const HOPParsedFile*       ownerFile,
-    HOPTypeCheckCtx*           ownerTc,
-    uint32_t                   ownerTcFnIndex,
-    const HOPMirSymbolRef*     sym,
+    const H2MirTcFunctionMap* tcFnMap,
+    const H2Package*          ownerPkg,
+    const H2ParsedFile*       ownerFile,
+    H2TypeCheckCtx*           ownerTc,
+    uint32_t                  ownerTcFnIndex,
+    const H2MirSymbolRef*     sym,
     uint32_t* _Nonnull outTargetMirFn);
 
 static int ClassifyMirFuncFieldCall(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirFunction*   fn,
-    uint32_t                localIndex,
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirFunction*   fn,
+    uint32_t               localIndex,
     uint32_t* _Nullable outInsertAfterPc,
     uint32_t* _Nullable outImplFieldRef);
 
 static int ResolvePackageMirProgram(
-    const HOPPackageLoader*      loader,
-    const HOPMirResolvedDeclMap* declMap,
-    const HOPMirTcFunctionMap*   tcFnMap,
-    HOPArena*                    arena,
-    const HOPMirProgram*         program,
-    HOPMirProgram*               outProgram) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0;
-    uint32_t        funcIndex;
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* declMap,
+    const H2MirTcFunctionMap*   tcFnMap,
+    H2Arena*                    arena,
+    const H2MirProgram*         program,
+    H2MirProgram*               outProgram) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0;
+    uint32_t       funcIndex;
     if (loader == NULL || declMap == NULL || arena == NULL || program == NULL || outProgram == NULL)
     {
         return -1;
     }
     *outProgram = *program;
-    insts = (HOPMirInst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirInst) * program->instLen, (uint32_t)_Alignof(HOPMirInst));
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
+        arena, sizeof(H2MirInst) * program->instLen, (uint32_t)_Alignof(H2MirInst));
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
     if ((program->instLen != 0u && insts == NULL) || (program->funcLen != 0u && funcs == NULL)) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        const HOPPackage*     ownerPkg = NULL;
-        const HOPParsedFile*  ownerFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        const H2Package*     ownerPkg = NULL;
+        const H2ParsedFile*  ownerFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, &ownerPkg);
-        HOPTypeCheckCtx* ownerTc =
+        H2TypeCheckCtx* ownerTc =
             ownerFile != NULL && ownerFile->hasTypecheckCtx
-                ? (HOPTypeCheckCtx*)ownerFile->typecheckCtx
+                ? (H2TypeCheckCtx*)ownerFile->typecheckCtx
                 : NULL;
         uint32_t ownerTcFnIndex = UINT32_MAX;
         uint8_t* omit = NULL;
@@ -5565,27 +5548,27 @@ static int ResolvePackageMirProgram(
         }
         if (ownerPkg != NULL && ownerFile != NULL) {
             for (localIndex = 0; localIndex < fn->instLen; localIndex++) {
-                uint32_t          instIndex = fn->instStart + localIndex;
-                const HOPMirInst* inst = &program->insts[instIndex];
-                if (inst->op == HOPMirOp_CALL && inst->aux < program->symbolLen) {
-                    const HOPMirSymbolRef*    sym = &program->symbols[inst->aux];
-                    const HOPMirResolvedDecl* target = NULL;
-                    if (sym->kind != HOPMirSymbol_CALL) {
+                uint32_t         instIndex = fn->instStart + localIndex;
+                const H2MirInst* inst = &program->insts[instIndex];
+                if (inst->op == H2MirOp_CALL && inst->aux < program->symbolLen) {
+                    const H2MirSymbolRef*    sym = &program->symbols[inst->aux];
+                    const H2MirResolvedDecl* target = NULL;
+                    if (sym->kind != H2MirSymbol_CALL) {
                         continue;
                     }
-                    if ((sym->flags & HOPMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
-                        uint32_t argc = HOPMirCallArgCountFromTok(inst->tok);
+                    if ((sym->flags & H2MirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
+                        uint32_t argc = H2MirCallArgCountFromTok(inst->tok);
                         uint32_t argStart = UINT32_MAX;
                         if (argc == 0u
                             || !FindCallArgStartInFunction(program, fn, instIndex, argc, &argStart)
                             || argStart < fn->instStart || argStart >= fn->instStart + fn->instLen
-                            || program->insts[argStart].op != HOPMirOp_LOAD_IDENT)
+                            || program->insts[argStart].op != H2MirOp_LOAD_IDENT)
                         {
                             continue;
                         }
                         {
-                            const HOPMirInst*   recvInst = &program->insts[argStart];
-                            const HOPImportRef* imp = FindImportByAliasSlice(
+                            const H2MirInst*   recvInst = &program->insts[argStart];
+                            const H2ImportRef* imp = FindImportByAliasSlice(
                                 ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
                             if (imp == NULL || EffectiveMirImportTargetPackage(loader, imp) == NULL)
                             {
@@ -5597,7 +5580,7 @@ static int ResolvePackageMirProgram(
                                 ownerFile->source,
                                 inst->start,
                                 inst->end,
-                                HOPMirDeclKind_FN);
+                                H2MirDeclKind_FN);
                             if (target == NULL) {
                                 continue;
                             }
@@ -5610,7 +5593,7 @@ static int ResolvePackageMirProgram(
                             ownerFile->source,
                             inst->start,
                             inst->end,
-                            HOPMirDeclKind_FN);
+                            H2MirDeclKind_FN);
                         if (target == NULL) {
                             target = FindResolvedImportFunctionBySlice(
                                 loader,
@@ -5624,12 +5607,12 @@ static int ResolvePackageMirProgram(
                             continue;
                         }
                     }
-                } else if (inst->op == HOPMirOp_AGG_GET && localIndex > 0u) {
-                    const HOPMirInst*         recvInst = &program->insts[instIndex - 1u];
-                    const HOPImportRef*       imp;
-                    const HOPMirResolvedDecl* target;
-                    int64_t                   enumValue = 0;
-                    if (recvInst->op != HOPMirOp_LOAD_IDENT) {
+                } else if (inst->op == H2MirOp_AGG_GET && localIndex > 0u) {
+                    const H2MirInst*         recvInst = &program->insts[instIndex - 1u];
+                    const H2ImportRef*       imp;
+                    const H2MirResolvedDecl* target;
+                    int64_t                  enumValue = 0;
+                    if (recvInst->op != H2MirOp_LOAD_IDENT) {
                         continue;
                     }
                     if (ResolvePackageEnumVariantConstValue(
@@ -5664,21 +5647,21 @@ static int ResolvePackageMirProgram(
             }
         }
         for (localIndex = 0; localIndex < fn->instLen; localIndex++) {
-            uint32_t   instIndex = fn->instStart + localIndex;
-            HOPMirInst inst = program->insts[instIndex];
+            uint32_t  instIndex = fn->instStart + localIndex;
+            H2MirInst inst = program->insts[instIndex];
             if (omit != NULL && omit[localIndex] != 0u) {
                 continue;
             }
             if (ownerPkg != NULL && ownerFile != NULL) {
-                if (inst.op == HOPMirOp_LOAD_IDENT) {
-                    const HOPMirResolvedDecl* target = FindMirResolvedValueBySlice(
+                if (inst.op == H2MirOp_LOAD_IDENT) {
+                    const H2MirResolvedDecl* target = FindMirResolvedValueBySlice(
                         declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
                     if (target == NULL) {
                         target = FindResolvedImportValueBySlice(
                             loader, declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
                     }
                     if (target != NULL) {
-                        inst.op = HOPMirOp_CALL_FN;
+                        inst.op = H2MirOp_CALL_FN;
                         inst.tok = 0;
                         inst.aux = target->functionIndex;
                     } else {
@@ -5688,7 +5671,7 @@ static int ResolvePackageMirProgram(
                             ownerFile->source,
                             inst.start,
                             inst.end,
-                            HOPMirDeclKind_FN);
+                            H2MirDeclKind_FN);
                         if (target == NULL) {
                             target = FindResolvedImportFunctionBySlice(
                                 loader, declMap, ownerPkg, ownerFile->source, inst.start, inst.end);
@@ -5702,7 +5685,7 @@ static int ResolvePackageMirProgram(
                                 free(omit);
                                 return -1;
                             }
-                            inst.op = HOPMirOp_PUSH_CONST;
+                            inst.op = H2MirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
                         } else if (
@@ -5719,15 +5702,15 @@ static int ResolvePackageMirProgram(
                                 free(omit);
                                 return -1;
                             }
-                            inst.op = HOPMirOp_PUSH_CONST;
+                            inst.op = H2MirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
                         }
                     }
-                } else if (inst.op == HOPMirOp_CALL && inst.aux < program->symbolLen) {
-                    const HOPMirSymbolRef*    sym = &program->symbols[inst.aux];
-                    const HOPMirResolvedDecl* target = NULL;
-                    if (sym->kind == HOPMirSymbol_CALL) {
+                } else if (inst.op == H2MirOp_CALL && inst.aux < program->symbolLen) {
+                    const H2MirSymbolRef*    sym = &program->symbols[inst.aux];
+                    const H2MirResolvedDecl* target = NULL;
+                    if (sym->kind == H2MirSymbol_CALL) {
                         uint32_t targetMirFn = UINT32_MAX;
                         if (SliceEqCStr(ownerFile->source, inst.start, inst.end, "typeof")) {
                             uint32_t constIndex = UINT32_MAX;
@@ -5735,20 +5718,20 @@ static int ResolvePackageMirProgram(
                                 free(omit);
                                 return -1;
                             }
-                            inst.op = HOPMirOp_PUSH_CONST;
+                            inst.op = H2MirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
-                        } else if ((sym->flags & HOPMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
-                            uint32_t argc = HOPMirCallArgCountFromTok(inst.tok);
+                        } else if ((sym->flags & H2MirSymbolFlag_CALL_RECEIVER_ARG0) != 0u) {
+                            uint32_t argc = H2MirCallArgCountFromTok(inst.tok);
                             uint32_t argStart = UINT32_MAX;
                             if (argc != 0u
                                 && FindCallArgStartInFunction(
                                     program, fn, instIndex, argc, &argStart)
                                 && argStart < instIndex
-                                && program->insts[argStart].op == HOPMirOp_LOAD_IDENT)
+                                && program->insts[argStart].op == H2MirOp_LOAD_IDENT)
                             {
-                                const HOPMirInst*   recvInst = &program->insts[argStart];
-                                const HOPImportRef* imp = FindImportByAliasSlice(
+                                const H2MirInst*   recvInst = &program->insts[argStart];
+                                const H2ImportRef* imp = FindImportByAliasSlice(
                                     ownerPkg, ownerFile->source, recvInst->start, recvInst->end);
                                 if (imp != NULL
                                     && EffectiveMirImportTargetPackage(loader, imp) != NULL)
@@ -5759,13 +5742,12 @@ static int ResolvePackageMirProgram(
                                         ownerFile->source,
                                         inst.start,
                                         inst.end,
-                                        HOPMirDeclKind_FN);
+                                        H2MirDeclKind_FN);
                                     if (target != NULL) {
-                                        inst.op = HOPMirOp_CALL_FN;
+                                        inst.op = H2MirOp_CALL_FN;
                                         inst.tok =
-                                            (uint16_t)((HOPMirCallArgCountFromTok(inst.tok) - 1u)
-                                                       | (inst.tok
-                                                          & HOPMirCallArgFlag_SPREAD_LAST));
+                                            (uint16_t)((H2MirCallArgCountFromTok(inst.tok) - 1u)
+                                                       | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
                                         inst.aux = target->functionIndex;
                                     }
                                 }
@@ -5782,9 +5764,9 @@ static int ResolvePackageMirProgram(
                                     sym,
                                     &targetMirFn))
                             {
-                                inst.op = HOPMirOp_CALL_FN;
-                                inst.tok = (uint16_t)(HOPMirCallArgCountFromTok(inst.tok)
-                                                      | (inst.tok & HOPMirCallArgFlag_SPREAD_LAST));
+                                inst.op = H2MirOp_CALL_FN;
+                                inst.tok = (uint16_t)(H2MirCallArgCountFromTok(inst.tok)
+                                                      | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
                                 inst.aux = targetMirFn;
                             }
                         } else {
@@ -5797,9 +5779,9 @@ static int ResolvePackageMirProgram(
                                     sym,
                                     &targetMirFn))
                             {
-                                inst.op = HOPMirOp_CALL_FN;
-                                inst.tok = (uint16_t)(HOPMirCallArgCountFromTok(inst.tok)
-                                                      | (inst.tok & HOPMirCallArgFlag_SPREAD_LAST));
+                                inst.op = H2MirOp_CALL_FN;
+                                inst.tok = (uint16_t)(H2MirCallArgCountFromTok(inst.tok)
+                                                      | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
                                 inst.aux = targetMirFn;
                             } else {
                                 target = FindMirResolvedDeclBySlice(
@@ -5808,7 +5790,7 @@ static int ResolvePackageMirProgram(
                                     ownerFile->source,
                                     inst.start,
                                     inst.end,
-                                    HOPMirDeclKind_FN);
+                                    H2MirDeclKind_FN);
                                 if (target == NULL) {
                                     target = FindResolvedImportFunctionBySlice(
                                         loader,
@@ -5819,17 +5801,17 @@ static int ResolvePackageMirProgram(
                                         inst.end);
                                 }
                                 if (target != NULL) {
-                                    inst.op = HOPMirOp_CALL_FN;
+                                    inst.op = H2MirOp_CALL_FN;
                                     inst.aux = target->functionIndex;
                                 }
                             }
                         }
                     }
-                } else if (inst.op == HOPMirOp_AGG_GET && localIndex > 0u) {
-                    const HOPMirInst*         recvInst = &program->insts[instIndex - 1u];
-                    const HOPImportRef*       imp;
-                    const HOPMirResolvedDecl* target;
-                    if (recvInst->op == HOPMirOp_LOAD_IDENT) {
+                } else if (inst.op == H2MirOp_AGG_GET && localIndex > 0u) {
+                    const H2MirInst*         recvInst = &program->insts[instIndex - 1u];
+                    const H2ImportRef*       imp;
+                    const H2MirResolvedDecl* target;
+                    if (recvInst->op == H2MirOp_LOAD_IDENT) {
                         int64_t  enumValue = 0;
                         uint32_t constIndex = UINT32_MAX;
                         if (ResolvePackageEnumVariantConstValue(
@@ -5846,7 +5828,7 @@ static int ResolvePackageMirProgram(
                                 free(omit);
                                 return -1;
                             }
-                            inst.op = HOPMirOp_PUSH_CONST;
+                            inst.op = H2MirOp_PUSH_CONST;
                             inst.tok = 0u;
                             inst.aux = constIndex;
                         } else {
@@ -5861,7 +5843,7 @@ static int ResolvePackageMirProgram(
                                     inst.start,
                                     inst.end);
                                 if (target != NULL) {
-                                    inst.op = HOPMirOp_CALL_FN;
+                                    inst.op = H2MirOp_CALL_FN;
                                     inst.tok = 0;
                                     inst.aux = target->functionIndex;
                                 }
@@ -5882,12 +5864,12 @@ static int ResolvePackageMirProgram(
 }
 
 static int FindMirStaticCallTarget(
-    const HOPMirTcFunctionMap* tcFnMap,
-    const HOPPackage*          ownerPkg,
-    const HOPParsedFile*       ownerFile,
-    HOPTypeCheckCtx*           ownerTc,
-    uint32_t                   ownerTcFnIndex,
-    const HOPMirSymbolRef*     sym,
+    const H2MirTcFunctionMap* tcFnMap,
+    const H2Package*          ownerPkg,
+    const H2ParsedFile*       ownerFile,
+    H2TypeCheckCtx*           ownerTc,
+    uint32_t                  ownerTcFnIndex,
+    const H2MirSymbolRef*     sym,
     uint32_t* _Nonnull outTargetMirFn) {
     int32_t targetTcFn = -1;
     if (outTargetMirFn != NULL) {
@@ -5899,7 +5881,7 @@ static int FindMirStaticCallTarget(
     {
         return 0;
     }
-    if (!HOPTCFindCallTarget(ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
+    if (!H2TCFindCallTarget(ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
         || targetTcFn < 0 || (uint32_t)targetTcFn >= ownerTc->funcLen)
     {
         return 0;
@@ -5909,15 +5891,15 @@ static int FindMirStaticCallTarget(
 }
 
 static uint32_t FindMirFuncRefFieldByName(
-    const HOPMirProgram* program, const char* src, uint32_t start, uint32_t end) {
+    const H2MirProgram* program, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (program == NULL || src == NULL) {
         return UINT32_MAX;
     }
     for (i = 0; i < program->fieldLen; i++) {
-        const HOPMirField* field = &program->fields[i];
+        const H2MirField* field = &program->fields[i];
         if (field->typeRef < program->typeLen
-            && HOPMirTypeRefIsFuncRef(&program->types[field->typeRef])
+            && H2MirTypeRefIsFuncRef(&program->types[field->typeRef])
             && SliceEqSlice(src, field->nameStart, field->nameEnd, src, start, end))
         {
             return i;
@@ -5927,19 +5909,19 @@ static uint32_t FindMirFuncRefFieldByName(
 }
 
 static int ClassifyMirFuncFieldCall(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirFunction*   fn,
-    uint32_t                localIndex,
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirFunction*   fn,
+    uint32_t               localIndex,
     uint32_t* _Nullable outInsertAfterPc,
     uint32_t* _Nullable outImplFieldRef) {
-    const HOPParsedFile*   ownerFile;
-    const HOPMirInst*      inst;
-    const HOPMirSymbolRef* sym;
-    uint32_t               argc;
-    uint32_t               argStartPc = UINT32_MAX;
-    uint32_t               recvEndPc = UINT32_MAX;
-    uint32_t               fieldRef = UINT32_MAX;
+    const H2ParsedFile*   ownerFile;
+    const H2MirInst*      inst;
+    const H2MirSymbolRef* sym;
+    uint32_t              argc;
+    uint32_t              argStartPc = UINT32_MAX;
+    uint32_t              recvEndPc = UINT32_MAX;
+    uint32_t              fieldRef = UINT32_MAX;
     if (outInsertAfterPc != NULL) {
         *outInsertAfterPc = UINT32_MAX;
     }
@@ -5951,15 +5933,15 @@ static int ClassifyMirFuncFieldCall(
     }
     ownerFile = FindLoaderFileByMirSource(loader, program, fn->sourceRef, NULL);
     inst = &program->insts[fn->instStart + localIndex];
-    if (ownerFile == NULL || ownerFile->source == NULL || inst->op != HOPMirOp_CALL
+    if (ownerFile == NULL || ownerFile->source == NULL || inst->op != H2MirOp_CALL
         || inst->aux >= program->symbolLen)
     {
         return 0;
     }
     sym = &program->symbols[inst->aux];
-    argc = HOPMirCallArgCountFromTok(inst->tok);
-    if (sym->kind != HOPMirSymbol_CALL || argc < 2u
-        || (sym->flags & HOPMirSymbolFlag_CALL_RECEIVER_ARG0) == 0u
+    argc = H2MirCallArgCountFromTok(inst->tok);
+    if (sym->kind != H2MirSymbol_CALL || argc < 2u
+        || (sym->flags & H2MirSymbolFlag_CALL_RECEIVER_ARG0) == 0u
         || !FindCallArgStartInFunction(program, fn, fn->instStart + localIndex, argc, &argStartPc)
         || !FindCallArgStartInFunction(
             program, fn, fn->instStart + localIndex, argc - 1u, &recvEndPc)
@@ -5984,21 +5966,21 @@ static int ClassifyMirFuncFieldCall(
     return 1;
 }
 
-static int LoaderTargetNeedsSelectedPlatformMir(const HOPPackageLoader* _Nullable loader) {
+static int LoaderTargetNeedsSelectedPlatformMir(const H2PackageLoader* _Nullable loader) {
     return loader != NULL && loader->platformTarget != NULL
-        && (StrEq(loader->platformTarget, HOP_WASM_MIN_PLATFORM_TARGET)
-            || StrEq(loader->platformTarget, HOP_PLAYBIT_PLATFORM_TARGET));
+        && (StrEq(loader->platformTarget, H2_WASM_MIN_PLATFORM_TARGET)
+            || StrEq(loader->platformTarget, H2_PLAYBIT_PLATFORM_TARGET));
 }
 
-static int BuilderHasHostPrintCall(const HOPMirProgramBuilder* builder) {
+static int BuilderHasHostPrintCall(const H2MirProgramBuilder* builder) {
     uint32_t i;
     if (builder == NULL) {
         return 0;
     }
     for (i = 0; i < builder->instLen; i++) {
-        const HOPMirInst* inst = &builder->insts[i];
-        if (inst->op == HOPMirOp_CALL_HOST && inst->aux < builder->hostLen
-            && builder->hosts[inst->aux].target == HOPMirHostTarget_PRINT)
+        const H2MirInst* inst = &builder->insts[i];
+        if (inst->op == H2MirOp_CALL_HOST && inst->aux < builder->hostLen
+            && builder->hosts[inst->aux].target == H2MirHostTarget_PRINT)
         {
             return 1;
         }
@@ -6006,7 +5988,7 @@ static int BuilderHasHostPrintCall(const HOPMirProgramBuilder* builder) {
     return 0;
 }
 
-static int FindMirIntConstIndex(const HOPMirProgram* program, uint64_t bits, uint32_t* outIndex) {
+static int FindMirIntConstIndex(const H2MirProgram* program, uint64_t bits, uint32_t* outIndex) {
     uint32_t i;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
@@ -6015,7 +5997,7 @@ static int FindMirIntConstIndex(const HOPMirProgram* program, uint64_t bits, uin
         return 0;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_INT && program->consts[i].bits == bits) {
+        if (program->consts[i].kind == H2MirConst_INT && program->consts[i].bits == bits) {
             *outIndex = i;
             return 1;
         }
@@ -6024,9 +6006,9 @@ static int FindMirIntConstIndex(const HOPMirProgram* program, uint64_t bits, uin
 }
 
 static int EnsureMirIntConstIndex(
-    HOPArena* arena, HOPMirProgram* program, uint64_t bits, uint32_t* outIndex) {
-    HOPMirConst* consts;
-    uint32_t     i;
+    H2Arena* arena, H2MirProgram* program, uint64_t bits, uint32_t* outIndex) {
+    H2MirConst* consts;
+    uint32_t    i;
     if (outIndex != NULL) {
         *outIndex = UINT32_MAX;
     }
@@ -6034,21 +6016,21 @@ static int EnsureMirIntConstIndex(
         return 0;
     }
     for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == HOPMirConst_INT && program->consts[i].bits == bits) {
+        if (program->consts[i].kind == H2MirConst_INT && program->consts[i].bits == bits) {
             *outIndex = i;
             return 1;
         }
     }
-    consts = (HOPMirConst*)HOPArenaAlloc(
-        arena, sizeof(HOPMirConst) * (program->constLen + 1u), (uint32_t)_Alignof(HOPMirConst));
+    consts = (H2MirConst*)H2ArenaAlloc(
+        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
     if (consts == NULL) {
         return 0;
     }
     for (i = 0; i < program->constLen; i++) {
         consts[i] = program->consts[i];
     }
-    consts[program->constLen] = (HOPMirConst){
-        .kind = HOPMirConst_INT,
+    consts[program->constLen] = (H2MirConst){
+        .kind = H2MirConst_INT,
         .bits = bits,
     };
     *outIndex = program->constLen;
@@ -6058,19 +6040,19 @@ static int EnsureMirIntConstIndex(
 }
 
 static int RewriteMirWasmPrintHostcalls(
-    const HOPPackageLoader*      loader,
-    const HOPMirResolvedDeclMap* declMap,
-    HOPArena*                    arena,
-    HOPMirProgram*               program) {
-    const HOPMirResolvedDecl* consoleLogDecl;
-    const HOPMirFunction*     consoleLogFn;
-    HOPMirFunction*           funcs;
-    HOPMirInst*               insts;
-    uint32_t                  zeroConstIndex = UINT32_MAX;
-    uint32_t                  flagsTypeRef;
-    uint32_t                  totalExtraLen = 0u;
-    uint32_t                  funcIndex;
-    uint32_t                  instOutLen = 0u;
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* declMap,
+    H2Arena*                    arena,
+    H2MirProgram*               program) {
+    const H2MirResolvedDecl* consoleLogDecl;
+    const H2MirFunction*     consoleLogFn;
+    H2MirFunction*           funcs;
+    H2MirInst*               insts;
+    uint32_t                 zeroConstIndex = UINT32_MAX;
+    uint32_t                 flagsTypeRef;
+    uint32_t                 totalExtraLen = 0u;
+    uint32_t                 funcIndex;
+    uint32_t                 instOutLen = 0u;
     if (!LoaderTargetNeedsSelectedPlatformMir(loader)) {
         return 0;
     }
@@ -6080,7 +6062,7 @@ static int RewriteMirWasmPrintHostcalls(
         return -1;
     }
     consoleLogDecl = FindMirResolvedDeclByCStr(
-        declMap, loader->selectedPlatformPkg, "console_log", HOPMirDeclKind_FN);
+        declMap, loader->selectedPlatformPkg, "console_log", H2MirDeclKind_FN);
     if (consoleLogDecl == NULL || consoleLogDecl->functionIndex >= program->funcLen) {
         return 0;
     }
@@ -6090,12 +6072,12 @@ static int RewriteMirWasmPrintHostcalls(
     }
     flagsTypeRef = program->locals[consoleLogFn->localStart + 1u].typeRef;
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
         for (pc = 0; pc < fn->instLen; pc++) {
-            const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == HOPMirOp_CALL_HOST && inst->aux < program->hostLen
-                && program->hosts[inst->aux].target == HOPMirHostTarget_PRINT)
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op == H2MirOp_CALL_HOST && inst->aux < program->hostLen
+                && program->hosts[inst->aux].target == H2MirHostTarget_PRINT)
             {
                 totalExtraLen += 2u;
             }
@@ -6110,24 +6092,24 @@ static int RewriteMirWasmPrintHostcalls(
     if (program->instLen + totalExtraLen < program->instLen) {
         return -1;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t*             insertCounts = NULL;
-        uint32_t*             pcMap = NULL;
-        uint32_t              extraLen = 0u;
-        uint32_t              delta = 0u;
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t*            insertCounts = NULL;
+        uint32_t*            pcMap = NULL;
+        uint32_t             extraLen = 0u;
+        uint32_t             delta = 0u;
+        uint32_t             pc;
         funcs[funcIndex] = *fn;
         funcs[funcIndex].instStart = instOutLen;
         if (fn->instLen != 0u) {
@@ -6140,9 +6122,9 @@ static int RewriteMirWasmPrintHostcalls(
             }
         }
         for (pc = 0; pc < fn->instLen; pc++) {
-            const HOPMirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == HOPMirOp_CALL_HOST && inst->aux < program->hostLen
-                && program->hosts[inst->aux].target == HOPMirHostTarget_PRINT)
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
+            if (inst->op == H2MirOp_CALL_HOST && inst->aux < program->hostLen
+                && program->hosts[inst->aux].target == H2MirHostTarget_PRINT)
             {
                 insertCounts[pc] = 2u;
                 extraLen += 2u;
@@ -6154,34 +6136,34 @@ static int RewriteMirWasmPrintHostcalls(
             delta += insertCounts[pc];
         }
         for (pc = 0; pc < fn->instLen; pc++) {
-            const HOPMirInst* srcInst = &program->insts[fn->instStart + pc];
+            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             if (insertCounts[pc] != 0u) {
-                insts[instOutLen++] = (HOPMirInst){
-                    .op = HOPMirOp_PUSH_CONST,
+                insts[instOutLen++] = (H2MirInst){
+                    .op = H2MirOp_PUSH_CONST,
                     .aux = zeroConstIndex,
                     .start = srcInst->start,
                     .end = srcInst->end,
                 };
-                insts[instOutLen++] = (HOPMirInst){
-                    .op = HOPMirOp_CAST,
-                    .tok = HOPMirCastTarget_INT,
+                insts[instOutLen++] = (H2MirInst){
+                    .op = H2MirOp_CAST,
+                    .tok = H2MirCastTarget_INT,
                     .aux = flagsTypeRef,
                     .start = srcInst->start,
                     .end = srcInst->end,
                 };
             }
             insts[instOutLen] = *srcInst;
-            if ((srcInst->op == HOPMirOp_JUMP || srcInst->op == HOPMirOp_JUMP_IF_FALSE)
+            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
             {
                 insts[instOutLen].aux = pcMap[srcInst->aux];
             } else if (
-                srcInst->op == HOPMirOp_CALL_HOST && srcInst->aux < program->hostLen
-                && program->hosts[srcInst->aux].target == HOPMirHostTarget_PRINT)
+                srcInst->op == H2MirOp_CALL_HOST && srcInst->aux < program->hostLen
+                && program->hosts[srcInst->aux].target == H2MirHostTarget_PRINT)
             {
-                insts[instOutLen].op = HOPMirOp_CALL_FN;
+                insts[instOutLen].op = H2MirOp_CALL_FN;
                 insts[instOutLen].aux = consoleLogDecl->functionIndex;
-                insts[instOutLen].tok = (uint16_t)((srcInst->tok & HOPMirCallArgFlag_MASK) | 2u);
+                insts[instOutLen].tok = (uint16_t)((srcInst->tok & H2MirCallArgFlag_MASK) | 2u);
             }
             instOutLen++;
         }
@@ -6195,18 +6177,18 @@ static int RewriteMirWasmPrintHostcalls(
 }
 
 static int RewriteMirFuncFieldCalls(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
-    HOPMirInst*     insts = NULL;
-    HOPMirFunction* funcs = NULL;
-    uint32_t        instOutLen = 0u;
-    uint32_t        totalExtraLen = 0u;
-    uint32_t        funcIndex;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
+    H2MirInst*     insts = NULL;
+    H2MirFunction* funcs = NULL;
+    uint32_t       instOutLen = 0u;
+    uint32_t       totalExtraLen = 0u;
+    uint32_t       funcIndex;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
         for (pc = 0u; pc < fn->instLen; pc++) {
             if (ClassifyMirFuncFieldCall(loader, program, fn, pc, NULL, NULL)) {
                 totalExtraLen++;
@@ -6216,25 +6198,25 @@ static int RewriteMirFuncFieldCalls(
     if (totalExtraLen == 0u) {
         return 0;
     }
-    funcs = (HOPMirFunction*)HOPArenaAlloc(
-        arena, sizeof(HOPMirFunction) * program->funcLen, (uint32_t)_Alignof(HOPMirFunction));
-    insts = (HOPMirInst*)HOPArenaAlloc(
+    funcs = (H2MirFunction*)H2ArenaAlloc(
+        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
+    insts = (H2MirInst*)H2ArenaAlloc(
         arena,
-        sizeof(HOPMirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(HOPMirInst));
+        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
+        (uint32_t)_Alignof(H2MirInst));
     if ((funcs == NULL && program->funcLen != 0u)
         || (insts == NULL && program->instLen + totalExtraLen != 0u))
     {
         return -1;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t*             insertCounts = NULL;
-        uint32_t*             insertFieldRefs = NULL;
-        uint32_t*             pcMap = NULL;
-        uint32_t              extraLen = 0u;
-        uint32_t              delta = 0u;
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t*            insertCounts = NULL;
+        uint32_t*            insertFieldRefs = NULL;
+        uint32_t*            pcMap = NULL;
+        uint32_t             extraLen = 0u;
+        uint32_t             delta = 0u;
+        uint32_t             pc;
         funcs[funcIndex] = *fn;
         funcs[funcIndex].instStart = instOutLen;
         if (fn->instLen != 0u) {
@@ -6267,27 +6249,27 @@ static int RewriteMirFuncFieldCalls(
             delta += insertCounts[pc];
         }
         for (pc = 0u; pc < fn->instLen; pc++) {
-            HOPMirInst inst = program->insts[fn->instStart + pc];
-            if ((inst.op == HOPMirOp_JUMP || inst.op == HOPMirOp_JUMP_IF_FALSE)
+            H2MirInst inst = program->insts[fn->instStart + pc];
+            if ((inst.op == H2MirOp_JUMP || inst.op == H2MirOp_JUMP_IF_FALSE)
                 && inst.aux < fn->instLen)
             {
                 inst.aux = pcMap[inst.aux];
-            } else if (inst.op == HOPMirOp_CALL && inst.aux < program->symbolLen) {
-                const HOPMirSymbolRef* sym = &program->symbols[inst.aux];
-                if (sym->kind == HOPMirSymbol_CALL
-                    && (sym->flags & HOPMirSymbolFlag_CALL_RECEIVER_ARG0) != 0u
-                    && HOPMirCallArgCountFromTok(inst.tok) > 0u)
+            } else if (inst.op == H2MirOp_CALL && inst.aux < program->symbolLen) {
+                const H2MirSymbolRef* sym = &program->symbols[inst.aux];
+                if (sym->kind == H2MirSymbol_CALL
+                    && (sym->flags & H2MirSymbolFlag_CALL_RECEIVER_ARG0) != 0u
+                    && H2MirCallArgCountFromTok(inst.tok) > 0u)
                 {
-                    inst.op = HOPMirOp_CALL_INDIRECT;
-                    inst.tok = (uint16_t)((HOPMirCallArgCountFromTok(inst.tok) - 1u)
-                                          | (inst.tok & HOPMirCallArgFlag_SPREAD_LAST));
+                    inst.op = H2MirOp_CALL_INDIRECT;
+                    inst.tok = (uint16_t)((H2MirCallArgCountFromTok(inst.tok) - 1u)
+                                          | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
                     inst.aux = 0u;
                 }
             }
             insts[instOutLen++] = inst;
             if (insertCounts != NULL && insertCounts[pc] != 0u) {
-                insts[instOutLen++] = (HOPMirInst){
-                    .op = HOPMirOp_AGG_GET,
+                insts[instOutLen++] = (H2MirInst){
+                    .op = H2MirOp_AGG_GET,
                     .tok = 0u,
                     ._reserved = 0u,
                     .aux = insertFieldRefs[pc],
@@ -6306,25 +6288,25 @@ static int RewriteMirFuncFieldCalls(
     return 0;
 }
 
-static void SpecializeMirDirectFunctionFieldStores(HOPArena* arena, HOPMirProgram* program) {
+static void SpecializeMirDirectFunctionFieldStores(H2Arena* arena, H2MirProgram* program) {
     uint32_t funcIndex;
     if (arena == NULL || program == NULL) {
         return;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
         for (pc = 3u; pc < fn->instLen; pc++) {
-            const HOPMirInst*  storeInst = &program->insts[fn->instStart + pc];
-            const HOPMirInst*  addrInst = &program->insts[fn->instStart + pc - 1u];
-            const HOPMirInst*  valueInst = &program->insts[fn->instStart + pc - 3u];
-            const HOPMirField* fieldRef;
-            HOPMirField*       field = NULL;
-            uint32_t           typeRef = UINT32_MAX;
-            if (storeInst->op != HOPMirOp_DEREF_STORE || addrInst->op != HOPMirOp_AGG_ADDR
-                || addrInst->aux >= program->fieldLen || valueInst->op != HOPMirOp_PUSH_CONST
+            const H2MirInst*  storeInst = &program->insts[fn->instStart + pc];
+            const H2MirInst*  addrInst = &program->insts[fn->instStart + pc - 1u];
+            const H2MirInst*  valueInst = &program->insts[fn->instStart + pc - 3u];
+            const H2MirField* fieldRef;
+            H2MirField*       field = NULL;
+            uint32_t          typeRef = UINT32_MAX;
+            if (storeInst->op != H2MirOp_DEREF_STORE || addrInst->op != H2MirOp_AGG_ADDR
+                || addrInst->aux >= program->fieldLen || valueInst->op != H2MirOp_PUSH_CONST
                 || valueInst->aux >= program->constLen
-                || program->consts[valueInst->aux].kind != HOPMirConst_FUNCTION)
+                || program->consts[valueInst->aux].kind != H2MirConst_FUNCTION)
             {
                 continue;
             }
@@ -6341,11 +6323,11 @@ static void SpecializeMirDirectFunctionFieldStores(HOPArena* arena, HOPMirProgra
                 if (fieldIndex >= program->fieldLen) {
                     continue;
                 }
-                field = (HOPMirField*)&program->fields[fieldIndex];
+                field = (H2MirField*)&program->fields[fieldIndex];
             }
             if (field->typeRef >= program->typeLen
-                || !HOPMirTypeRefIsFuncRef(&program->types[field->typeRef])
-                || HOPMirTypeRefFuncRefFunctionIndex(&program->types[field->typeRef]) != UINT32_MAX)
+                || !H2MirTypeRefIsFuncRef(&program->types[field->typeRef])
+                || H2MirTypeRefFuncRefFunctionIndex(&program->types[field->typeRef]) != UINT32_MAX)
             {
                 continue;
             }
@@ -6361,11 +6343,11 @@ static void SpecializeMirDirectFunctionFieldStores(HOPArena* arena, HOPMirProgra
 }
 
 static bool MirTypeNodesEquivalent(
-    const HOPParsedFile* fileA, int32_t nodeA, const HOPParsedFile* fileB, int32_t nodeB) {
-    const HOPAstNode* astNodeA;
-    const HOPAstNode* astNodeB;
-    int32_t           childA;
-    int32_t           childB;
+    const H2ParsedFile* fileA, int32_t nodeA, const H2ParsedFile* fileB, int32_t nodeB) {
+    const H2AstNode* astNodeA;
+    const H2AstNode* astNodeB;
+    int32_t          childA;
+    int32_t          childB;
     if (fileA == NULL || fileB == NULL || nodeA < 0 || nodeB < 0
         || (uint32_t)nodeA >= fileA->ast.len || (uint32_t)nodeB >= fileB->ast.len)
     {
@@ -6396,15 +6378,15 @@ static bool MirTypeNodesEquivalent(
     return childA < 0 && childB < 0;
 }
 
-static int32_t FindMirFunctionDeclNode(const HOPParsedFile* file, const HOPMirFunction* fn) {
+static int32_t FindMirFunctionDeclNode(const H2ParsedFile* file, const H2MirFunction* fn) {
     int32_t child;
     if (file == NULL || fn == NULL) {
         return -1;
     }
     child = ASTFirstChild(&file->ast, file->ast.root);
     while (child >= 0) {
-        const HOPAstNode* n = &file->ast.nodes[child];
-        if (n->kind == HOPAst_FN
+        const H2AstNode* n = &file->ast.nodes[child];
+        if (n->kind == H2Ast_FN
             && SliceEqSlice(
                 file->source, n->dataStart, n->dataEnd, file->source, fn->nameStart, fn->nameEnd))
         {
@@ -6416,21 +6398,21 @@ static int32_t FindMirFunctionDeclNode(const HOPParsedFile* file, const HOPMirFu
 }
 
 static bool MirFunctionTypeMatchesDecl(
-    const HOPParsedFile* typeFile, int32_t typeNode, const HOPParsedFile* fnFile, int32_t fnNode) {
+    const H2ParsedFile* typeFile, int32_t typeNode, const H2ParsedFile* fnFile, int32_t fnNode) {
     int32_t typeChild;
     int32_t fnChild;
     int32_t typeReturnNode = -1;
     int32_t fnReturnNode = -1;
     if (typeFile == NULL || fnFile == NULL || typeNode < 0 || fnNode < 0
         || (uint32_t)typeNode >= typeFile->ast.len || (uint32_t)fnNode >= fnFile->ast.len
-        || typeFile->ast.nodes[typeNode].kind != HOPAst_TYPE_FN
-        || fnFile->ast.nodes[fnNode].kind != HOPAst_FN)
+        || typeFile->ast.nodes[typeNode].kind != H2Ast_TYPE_FN
+        || fnFile->ast.nodes[fnNode].kind != H2Ast_FN)
     {
         return false;
     }
     typeChild = ASTFirstChild(&typeFile->ast, typeNode);
     fnChild = ASTFirstChild(&fnFile->ast, fnNode);
-    while (fnChild >= 0 && fnFile->ast.nodes[fnChild].kind == HOPAst_PARAM) {
+    while (fnChild >= 0 && fnFile->ast.nodes[fnChild].kind == H2Ast_PARAM) {
         int32_t fnParamType = ASTFirstChild(&fnFile->ast, fnChild);
         if (typeChild < 0 || fnParamType < 0
             || !MirTypeNodesEquivalent(typeFile, typeChild, fnFile, fnParamType))
@@ -6461,10 +6443,10 @@ static bool MirFunctionTypeMatchesDecl(
 }
 
 static uint32_t FindMirRepresentativeFunctionForFuncType(
-    const HOPPackageLoader* loader, const HOPMirProgram* program, const HOPMirTypeRef* typeRef) {
-    const HOPParsedFile* typeFile;
-    uint32_t             functionIndex;
-    if (loader == NULL || program == NULL || typeRef == NULL || !HOPMirTypeRefIsFuncRef(typeRef)
+    const H2PackageLoader* loader, const H2MirProgram* program, const H2MirTypeRef* typeRef) {
+    const H2ParsedFile* typeFile;
+    uint32_t            functionIndex;
+    if (loader == NULL || program == NULL || typeRef == NULL || !H2MirTypeRefIsFuncRef(typeRef)
         || typeRef->astNode == UINT32_MAX)
     {
         return UINT32_MAX;
@@ -6474,8 +6456,8 @@ static uint32_t FindMirRepresentativeFunctionForFuncType(
         return UINT32_MAX;
     }
     for (functionIndex = 0; functionIndex < program->funcLen; functionIndex++) {
-        const HOPMirFunction* fn = &program->funcs[functionIndex];
-        const HOPParsedFile*  fnFile = FindLoaderFileByMirSource(
+        const H2MirFunction* fn = &program->funcs[functionIndex];
+        const H2ParsedFile*  fnFile = FindLoaderFileByMirSource(
             loader, program, fn->sourceRef, NULL);
         int32_t fnNode;
         if (fnFile == NULL) {
@@ -6492,16 +6474,15 @@ static uint32_t FindMirRepresentativeFunctionForFuncType(
 }
 
 static void EnrichMirFunctionRefRepresentatives(
-    const HOPPackageLoader* loader, HOPMirProgram* program) {
+    const H2PackageLoader* loader, H2MirProgram* program) {
     uint32_t i;
     if (loader == NULL || program == NULL) {
         return;
     }
     for (i = 0; i < program->typeLen; i++) {
-        HOPMirTypeRef* typeRef = (HOPMirTypeRef*)&program->types[i];
-        uint32_t       functionIndex;
-        if (!HOPMirTypeRefIsFuncRef(typeRef) || typeRef->aux != 0u
-            || typeRef->astNode == UINT32_MAX)
+        H2MirTypeRef* typeRef = (H2MirTypeRef*)&program->types[i];
+        uint32_t      functionIndex;
+        if (!H2MirTypeRefIsFuncRef(typeRef) || typeRef->aux != 0u || typeRef->astNode == UINT32_MAX)
         {
             continue;
         }
@@ -6512,14 +6493,14 @@ static void EnrichMirFunctionRefRepresentatives(
     }
 }
 
-int PackageUsesPlatformImport(const HOPPackageLoader* loader) {
+int PackageUsesPlatformImport(const H2PackageLoader* loader) {
     uint32_t pkgIndex;
     if (loader == NULL) {
         return 0;
     }
     for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
-        const HOPPackage* pkg = &loader->packages[pkgIndex];
-        uint32_t          importIndex;
+        const H2Package* pkg = &loader->packages[pkgIndex];
+        uint32_t         importIndex;
         for (importIndex = 0; importIndex < pkg->importLen; importIndex++) {
             const char* path = pkg->imports[importIndex].path;
             if (path == NULL) {
@@ -6533,30 +6514,30 @@ int PackageUsesPlatformImport(const HOPPackageLoader* loader) {
     return 0;
 }
 
-static HOPMirTypeScalar ClassifyMirScalarType(
-    const HOPParsedFile* file, const HOPMirTypeRef* typeRef) {
-    const HOPAstNode* node;
-    const HOPAstNode* child;
+static H2MirTypeScalar ClassifyMirScalarType(
+    const H2ParsedFile* file, const H2MirTypeRef* typeRef) {
+    const H2AstNode* node;
+    const H2AstNode* child;
     if (file == NULL || typeRef == NULL || typeRef->astNode >= file->ast.len) {
-        return HOPMirTypeScalar_NONE;
+        return H2MirTypeScalar_NONE;
     }
     node = &file->ast.nodes[typeRef->astNode];
     switch (node->kind) {
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_MUTREF: return HOPMirTypeScalar_I32;
-        case HOPAst_TYPE_REF:
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_MUTREF: return H2MirTypeScalar_I32;
+        case H2Ast_TYPE_REF:
             if (node->firstChild >= 0 && (uint32_t)node->firstChild < file->ast.len) {
                 child = &file->ast.nodes[node->firstChild];
-                if (child->kind == HOPAst_TYPE_NAME
+                if (child->kind == H2Ast_TYPE_NAME
                     && SliceEqCStr(file->source, child->dataStart, child->dataEnd, "str"))
                 {
-                    return HOPMirTypeScalar_NONE;
+                    return H2MirTypeScalar_NONE;
                 }
             }
-            return HOPMirTypeScalar_I32;
-        case HOPAst_TYPE_NAME:
+            return H2MirTypeScalar_I32;
+        case H2Ast_TYPE_NAME:
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "rawptr")) {
-                return HOPMirTypeScalar_NONE;
+                return H2MirTypeScalar_NONE;
             }
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "bool")
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u8")
@@ -6568,60 +6549,60 @@ static HOPMirTypeScalar ClassifyMirScalarType(
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "uint")
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "int"))
             {
-                return HOPMirTypeScalar_I32;
+                return H2MirTypeScalar_I32;
             }
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u64")
                 || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "i64"))
             {
-                return HOPMirTypeScalar_I64;
+                return H2MirTypeScalar_I64;
             }
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "f32")) {
-                return HOPMirTypeScalar_F32;
+                return H2MirTypeScalar_F32;
             }
             if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "f64")) {
-                return HOPMirTypeScalar_F64;
+                return H2MirTypeScalar_F64;
             }
-            return HOPMirTypeScalar_NONE;
-        default: return HOPMirTypeScalar_NONE;
+            return H2MirTypeScalar_NONE;
+        default: return H2MirTypeScalar_NONE;
     }
 }
 
-static HOPMirIntKind ClassifyMirIntKindFromTypeNode(
-    const HOPParsedFile* file, const HOPAstNode* node) {
+static H2MirIntKind ClassifyMirIntKindFromTypeNode(
+    const H2ParsedFile* file, const H2AstNode* node) {
     if (file == NULL || node == NULL) {
-        return HOPMirIntKind_NONE;
+        return H2MirIntKind_NONE;
     }
-    if (node->kind != HOPAst_TYPE_NAME) {
-        return HOPMirIntKind_NONE;
+    if (node->kind != H2Ast_TYPE_NAME) {
+        return H2MirIntKind_NONE;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "bool")) {
-        return HOPMirIntKind_BOOL;
+        return H2MirIntKind_BOOL;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u8")) {
-        return HOPMirIntKind_U8;
+        return H2MirIntKind_U8;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "i8")) {
-        return HOPMirIntKind_I8;
+        return H2MirIntKind_I8;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u16")) {
-        return HOPMirIntKind_U16;
+        return H2MirIntKind_U16;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "i16")) {
-        return HOPMirIntKind_I16;
+        return H2MirIntKind_I16;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "u32")) {
-        return HOPMirIntKind_U32;
+        return H2MirIntKind_U32;
     }
     if (SliceEqCStr(file->source, node->dataStart, node->dataEnd, "i32")
         || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "uint")
         || SliceEqCStr(file->source, node->dataStart, node->dataEnd, "int"))
     {
-        return HOPMirIntKind_I32;
+        return H2MirIntKind_I32;
     }
-    return HOPMirIntKind_NONE;
+    return H2MirIntKind_NONE;
 }
 
-static uint32_t ParseMirArrayLen(const HOPParsedFile* file, const HOPAstNode* node) {
+static uint32_t ParseMirArrayLen(const H2ParsedFile* file, const H2AstNode* node) {
     uint32_t value = 0;
     uint32_t i;
     if (file == NULL || node == NULL || node->dataEnd <= node->dataStart) {
@@ -6638,7 +6619,7 @@ static uint32_t ParseMirArrayLen(const HOPParsedFile* file, const HOPAstNode* no
 }
 
 static uint32_t FindMirSourceRefByFile(
-    const HOPMirProgram* program, const HOPParsedFile* file, uint32_t defaultSourceRef) {
+    const H2MirProgram* program, const H2ParsedFile* file, uint32_t defaultSourceRef) {
     uint32_t i;
     if (program == NULL || file == NULL) {
         return defaultSourceRef;
@@ -6653,8 +6634,8 @@ static uint32_t FindMirSourceRefByFile(
     return defaultSourceRef;
 }
 
-static const HOPSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     size_t   nameLen;
     if (pkg == NULL || src == NULL || end < start) {
@@ -6678,15 +6659,15 @@ static const HOPSymbolDecl* _Nullable FindPackageTypeDeclBySlice(
     return NULL;
 }
 
-static const HOPImportSymbolRef* _Nullable FindImportTypeSymbolBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+static const H2ImportSymbolRef* _Nullable FindImportTypeSymbolBySlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL || src == NULL || end <= start) {
         return NULL;
     }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if (!sym->isType) {
             continue;
         }
@@ -6698,19 +6679,19 @@ static const HOPImportSymbolRef* _Nullable FindImportTypeSymbolBySlice(
     return NULL;
 }
 
-static const HOPAstNode* _Nullable ResolveMirTypeAliasTargetNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirTypeRef*    typeRef,
-    const HOPParsedFile** _Nullable outFile,
+static const H2AstNode* _Nullable ResolveMirTypeAliasTargetNode(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirTypeRef*    typeRef,
+    const H2ParsedFile** _Nullable outFile,
     uint32_t* _Nullable outSourceRef) {
-    const HOPPackage*    pkg = NULL;
-    const HOPParsedFile* file;
-    const HOPAstNode*    node;
-    const HOPSymbolDecl* decl;
-    const HOPParsedFile* declFile;
-    uint32_t             sourceRef;
-    int32_t              targetNode;
+    const H2Package*    pkg = NULL;
+    const H2ParsedFile* file;
+    const H2AstNode*    node;
+    const H2SymbolDecl* decl;
+    const H2ParsedFile* declFile;
+    uint32_t            sourceRef;
+    int32_t             targetNode;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -6725,11 +6706,11 @@ static const HOPAstNode* _Nullable ResolveMirTypeAliasTargetNode(
         return NULL;
     }
     node = &file->ast.nodes[typeRef->astNode];
-    if (node->kind != HOPAst_TYPE_NAME) {
+    if (node->kind != H2Ast_TYPE_NAME) {
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
-    if (decl == NULL || decl->kind != HOPAst_TYPE_ALIAS || decl->nodeId < 0
+    if (decl == NULL || decl->kind != H2Ast_TYPE_ALIAS || decl->nodeId < 0
         || (uint32_t)decl->fileIndex >= pkg->fileLen)
     {
         return NULL;
@@ -6752,19 +6733,19 @@ static const HOPAstNode* _Nullable ResolveMirTypeAliasTargetNode(
     return &declFile->ast.nodes[targetNode];
 }
 
-static const HOPAstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirTypeRef*    typeRef,
-    const HOPParsedFile** _Nullable outFile,
+static const H2AstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirTypeRef*    typeRef,
+    const H2ParsedFile** _Nullable outFile,
     uint32_t* _Nullable outSourceRef) {
-    const HOPPackage*    pkg = NULL;
-    const HOPParsedFile* file;
-    const HOPAstNode*    node;
-    const HOPSymbolDecl* decl;
-    const HOPParsedFile* declFile;
-    uint32_t             sourceRef;
-    int32_t              underTypeNode;
+    const H2Package*    pkg = NULL;
+    const H2ParsedFile* file;
+    const H2AstNode*    node;
+    const H2SymbolDecl* decl;
+    const H2ParsedFile* declFile;
+    uint32_t            sourceRef;
+    int32_t             underTypeNode;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -6779,11 +6760,11 @@ static const HOPAstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
         return NULL;
     }
     node = &file->ast.nodes[typeRef->astNode];
-    if (node->kind != HOPAst_TYPE_NAME) {
+    if (node->kind != H2Ast_TYPE_NAME) {
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
-    if (decl == NULL || decl->kind != HOPAst_ENUM || decl->nodeId < 0
+    if (decl == NULL || decl->kind != H2Ast_ENUM || decl->nodeId < 0
         || (uint32_t)decl->fileIndex >= pkg->fileLen)
     {
         return NULL;
@@ -6795,19 +6776,19 @@ static const HOPAstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
     underTypeNode = declFile->ast.nodes[decl->nodeId].firstChild;
     if (underTypeNode < 0 || (uint32_t)underTypeNode >= declFile->ast.len
         || !(
-            declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_NAME
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_PTR
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_REF
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_MUTREF
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_ARRAY
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_VARRAY
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_SLICE
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_MUTSLICE
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_OPTIONAL
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_FN
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_ANON_STRUCT
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_ANON_UNION
-            || declFile->ast.nodes[underTypeNode].kind == HOPAst_TYPE_TUPLE))
+            declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_NAME
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_PTR
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_REF
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_MUTREF
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_ARRAY
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_VARRAY
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_SLICE
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_MUTSLICE
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_OPTIONAL
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_FN
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_ANON_STRUCT
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_ANON_UNION
+            || declFile->ast.nodes[underTypeNode].kind == H2Ast_TYPE_TUPLE))
     {
         return NULL;
     }
@@ -6821,19 +6802,19 @@ static const HOPAstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
     return &declFile->ast.nodes[underTypeNode];
 }
 
-static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPMirTypeRef*    typeRef,
-    const HOPParsedFile** _Nullable outFile,
+static const H2AstNode* _Nullable ResolveMirAggregateDeclNode(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2MirTypeRef*    typeRef,
+    const H2ParsedFile** _Nullable outFile,
     uint32_t* _Nullable outSourceRef) {
-    const HOPPackage*         pkg = NULL;
-    const HOPParsedFile*      file;
-    const HOPAstNode*         node;
-    const HOPSymbolDecl*      decl;
-    const HOPImportSymbolRef* importSym;
-    const HOPParsedFile*      declFile;
-    uint32_t                  sourceRef;
+    const H2Package*         pkg = NULL;
+    const H2ParsedFile*      file;
+    const H2AstNode*         node;
+    const H2SymbolDecl*      decl;
+    const H2ImportSymbolRef* importSym;
+    const H2ParsedFile*      declFile;
+    uint32_t                 sourceRef;
     if (outFile != NULL) {
         *outFile = NULL;
     }
@@ -6848,7 +6829,7 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
         return NULL;
     }
     node = &file->ast.nodes[typeRef->astNode];
-    if (node->kind == HOPAst_TYPE_ANON_STRUCT || node->kind == HOPAst_TYPE_ANON_UNION) {
+    if (node->kind == H2Ast_TYPE_ANON_STRUCT || node->kind == H2Ast_TYPE_ANON_UNION) {
         if (outFile != NULL) {
             *outFile = file;
         }
@@ -6857,7 +6838,7 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
         }
         return node;
     }
-    if (node->kind != HOPAst_TYPE_NAME) {
+    if (node->kind != H2Ast_TYPE_NAME) {
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
@@ -6866,7 +6847,7 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
             return NULL;
         }
         declFile = &pkg->files[decl->fileIndex];
-        if ((decl->kind != HOPAst_STRUCT && decl->kind != HOPAst_UNION)
+        if ((decl->kind != H2Ast_STRUCT && decl->kind != H2Ast_UNION)
             || (uint32_t)decl->nodeId >= declFile->ast.len)
         {
             return NULL;
@@ -6885,7 +6866,7 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
         return NULL;
     }
     {
-        const HOPPackage* targetPkg = EffectiveMirImportTargetPackage(
+        const H2Package* targetPkg = EffectiveMirImportTargetPackage(
             loader, &pkg->imports[importSym->importIndex]);
         if (targetPkg == NULL || importSym->exportNodeId < 0
             || importSym->exportFileIndex >= targetPkg->fileLen)
@@ -6894,8 +6875,8 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
         }
         declFile = &targetPkg->files[importSym->exportFileIndex];
         if ((uint32_t)importSym->exportNodeId >= declFile->ast.len
-            || (declFile->ast.nodes[importSym->exportNodeId].kind != HOPAst_STRUCT
-                && declFile->ast.nodes[importSym->exportNodeId].kind != HOPAst_UNION))
+            || (declFile->ast.nodes[importSym->exportNodeId].kind != H2Ast_STRUCT
+                && declFile->ast.nodes[importSym->exportNodeId].kind != H2Ast_UNION))
         {
             return NULL;
         }
@@ -6911,86 +6892,86 @@ static const HOPAstNode* _Nullable ResolveMirAggregateDeclNode(
 }
 
 static uint32_t ClassifyMirTypeFlags(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPParsedFile*    file,
-    const HOPMirTypeRef*    typeRef) {
-    uint32_t          flags = ClassifyMirScalarType(file, typeRef);
-    const HOPAstNode* node;
-    const HOPAstNode* child;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2ParsedFile*    file,
+    const H2MirTypeRef*    typeRef) {
+    uint32_t         flags = ClassifyMirScalarType(file, typeRef);
+    const H2AstNode* node;
+    const H2AstNode* child;
     if (file == NULL || typeRef == NULL || typeRef->astNode >= file->ast.len) {
         return flags;
     }
     node = &file->ast.nodes[typeRef->astNode];
-    if (node->kind == HOPAst_TYPE_OPTIONAL && node->firstChild >= 0
+    if (node->kind == H2Ast_TYPE_OPTIONAL && node->firstChild >= 0
         && (uint32_t)node->firstChild < file->ast.len)
     {
-        HOPMirTypeRef childTypeRef = {
+        H2MirTypeRef childTypeRef = {
             .astNode = (uint32_t)node->firstChild,
             .sourceRef = typeRef->sourceRef,
             .flags = 0u,
             .aux = 0u,
         };
-        return HOPMirTypeFlag_OPTIONAL | ClassifyMirTypeFlags(loader, program, file, &childTypeRef);
+        return H2MirTypeFlag_OPTIONAL | ClassifyMirTypeFlags(loader, program, file, &childTypeRef);
     }
-    if ((node->kind == HOPAst_TYPE_REF || node->kind == HOPAst_TYPE_PTR) && node->firstChild >= 0
+    if ((node->kind == H2Ast_TYPE_REF || node->kind == H2Ast_TYPE_PTR) && node->firstChild >= 0
         && (uint32_t)node->firstChild < file->ast.len)
     {
-        HOPMirTypeRef childTypeRef = {
+        H2MirTypeRef childTypeRef = {
             .astNode = (uint32_t)node->firstChild,
             .sourceRef = typeRef->sourceRef,
             .flags = 0u,
             .aux = 0u,
         };
         child = &file->ast.nodes[node->firstChild];
-        if (child->kind == HOPAst_TYPE_NAME) {
+        if (child->kind == H2Ast_TYPE_NAME) {
             if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "str")) {
                 flags |=
-                    node->kind == HOPAst_TYPE_REF ? HOPMirTypeFlag_STR_REF : HOPMirTypeFlag_STR_PTR;
+                    node->kind == H2Ast_TYPE_REF ? H2MirTypeFlag_STR_REF : H2MirTypeFlag_STR_PTR;
             } else if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "u8")) {
-                flags |= HOPMirTypeFlag_U8_PTR;
+                flags |= H2MirTypeFlag_U8_PTR;
             } else if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "i8")) {
-                flags |= HOPMirTypeFlag_I8_PTR;
+                flags |= H2MirTypeFlag_I8_PTR;
             } else if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "u16")) {
-                flags |= HOPMirTypeFlag_U16_PTR;
+                flags |= H2MirTypeFlag_U16_PTR;
             } else if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "i16")) {
-                flags |= HOPMirTypeFlag_I16_PTR;
+                flags |= H2MirTypeFlag_I16_PTR;
             } else if (SliceEqCStr(file->source, child->dataStart, child->dataEnd, "u32")) {
-                flags |= HOPMirTypeFlag_U32_PTR;
+                flags |= H2MirTypeFlag_U32_PTR;
             } else if (
                 SliceEqCStr(file->source, child->dataStart, child->dataEnd, "bool")
                 || SliceEqCStr(file->source, child->dataStart, child->dataEnd, "i32")
                 || SliceEqCStr(file->source, child->dataStart, child->dataEnd, "uint")
                 || SliceEqCStr(file->source, child->dataStart, child->dataEnd, "int"))
             {
-                flags |= HOPMirTypeFlag_I32_PTR;
+                flags |= H2MirTypeFlag_I32_PTR;
             } else if (
                 loader != NULL && program != NULL
                 && ResolveMirAggregateDeclNode(loader, program, &childTypeRef, NULL, NULL) != NULL)
             {
-                flags |= HOPMirTypeFlag_OPAQUE_PTR;
+                flags |= H2MirTypeFlag_OPAQUE_PTR;
             }
         } else if (
-            child->kind == HOPAst_TYPE_ARRAY
+            child->kind == H2Ast_TYPE_ARRAY
             && ClassifyMirIntKindFromTypeNode(
                    file,
                    child->firstChild >= 0 && (uint32_t)child->firstChild < file->ast.len
                        ? &file->ast.nodes[child->firstChild]
                        : NULL)
-                   != HOPMirIntKind_NONE
+                   != H2MirIntKind_NONE
             && ParseMirArrayLen(file, child) != 0u)
         {
-            flags |= HOPMirTypeFlag_FIXED_ARRAY_VIEW;
+            flags |= H2MirTypeFlag_FIXED_ARRAY_VIEW;
         } else if (
-            child->kind == HOPAst_TYPE_SLICE && child->firstChild >= 0
+            child->kind == H2Ast_TYPE_SLICE && child->firstChild >= 0
             && (uint32_t)child->firstChild < file->ast.len
             && (ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild])
-                    != HOPMirIntKind_NONE
+                    != H2MirIntKind_NONE
                 || (loader != NULL && program != NULL
                     && ResolveMirAggregateDeclNode(
                            loader,
                            program,
-                           &(HOPMirTypeRef){
+                           &(H2MirTypeRef){
                                .astNode = (uint32_t)child->firstChild,
                                .sourceRef = typeRef->sourceRef,
                                .flags = 0u,
@@ -7001,19 +6982,19 @@ static uint32_t ClassifyMirTypeFlags(
                            != NULL)))
         {
             flags |= ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild])
-                          != HOPMirIntKind_NONE
-                       ? HOPMirTypeFlag_SLICE_VIEW
-                       : HOPMirTypeFlag_AGG_SLICE_VIEW;
+                          != H2MirIntKind_NONE
+                       ? H2MirTypeFlag_SLICE_VIEW
+                       : H2MirTypeFlag_AGG_SLICE_VIEW;
         } else if (
-            child->kind == HOPAst_TYPE_VARRAY && child->firstChild >= 0
+            child->kind == H2Ast_TYPE_VARRAY && child->firstChild >= 0
             && (uint32_t)child->firstChild < file->ast.len
             && (ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild])
-                    != HOPMirIntKind_NONE
+                    != H2MirIntKind_NONE
                 || (loader != NULL && program != NULL
                     && ResolveMirAggregateDeclNode(
                            loader,
                            program,
-                           &(HOPMirTypeRef){
+                           &(H2MirTypeRef){
                                .astNode = (uint32_t)child->firstChild,
                                .sourceRef = typeRef->sourceRef,
                                .flags = 0u,
@@ -7024,46 +7005,46 @@ static uint32_t ClassifyMirTypeFlags(
                            != NULL)))
         {
             flags |= ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild])
-                          != HOPMirIntKind_NONE
-                       ? HOPMirTypeFlag_VARRAY_VIEW
-                       : HOPMirTypeFlag_AGG_SLICE_VIEW;
+                          != H2MirIntKind_NONE
+                       ? H2MirTypeFlag_VARRAY_VIEW
+                       : H2MirTypeFlag_AGG_SLICE_VIEW;
         }
     } else if (
-        node->kind == HOPAst_TYPE_ARRAY && node->firstChild >= 0
+        node->kind == H2Ast_TYPE_ARRAY && node->firstChild >= 0
         && (uint32_t)node->firstChild < file->ast.len)
     {
         child = &file->ast.nodes[node->firstChild];
-        if (ClassifyMirIntKindFromTypeNode(file, child) != HOPMirIntKind_NONE
+        if (ClassifyMirIntKindFromTypeNode(file, child) != H2MirIntKind_NONE
             && ParseMirArrayLen(file, node) != 0u)
         {
-            flags |= HOPMirTypeFlag_FIXED_ARRAY;
+            flags |= H2MirTypeFlag_FIXED_ARRAY;
         }
-    } else if (node->kind == HOPAst_TYPE_FN) {
-        flags |= HOPMirTypeFlag_FUNC_REF;
+    } else if (node->kind == H2Ast_TYPE_FN) {
+        flags |= H2MirTypeFlag_FUNC_REF;
     } else if (
-        node->kind == HOPAst_TYPE_VARRAY && node->firstChild >= 0
+        node->kind == H2Ast_TYPE_VARRAY && node->firstChild >= 0
         && (uint32_t)node->firstChild < file->ast.len
         && ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[node->firstChild])
-               != HOPMirIntKind_NONE)
+               != H2MirIntKind_NONE)
     {
-        flags |= HOPMirTypeFlag_VARRAY_VIEW;
+        flags |= H2MirTypeFlag_VARRAY_VIEW;
     } else if (
-        node->kind == HOPAst_TYPE_NAME
+        node->kind == H2Ast_TYPE_NAME
         && SliceEqCStr(file->source, node->dataStart, node->dataEnd, "str"))
     {
-        flags |= HOPMirTypeFlag_STR_OBJ;
+        flags |= H2MirTypeFlag_STR_OBJ;
     } else if (
-        node->kind == HOPAst_TYPE_NAME
+        node->kind == H2Ast_TYPE_NAME
         && SliceEqCStr(file->source, node->dataStart, node->dataEnd, "rawptr"))
     {
-        flags |= HOPMirTypeFlag_OPAQUE_PTR;
-    } else if (node->kind == HOPAst_TYPE_NAME) {
-        const HOPParsedFile* aliasFile = NULL;
-        uint32_t             aliasSourceRef = UINT32_MAX;
-        const HOPAstNode*    aliasTarget = ResolveMirTypeAliasTargetNode(
+        flags |= H2MirTypeFlag_OPAQUE_PTR;
+    } else if (node->kind == H2Ast_TYPE_NAME) {
+        const H2ParsedFile* aliasFile = NULL;
+        uint32_t            aliasSourceRef = UINT32_MAX;
+        const H2AstNode*    aliasTarget = ResolveMirTypeAliasTargetNode(
             loader, program, typeRef, &aliasFile, &aliasSourceRef);
         if (aliasTarget != NULL && aliasFile != NULL) {
-            HOPMirTypeRef aliasTypeRef = {
+            H2MirTypeRef aliasTypeRef = {
                 .astNode = (uint32_t)(aliasTarget - aliasFile->ast.nodes),
                 .sourceRef = aliasSourceRef,
                 .flags = 0u,
@@ -7071,13 +7052,13 @@ static uint32_t ClassifyMirTypeFlags(
             };
             flags |= ClassifyMirTypeFlags(loader, program, aliasFile, &aliasTypeRef);
         }
-        if (flags == HOPMirTypeScalar_NONE) {
-            const HOPParsedFile* enumFile = NULL;
-            uint32_t             enumSourceRef = UINT32_MAX;
-            const HOPAstNode*    enumType = ResolveMirEnumUnderlyingTypeNode(
+        if (flags == H2MirTypeScalar_NONE) {
+            const H2ParsedFile* enumFile = NULL;
+            uint32_t            enumSourceRef = UINT32_MAX;
+            const H2AstNode*    enumType = ResolveMirEnumUnderlyingTypeNode(
                 loader, program, typeRef, &enumFile, &enumSourceRef);
             if (enumType != NULL && enumFile != NULL) {
-                HOPMirTypeRef enumTypeRef = {
+                H2MirTypeRef enumTypeRef = {
                     .astNode = (uint32_t)(enumType - enumFile->ast.nodes),
                     .sourceRef = enumSourceRef,
                     .flags = 0u,
@@ -7090,26 +7071,26 @@ static uint32_t ClassifyMirTypeFlags(
         loader != NULL && program != NULL
         && ResolveMirAggregateDeclNode(loader, program, typeRef, NULL, NULL) != NULL)
     {
-        flags |= HOPMirTypeFlag_AGGREGATE;
+        flags |= H2MirTypeFlag_AGGREGATE;
     }
     return flags;
 }
 
 static uint32_t ClassifyMirTypeAux(
-    const HOPPackageLoader* loader,
-    const HOPMirProgram*    program,
-    const HOPParsedFile*    file,
-    const HOPMirTypeRef*    typeRef) {
-    const HOPAstNode* node;
-    const HOPAstNode* child;
-    HOPMirIntKind     intKind;
-    uint32_t          arrayCount;
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2ParsedFile*    file,
+    const H2MirTypeRef*    typeRef) {
+    const H2AstNode* node;
+    const H2AstNode* child;
+    H2MirIntKind     intKind;
+    uint32_t         arrayCount;
     if (file == NULL || typeRef == NULL || typeRef->astNode >= file->ast.len) {
         return 0u;
     }
     node = &file->ast.nodes[typeRef->astNode];
     switch (node->kind) {
-        case HOPAst_TYPE_OPTIONAL:
+        case H2Ast_TYPE_OPTIONAL:
             if (node->firstChild < 0 || (uint32_t)node->firstChild >= file->ast.len) {
                 return 0u;
             }
@@ -7117,28 +7098,28 @@ static uint32_t ClassifyMirTypeAux(
                 loader,
                 program,
                 file,
-                &(HOPMirTypeRef){
+                &(H2MirTypeRef){
                     .astNode = (uint32_t)node->firstChild,
                     .sourceRef = typeRef->sourceRef,
                     .flags = 0u,
                     .aux = 0u,
                 });
-        case HOPAst_TYPE_NAME:
+        case H2Ast_TYPE_NAME:
             intKind = ClassifyMirIntKindFromTypeNode(file, node);
-            if (intKind != HOPMirIntKind_NONE) {
-                return HOPMirTypeAuxMakeScalarInt(intKind);
+            if (intKind != H2MirIntKind_NONE) {
+                return H2MirTypeAuxMakeScalarInt(intKind);
             }
             if (loader != NULL && program != NULL) {
-                const HOPParsedFile* aliasFile = NULL;
-                uint32_t             aliasSourceRef = UINT32_MAX;
-                const HOPAstNode*    aliasTarget = ResolveMirTypeAliasTargetNode(
+                const H2ParsedFile* aliasFile = NULL;
+                uint32_t            aliasSourceRef = UINT32_MAX;
+                const H2AstNode*    aliasTarget = ResolveMirTypeAliasTargetNode(
                     loader, program, typeRef, &aliasFile, &aliasSourceRef);
                 if (aliasTarget != NULL && aliasFile != NULL) {
                     return ClassifyMirTypeAux(
                         loader,
                         program,
                         aliasFile,
-                        &(HOPMirTypeRef){
+                        &(H2MirTypeRef){
                             .astNode = (uint32_t)(aliasTarget - aliasFile->ast.nodes),
                             .sourceRef = aliasSourceRef,
                             .flags = 0u,
@@ -7146,16 +7127,16 @@ static uint32_t ClassifyMirTypeAux(
                         });
                 }
                 {
-                    const HOPParsedFile* enumFile = NULL;
-                    uint32_t             enumSourceRef = UINT32_MAX;
-                    const HOPAstNode*    enumType = ResolveMirEnumUnderlyingTypeNode(
+                    const H2ParsedFile* enumFile = NULL;
+                    uint32_t            enumSourceRef = UINT32_MAX;
+                    const H2AstNode*    enumType = ResolveMirEnumUnderlyingTypeNode(
                         loader, program, typeRef, &enumFile, &enumSourceRef);
                     if (enumType != NULL && enumFile != NULL) {
                         return ClassifyMirTypeAux(
                             loader,
                             program,
                             enumFile,
-                            &(HOPMirTypeRef){
+                            &(H2MirTypeRef){
                                 .astNode = (uint32_t)(enumType - enumFile->ast.nodes),
                                 .sourceRef = enumSourceRef,
                                 .flags = 0u,
@@ -7165,101 +7146,101 @@ static uint32_t ClassifyMirTypeAux(
                 }
             }
             return 0u;
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF:
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF:
             if (node->firstChild < 0 || (uint32_t)node->firstChild >= file->ast.len) {
                 return 0u;
             }
             child = &file->ast.nodes[node->firstChild];
-            if (child->kind == HOPAst_TYPE_ARRAY && child->firstChild >= 0
+            if (child->kind == H2Ast_TYPE_ARRAY && child->firstChild >= 0
                 && (uint32_t)child->firstChild < file->ast.len)
             {
                 intKind = ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild]);
                 arrayCount = ParseMirArrayLen(file, child);
-                if (intKind != HOPMirIntKind_NONE && arrayCount != 0u) {
-                    return HOPMirTypeAuxMakeFixedArray(intKind, arrayCount);
+                if (intKind != H2MirIntKind_NONE && arrayCount != 0u) {
+                    return H2MirTypeAuxMakeFixedArray(intKind, arrayCount);
                 }
                 return 0u;
             }
-            if (child->kind == HOPAst_TYPE_SLICE && child->firstChild >= 0
+            if (child->kind == H2Ast_TYPE_SLICE && child->firstChild >= 0
                 && (uint32_t)child->firstChild < file->ast.len)
             {
                 intKind = ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild]);
-                if (intKind != HOPMirIntKind_NONE) {
-                    return HOPMirTypeAuxMakeScalarInt(intKind);
+                if (intKind != H2MirIntKind_NONE) {
+                    return H2MirTypeAuxMakeScalarInt(intKind);
                 }
-                return HOPMirTypeAuxMakeAggSliceView(UINT32_MAX);
+                return H2MirTypeAuxMakeAggSliceView(UINT32_MAX);
             }
-            if (child->kind == HOPAst_TYPE_VARRAY && child->firstChild >= 0
+            if (child->kind == H2Ast_TYPE_VARRAY && child->firstChild >= 0
                 && (uint32_t)child->firstChild < file->ast.len)
             {
                 intKind = ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[child->firstChild]);
-                if (intKind != HOPMirIntKind_NONE) {
-                    return HOPMirTypeAuxMakeScalarInt(intKind);
+                if (intKind != H2MirIntKind_NONE) {
+                    return H2MirTypeAuxMakeScalarInt(intKind);
                 }
-                return HOPMirTypeAuxMakeAggSliceView(UINT32_MAX);
+                return H2MirTypeAuxMakeAggSliceView(UINT32_MAX);
             }
             intKind = ClassifyMirIntKindFromTypeNode(file, child);
-            return intKind != HOPMirIntKind_NONE ? HOPMirTypeAuxMakeScalarInt(intKind) : 0u;
-        case HOPAst_TYPE_ARRAY:
+            return intKind != H2MirIntKind_NONE ? H2MirTypeAuxMakeScalarInt(intKind) : 0u;
+        case H2Ast_TYPE_ARRAY:
             if (node->firstChild < 0 || (uint32_t)node->firstChild >= file->ast.len) {
                 return 0u;
             }
             child = &file->ast.nodes[node->firstChild];
             intKind = ClassifyMirIntKindFromTypeNode(file, child);
             arrayCount = ParseMirArrayLen(file, node);
-            if (intKind == HOPMirIntKind_NONE || arrayCount == 0u) {
+            if (intKind == H2MirIntKind_NONE || arrayCount == 0u) {
                 return 0u;
             }
-            return HOPMirTypeAuxMakeFixedArray(intKind, arrayCount);
-        case HOPAst_TYPE_VARRAY:
+            return H2MirTypeAuxMakeFixedArray(intKind, arrayCount);
+        case H2Ast_TYPE_VARRAY:
             if (node->firstChild < 0 || (uint32_t)node->firstChild >= file->ast.len) {
                 return 0u;
             }
             intKind = ClassifyMirIntKindFromTypeNode(file, &file->ast.nodes[node->firstChild]);
-            return intKind != HOPMirIntKind_NONE ? HOPMirTypeAuxMakeScalarInt(intKind) : 0u;
+            return intKind != H2MirIntKind_NONE ? H2MirTypeAuxMakeScalarInt(intKind) : 0u;
         default: return 0u;
     }
 }
 
-static void EnrichMirTypeFlags(const HOPPackageLoader* loader, HOPMirProgram* program) {
+static void EnrichMirTypeFlags(const H2PackageLoader* loader, H2MirProgram* program) {
     uint32_t i;
     if (loader == NULL || program == NULL || program->types == NULL) {
         return;
     }
     for (i = 0; i < program->typeLen; i++) {
-        HOPMirTypeRef*       typeRef = (HOPMirTypeRef*)&program->types[i];
-        const HOPParsedFile* file = FindLoaderFileByMirSource(
+        H2MirTypeRef*       typeRef = (H2MirTypeRef*)&program->types[i];
+        const H2ParsedFile* file = FindLoaderFileByMirSource(
             loader, program, typeRef->sourceRef, NULL);
         if (typeRef->astNode == UINT32_MAX && typeRef->sourceRef == UINT32_MAX) {
             continue;
         }
         typeRef->flags =
             (typeRef->flags
-             & ~(HOPMirTypeFlag_SCALAR_MASK | HOPMirTypeFlag_STR_REF | HOPMirTypeFlag_STR_PTR
-                 | HOPMirTypeFlag_STR_OBJ | HOPMirTypeFlag_U8_PTR | HOPMirTypeFlag_I32_PTR
-                 | HOPMirTypeFlag_I8_PTR | HOPMirTypeFlag_U16_PTR | HOPMirTypeFlag_I16_PTR
-                 | HOPMirTypeFlag_U32_PTR | HOPMirTypeFlag_FIXED_ARRAY
-                 | HOPMirTypeFlag_FIXED_ARRAY_VIEW | HOPMirTypeFlag_SLICE_VIEW
-                 | HOPMirTypeFlag_VARRAY_VIEW | HOPMirTypeFlag_AGG_SLICE_VIEW
-                 | HOPMirTypeFlag_AGGREGATE | HOPMirTypeFlag_OPAQUE_PTR | HOPMirTypeFlag_OPTIONAL
-                 | HOPMirTypeFlag_FUNC_REF))
+             & ~(H2MirTypeFlag_SCALAR_MASK | H2MirTypeFlag_STR_REF | H2MirTypeFlag_STR_PTR
+                 | H2MirTypeFlag_STR_OBJ | H2MirTypeFlag_U8_PTR | H2MirTypeFlag_I32_PTR
+                 | H2MirTypeFlag_I8_PTR | H2MirTypeFlag_U16_PTR | H2MirTypeFlag_I16_PTR
+                 | H2MirTypeFlag_U32_PTR | H2MirTypeFlag_FIXED_ARRAY
+                 | H2MirTypeFlag_FIXED_ARRAY_VIEW | H2MirTypeFlag_SLICE_VIEW
+                 | H2MirTypeFlag_VARRAY_VIEW | H2MirTypeFlag_AGG_SLICE_VIEW
+                 | H2MirTypeFlag_AGGREGATE | H2MirTypeFlag_OPAQUE_PTR | H2MirTypeFlag_OPTIONAL
+                 | H2MirTypeFlag_FUNC_REF))
             | ClassifyMirTypeFlags(loader, program, file, typeRef);
         typeRef->aux = ClassifyMirTypeAux(loader, program, file, typeRef);
     }
 }
 
 static int EnsureMirAstTypeRef(
-    HOPArena*               arena,
-    const HOPPackageLoader* loader,
-    HOPMirProgram*          program,
-    uint32_t                astNode,
-    uint32_t                sourceRef,
+    H2Arena*               arena,
+    const H2PackageLoader* loader,
+    H2MirProgram*          program,
+    uint32_t               astNode,
+    uint32_t               sourceRef,
     uint32_t* _Nonnull outTypeRef) {
-    uint32_t             i;
-    HOPMirTypeRef*       newTypes;
-    const HOPParsedFile* file;
+    uint32_t            i;
+    H2MirTypeRef*       newTypes;
+    const H2ParsedFile* file;
     if (arena == NULL || loader == NULL || program == NULL || outTypeRef == NULL) {
         return -1;
     }
@@ -7269,16 +7250,16 @@ static int EnsureMirAstTypeRef(
             return 0;
         }
     }
-    newTypes = (HOPMirTypeRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(HOPMirTypeRef));
+    newTypes = (H2MirTypeRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(H2MirTypeRef));
     if (newTypes == NULL) {
         return -1;
     }
     if (program->typeLen != 0u) {
-        memcpy(newTypes, program->types, sizeof(HOPMirTypeRef) * program->typeLen);
+        memcpy(newTypes, program->types, sizeof(H2MirTypeRef) * program->typeLen);
     }
     newTypes[program->typeLen] =
-        (HOPMirTypeRef){ .astNode = astNode, .sourceRef = sourceRef, .flags = 0u, .aux = 0u };
+        (H2MirTypeRef){ .astNode = astNode, .sourceRef = sourceRef, .flags = 0u, .aux = 0u };
     file = FindLoaderFileByMirSource(loader, program, sourceRef, NULL);
     newTypes[program->typeLen].flags = ClassifyMirTypeFlags(
         loader, program, file, &newTypes[program->typeLen]);
@@ -7290,16 +7271,16 @@ static int EnsureMirAstTypeRef(
 }
 
 static int EnsureMirAggregateFieldRef(
-    HOPArena*      arena,
-    HOPMirProgram* program,
-    uint32_t       nameStart,
-    uint32_t       nameEnd,
-    uint32_t       sourceRef,
-    uint32_t       ownerTypeRef,
-    uint32_t       typeRef,
+    H2Arena*      arena,
+    H2MirProgram* program,
+    uint32_t      nameStart,
+    uint32_t      nameEnd,
+    uint32_t      sourceRef,
+    uint32_t      ownerTypeRef,
+    uint32_t      typeRef,
     uint32_t* _Nonnull outFieldRef) {
-    uint32_t     i;
-    HOPMirField* newFields;
+    uint32_t    i;
+    H2MirField* newFields;
     if (arena == NULL || program == NULL || outFieldRef == NULL) {
         return -1;
     }
@@ -7313,15 +7294,15 @@ static int EnsureMirAggregateFieldRef(
             return 0;
         }
     }
-    newFields = (HOPMirField*)HOPArenaAlloc(
-        arena, sizeof(HOPMirField) * (program->fieldLen + 1u), (uint32_t)_Alignof(HOPMirField));
+    newFields = (H2MirField*)H2ArenaAlloc(
+        arena, sizeof(H2MirField) * (program->fieldLen + 1u), (uint32_t)_Alignof(H2MirField));
     if (newFields == NULL) {
         return -1;
     }
     if (program->fieldLen != 0u) {
-        memcpy(newFields, program->fields, sizeof(HOPMirField) * program->fieldLen);
+        memcpy(newFields, program->fields, sizeof(H2MirField) * program->fieldLen);
     }
-    newFields[program->fieldLen] = (HOPMirField){
+    newFields[program->fieldLen] = (H2MirField){
         .nameStart = nameStart,
         .nameEnd = nameEnd,
         .sourceRef = sourceRef,
@@ -7334,21 +7315,18 @@ static int EnsureMirAggregateFieldRef(
 }
 
 static int EnsureMirAggregateFieldsForType(
-    const HOPPackageLoader* loader,
-    HOPArena*               arena,
-    HOPMirProgram*          program,
-    uint32_t                ownerTypeRef) {
-    const HOPParsedFile* file = NULL;
-    const HOPParsedFile* ownerFile = NULL;
-    const HOPAstNode*    declNode;
-    const HOPAstNode*    ownerNode = NULL;
-    uint32_t             ownerSourceRef = UINT32_MAX;
-    int32_t              childNode;
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program, uint32_t ownerTypeRef) {
+    const H2ParsedFile* file = NULL;
+    const H2ParsedFile* ownerFile = NULL;
+    const H2AstNode*    declNode;
+    const H2AstNode*    ownerNode = NULL;
+    uint32_t            ownerSourceRef = UINT32_MAX;
+    int32_t             childNode;
     if (loader == NULL || arena == NULL || program == NULL || ownerTypeRef >= program->typeLen) {
         return -1;
     }
     if (program->types[ownerTypeRef].flags != 0u
-        && !HOPMirTypeRefIsAggregate(&program->types[ownerTypeRef]))
+        && !H2MirTypeRefIsAggregate(&program->types[ownerTypeRef]))
     {
         return 0;
     }
@@ -7360,44 +7338,43 @@ static int EnsureMirAggregateFieldsForType(
         ownerNode = &ownerFile->ast.nodes[program->types[ownerTypeRef].astNode];
     }
     if (declNode == NULL || file == NULL
-        || (declNode->kind != HOPAst_STRUCT && declNode->kind != HOPAst_UNION
-            && declNode->kind != HOPAst_TYPE_ANON_STRUCT
-            && declNode->kind != HOPAst_TYPE_ANON_UNION))
+        || (declNode->kind != H2Ast_STRUCT && declNode->kind != H2Ast_UNION
+            && declNode->kind != H2Ast_TYPE_ANON_STRUCT && declNode->kind != H2Ast_TYPE_ANON_UNION))
     {
         return 0;
     }
     if (ownerNode == NULL
-        || (ownerNode->kind != HOPAst_TYPE_NAME && ownerNode->kind != HOPAst_TYPE_ANON_STRUCT
-            && ownerNode->kind != HOPAst_TYPE_ANON_UNION && ownerNode->kind != HOPAst_STRUCT
-            && ownerNode->kind != HOPAst_UNION))
+        || (ownerNode->kind != H2Ast_TYPE_NAME && ownerNode->kind != H2Ast_TYPE_ANON_STRUCT
+            && ownerNode->kind != H2Ast_TYPE_ANON_UNION && ownerNode->kind != H2Ast_STRUCT
+            && ownerNode->kind != H2Ast_UNION))
     {
         return 0;
     }
-    ((HOPMirTypeRef*)&program->types[ownerTypeRef])->flags |= HOPMirTypeFlag_AGGREGATE;
+    ((H2MirTypeRef*)&program->types[ownerTypeRef])->flags |= H2MirTypeFlag_AGGREGATE;
     childNode = declNode->firstChild;
     while (childNode >= 0 && (uint32_t)childNode < file->ast.len) {
-        const HOPAstNode* fieldNode = &file->ast.nodes[childNode];
-        uint32_t          fieldTypeRef = UINT32_MAX;
-        uint32_t          fieldRef = UINT32_MAX;
-        int32_t           typeNode = fieldNode->firstChild;
-        uint32_t          typeSourceRef = ownerSourceRef;
-        if (fieldNode->kind != HOPAst_FIELD) {
+        const H2AstNode* fieldNode = &file->ast.nodes[childNode];
+        uint32_t         fieldTypeRef = UINT32_MAX;
+        uint32_t         fieldRef = UINT32_MAX;
+        int32_t          typeNode = fieldNode->firstChild;
+        uint32_t         typeSourceRef = ownerSourceRef;
+        if (fieldNode->kind != H2Ast_FIELD) {
             childNode = fieldNode->nextSibling;
             continue;
         }
         if (typeNode < 0 || (uint32_t)typeNode >= file->ast.len) {
             return -1;
         }
-        if (ownerFile != NULL && ownerNode != NULL && ownerNode->kind == HOPAst_TYPE_NAME
-            && file->ast.nodes[typeNode].kind == HOPAst_TYPE_NAME)
+        if (ownerFile != NULL && ownerNode != NULL && ownerNode->kind == H2Ast_TYPE_NAME
+            && file->ast.nodes[typeNode].kind == H2Ast_TYPE_NAME)
         {
             int32_t typeParamNode = declNode->firstChild;
             int32_t typeArgNode = ownerNode->firstChild;
             while (typeParamNode >= 0 && typeArgNode >= 0) {
-                const HOPAstNode* param = &file->ast.nodes[typeParamNode];
-                if (param->kind == HOPAst_TYPE_PARAM
-                    && HOPNameEqSlice(
-                        (HOPStrView){ file->source, file->sourceLen },
+                const H2AstNode* param = &file->ast.nodes[typeParamNode];
+                if (param->kind == H2Ast_TYPE_PARAM
+                    && H2NameEqSlice(
+                        (H2StrView){ file->source, file->sourceLen },
                         param->dataStart,
                         param->dataEnd,
                         file->ast.nodes[typeNode].dataStart,
@@ -7437,7 +7414,7 @@ static int EnsureMirAggregateFieldsForType(
 }
 
 static int EnrichMirAggregateFields(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
     uint32_t i;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
@@ -7450,21 +7427,21 @@ static int EnrichMirAggregateFields(
     return 0;
 }
 
-static int EnrichMirVArrayCountFields(const HOPPackageLoader* loader, HOPMirProgram* program) {
+static int EnrichMirVArrayCountFields(const H2PackageLoader* loader, H2MirProgram* program) {
     uint32_t i;
     if (loader == NULL || program == NULL) {
         return -1;
     }
     for (i = 0; i < program->fieldLen; i++) {
-        HOPMirTypeRef*       typeRef;
-        const HOPParsedFile* file;
-        const HOPAstNode*    typeNode;
-        uint32_t             countFieldRef = UINT32_MAX;
+        H2MirTypeRef*       typeRef;
+        const H2ParsedFile* file;
+        const H2AstNode*    typeNode;
+        uint32_t            countFieldRef = UINT32_MAX;
         if (program->fields[i].typeRef >= program->typeLen) {
             continue;
         }
-        typeRef = (HOPMirTypeRef*)&program->types[program->fields[i].typeRef];
-        if (!HOPMirTypeRefIsVArrayView(typeRef)) {
+        typeRef = (H2MirTypeRef*)&program->types[program->fields[i].typeRef];
+        if (!H2MirTypeRefIsVArrayView(typeRef)) {
             continue;
         }
         file = FindLoaderFileByMirSource(loader, program, typeRef->sourceRef, NULL);
@@ -7472,7 +7449,7 @@ static int EnrichMirVArrayCountFields(const HOPPackageLoader* loader, HOPMirProg
             continue;
         }
         typeNode = &file->ast.nodes[typeRef->astNode];
-        if (typeNode->kind != HOPAst_TYPE_VARRAY
+        if (typeNode->kind != H2Ast_TYPE_VARRAY
             || !FindMirFieldByOwnerAndSlice(
                 program,
                 program->fields[i].ownerTypeRef,
@@ -7483,25 +7460,25 @@ static int EnrichMirVArrayCountFields(const HOPPackageLoader* loader, HOPMirProg
         {
             return -1;
         }
-        typeRef->aux = HOPMirTypeAuxMakeVArrayView(HOPMirTypeRefIntKind(typeRef), countFieldRef);
+        typeRef->aux = H2MirTypeAuxMakeVArrayView(H2MirTypeRefIntKind(typeRef), countFieldRef);
     }
     return 0;
 }
 
 static int EnrichMirAggSliceElemTypes(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
     uint32_t i = 0;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     while (i < program->typeLen) {
-        HOPMirTypeRef*       typeRef = (HOPMirTypeRef*)&program->types[i];
-        const HOPParsedFile* file;
-        const HOPAstNode*    node;
-        const HOPAstNode*    child;
-        uint32_t             elemTypeRef = UINT32_MAX;
-        uint32_t             sourceRef;
-        if (!HOPMirTypeRefIsAggSliceView(typeRef)) {
+        H2MirTypeRef*       typeRef = (H2MirTypeRef*)&program->types[i];
+        const H2ParsedFile* file;
+        const H2AstNode*    node;
+        const H2AstNode*    child;
+        uint32_t            elemTypeRef = UINT32_MAX;
+        uint32_t            sourceRef;
+        if (!H2MirTypeRefIsAggSliceView(typeRef)) {
             i++;
             continue;
         }
@@ -7512,15 +7489,15 @@ static int EnrichMirAggSliceElemTypes(
             continue;
         }
         node = &file->ast.nodes[typeRef->astNode];
-        if ((node->kind != HOPAst_TYPE_PTR && node->kind != HOPAst_TYPE_REF
-             && node->kind != HOPAst_TYPE_MUTREF)
+        if ((node->kind != H2Ast_TYPE_PTR && node->kind != H2Ast_TYPE_REF
+             && node->kind != H2Ast_TYPE_MUTREF)
             || node->firstChild < 0 || (uint32_t)node->firstChild >= file->ast.len)
         {
             i++;
             continue;
         }
         child = &file->ast.nodes[node->firstChild];
-        if ((child->kind != HOPAst_TYPE_SLICE && child->kind != HOPAst_TYPE_VARRAY)
+        if ((child->kind != H2Ast_TYPE_SLICE && child->kind != H2Ast_TYPE_VARRAY)
             || child->firstChild < 0 || (uint32_t)child->firstChild >= file->ast.len)
         {
             i++;
@@ -7532,8 +7509,8 @@ static int EnrichMirAggSliceElemTypes(
         {
             return -1;
         }
-        typeRef = (HOPMirTypeRef*)&program->types[i];
-        typeRef->aux = HOPMirTypeAuxMakeAggSliceView(elemTypeRef);
+        typeRef = (H2MirTypeRef*)&program->types[i];
+        typeRef->aux = H2MirTypeAuxMakeAggSliceView(elemTypeRef);
         if (EnsureMirAggregateFieldsForType(loader, arena, program, elemTypeRef) != 0) {
             return -1;
         }
@@ -7543,19 +7520,19 @@ static int EnrichMirAggSliceElemTypes(
 }
 
 static int EnrichMirOpaquePtrPointees(
-    const HOPPackageLoader* loader, HOPArena* arena, HOPMirProgram* program) {
+    const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program) {
     uint32_t i = 0;
     if (loader == NULL || arena == NULL || program == NULL) {
         return -1;
     }
     while (i < program->typeLen) {
-        HOPMirTypeRef*       typeRef = (HOPMirTypeRef*)&program->types[i];
-        const HOPParsedFile* file;
-        const HOPAstNode*    node;
-        HOPMirTypeRef        childTypeRef;
-        uint32_t             pointeeTypeRef = UINT32_MAX;
-        uint32_t             sourceRef;
-        if (!HOPMirTypeRefIsOpaquePtr(typeRef)) {
+        H2MirTypeRef*       typeRef = (H2MirTypeRef*)&program->types[i];
+        const H2ParsedFile* file;
+        const H2AstNode*    node;
+        H2MirTypeRef        childTypeRef;
+        uint32_t            pointeeTypeRef = UINT32_MAX;
+        uint32_t            sourceRef;
+        if (!H2MirTypeRefIsOpaquePtr(typeRef)) {
             i++;
             continue;
         }
@@ -7566,13 +7543,13 @@ static int EnrichMirOpaquePtrPointees(
             continue;
         }
         node = &file->ast.nodes[typeRef->astNode];
-        if (node->kind != HOPAst_TYPE_PTR || node->firstChild < 0
+        if (node->kind != H2Ast_TYPE_PTR || node->firstChild < 0
             || (uint32_t)node->firstChild >= file->ast.len)
         {
             i++;
             continue;
         }
-        childTypeRef = (HOPMirTypeRef){
+        childTypeRef = (H2MirTypeRef){
             .astNode = (uint32_t)node->firstChild,
             .sourceRef = sourceRef,
             .flags = 0u,
@@ -7588,7 +7565,7 @@ static int EnrichMirOpaquePtrPointees(
         {
             return -1;
         }
-        typeRef = (HOPMirTypeRef*)&program->types[i];
+        typeRef = (H2MirTypeRef*)&program->types[i];
         typeRef->aux = pointeeTypeRef;
         if (EnsureMirAggregateFieldsForType(loader, arena, program, pointeeTypeRef) != 0) {
             return -1;
@@ -7599,30 +7576,27 @@ static int EnrichMirOpaquePtrPointees(
 }
 
 static int EnsureMirScalarTypeRef(
-    HOPArena*        arena,
-    HOPMirProgram*   program,
-    HOPMirTypeScalar scalar,
-    uint32_t* _Nonnull outTypeRef) {
-    uint32_t       i;
-    HOPMirTypeRef* newTypes;
-    if (arena == NULL || program == NULL || outTypeRef == NULL || scalar == HOPMirTypeScalar_NONE) {
+    H2Arena* arena, H2MirProgram* program, H2MirTypeScalar scalar, uint32_t* _Nonnull outTypeRef) {
+    uint32_t      i;
+    H2MirTypeRef* newTypes;
+    if (arena == NULL || program == NULL || outTypeRef == NULL || scalar == H2MirTypeScalar_NONE) {
         return -1;
     }
     for (i = 0; i < program->typeLen; i++) {
-        if (HOPMirTypeRefScalarKind(&program->types[i]) == scalar) {
+        if (H2MirTypeRefScalarKind(&program->types[i]) == scalar) {
             *outTypeRef = i;
             return 0;
         }
     }
-    newTypes = (HOPMirTypeRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(HOPMirTypeRef));
+    newTypes = (H2MirTypeRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(H2MirTypeRef));
     if (newTypes == NULL) {
         return -1;
     }
     if (program->typeLen != 0u) {
-        memcpy(newTypes, program->types, sizeof(HOPMirTypeRef) * program->typeLen);
+        memcpy(newTypes, program->types, sizeof(H2MirTypeRef) * program->typeLen);
     }
-    newTypes[program->typeLen] = (HOPMirTypeRef){
+    newTypes[program->typeLen] = (H2MirTypeRef){
         .astNode = UINT32_MAX,
         .sourceRef = 0,
         .flags = (uint32_t)scalar,
@@ -7665,107 +7639,107 @@ typedef enum {
     MirInferredType_FUNC_REF,
 } MirInferredType;
 
-static MirInferredType MirInferredTypeFromTypeRef(const HOPMirTypeRef* typeRef) {
+static MirInferredType MirInferredTypeFromTypeRef(const H2MirTypeRef* typeRef) {
     uint32_t flags;
     if (typeRef == NULL) {
         return MirInferredType_NONE;
     }
     flags = typeRef->flags;
-    if ((flags & HOPMirTypeFlag_STR_REF) != 0) {
+    if ((flags & H2MirTypeFlag_STR_REF) != 0) {
         return MirInferredType_STR_REF;
     }
-    if ((flags & HOPMirTypeFlag_STR_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_STR_PTR) != 0) {
         return MirInferredType_STR_PTR;
     }
-    if ((flags & HOPMirTypeFlag_STR_OBJ) != 0) {
+    if ((flags & H2MirTypeFlag_STR_OBJ) != 0) {
         return MirInferredType_STR_PTR;
     }
-    if ((flags & HOPMirTypeFlag_U8_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_U8_PTR) != 0) {
         return MirInferredType_U8_PTR;
     }
-    if ((flags & HOPMirTypeFlag_I8_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_I8_PTR) != 0) {
         return MirInferredType_I8_PTR;
     }
-    if ((flags & HOPMirTypeFlag_U16_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_U16_PTR) != 0) {
         return MirInferredType_U16_PTR;
     }
-    if ((flags & HOPMirTypeFlag_I16_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_I16_PTR) != 0) {
         return MirInferredType_I16_PTR;
     }
-    if ((flags & HOPMirTypeFlag_U32_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_U32_PTR) != 0) {
         return MirInferredType_U32_PTR;
     }
-    if ((flags & HOPMirTypeFlag_I32_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_I32_PTR) != 0) {
         return MirInferredType_I32_PTR;
     }
-    if ((flags & HOPMirTypeFlag_OPAQUE_PTR) != 0) {
+    if ((flags & H2MirTypeFlag_OPAQUE_PTR) != 0) {
         return MirInferredType_OPAQUE_PTR;
     }
-    if ((flags & HOPMirTypeFlag_FUNC_REF) != 0) {
+    if ((flags & H2MirTypeFlag_FUNC_REF) != 0) {
         return MirInferredType_FUNC_REF;
     }
-    if ((flags & (HOPMirTypeFlag_FIXED_ARRAY | HOPMirTypeFlag_FIXED_ARRAY_VIEW)) != 0) {
-        switch (HOPMirTypeRefIntKind(typeRef)) {
-            case HOPMirIntKind_U8:   return MirInferredType_ARRAY_U8;
-            case HOPMirIntKind_I8:   return MirInferredType_ARRAY_I8;
-            case HOPMirIntKind_U16:  return MirInferredType_ARRAY_U16;
-            case HOPMirIntKind_I16:  return MirInferredType_ARRAY_I16;
-            case HOPMirIntKind_U32:  return MirInferredType_ARRAY_U32;
-            case HOPMirIntKind_BOOL:
-            case HOPMirIntKind_I32:  return MirInferredType_ARRAY_I32;
-            default:                 return MirInferredType_NONE;
+    if ((flags & (H2MirTypeFlag_FIXED_ARRAY | H2MirTypeFlag_FIXED_ARRAY_VIEW)) != 0) {
+        switch (H2MirTypeRefIntKind(typeRef)) {
+            case H2MirIntKind_U8:   return MirInferredType_ARRAY_U8;
+            case H2MirIntKind_I8:   return MirInferredType_ARRAY_I8;
+            case H2MirIntKind_U16:  return MirInferredType_ARRAY_U16;
+            case H2MirIntKind_I16:  return MirInferredType_ARRAY_I16;
+            case H2MirIntKind_U32:  return MirInferredType_ARRAY_U32;
+            case H2MirIntKind_BOOL:
+            case H2MirIntKind_I32:  return MirInferredType_ARRAY_I32;
+            default:                return MirInferredType_NONE;
         }
     }
-    if ((flags & (HOPMirTypeFlag_SLICE_VIEW | HOPMirTypeFlag_VARRAY_VIEW)) != 0) {
-        switch (HOPMirTypeRefIntKind(typeRef)) {
-            case HOPMirIntKind_U8:   return MirInferredType_SLICE_U8;
-            case HOPMirIntKind_I8:   return MirInferredType_SLICE_I8;
-            case HOPMirIntKind_U16:  return MirInferredType_SLICE_U16;
-            case HOPMirIntKind_I16:  return MirInferredType_SLICE_I16;
-            case HOPMirIntKind_U32:  return MirInferredType_SLICE_U32;
-            case HOPMirIntKind_BOOL:
-            case HOPMirIntKind_I32:  return MirInferredType_SLICE_I32;
-            default:                 return MirInferredType_NONE;
+    if ((flags & (H2MirTypeFlag_SLICE_VIEW | H2MirTypeFlag_VARRAY_VIEW)) != 0) {
+        switch (H2MirTypeRefIntKind(typeRef)) {
+            case H2MirIntKind_U8:   return MirInferredType_SLICE_U8;
+            case H2MirIntKind_I8:   return MirInferredType_SLICE_I8;
+            case H2MirIntKind_U16:  return MirInferredType_SLICE_U16;
+            case H2MirIntKind_I16:  return MirInferredType_SLICE_I16;
+            case H2MirIntKind_U32:  return MirInferredType_SLICE_U32;
+            case H2MirIntKind_BOOL:
+            case H2MirIntKind_I32:  return MirInferredType_SLICE_I32;
+            default:                return MirInferredType_NONE;
         }
     }
-    if ((flags & HOPMirTypeFlag_AGG_SLICE_VIEW) != 0) {
+    if ((flags & H2MirTypeFlag_AGG_SLICE_VIEW) != 0) {
         return MirInferredType_SLICE_AGG;
     }
-    if ((flags & HOPMirTypeFlag_AGGREGATE) != 0) {
+    if ((flags & H2MirTypeFlag_AGGREGATE) != 0) {
         return MirInferredType_AGG;
     }
-    switch ((HOPMirTypeScalar)(flags & HOPMirTypeFlag_SCALAR_MASK)) {
-        case HOPMirTypeScalar_I32: return MirInferredType_I32;
-        case HOPMirTypeScalar_I64: return MirInferredType_I64;
-        case HOPMirTypeScalar_F32: return MirInferredType_F32;
-        case HOPMirTypeScalar_F64: return MirInferredType_F64;
-        default:                   return MirInferredType_NONE;
+    switch ((H2MirTypeScalar)(flags & H2MirTypeFlag_SCALAR_MASK)) {
+        case H2MirTypeScalar_I32: return MirInferredType_I32;
+        case H2MirTypeScalar_I64: return MirInferredType_I64;
+        case H2MirTypeScalar_F32: return MirInferredType_F32;
+        case H2MirTypeScalar_F64: return MirInferredType_F64;
+        default:                  return MirInferredType_NONE;
     }
 }
 
-static MirInferredType MirProgramTypeKind(const HOPMirProgram* program, uint32_t typeRefIndex) {
+static MirInferredType MirProgramTypeKind(const H2MirProgram* program, uint32_t typeRefIndex) {
     if (program == NULL || typeRefIndex == UINT32_MAX || typeRefIndex >= program->typeLen) {
         return MirInferredType_NONE;
     }
     return MirInferredTypeFromTypeRef(&program->types[typeRefIndex]);
 }
 
-static MirInferredType MirConstTypeKind(const HOPMirConst* value) {
+static MirInferredType MirConstTypeKind(const H2MirConst* value) {
     if (value == NULL) {
         return MirInferredType_NONE;
     }
     switch (value->kind) {
-        case HOPMirConst_INT:
-        case HOPMirConst_BOOL:
-        case HOPMirConst_NULL:     return MirInferredType_I32;
-        case HOPMirConst_STRING:   return MirInferredType_STR_REF;
-        case HOPMirConst_FUNCTION: return MirInferredType_FUNC_REF;
-        default:                   return MirInferredType_NONE;
+        case H2MirConst_INT:
+        case H2MirConst_BOOL:
+        case H2MirConst_NULL:     return MirInferredType_I32;
+        case H2MirConst_STRING:   return MirInferredType_STR_REF;
+        case H2MirConst_FUNCTION: return MirInferredType_FUNC_REF;
+        default:                  return MirInferredType_NONE;
     }
 }
 
 static MirInferredType MirFunctionResultTypeKind(
-    const HOPMirProgram* program, uint32_t functionIndex) {
+    const H2MirProgram* program, uint32_t functionIndex) {
     if (program == NULL || functionIndex >= program->funcLen) {
         return MirInferredType_NONE;
     }
@@ -7773,30 +7747,30 @@ static MirInferredType MirFunctionResultTypeKind(
 }
 
 static int EnsureMirStrRefTypeRef(
-    HOPArena* arena, HOPMirProgram* program, uint32_t* _Nonnull outTypeRef) {
-    uint32_t       i;
-    HOPMirTypeRef* newTypes;
+    H2Arena* arena, H2MirProgram* program, uint32_t* _Nonnull outTypeRef) {
+    uint32_t      i;
+    H2MirTypeRef* newTypes;
     if (arena == NULL || program == NULL || outTypeRef == NULL) {
         return -1;
     }
     for (i = 0; i < program->typeLen; i++) {
-        if (HOPMirTypeRefIsStrRef(&program->types[i])) {
+        if (H2MirTypeRefIsStrRef(&program->types[i])) {
             *outTypeRef = i;
             return 0;
         }
     }
-    newTypes = (HOPMirTypeRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(HOPMirTypeRef));
+    newTypes = (H2MirTypeRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(H2MirTypeRef));
     if (newTypes == NULL) {
         return -1;
     }
     if (program->typeLen != 0u) {
-        memcpy(newTypes, program->types, sizeof(HOPMirTypeRef) * program->typeLen);
+        memcpy(newTypes, program->types, sizeof(H2MirTypeRef) * program->typeLen);
     }
-    newTypes[program->typeLen] = (HOPMirTypeRef){
+    newTypes[program->typeLen] = (H2MirTypeRef){
         .astNode = UINT32_MAX,
         .sourceRef = 0,
-        .flags = HOPMirTypeFlag_STR_REF,
+        .flags = H2MirTypeFlag_STR_REF,
         .aux = 0,
     };
     program->types = newTypes;
@@ -7805,9 +7779,9 @@ static int EnsureMirStrRefTypeRef(
 }
 
 static int EnsureMirFlaggedTypeRef(
-    HOPArena* arena, HOPMirProgram* program, uint32_t flags, uint32_t* _Nonnull outTypeRef) {
-    uint32_t       i;
-    HOPMirTypeRef* newTypes;
+    H2Arena* arena, H2MirProgram* program, uint32_t flags, uint32_t* _Nonnull outTypeRef) {
+    uint32_t      i;
+    H2MirTypeRef* newTypes;
     if (arena == NULL || program == NULL || outTypeRef == NULL || flags == 0u) {
         return -1;
     }
@@ -7817,54 +7791,51 @@ static int EnsureMirFlaggedTypeRef(
             return 0;
         }
     }
-    newTypes = (HOPMirTypeRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(HOPMirTypeRef));
+    newTypes = (H2MirTypeRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(H2MirTypeRef));
     if (newTypes == NULL) {
         return -1;
     }
     if (program->typeLen != 0u) {
-        memcpy(newTypes, program->types, sizeof(HOPMirTypeRef) * program->typeLen);
+        memcpy(newTypes, program->types, sizeof(H2MirTypeRef) * program->typeLen);
     }
     newTypes[program->typeLen] =
-        (HOPMirTypeRef){ .astNode = UINT32_MAX, .sourceRef = 0, .flags = flags, .aux = 0 };
+        (H2MirTypeRef){ .astNode = UINT32_MAX, .sourceRef = 0, .flags = flags, .aux = 0 };
     program->types = newTypes;
     *outTypeRef = program->typeLen++;
     return 0;
 }
 
 static int EnsureMirFunctionRefTypeRef(
-    HOPArena*      arena,
-    HOPMirProgram* program,
-    uint32_t       functionIndex,
-    uint32_t* _Nonnull outTypeRef) {
-    uint32_t       i;
-    HOPMirTypeRef* newTypes;
-    uint32_t       aux;
+    H2Arena* arena, H2MirProgram* program, uint32_t functionIndex, uint32_t* _Nonnull outTypeRef) {
+    uint32_t      i;
+    H2MirTypeRef* newTypes;
+    uint32_t      aux;
     if (arena == NULL || program == NULL || outTypeRef == NULL || functionIndex >= program->funcLen)
     {
         return -1;
     }
     aux = functionIndex + 1u;
     for (i = 0; i < program->typeLen; i++) {
-        if ((program->types[i].flags & HOPMirTypeFlag_FUNC_REF) != 0u
+        if ((program->types[i].flags & H2MirTypeFlag_FUNC_REF) != 0u
             && program->types[i].aux == aux)
         {
             *outTypeRef = i;
             return 0;
         }
     }
-    newTypes = (HOPMirTypeRef*)HOPArenaAlloc(
-        arena, sizeof(HOPMirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(HOPMirTypeRef));
+    newTypes = (H2MirTypeRef*)H2ArenaAlloc(
+        arena, sizeof(H2MirTypeRef) * (program->typeLen + 1u), (uint32_t)_Alignof(H2MirTypeRef));
     if (newTypes == NULL) {
         return -1;
     }
     if (program->typeLen != 0u) {
-        memcpy(newTypes, program->types, sizeof(HOPMirTypeRef) * program->typeLen);
+        memcpy(newTypes, program->types, sizeof(H2MirTypeRef) * program->typeLen);
     }
-    newTypes[program->typeLen] = (HOPMirTypeRef){
+    newTypes[program->typeLen] = (H2MirTypeRef){
         .astNode = UINT32_MAX,
         .sourceRef = 0,
-        .flags = HOPMirTypeFlag_FUNC_REF,
+        .flags = H2MirTypeFlag_FUNC_REF,
         .aux = aux,
     };
     program->types = newTypes;
@@ -7873,35 +7844,35 @@ static int EnsureMirFunctionRefTypeRef(
 }
 
 static int EnsureMirInferredTypeRef(
-    HOPArena* arena, HOPMirProgram* program, MirInferredType type, uint32_t* _Nonnull outTypeRef) {
+    H2Arena* arena, H2MirProgram* program, MirInferredType type, uint32_t* _Nonnull outTypeRef) {
     switch (type) {
         case MirInferredType_I32:
-            return EnsureMirScalarTypeRef(arena, program, HOPMirTypeScalar_I32, outTypeRef);
+            return EnsureMirScalarTypeRef(arena, program, H2MirTypeScalar_I32, outTypeRef);
         case MirInferredType_I64:
-            return EnsureMirScalarTypeRef(arena, program, HOPMirTypeScalar_I64, outTypeRef);
+            return EnsureMirScalarTypeRef(arena, program, H2MirTypeScalar_I64, outTypeRef);
         case MirInferredType_F32:
-            return EnsureMirScalarTypeRef(arena, program, HOPMirTypeScalar_F32, outTypeRef);
+            return EnsureMirScalarTypeRef(arena, program, H2MirTypeScalar_F32, outTypeRef);
         case MirInferredType_F64:
-            return EnsureMirScalarTypeRef(arena, program, HOPMirTypeScalar_F64, outTypeRef);
+            return EnsureMirScalarTypeRef(arena, program, H2MirTypeScalar_F64, outTypeRef);
         case MirInferredType_STR_REF: return EnsureMirStrRefTypeRef(arena, program, outTypeRef);
         case MirInferredType_STR_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_STR_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_STR_PTR, outTypeRef);
         case MirInferredType_U8_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_U8_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_U8_PTR, outTypeRef);
         case MirInferredType_I8_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_I8_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_I8_PTR, outTypeRef);
         case MirInferredType_U16_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_U16_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_U16_PTR, outTypeRef);
         case MirInferredType_I16_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_I16_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_I16_PTR, outTypeRef);
         case MirInferredType_U32_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_U32_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_U32_PTR, outTypeRef);
         case MirInferredType_I32_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_I32_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_I32_PTR, outTypeRef);
         case MirInferredType_OPAQUE_PTR:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_OPAQUE_PTR, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_OPAQUE_PTR, outTypeRef);
         case MirInferredType_FUNC_REF:
-            return EnsureMirFlaggedTypeRef(arena, program, HOPMirTypeFlag_FUNC_REF, outTypeRef);
+            return EnsureMirFlaggedTypeRef(arena, program, H2MirTypeFlag_FUNC_REF, outTypeRef);
         default: return -1;
     }
 }
@@ -7916,60 +7887,60 @@ static bool MirCanStoreInferredType(MirInferredType dstType, MirInferredType src
     return false;
 }
 
-static void RewriteMirAggregateMake(HOPMirProgram* program) {
+static void RewriteMirAggregateMake(H2MirProgram* program) {
     uint32_t funcIndex;
     if (program == NULL) {
         return;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        uint32_t              pc;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
         for (pc = 0; pc < fn->instLen; pc++) {
-            HOPMirInst* inst = (HOPMirInst*)&program->insts[fn->instStart + pc];
-            uint32_t    typeRef = UINT32_MAX;
-            uint32_t    scanPc;
-            int32_t     depth = 1;
-            if (inst->op == HOPMirOp_AGG_ZERO && fn->typeRef < program->typeLen
-                && HOPMirTypeRefIsAggregate(&program->types[fn->typeRef]))
+            H2MirInst* inst = (H2MirInst*)&program->insts[fn->instStart + pc];
+            uint32_t   typeRef = UINT32_MAX;
+            uint32_t   scanPc;
+            int32_t    depth = 1;
+            if (inst->op == H2MirOp_AGG_ZERO && fn->typeRef < program->typeLen
+                && H2MirTypeRefIsAggregate(&program->types[fn->typeRef]))
             {
                 for (scanPc = pc + 1u; scanPc < fn->instLen; scanPc++) {
-                    HOPMirInst* next = (HOPMirInst*)&program->insts[fn->instStart + scanPc];
-                    if (next->op == HOPMirOp_LOCAL_STORE) {
+                    H2MirInst* next = (H2MirInst*)&program->insts[fn->instStart + scanPc];
+                    if (next->op == H2MirOp_LOCAL_STORE) {
                         break;
                     }
-                    if (next->op == HOPMirOp_COERCE && next->aux == inst->aux) {
+                    if (next->op == H2MirOp_COERCE && next->aux == inst->aux) {
                         next->aux = fn->typeRef;
                         continue;
                     }
-                    if (next->op == HOPMirOp_RETURN) {
+                    if (next->op == H2MirOp_RETURN) {
                         inst->aux = fn->typeRef;
                         break;
                     }
                 }
             }
-            if (inst->op != HOPMirOp_AGG_MAKE) {
+            if (inst->op != H2MirOp_AGG_MAKE) {
                 continue;
             }
             for (scanPc = pc + 1u; scanPc < fn->instLen && depth > 0; scanPc++) {
-                const HOPMirInst* next = &program->insts[fn->instStart + scanPc];
-                int32_t           delta = 0;
+                const H2MirInst* next = &program->insts[fn->instStart + scanPc];
+                int32_t          delta = 0;
                 if (depth == 1) {
-                    if (next->op == HOPMirOp_COERCE && next->aux < program->typeLen
-                        && HOPMirTypeRefIsAggregate(&program->types[next->aux]))
+                    if (next->op == H2MirOp_COERCE && next->aux < program->typeLen
+                        && H2MirTypeRefIsAggregate(&program->types[next->aux]))
                     {
                         typeRef = next->aux;
                         break;
                     }
-                    if (next->op == HOPMirOp_RETURN && fn->typeRef < program->typeLen
-                        && HOPMirTypeRefIsAggregate(&program->types[fn->typeRef]))
+                    if (next->op == H2MirOp_RETURN && fn->typeRef < program->typeLen
+                        && H2MirTypeRefIsAggregate(&program->types[fn->typeRef]))
                     {
                         typeRef = fn->typeRef;
                         break;
                     }
-                    if (next->op == HOPMirOp_LOCAL_STORE && next->aux < fn->localCount) {
+                    if (next->op == H2MirOp_LOCAL_STORE && next->aux < fn->localCount) {
                         uint32_t localTypeRef = program->locals[fn->localStart + next->aux].typeRef;
                         if (localTypeRef < program->typeLen
-                            && HOPMirTypeRefIsAggregate(&program->types[localTypeRef]))
+                            && H2MirTypeRefIsAggregate(&program->types[localTypeRef]))
                         {
                             typeRef = localTypeRef;
                             break;
@@ -7985,7 +7956,7 @@ static void RewriteMirAggregateMake(HOPMirProgram* program) {
                 depth += delta;
             }
             if (typeRef != UINT32_MAX) {
-                inst->op = HOPMirOp_AGG_ZERO;
+                inst->op = H2MirOp_AGG_ZERO;
                 inst->tok = 0u;
                 inst->aux = typeRef;
             }
@@ -7993,21 +7964,21 @@ static void RewriteMirAggregateMake(HOPMirProgram* program) {
     }
 }
 
-static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* program) {
+static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program) {
     uint32_t funcIndex;
     if (arena == NULL || program == NULL) {
         return;
     }
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const HOPMirFunction* fn = &program->funcs[funcIndex];
-        MirInferredType       localTypes[256] = { 0 };
-        MirInferredType       stackTypes[512] = { 0 };
-        uint32_t              localTypeRefs[256];
-        uint32_t              stackTypeRefs[512];
-        uint32_t              stackLen = 0;
-        uint32_t              localIndex;
-        uint32_t              pc;
-        int                   supported = 1;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        MirInferredType      localTypes[256] = { 0 };
+        MirInferredType      stackTypes[512] = { 0 };
+        uint32_t             localTypeRefs[256];
+        uint32_t             stackTypeRefs[512];
+        uint32_t             stackLen = 0;
+        uint32_t             localIndex;
+        uint32_t             pc;
+        int                  supported = 1;
         if (fn->localCount > 256u) {
             continue;
         }
@@ -8018,21 +7989,21 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
             stackTypeRefs[localIndex] = UINT32_MAX;
         }
         for (localIndex = 0; localIndex < fn->localCount; localIndex++) {
-            const HOPMirLocal* local = &program->locals[fn->localStart + localIndex];
+            const H2MirLocal* local = &program->locals[fn->localStart + localIndex];
             localTypes[localIndex] = MirProgramTypeKind(program, local->typeRef);
             localTypeRefs[localIndex] = local->typeRef;
         }
         for (pc = 0; pc < fn->instLen && supported; pc++) {
-            const HOPMirInst* inst = &program->insts[fn->instStart + pc];
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
             switch (inst->op) {
-                case HOPMirOp_PUSH_CONST:
+                case H2MirOp_PUSH_CONST:
                     if (inst->aux >= program->constLen || stackLen >= 512u) {
                         supported = 0;
                         break;
                     }
                     stackTypes[stackLen] = MirConstTypeKind(&program->consts[inst->aux]);
                     stackTypeRefs[stackLen] = UINT32_MAX;
-                    if (program->consts[inst->aux].kind == HOPMirConst_FUNCTION
+                    if (program->consts[inst->aux].kind == H2MirConst_FUNCTION
                         && EnsureMirFunctionRefTypeRef(
                                arena,
                                program,
@@ -8045,7 +8016,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     }
                     stackLen++;
                     break;
-                case HOPMirOp_AGG_ZERO:
+                case H2MirOp_AGG_ZERO:
                     if (inst->aux >= program->typeLen || stackLen >= 512u) {
                         supported = 0;
                         break;
@@ -8053,25 +8024,25 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen] = MirInferredType_AGG;
                     stackTypeRefs[stackLen++] = inst->aux;
                     break;
-                case HOPMirOp_LOCAL_ZERO:
+                case H2MirOp_LOCAL_ZERO:
                     if (inst->aux >= fn->localCount) {
                         supported = 0;
                     }
                     break;
-                case HOPMirOp_CTX_GET:
-                case HOPMirOp_CTX_ADDR:
+                case H2MirOp_CTX_GET:
+                case H2MirOp_CTX_ADDR:
                     if (stackLen >= 512u) {
                         supported = 0;
                         break;
                     }
                     stackTypes[stackLen] =
-                        (inst->aux == HOPMirContextField_ALLOCATOR
-                         || inst->aux == HOPMirContextField_TEMP_ALLOCATOR)
+                        (inst->aux == H2MirContextField_ALLOCATOR
+                         || inst->aux == H2MirContextField_TEMP_ALLOCATOR)
                             ? MirInferredType_OPAQUE_PTR
                             : MirInferredType_NONE;
                     stackTypeRefs[stackLen++] = UINT32_MAX;
                     break;
-                case HOPMirOp_LOCAL_LOAD:
+                case H2MirOp_LOCAL_LOAD:
                     if (inst->aux >= fn->localCount || stackLen >= 512u) {
                         supported = 0;
                         break;
@@ -8079,7 +8050,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen] = localTypes[inst->aux];
                     stackTypeRefs[stackLen++] = localTypeRefs[inst->aux];
                     break;
-                case HOPMirOp_LOCAL_ADDR:
+                case H2MirOp_LOCAL_ADDR:
                     if (inst->aux >= fn->localCount || stackLen >= 512u) {
                         supported = 0;
                         break;
@@ -8087,8 +8058,8 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen] = localTypes[inst->aux];
                     stackTypeRefs[stackLen++] = localTypeRefs[inst->aux];
                     break;
-                case HOPMirOp_LOCAL_STORE: {
-                    HOPMirLocal*    local;
+                case H2MirOp_LOCAL_STORE: {
+                    H2MirLocal*     local;
                     MirInferredType srcType;
                     uint32_t        typeRef = UINT32_MAX;
                     if (inst->aux >= fn->localCount || stackLen == 0u) {
@@ -8108,9 +8079,9 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                                 && localTypeRefs[inst->aux] != typeRef
                                 && (localTypeRefs[inst->aux] >= program->typeLen
                                     || typeRef >= program->typeLen
-                                    || !HOPMirTypeRefIsAggregate(
+                                    || !H2MirTypeRefIsAggregate(
                                         &program->types[localTypeRefs[inst->aux]])
-                                    || !HOPMirTypeRefIsAggregate(&program->types[typeRef]))))
+                                    || !H2MirTypeRefIsAggregate(&program->types[typeRef]))))
                         {
                             supported = 0;
                             break;
@@ -8119,7 +8090,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         if (typeRef != UINT32_MAX) {
                             localTypeRefs[inst->aux] = typeRef;
                         }
-                        local = (HOPMirLocal*)&program->locals[fn->localStart + inst->aux];
+                        local = (H2MirLocal*)&program->locals[fn->localStart + inst->aux];
                         if (typeRef != UINT32_MAX) {
                             local->typeRef = typeRef;
                         }
@@ -8132,11 +8103,11 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     if (localTypes[inst->aux] == MirInferredType_NONE) {
                         localTypes[inst->aux] = srcType;
                     }
-                    local = (HOPMirLocal*)&program->locals[fn->localStart + inst->aux];
+                    local = (H2MirLocal*)&program->locals[fn->localStart + inst->aux];
                     if (srcType == MirInferredType_FUNC_REF && typeRef != UINT32_MAX
                         && local->typeRef < program->typeLen
-                        && HOPMirTypeRefIsFuncRef(&program->types[local->typeRef])
-                        && HOPMirTypeRefFuncRefFunctionIndex(&program->types[local->typeRef])
+                        && H2MirTypeRefIsFuncRef(&program->types[local->typeRef])
+                        && H2MirTypeRefFuncRefFunctionIndex(&program->types[local->typeRef])
                                == UINT32_MAX)
                     {
                         local->typeRef = typeRef;
@@ -8154,14 +8125,14 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     }
                     break;
                 }
-                case HOPMirOp_AGG_SET:
+                case H2MirOp_AGG_SET:
                     if (stackLen < 2u || stackTypes[stackLen - 2u] != MirInferredType_AGG) {
                         supported = 0;
                         break;
                     }
                     stackLen--;
                     break;
-                case HOPMirOp_UNARY:
+                case H2MirOp_UNARY:
                     if (stackLen == 0u
                         || (stackTypes[stackLen - 1u] != MirInferredType_I32
                             && stackTypes[stackLen - 1u] != MirInferredType_I64
@@ -8172,7 +8143,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         break;
                     }
                     break;
-                case HOPMirOp_BINARY:
+                case H2MirOp_BINARY:
                     if (stackLen < 2u) {
                         supported = 0;
                         break;
@@ -8189,15 +8160,15 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                             break;
                         }
                         stackLen--;
-                        switch ((HOPTokenKind)inst->tok) {
-                            case HOPTok_EQ:
-                            case HOPTok_NEQ:
-                            case HOPTok_LT:
-                            case HOPTok_GT:
-                            case HOPTok_LTE:
-                            case HOPTok_GTE:
-                            case HOPTok_LOGICAL_AND:
-                            case HOPTok_LOGICAL_OR:
+                        switch ((H2TokenKind)inst->tok) {
+                            case H2Tok_EQ:
+                            case H2Tok_NEQ:
+                            case H2Tok_LT:
+                            case H2Tok_GT:
+                            case H2Tok_LTE:
+                            case H2Tok_GTE:
+                            case H2Tok_LOGICAL_AND:
+                            case H2Tok_LOGICAL_OR:
                                 stackTypes[stackLen - 1u] = MirInferredType_I32;
                                 stackTypeRefs[stackLen - 1u] = UINT32_MAX;
                                 break;
@@ -8205,8 +8176,8 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         }
                     }
                     break;
-                case HOPMirOp_CAST:
-                case HOPMirOp_COERCE:
+                case H2MirOp_CAST:
+                case H2MirOp_COERCE:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
@@ -8214,7 +8185,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen - 1u] = MirProgramTypeKind(program, inst->aux);
                     stackTypeRefs[stackLen - 1u] = inst->aux;
                     break;
-                case HOPMirOp_SEQ_LEN:
+                case H2MirOp_SEQ_LEN:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
@@ -8222,7 +8193,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen - 1u] = MirInferredType_I32;
                     stackTypeRefs[stackLen - 1u] = UINT32_MAX;
                     break;
-                case HOPMirOp_STR_CSTR:
+                case H2MirOp_STR_CSTR:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
@@ -8230,8 +8201,8 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     stackTypes[stackLen - 1u] = MirInferredType_U8_PTR;
                     stackTypeRefs[stackLen - 1u] = UINT32_MAX;
                     break;
-                case HOPMirOp_CALL_FN: {
-                    uint32_t argc = HOPMirCallArgCountFromTok(inst->tok);
+                case H2MirOp_CALL_FN: {
+                    uint32_t argc = H2MirCallArgCountFromTok(inst->tok);
                     if (inst->aux >= program->funcLen || stackLen < argc) {
                         supported = 0;
                         break;
@@ -8250,7 +8221,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                     }
                     break;
                 }
-                case HOPMirOp_ARRAY_ADDR:
+                case H2MirOp_ARRAY_ADDR:
                     if (stackLen < 2u || stackTypes[stackLen - 1u] != MirInferredType_I32) {
                         supported = 0;
                         break;
@@ -8285,7 +8256,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                             stackTypes[stackLen - 1u] = MirInferredType_OPAQUE_PTR;
                             stackTypeRefs[stackLen - 1u] =
                                 stackTypeRefs[stackLen - 1u] < program->typeLen
-                                    ? HOPMirTypeRefAggSliceElemTypeRef(
+                                    ? H2MirTypeRefAggSliceElemTypeRef(
                                           &program->types[stackTypeRefs[stackLen - 1u]])
                                     : UINT32_MAX;
                             if (stackTypeRefs[stackLen - 1u] == UINT32_MAX) {
@@ -8295,7 +8266,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         default: supported = 0; break;
                     }
                     break;
-                case HOPMirOp_DEREF_LOAD:
+                case H2MirOp_DEREF_LOAD:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
@@ -8317,26 +8288,26 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         default: supported = 0; break;
                     }
                     break;
-                case HOPMirOp_DEREF_STORE:
+                case H2MirOp_DEREF_STORE:
                     if (stackLen < 2u) {
                         supported = 0;
                         break;
                     }
                     stackLen -= 2u;
                     break;
-                case HOPMirOp_SLICE_MAKE:
+                case H2MirOp_SLICE_MAKE:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
                     }
-                    if ((inst->tok & HOPAstFlag_INDEX_HAS_END) != 0u) {
+                    if ((inst->tok & H2AstFlag_INDEX_HAS_END) != 0u) {
                         if (stackLen == 0u || stackTypes[stackLen - 1u] != MirInferredType_I32) {
                             supported = 0;
                             break;
                         }
                         stackLen--;
                     }
-                    if ((inst->tok & HOPAstFlag_INDEX_HAS_START) != 0u) {
+                    if ((inst->tok & H2AstFlag_INDEX_HAS_START) != 0u) {
                         if (stackLen == 0u || stackTypes[stackLen - 1u] != MirInferredType_I32) {
                             supported = 0;
                             break;
@@ -8381,7 +8352,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         default: supported = 0; break;
                     }
                     break;
-                case HOPMirOp_INDEX:
+                case H2MirOp_INDEX:
                     if (stackLen < 2u) {
                         supported = 0;
                         break;
@@ -8391,7 +8362,7 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         stackTypes[stackLen - 1u] = MirInferredType_OPAQUE_PTR;
                         stackTypeRefs[stackLen - 1u] =
                             stackTypeRefs[stackLen - 1u] < program->typeLen
-                                ? HOPMirTypeRefAggSliceElemTypeRef(
+                                ? H2MirTypeRefAggSliceElemTypeRef(
                                       &program->types[stackTypeRefs[stackLen - 1u]])
                                 : UINT32_MAX;
                         if (stackTypeRefs[stackLen - 1u] == UINT32_MAX) {
@@ -8402,42 +8373,42 @@ static void InferMirStraightLineLocalTypes(HOPArena* arena, HOPMirProgram* progr
                         stackTypeRefs[stackLen - 1u] = UINT32_MAX;
                     }
                     break;
-                case HOPMirOp_DROP:
-                case HOPMirOp_ASSERT:
-                case HOPMirOp_RETURN:
+                case H2MirOp_DROP:
+                case H2MirOp_ASSERT:
+                case H2MirOp_RETURN:
                     if (stackLen == 0u) {
                         supported = 0;
                         break;
                     }
                     stackLen--;
                     break;
-                case HOPMirOp_RETURN_VOID: break;
-                default:                   supported = 0; break;
+                case H2MirOp_RETURN_VOID: break;
+                default:                  supported = 0; break;
             }
         }
     }
 }
 
 int BuildPackageMirProgram(
-    const HOPPackageLoader* loader,
-    const HOPPackage*       entryPkg,
-    int                     includeSelectedPlatform,
-    HOPArena*               arena,
-    HOPMirProgram*          outProgram,
-    HOPForeignLinkageInfo* _Nullable outForeignLinkage,
-    HOPDiag* _Nullable diag) {
-    HOPMirProgramBuilder  builder;
-    HOPMirResolvedDeclMap declMap = { 0 };
-    HOPMirTcFunctionMap   tcFnMap = { 0 };
-    uint32_t*             topoOrder = NULL;
-    uint32_t              topoOrderLen = 0;
-    uint32_t              orderIndex;
-    int                   autoIncludeSelectedPlatformPanicOnly = 0;
+    const H2PackageLoader* loader,
+    const H2Package*       entryPkg,
+    int                    includeSelectedPlatform,
+    H2Arena*               arena,
+    H2MirProgram*          outProgram,
+    H2ForeignLinkageInfo* _Nullable outForeignLinkage,
+    H2Diag* _Nullable diag) {
+    H2MirProgramBuilder  builder;
+    H2MirResolvedDeclMap declMap = { 0 };
+    H2MirTcFunctionMap   tcFnMap = { 0 };
+    uint32_t*            topoOrder = NULL;
+    uint32_t             topoOrderLen = 0;
+    uint32_t             orderIndex;
+    int                  autoIncludeSelectedPlatformPanicOnly = 0;
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     if (outForeignLinkage != NULL) {
-        *outForeignLinkage = (HOPForeignLinkageInfo){ 0 };
+        *outForeignLinkage = (H2ForeignLinkageInfo){ 0 };
     }
     if (loader == NULL || entryPkg == NULL || arena == NULL || outProgram == NULL) {
         return -1;
@@ -8456,11 +8427,11 @@ int BuildPackageMirProgram(
     autoIncludeSelectedPlatformPanicOnly =
         includeSelectedPlatform && !PackageUsesPlatformImport(loader)
         && loader->platformTarget != NULL
-        && StrEq(loader->platformTarget, HOP_WASM_MIN_PLATFORM_TARGET);
-    HOPMirProgramBuilderInit(&builder, arena);
+        && StrEq(loader->platformTarget, H2_WASM_MIN_PLATFORM_TARGET);
+    H2MirProgramBuilderInit(&builder, arena);
     for (orderIndex = 0; orderIndex < topoOrderLen; orderIndex++) {
-        const HOPPackage* pkg = &loader->packages[topoOrder[orderIndex]];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &loader->packages[topoOrder[orderIndex]];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
             int rc;
             if (autoIncludeSelectedPlatformPanicOnly && loader->selectedPlatformPkg == pkg) {
@@ -8486,8 +8457,8 @@ int BuildPackageMirProgram(
         }
     }
     for (orderIndex = 0; orderIndex < topoOrderLen; orderIndex++) {
-        const HOPPackage* pkg = &loader->packages[topoOrder[orderIndex]];
-        uint32_t          fileIndex;
+        const H2Package* pkg = &loader->packages[topoOrder[orderIndex]];
+        uint32_t         fileIndex;
         for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
             if (AppendMirTemplateInstancesFromFile(
                     loader, &builder, arena, pkg, &pkg->files[fileIndex], &tcFnMap)
@@ -8501,7 +8472,7 @@ int BuildPackageMirProgram(
         }
     }
     if (loader != NULL && loader->selectedPlatformPkg != NULL && loader->platformTarget != NULL
-        && StrEq(loader->platformTarget, HOP_WASM_MIN_PLATFORM_TARGET)
+        && StrEq(loader->platformTarget, H2_WASM_MIN_PLATFORM_TARGET)
         && !PackageUsesPlatformImport(loader) && BuilderHasHostPrintCall(&builder))
     {
         uint32_t fileIndex;
@@ -8521,7 +8492,7 @@ int BuildPackageMirProgram(
             }
         }
     }
-    HOPMirProgramBuilderFinish(&builder, outProgram);
+    H2MirProgramBuilderFinish(&builder, outProgram);
     EnrichMirTypeFlags(loader, outProgram);
     if (EnrichMirOpaquePtrPointees(loader, arena, outProgram) != 0) {
         free(tcFnMap.v);
@@ -8599,7 +8570,7 @@ int BuildPackageMirProgram(
         free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);
-        if (diag != NULL && diag->code != HOPDiag_NONE) {
+        if (diag != NULL && diag->code != H2Diag_NONE) {
             return -1;
         }
         return ErrorSimple("out of memory");
@@ -8607,7 +8578,7 @@ int BuildPackageMirProgram(
     free(tcFnMap.v);
     free(declMap.v);
     free(topoOrder);
-    return HOPMirValidateProgram(outProgram, diag);
+    return H2MirValidateProgram(outProgram, diag);
 }
 
 int DumpMIR(
@@ -8615,41 +8586,40 @@ int DumpMIR(
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild) {
-    uint8_t          arenaStorage[4096];
-    HOPArena         arena;
-    HOPPackageLoader loader = { 0 };
-    HOPPackage*      entryPkg = NULL;
-    HOPMirProgram    program = { 0 };
-    HOPDiag          diag = { 0 };
-    HOPWriter        writer;
-    HOPStrView       fallbackSrc = { 0 };
-    int              includeSelectedPlatform = 0;
+    uint8_t         arenaStorage[4096];
+    H2Arena         arena;
+    H2PackageLoader loader = { 0 };
+    H2Package*      entryPkg = NULL;
+    H2MirProgram    program = { 0 };
+    H2Diag          diag = { 0 };
+    H2Writer        writer;
+    H2StrView       fallbackSrc = { 0 };
+    int             includeSelectedPlatform = 0;
 
-    HOPArenaInit(&arena, arenaStorage, sizeof(arenaStorage));
-    HOPArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    H2ArenaInit(&arena, arenaStorage, sizeof(arenaStorage));
+    H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
 
     if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
     {
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         return -1;
     }
     includeSelectedPlatform =
         PackageUsesPlatformImport(&loader)
-        || (platformTarget != NULL && StrEq(platformTarget, HOP_PLAYBIT_PLATFORM_TARGET));
+        || (platformTarget != NULL && StrEq(platformTarget, H2_PLAYBIT_PLATFORM_TARGET));
     if (BuildPackageMirProgram(
             &loader, entryPkg, includeSelectedPlatform, &arena, &program, NULL, &diag)
         != 0)
     {
-        if (diag.code != HOPDiag_NONE && entryPkg->fileLen == 1
-            && entryPkg->files[0].source != NULL)
+        if (diag.code != H2Diag_NONE && entryPkg->fileLen == 1 && entryPkg->files[0].source != NULL)
         {
             (void)PrintHOPDiagLineCol(entryPkg->files[0].path, entryPkg->files[0].source, &diag, 0);
-        } else if (diag.code != HOPDiag_NONE) {
+        } else if (diag.code != H2Diag_NONE) {
             (void)ErrorSimple("invalid MIR program");
         }
         FreeLoader(&loader);
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         return -1;
     }
 
@@ -8660,15 +8630,15 @@ int DumpMIR(
 
     writer.ctx = NULL;
     writer.write = StdoutWrite;
-    if (HOPMirDumpProgram(&program, fallbackSrc, &writer, &diag) != 0) {
+    if (H2MirDumpProgram(&program, fallbackSrc, &writer, &diag) != 0) {
         FreeLoader(&loader);
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         return -1;
     }
 
     FreeLoader(&loader);
-    HOPArenaDispose(&arena);
+    H2ArenaDispose(&arena);
     return 0;
 }
 
-HOP_API_END
+H2_API_END

@@ -1316,7 +1316,7 @@ def kind_libhop_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str
     dst_header = work_dir / "libhop.h"
     shutil.copy2(src_header, dst_header)
     libhop_c = work_dir / "libhop.c"
-    libhop_c.write_text('#define HOP_IMPLEMENTATION\n#include "libhop.h"\n')
+    libhop_c.write_text('#define H2_IMPLEMENTATION\n#include "libhop.h"\n')
 
     host_args = [
         ctx.cc,

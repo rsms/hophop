@@ -1,12 +1,12 @@
 #pragma once
 #include "codegen.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 struct stat;
 
-#ifndef HOP_WITH_C_BACKEND
-    #define HOP_WITH_C_BACKEND 1
+#ifndef H2_WITH_C_BACKEND
+    #define H2_WITH_C_BACKEND 1
 #endif
 
 typedef struct {
@@ -14,25 +14,25 @@ typedef struct {
     char* _Nullable source;
     uint32_t sourceLen;
     void* _Nullable arenaMem;
-    HOPAst ast;
+    H2Ast ast;
     void* _Nullable typecheckArenaMem;
-    HOPArena typecheckArena;
+    H2Arena typecheckArena;
     void* _Nullable typecheckCtx;
     int hasTypecheckCtx;
-} HOPParsedFile;
+} H2ParsedFile;
 
-struct HOPPackage;
-struct HOPPackageLoader;
+struct H2Package;
+struct H2PackageLoader;
 
 typedef struct {
     char* alias; /* internal mangle prefix */
     char* _Nullable bindName;
     char* path;
-    struct HOPPackage* _Nullable target;
+    struct H2Package* _Nullable target;
     uint32_t fileIndex;
     uint32_t start;
     uint32_t end;
-} HOPImportRef;
+} H2ImportRef;
 
 typedef struct {
     uint32_t importIndex;
@@ -49,16 +49,16 @@ typedef struct {
     uint32_t fileIndex;
     uint32_t start;
     uint32_t end;
-} HOPImportSymbolRef;
+} H2ImportSymbolRef;
 
 typedef struct {
-    HOPAstKind kind;
-    char*      name;
-    char*      declText;
-    int        hasBody;
-    uint32_t   fileIndex;
-    int32_t    nodeId;
-} HOPSymbolDecl;
+    H2AstKind kind;
+    char*     name;
+    char*     declText;
+    int       hasBody;
+    uint32_t  fileIndex;
+    int32_t   nodeId;
+} H2SymbolDecl;
 
 typedef struct {
     char*    text;
@@ -66,61 +66,61 @@ typedef struct {
     int32_t  nodeId;
     uint32_t sourceStart;
     uint32_t sourceEnd;
-} HOPDeclText;
+} H2DeclText;
 
-typedef struct HOPPackage {
-    char*       dirPath;
-    char*       name;
-    int         loadState; /* 0=new, 1=loading, 2=loaded */
-    int         checked;
-    HOPFeatures features; /* accumulated from all parsed files */
+typedef struct H2Package {
+    char*      dirPath;
+    char*      name;
+    int        loadState; /* 0=new, 1=loading, 2=loaded */
+    int        checked;
+    H2Features features; /* accumulated from all parsed files */
 
-    HOPParsedFile* files;
-    uint32_t       fileLen;
-    uint32_t       fileCap;
+    H2ParsedFile* files;
+    uint32_t      fileLen;
+    uint32_t      fileCap;
 
-    HOPImportRef* imports;
-    uint32_t      importLen;
-    uint32_t      importCap;
+    H2ImportRef* imports;
+    uint32_t     importLen;
+    uint32_t     importCap;
 
-    HOPImportSymbolRef* importSymbols;
-    uint32_t            importSymbolLen;
-    uint32_t            importSymbolCap;
+    H2ImportSymbolRef* importSymbols;
+    uint32_t           importSymbolLen;
+    uint32_t           importSymbolCap;
 
-    HOPSymbolDecl* decls;
-    uint32_t       declLen;
-    uint32_t       declCap;
+    H2SymbolDecl* decls;
+    uint32_t      declLen;
+    uint32_t      declCap;
 
-    HOPSymbolDecl* pubDecls;
-    uint32_t       pubDeclLen;
-    uint32_t       pubDeclCap;
+    H2SymbolDecl* pubDecls;
+    uint32_t      pubDeclLen;
+    uint32_t      pubDeclCap;
 
-    HOPDeclText* declTexts;
-    uint32_t     declTextLen;
-    uint32_t     declTextCap;
-} HOPPackage;
+    H2DeclText* declTexts;
+    uint32_t    declTextLen;
+    uint32_t    declTextCap;
+} H2Package;
 
-typedef struct HOPPackageLoader {
+typedef struct H2PackageLoader {
     char* _Nullable rootDir;
     char* _Nullable platformTarget;
     char* _Nullable archTarget;
     int testingBuild;
-    struct HOPPackage* _Nullable selectedPlatformPkg;
-    HOPPackage* _Nullable packages;
+    struct H2Package* _Nullable selectedPlatformPkg;
+    H2Package* _Nullable packages;
     uint32_t packageLen;
     uint32_t packageCap;
-} HOPPackageLoader;
+} H2PackageLoader;
 
 typedef struct {
     const char* name;
     const char* _Nullable replacement;
-} HOPIdentMap;
+} H2IdentMap;
 
 typedef struct {
     char* _Nullable v;
     uint32_t len;
     uint32_t cap;
-} HOPStringBuilder;
+} H2StringBuilder;
 
 typedef struct {
     uint32_t combinedStart;
@@ -129,73 +129,73 @@ typedef struct {
     uint32_t sourceEnd;
     uint32_t fileIndex;
     int32_t  nodeId;
-} HOPCombinedSourceSpan;
+} H2CombinedSourceSpan;
 
 typedef struct {
-    HOPCombinedSourceSpan* _Nullable spans;
+    H2CombinedSourceSpan* _Nullable spans;
     uint32_t len;
     uint32_t cap;
-} HOPCombinedSourceMap;
+} H2CombinedSourceMap;
 
 typedef struct {
-    HOPForeignLinkageEntry* _Nullable entries;
+    H2ForeignLinkageEntry* _Nullable entries;
     uint32_t len;
     uint32_t cap;
-} HOPForeignLinkageBuilder;
+} H2ForeignLinkageBuilder;
 
 typedef struct {
-    const HOPPackage* pkg;
-    uint32_t          pkgIndex;
-    char*             key;
-    char*             linkPrefix;
-    char*             cacheDir;
-    char*             cPath;
-    char*             oPath;
-    char*             sigPath;
-    uint64_t          objMtimeNs;
-} HOPPackageArtifact;
+    const H2Package* pkg;
+    uint32_t         pkgIndex;
+    char*            key;
+    char*            linkPrefix;
+    char*            cacheDir;
+    char*            cPath;
+    char*            oPath;
+    char*            sigPath;
+    uint64_t         objMtimeNs;
+} H2PackageArtifact;
 
 typedef struct {
-    HOPImportRef* imp;
-    char*         oldAlias;
-    char*         newAlias;
-} HOPAliasOverride;
+    H2ImportRef* imp;
+    char*        oldAlias;
+    char*        newAlias;
+} H2AliasOverride;
 
 typedef struct {
-    HOPImportSymbolRef* sym;
-    char*               oldQualifiedName;
-    char*               newQualifiedName;
-} HOPImportSymbolOverride;
+    H2ImportSymbolRef* sym;
+    char*              oldQualifiedName;
+    char*              newQualifiedName;
+} H2ImportSymbolOverride;
 
 typedef struct {
     uint8_t startMapped;
     uint8_t endMapped;
     uint8_t argStartMapped;
     uint8_t argEndMapped;
-} HOPRemapDiagStatus;
+} H2RemapDiagStatus;
 
-#define HOP_DEFAULT_PLATFORM_TARGET  "cli-libc"
-#define HOP_EVAL_PLATFORM_TARGET     "cli-eval"
-#define HOP_WASM_MIN_PLATFORM_TARGET "wasm-min"
-#define HOP_PLAYBIT_PLATFORM_TARGET  "playbit"
-#define HOP_PLAYBIT_ENTRY_HOOK_NAME  "hop_entry_main"
-#define HOP_EVAL_CALL_MAX_DEPTH      128u
+#define H2_DEFAULT_PLATFORM_TARGET  "cli-libc"
+#define H2_EVAL_PLATFORM_TARGET     "cli-eval"
+#define H2_WASM_MIN_PLATFORM_TARGET "wasm-min"
+#define H2_PLAYBIT_PLATFORM_TARGET  "playbit"
+#define H2_PLAYBIT_ENTRY_HOOK_NAME  "hop_entry_main"
+#define H2_EVAL_CALL_MAX_DEPTH      128u
 
 #if defined(__wasm32__)
-    #define HOP_DEFAULT_ARCH_TARGET "wasm32"
+    #define H2_DEFAULT_ARCH_TARGET "wasm32"
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #define HOP_DEFAULT_ARCH_TARGET "aarch64"
+    #define H2_DEFAULT_ARCH_TARGET "aarch64"
 #elif defined(__x86_64__) || defined(_M_X64)
-    #define HOP_DEFAULT_ARCH_TARGET "x86_64"
+    #define H2_DEFAULT_ARCH_TARGET "x86_64"
 #else
-    #define HOP_DEFAULT_ARCH_TARGET "unknown"
+    #define H2_DEFAULT_ARCH_TARGET "unknown"
 #endif
 
 const char* DisplayPath(const char* path);
-int         ASTFirstChild(const HOPAst* ast, int32_t nodeId);
-int         ASTNextSibling(const HOPAst* ast, int32_t nodeId);
-uint32_t    AstListCount(const HOPAst* ast, int32_t listNode);
-int32_t     AstListItemAt(const HOPAst* ast, int32_t listNode, uint32_t index);
+int         ASTFirstChild(const H2Ast* ast, int32_t nodeId);
+int         ASTNextSibling(const H2Ast* ast, int32_t nodeId);
+uint32_t    AstListCount(const H2Ast* ast, int32_t listNode);
+int32_t     AstListItemAt(const H2Ast* ast, int32_t listNode, uint32_t index);
 int         Errorf(
     const char* file,
     const char* _Nullable source,
@@ -206,51 +206,51 @@ int         Errorf(
 int ErrorDiagf(
     const char* file,
     const char* _Nullable source,
-    uint32_t    start,
-    uint32_t    end,
-    HOPDiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    H2DiagCode code,
     ...);
 int ErrorSimple(const char* fmt, ...);
 int PrintHOPDiag(
-    const char* filename, const char* _Nullable source, const HOPDiag* diag, int includeHint);
+    const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint);
 int PrintHOPDiagLineCol(
-    const char* filename, const char* _Nullable source, const HOPDiag* diag, int includeHint);
+    const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint);
 void* _Nullable CodegenArenaGrow(void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
 void     CodegenArenaFree(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
-int      CompactAstInArena(HOPArena* arena, HOPAst* ast);
+int      CompactAstInArena(H2Arena* arena, H2Ast* ast);
 int      EnsureCap(void** ptr, uint32_t* cap, uint32_t need, size_t elemSize);
-uint32_t ArenaBytesUsed(const HOPArena* arena);
-uint32_t ArenaBytesCapacity(const HOPArena* arena);
+uint32_t ArenaBytesUsed(const H2Arena* arena);
+uint32_t ArenaBytesCapacity(const H2Arena* arena);
 int      ArenaDebugEnabled(void);
-void     CombinedSourceMapFree(HOPCombinedSourceMap* map);
+void     CombinedSourceMapFree(H2CombinedSourceMap* map);
 int      CombinedSourceMapAdd(
-    HOPCombinedSourceMap* map,
-    uint32_t              combinedStart,
-    uint32_t              combinedEnd,
-    uint32_t              sourceStart,
-    uint32_t              sourceEnd,
-    uint32_t              fileIndex,
-    int32_t               nodeId);
+    H2CombinedSourceMap* map,
+    uint32_t             combinedStart,
+    uint32_t             combinedEnd,
+    uint32_t             sourceStart,
+    uint32_t             sourceEnd,
+    uint32_t             fileIndex,
+    int32_t              nodeId);
 int RemapCombinedOffset(
-    const HOPCombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex);
+    const H2CombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex);
 void RemapCombinedDiag(
-    const HOPCombinedSourceMap* map,
-    const HOPDiag*              diagIn,
-    HOPDiag*                    diagOut,
-    uint32_t*                   outFileIndex,
+    const H2CombinedSourceMap* map,
+    const H2Diag*              diagIn,
+    H2Diag*                    diagOut,
+    uint32_t*                  outFileIndex,
     const char* _Nullable source,
-    HOPRemapDiagStatus* _Nullable outStatus);
-int SBReserve(HOPStringBuilder* b, uint32_t extra);
-int SBAppend(HOPStringBuilder* b, const char* s, uint32_t len);
-int SBAppendCStr(HOPStringBuilder* b, const char* _Nullable s);
-int SBAppendSlice(HOPStringBuilder* b, const char* s, uint32_t start, uint32_t end);
-char* _Nullable SBFinish(HOPStringBuilder* b, uint32_t* _Nullable outLen);
+    H2RemapDiagStatus* _Nullable outStatus);
+int SBReserve(H2StringBuilder* b, uint32_t extra);
+int SBAppend(H2StringBuilder* b, const char* s, uint32_t len);
+int SBAppendCStr(H2StringBuilder* b, const char* _Nullable s);
+int SBAppendSlice(H2StringBuilder* b, const char* s, uint32_t start, uint32_t end);
+char* _Nullable SBFinish(H2StringBuilder* b, uint32_t* _Nullable outLen);
 int StrEq(const char* a, const char* b);
 int SliceEqCStr(const char* s, uint32_t start, uint32_t end, const char* cstr);
 int SliceEqSlice(
     const char* a, uint32_t aStart, uint32_t aEnd, const char* b, uint32_t bStart, uint32_t bEnd);
-char* _Nullable HOPCDupCStr(const char* s);
-char* _Nullable HOPCDupSlice(const char* s, uint32_t start, uint32_t end);
+char* _Nullable H2CDupCStr(const char* s);
+char* _Nullable H2CDupSlice(const char* s, uint32_t start, uint32_t end);
 char* _Nullable JoinPath(const char* _Nullable a, const char* _Nullable b);
 char* _Nullable DirNameDup(const char* path);
 char* _Nullable GetExeDir(void);
@@ -279,41 +279,41 @@ int  RunFmtCommand(int argc, const char* const* argv);
 int  DumpTokens(const char* filename, const char* source, uint32_t sourceLen);
 int  DumpAST(const char* filename, const char* source, uint32_t sourceLen);
 void StdoutWrite(void* ctx, const char* data, uint32_t len);
-int  IsFnReturnTypeNodeKind(HOPAstKind kind);
+int  IsFnReturnTypeNodeKind(H2AstKind kind);
 
-const HOPImportRef* _Nullable FindImportByAliasSlice(
-    const HOPPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
-void FreeLoader(HOPPackageLoader* loader);
+const H2ImportRef* _Nullable FindImportByAliasSlice(
+    const H2Package* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
+void FreeLoader(H2PackageLoader* loader);
 int  CheckSource(const char* filename, const char* source, uint32_t sourceLen);
 int  LoadPackageForFmt(
     const char* entryPath,
     const char* _Nullable platformTarget,
-    HOPPackageLoader* outLoader,
-    HOPPackage**      outEntryPkg);
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg);
 int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
-    int               testingBuild,
-    HOPPackageLoader* outLoader,
-    HOPPackage**      outEntryPkg);
-int FindPackageIndex(const HOPPackageLoader* loader, const HOPPackage* pkg);
-int ValidateEntryMainSignature(const HOPPackage* _Nullable entryPkg);
+    int              testingBuild,
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg);
+int FindPackageIndex(const H2PackageLoader* loader, const H2Package* pkg);
+int ValidateEntryMainSignature(const H2Package* _Nullable entryPkg);
 int CheckPackageDir(
     const char* entryPath,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild);
 int     IsAsciiSpaceChar(unsigned char c);
-int     IsTypeDeclKind(HOPAstKind kind);
-int     DirectiveNameEq(const HOPParsedFile* file, int32_t nodeId, const char* name);
-int32_t DirectiveArgAt(const HOPAst* ast, int32_t nodeId, uint32_t index);
+int     IsTypeDeclKind(H2AstKind kind);
+int     DirectiveNameEq(const H2ParsedFile* file, int32_t nodeId, const char* name);
+int32_t DirectiveArgAt(const H2Ast* ast, int32_t nodeId, uint32_t index);
 int     FindAttachedDirectiveRun(
-    const HOPAst* ast, int32_t nodeId, int32_t* outFirstDirective, int32_t* outLastDirective);
-int LoaderUsesWasmImportDirective(const HOPPackageLoader* loader);
+    const H2Ast* ast, int32_t nodeId, int32_t* outFirstDirective, int32_t* outLastDirective);
+int LoaderUsesWasmImportDirective(const H2PackageLoader* loader);
 int BuildPrefixedName(const char* alias, const char* name, char** outName);
 int RewriteAliasedPubDeclText(
-    const HOPPackage* sourcePkg, const HOPSymbolDecl* pubDecl, const char* alias, char** outText);
+    const H2Package* sourcePkg, const H2SymbolDecl* pubDecl, const char* alias, char** outText);
 int BuildFnImportShapeAndWrapper(
     const char* _Nullable aliasedDeclText,
     const char* _Nullable localName,
@@ -321,25 +321,25 @@ int BuildFnImportShapeAndWrapper(
     char** _Nullable outShapeKey,
     char** _Nullable outWrapperDeclText);
 int BuildCombinedPackageSource(
-    HOPPackageLoader* loader,
-    const HOPPackage* pkg,
-    int               includePrivateImportDecls,
-    char**            outSource,
-    uint32_t*         outLen,
-    HOPCombinedSourceMap* _Nullable sourceMap,
+    H2PackageLoader* loader,
+    const H2Package* pkg,
+    int              includePrivateImportDecls,
+    char**           outSource,
+    uint32_t*        outLen,
+    H2CombinedSourceMap* _Nullable sourceMap,
     uint32_t* _Nullable outOwnDeclStartOffset);
 
-void FreeForeignLinkageInfo(HOPForeignLinkageInfo* info);
-int  PackageHasPlatformImport(const HOPPackage* _Nullable pkg);
-int  PackageUsesPlatformImport(const HOPPackageLoader* loader);
+void FreeForeignLinkageInfo(H2ForeignLinkageInfo* info);
+int  PackageHasPlatformImport(const H2Package* _Nullable pkg);
+int  PackageUsesPlatformImport(const H2PackageLoader* loader);
 int  BuildPackageMirProgram(
-    const HOPPackageLoader* loader,
-    const HOPPackage*       entryPkg,
-    int                     includeSelectedPlatform,
-    HOPArena*               arena,
-    HOPMirProgram*          outProgram,
-    HOPForeignLinkageInfo* _Nullable outForeignLinkage,
-    HOPDiag* _Nullable diag);
+    const H2PackageLoader* loader,
+    const H2Package*       entryPkg,
+    int                    includeSelectedPlatform,
+    H2Arena*               arena,
+    H2MirProgram*          outProgram,
+    H2ForeignLinkageInfo* _Nullable outForeignLinkage,
+    H2Diag* _Nullable diag);
 int DumpMIR(
     const char* entryPath,
     const char* _Nullable platformTarget,
@@ -368,4 +368,4 @@ int RunProgram(
     int testingBuild,
     const char* _Nullable cacheDirArg);
 
-HOP_API_END
+H2_API_END

@@ -1,18 +1,18 @@
 #include "libhop-impl.h"
-HOP_API_BEGIN
+H2_API_BEGIN
 
 typedef struct {
-    HOPToken* v;
-    uint32_t  len;
-    uint32_t  cap;
-} HOPTokenBuf;
+    H2Token* v;
+    uint32_t len;
+    uint32_t cap;
+} H2TokenBuf;
 
-static void HOPSetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t end) {
+static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
-    diag->type = HOPDiagTypeOfCode(code);
+    diag->type = H2DiagTypeOfCode(code);
     diag->start = start;
     diag->end = end;
     diag->argStart = 0;
@@ -23,12 +23,12 @@ static void HOPSetDiag(HOPDiag* diag, HOPDiagCode code, uint32_t start, uint32_t
     diag->hintOverride = NULL;
 }
 
-void HOPDiagClear(HOPDiag* _Nullable diag) {
+void H2DiagClear(H2Diag* _Nullable diag) {
     if (diag == NULL) {
         return;
     }
-    diag->code = HOPDiag_NONE;
-    diag->type = HOPDiagType_ERROR;
+    diag->code = H2Diag_NONE;
+    diag->type = H2DiagType_ERROR;
     diag->start = 0;
     diag->end = 0;
     diag->argStart = 0;
@@ -39,7 +39,7 @@ void HOPDiagClear(HOPDiag* _Nullable diag) {
     diag->hintOverride = NULL;
 }
 
-static uint32_t HOPArenaAlignUpU32(uint32_t value, uint32_t align) {
+static uint32_t H2ArenaAlignUpU32(uint32_t value, uint32_t align) {
     uint64_t aligned;
     if (align == 0) {
         align = 1;
@@ -51,18 +51,18 @@ static uint32_t HOPArenaAlignUpU32(uint32_t value, uint32_t align) {
     return (uint32_t)aligned;
 }
 
-static uint32_t HOPArenaGrowHeaderSize(void) {
+static uint32_t H2ArenaGrowHeaderSize(void) {
     uint32_t align = (uint32_t)_Alignof(max_align_t);
-    return HOPArenaAlignUpU32((uint32_t)sizeof(HOPArenaBlock), align);
+    return H2ArenaAlignUpU32((uint32_t)sizeof(H2ArenaBlock), align);
 }
 
-static void HOPArenaInitBlock(
-    HOPArenaBlock* block,
+static void H2ArenaInitBlock(
+    H2ArenaBlock* block,
     uint8_t* _Nullable mem,
     uint32_t cap,
     uint32_t allocSize,
     uint8_t  owned,
-    HOPArenaBlock* _Nullable next) {
+    H2ArenaBlock* _Nullable next) {
     block->mem = mem;
     block->cap = cap;
     block->len = 0;
@@ -71,8 +71,7 @@ static void HOPArenaInitBlock(
     block->owned = owned;
 }
 
-static void* _Nullable HOPArenaTryAllocInBlock(
-    HOPArenaBlock* block, uint32_t size, uint32_t align) {
+static void* _Nullable H2ArenaTryAllocInBlock(H2ArenaBlock* block, uint32_t size, uint32_t align) {
     uint64_t aligned;
     uint64_t end;
 
@@ -90,37 +89,37 @@ static void* _Nullable HOPArenaTryAllocInBlock(
     return block->mem + aligned;
 }
 
-void HOPArenaInit(HOPArena* arena, void* storage, uint32_t storageSize) {
-    HOPArenaInitEx(arena, storage, storageSize, NULL, NULL, NULL);
+void H2ArenaInit(H2Arena* arena, void* storage, uint32_t storageSize) {
+    H2ArenaInitEx(arena, storage, storageSize, NULL, NULL, NULL);
 }
 
-void HOPArenaInitEx(
-    HOPArena* arena,
+void H2ArenaInitEx(
+    H2Arena* arena,
     void* _Nullable storage,
     uint32_t storageSize,
     void* _Nullable allocatorCtx,
-    HOPArenaGrowFn _Nullable growFn,
-    HOPArenaFreeFn _Nullable freeFn) {
+    H2ArenaGrowFn _Nullable growFn,
+    H2ArenaFreeFn _Nullable freeFn) {
     arena->allocatorCtx = allocatorCtx;
     arena->grow = growFn;
     arena->free = freeFn;
-    HOPArenaInitBlock(&arena->inlineBlock, (uint8_t*)storage, storageSize, storageSize, 0, NULL);
+    H2ArenaInitBlock(&arena->inlineBlock, (uint8_t*)storage, storageSize, storageSize, 0, NULL);
     arena->first = &arena->inlineBlock;
     arena->current = &arena->inlineBlock;
 }
 
-void HOPArenaSetAllocator(
-    HOPArena* arena,
+void H2ArenaSetAllocator(
+    H2Arena* arena,
     void* _Nullable allocatorCtx,
-    HOPArenaGrowFn _Nullable growFn,
-    HOPArenaFreeFn _Nullable freeFn) {
+    H2ArenaGrowFn _Nullable growFn,
+    H2ArenaFreeFn _Nullable freeFn) {
     arena->allocatorCtx = allocatorCtx;
     arena->grow = growFn;
     arena->free = freeFn;
 }
 
-void HOPArenaReset(HOPArena* arena) {
-    HOPArenaBlock* block = arena->first;
+void H2ArenaReset(H2Arena* arena) {
+    H2ArenaBlock* block = arena->first;
     while (block != NULL) {
         block->len = 0;
         block = block->next;
@@ -128,8 +127,8 @@ void HOPArenaReset(HOPArena* arena) {
     arena->current = arena->first;
 }
 
-void HOPArenaDispose(HOPArena* arena) {
-    HOPArenaBlock* block;
+void H2ArenaDispose(H2Arena* arena) {
+    H2ArenaBlock* block;
 
     if (arena->first == NULL) {
         return;
@@ -137,7 +136,7 @@ void HOPArenaDispose(HOPArena* arena) {
 
     block = arena->first->next;
     while (block != NULL) {
-        HOPArenaBlock* next = block->next;
+        H2ArenaBlock* next = block->next;
         if (block->owned && arena->free != NULL) {
             arena->free(arena->allocatorCtx, block, block->allocSize);
         }
@@ -150,8 +149,8 @@ void HOPArenaDispose(HOPArena* arena) {
     arena->current = &arena->inlineBlock;
 }
 
-void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align) {
-    HOPArenaBlock* block;
+void* _Nullable H2ArenaAlloc(H2Arena* arena, uint32_t size, uint32_t align) {
+    H2ArenaBlock* block;
 
     if (align == 0) {
         align = 1;
@@ -166,7 +165,7 @@ void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align) {
     }
 
     for (;;) {
-        void* p = HOPArenaTryAllocInBlock(block, size, align);
+        void* p = H2ArenaTryAllocInBlock(block, size, align);
         if (p != NULL) {
             arena->current = block;
             return p;
@@ -178,14 +177,14 @@ void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align) {
     }
 
     if (arena->grow != NULL) {
-        uint32_t headerSize = HOPArenaGrowHeaderSize();
+        uint32_t headerSize = H2ArenaGrowHeaderSize();
         uint32_t minPayload;
         uint32_t targetPayload;
         uint64_t requestedSize64;
         uint32_t requestedSize;
         uint32_t allocSize = 0;
         void* _Nullable allocMem;
-        HOPArenaBlock* newBlock;
+        H2ArenaBlock* newBlock;
         void* _Nullable p;
 
         if (size > UINT32_MAX - (align - 1u)) {
@@ -222,12 +221,12 @@ void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align) {
             return NULL;
         }
 
-        newBlock = (HOPArenaBlock*)allocMem;
-        HOPArenaInitBlock(
+        newBlock = (H2ArenaBlock*)allocMem;
+        H2ArenaInitBlock(
             newBlock, (uint8_t*)allocMem + headerSize, allocSize - headerSize, allocSize, 1, NULL);
         block->next = newBlock;
         arena->current = newBlock;
-        p = HOPArenaTryAllocInBlock(newBlock, size, align);
+        p = H2ArenaTryAllocInBlock(newBlock, size, align);
         if (p != NULL) {
             return p;
         }
@@ -236,29 +235,29 @@ void* _Nullable HOPArenaAlloc(HOPArena* arena, uint32_t size, uint32_t align) {
     return NULL;
 }
 
-static int HOPIsAlpha(unsigned char c) {
+static int H2IsAlpha(unsigned char c) {
     return (c >= (unsigned char)'A' && c <= (unsigned char)'Z')
         || (c >= (unsigned char)'a' && c <= (unsigned char)'z');
 }
 
-static int HOPIsDigit(unsigned char c) {
+static int H2IsDigit(unsigned char c) {
     return c >= (unsigned char)'0' && c <= (unsigned char)'9';
 }
 
-static int HOPIsAlnum(unsigned char c) {
-    return HOPIsAlpha(c) || HOPIsDigit(c);
+static int H2IsAlnum(unsigned char c) {
+    return H2IsAlpha(c) || H2IsDigit(c);
 }
 
-static int HOPIsAsciiSpace(char c) {
+static int H2IsAsciiSpace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
-static int HOPIsHexDigit(unsigned char c) {
-    return HOPIsDigit(c) || (c >= (unsigned char)'a' && c <= (unsigned char)'f')
+static int H2IsHexDigit(unsigned char c) {
+    return H2IsDigit(c) || (c >= (unsigned char)'a' && c <= (unsigned char)'f')
         || (c >= (unsigned char)'A' && c <= (unsigned char)'F');
 }
 
-static int HOPStrEq(const char* a, uint32_t aLen, const char* b) {
+static int H2StrEq(const char* a, uint32_t aLen, const char* b) {
     uint32_t i = 0;
     while (i < aLen) {
         if (b[i] == '\0' || a[i] != b[i]) {
@@ -269,12 +268,12 @@ static int HOPStrEq(const char* a, uint32_t aLen, const char* b) {
     return b[i] == '\0';
 }
 
-static int HOPIsValidImportPathChar(char c) {
+static int H2IsValidImportPathChar(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
         || c == '.' || c == '/' || c == '-';
 }
 
-int HOPNormalizeImportPath(
+int H2NormalizeImportPath(
     const char* importPath,
     char*       out,
     uint32_t    outCap,
@@ -323,7 +322,7 @@ int HOPNormalizeImportPath(
         }
         return -1;
     }
-    if (HOPIsAsciiSpace(importPath[0]) || HOPIsAsciiSpace(importPath[len - 1u])) {
+    if (H2IsAsciiSpace(importPath[0]) || H2IsAsciiSpace(importPath[len - 1u])) {
         if (outErrReason != NULL) {
             *outErrReason = "leading/trailing whitespace";
         }
@@ -331,7 +330,7 @@ int HOPNormalizeImportPath(
     }
 
     for (i = 0; i < len; i++) {
-        if (!HOPIsValidImportPathChar(importPath[i])) {
+        if (!H2IsValidImportPathChar(importPath[i])) {
             if (outErrReason != NULL) {
                 *outErrReason = "invalid character";
             }
@@ -404,134 +403,134 @@ int HOPNormalizeImportPath(
     return 0;
 }
 
-static HOPTokenKind HOPKeywordKind(const char* s, uint32_t len) {
+static H2TokenKind H2KeywordKind(const char* s, uint32_t len) {
     if (len == 2) {
-        if (HOPStrEq(s, len, "as")) {
-            return HOPTok_AS;
+        if (H2StrEq(s, len, "as")) {
+            return H2Tok_AS;
         }
-        if (HOPStrEq(s, len, "in")) {
-            return HOPTok_IN;
+        if (H2StrEq(s, len, "in")) {
+            return H2Tok_IN;
         }
-        if (HOPStrEq(s, len, "fn")) {
-            return HOPTok_FN;
+        if (H2StrEq(s, len, "fn")) {
+            return H2Tok_FN;
         }
-        if (HOPStrEq(s, len, "if")) {
-            return HOPTok_IF;
+        if (H2StrEq(s, len, "if")) {
+            return H2Tok_IF;
         }
     } else if (len == 3) {
-        if (HOPStrEq(s, len, "for")) {
-            return HOPTok_FOR;
+        if (H2StrEq(s, len, "for")) {
+            return H2Tok_FOR;
         }
-        if (HOPStrEq(s, len, "new")) {
-            return HOPTok_NEW;
+        if (H2StrEq(s, len, "new")) {
+            return H2Tok_NEW;
         }
-        if (HOPStrEq(s, len, "del")) {
-            return HOPTok_DEL;
+        if (H2StrEq(s, len, "del")) {
+            return H2Tok_DEL;
         }
-        if (HOPStrEq(s, len, "var")) {
-            return HOPTok_VAR;
+        if (H2StrEq(s, len, "var")) {
+            return H2Tok_VAR;
         }
-        if (HOPStrEq(s, len, "mut")) {
-            return HOPTok_MUT;
+        if (H2StrEq(s, len, "mut")) {
+            return H2Tok_MUT;
         }
-        if (HOPStrEq(s, len, "pub")) {
-            return HOPTok_PUB;
+        if (H2StrEq(s, len, "pub")) {
+            return H2Tok_PUB;
         }
     } else if (len == 4) {
-        if (HOPStrEq(s, len, "enum")) {
-            return HOPTok_ENUM;
+        if (H2StrEq(s, len, "enum")) {
+            return H2Tok_ENUM;
         }
-        if (HOPStrEq(s, len, "else")) {
-            return HOPTok_ELSE;
+        if (H2StrEq(s, len, "else")) {
+            return H2Tok_ELSE;
         }
-        if (HOPStrEq(s, len, "case")) {
-            return HOPTok_CASE;
+        if (H2StrEq(s, len, "case")) {
+            return H2Tok_CASE;
         }
-        if (HOPStrEq(s, len, "true")) {
-            return HOPTok_TRUE;
+        if (H2StrEq(s, len, "true")) {
+            return H2Tok_TRUE;
         }
-        if (HOPStrEq(s, len, "null")) {
-            return HOPTok_NULL;
+        if (H2StrEq(s, len, "null")) {
+            return H2Tok_NULL;
         }
-        if (HOPStrEq(s, len, "type")) {
-            return HOPTok_TYPE;
+        if (H2StrEq(s, len, "type")) {
+            return H2Tok_TYPE;
         }
     } else if (len == 5) {
-        if (HOPStrEq(s, len, "break")) {
-            return HOPTok_BREAK;
+        if (H2StrEq(s, len, "break")) {
+            return H2Tok_BREAK;
         }
-        if (HOPStrEq(s, len, "const")) {
-            return HOPTok_CONST;
+        if (H2StrEq(s, len, "const")) {
+            return H2Tok_CONST;
         }
-        if (HOPStrEq(s, len, "defer")) {
-            return HOPTok_DEFER;
+        if (H2StrEq(s, len, "defer")) {
+            return H2Tok_DEFER;
         }
-        if (HOPStrEq(s, len, "false")) {
-            return HOPTok_FALSE;
+        if (H2StrEq(s, len, "false")) {
+            return H2Tok_FALSE;
         }
-        if (HOPStrEq(s, len, "union")) {
-            return HOPTok_UNION;
+        if (H2StrEq(s, len, "union")) {
+            return H2Tok_UNION;
         }
     } else if (len == 6) {
-        if (HOPStrEq(s, len, "import")) {
-            return HOPTok_IMPORT;
+        if (H2StrEq(s, len, "import")) {
+            return H2Tok_IMPORT;
         }
-        if (HOPStrEq(s, len, "sizeof")) {
-            return HOPTok_SIZEOF;
+        if (H2StrEq(s, len, "sizeof")) {
+            return H2Tok_SIZEOF;
         }
-        if (HOPStrEq(s, len, "return")) {
-            return HOPTok_RETURN;
+        if (H2StrEq(s, len, "return")) {
+            return H2Tok_RETURN;
         }
-        if (HOPStrEq(s, len, "switch")) {
-            return HOPTok_SWITCH;
+        if (H2StrEq(s, len, "switch")) {
+            return H2Tok_SWITCH;
         }
-        if (HOPStrEq(s, len, "struct")) {
-            return HOPTok_STRUCT;
+        if (H2StrEq(s, len, "struct")) {
+            return H2Tok_STRUCT;
         }
-        if (HOPStrEq(s, len, "assert")) {
-            return HOPTok_ASSERT;
+        if (H2StrEq(s, len, "assert")) {
+            return H2Tok_ASSERT;
         }
     } else if (len == 7) {
-        if (HOPStrEq(s, len, "anytype")) {
-            return HOPTok_ANYTYPE;
+        if (H2StrEq(s, len, "anytype")) {
+            return H2Tok_ANYTYPE;
         }
-        if (HOPStrEq(s, len, "default")) {
-            return HOPTok_DEFAULT;
+        if (H2StrEq(s, len, "default")) {
+            return H2Tok_DEFAULT;
         }
     } else if (len == 8) {
-        if (HOPStrEq(s, len, "continue")) {
-            return HOPTok_CONTINUE;
+        if (H2StrEq(s, len, "continue")) {
+            return H2Tok_CONTINUE;
         }
     }
-    return HOPTok_IDENT;
+    return H2Tok_IDENT;
 }
 
-static int HOPTokenCanEndStmt(HOPTokenKind kind) {
+static int H2TokenCanEndStmt(H2TokenKind kind) {
     switch (kind) {
-        case HOPTok_IDENT:
-        case HOPTok_INT:
-        case HOPTok_FLOAT:
-        case HOPTok_STRING:
-        case HOPTok_RUNE:
-        case HOPTok_TRUE:
-        case HOPTok_FALSE:
-        case HOPTok_BREAK:
-        case HOPTok_CONTINUE:
-        case HOPTok_RETURN:
-        case HOPTok_RPAREN:
-        case HOPTok_RBRACK:
-        case HOPTok_RBRACE:
-        case HOPTok_NOT:
-        case HOPTok_NULL:
-        case HOPTok_TYPE:     return 1;
-        default:              return 0;
+        case H2Tok_IDENT:
+        case H2Tok_INT:
+        case H2Tok_FLOAT:
+        case H2Tok_STRING:
+        case H2Tok_RUNE:
+        case H2Tok_TRUE:
+        case H2Tok_FALSE:
+        case H2Tok_BREAK:
+        case H2Tok_CONTINUE:
+        case H2Tok_RETURN:
+        case H2Tok_RPAREN:
+        case H2Tok_RBRACK:
+        case H2Tok_RBRACE:
+        case H2Tok_NOT:
+        case H2Tok_NULL:
+        case H2Tok_TYPE:     return 1;
+        default:             return 0;
     }
 }
 
-static int HOPPushToken(
-    HOPTokenBuf* out, HOPDiag* diag, HOPTokenKind kind, uint32_t start, uint32_t end) {
+static int H2PushToken(
+    H2TokenBuf* out, H2Diag* diag, H2TokenKind kind, uint32_t start, uint32_t end) {
     if (out->len >= out->cap) {
-        HOPSetDiag(diag, HOPDiag_ARENA_OOM, start, end);
+        H2SetDiag(diag, H2Diag_ARENA_OOM, start, end);
         return -1;
     }
 
@@ -542,8 +541,8 @@ static int HOPPushToken(
     return 0;
 }
 
-static int HOPSkipBlockComment(
-    HOPStrView src, uint32_t* ioPos, int* ioSawNewline, uint32_t* ioNewlinePos) {
+static int H2SkipBlockComment(
+    H2StrView src, uint32_t* ioPos, int* ioSawNewline, uint32_t* ioNewlinePos) {
     uint32_t pos = *ioPos + 2u;
     uint32_t depth = 1u;
     while (pos < src.len) {
@@ -576,102 +575,102 @@ static int HOPSkipBlockComment(
     return -1;
 }
 
-const char* HOPTokenKindName(HOPTokenKind kind) {
+const char* H2TokenKindName(H2TokenKind kind) {
     switch (kind) {
-        case HOPTok_INVALID:       return "INVALID";
-        case HOPTok_EOF:           return "EOF";
-        case HOPTok_IDENT:         return "IDENT";
-        case HOPTok_INT:           return "INT";
-        case HOPTok_FLOAT:         return "FLOAT";
-        case HOPTok_STRING:        return "STRING";
-        case HOPTok_RUNE:          return "RUNE";
-        case HOPTok_IMPORT:        return "IMPORT";
-        case HOPTok_PUB:           return "PUB";
-        case HOPTok_STRUCT:        return "STRUCT";
-        case HOPTok_UNION:         return "UNION";
-        case HOPTok_ENUM:          return "ENUM";
-        case HOPTok_FN:            return "FN";
-        case HOPTok_VAR:           return "VAR";
-        case HOPTok_CONST:         return "CONST";
-        case HOPTok_TYPE:          return "TYPE";
-        case HOPTok_MUT:           return "MUT";
-        case HOPTok_IF:            return "IF";
-        case HOPTok_ELSE:          return "ELSE";
-        case HOPTok_FOR:           return "FOR";
-        case HOPTok_SWITCH:        return "SWITCH";
-        case HOPTok_CASE:          return "CASE";
-        case HOPTok_DEFAULT:       return "DEFAULT";
-        case HOPTok_BREAK:         return "BREAK";
-        case HOPTok_CONTINUE:      return "CONTINUE";
-        case HOPTok_RETURN:        return "RETURN";
-        case HOPTok_DEFER:         return "DEFER";
-        case HOPTok_ASSERT:        return "ASSERT";
-        case HOPTok_SIZEOF:        return "SIZEOF";
-        case HOPTok_NEW:           return "NEW";
-        case HOPTok_DEL:           return "DEL";
-        case HOPTok_TRUE:          return "TRUE";
-        case HOPTok_FALSE:         return "FALSE";
-        case HOPTok_IN:            return "IN";
-        case HOPTok_AS:            return "AS";
-        case HOPTok_CONTEXT:       return "CONTEXT";
-        case HOPTok_ANYTYPE:       return "ANYTYPE";
-        case HOPTok_LPAREN:        return "LPAREN";
-        case HOPTok_RPAREN:        return "RPAREN";
-        case HOPTok_LBRACE:        return "LBRACE";
-        case HOPTok_RBRACE:        return "RBRACE";
-        case HOPTok_LBRACK:        return "LBRACK";
-        case HOPTok_RBRACK:        return "RBRACK";
-        case HOPTok_COMMA:         return "COMMA";
-        case HOPTok_DOT:           return "DOT";
-        case HOPTok_ELLIPSIS:      return "ELLIPSIS";
-        case HOPTok_SEMICOLON:     return "SEMICOLON";
-        case HOPTok_COLON:         return "COLON";
-        case HOPTok_AT:            return "AT";
-        case HOPTok_SHORT_ASSIGN:  return "SHORT_ASSIGN";
-        case HOPTok_ASSIGN:        return "ASSIGN";
-        case HOPTok_ADD:           return "ADD";
-        case HOPTok_SUB:           return "SUB";
-        case HOPTok_MUL:           return "MUL";
-        case HOPTok_DIV:           return "DIV";
-        case HOPTok_MOD:           return "MOD";
-        case HOPTok_AND:           return "AND";
-        case HOPTok_OR:            return "OR";
-        case HOPTok_XOR:           return "XOR";
-        case HOPTok_NOT:           return "NOT";
-        case HOPTok_LSHIFT:        return "LSHIFT";
-        case HOPTok_RSHIFT:        return "RSHIFT";
-        case HOPTok_EQ:            return "EQ";
-        case HOPTok_NEQ:           return "NEQ";
-        case HOPTok_LT:            return "LT";
-        case HOPTok_GT:            return "GT";
-        case HOPTok_LTE:           return "LTE";
-        case HOPTok_GTE:           return "GTE";
-        case HOPTok_LOGICAL_AND:   return "LOGICAL_AND";
-        case HOPTok_LOGICAL_OR:    return "LOGICAL_OR";
-        case HOPTok_ADD_ASSIGN:    return "ADD_ASSIGN";
-        case HOPTok_SUB_ASSIGN:    return "SUB_ASSIGN";
-        case HOPTok_MUL_ASSIGN:    return "MUL_ASSIGN";
-        case HOPTok_DIV_ASSIGN:    return "DIV_ASSIGN";
-        case HOPTok_MOD_ASSIGN:    return "MOD_ASSIGN";
-        case HOPTok_AND_ASSIGN:    return "AND_ASSIGN";
-        case HOPTok_OR_ASSIGN:     return "OR_ASSIGN";
-        case HOPTok_XOR_ASSIGN:    return "XOR_ASSIGN";
-        case HOPTok_LSHIFT_ASSIGN: return "LSHIFT_ASSIGN";
-        case HOPTok_RSHIFT_ASSIGN: return "RSHIFT_ASSIGN";
-        case HOPTok_QUESTION:      return "QUESTION";
-        case HOPTok_NULL:          return "NULL";
+        case H2Tok_INVALID:       return "INVALID";
+        case H2Tok_EOF:           return "EOF";
+        case H2Tok_IDENT:         return "IDENT";
+        case H2Tok_INT:           return "INT";
+        case H2Tok_FLOAT:         return "FLOAT";
+        case H2Tok_STRING:        return "STRING";
+        case H2Tok_RUNE:          return "RUNE";
+        case H2Tok_IMPORT:        return "IMPORT";
+        case H2Tok_PUB:           return "PUB";
+        case H2Tok_STRUCT:        return "STRUCT";
+        case H2Tok_UNION:         return "UNION";
+        case H2Tok_ENUM:          return "ENUM";
+        case H2Tok_FN:            return "FN";
+        case H2Tok_VAR:           return "VAR";
+        case H2Tok_CONST:         return "CONST";
+        case H2Tok_TYPE:          return "TYPE";
+        case H2Tok_MUT:           return "MUT";
+        case H2Tok_IF:            return "IF";
+        case H2Tok_ELSE:          return "ELSE";
+        case H2Tok_FOR:           return "FOR";
+        case H2Tok_SWITCH:        return "SWITCH";
+        case H2Tok_CASE:          return "CASE";
+        case H2Tok_DEFAULT:       return "DEFAULT";
+        case H2Tok_BREAK:         return "BREAK";
+        case H2Tok_CONTINUE:      return "CONTINUE";
+        case H2Tok_RETURN:        return "RETURN";
+        case H2Tok_DEFER:         return "DEFER";
+        case H2Tok_ASSERT:        return "ASSERT";
+        case H2Tok_SIZEOF:        return "SIZEOF";
+        case H2Tok_NEW:           return "NEW";
+        case H2Tok_DEL:           return "DEL";
+        case H2Tok_TRUE:          return "TRUE";
+        case H2Tok_FALSE:         return "FALSE";
+        case H2Tok_IN:            return "IN";
+        case H2Tok_AS:            return "AS";
+        case H2Tok_CONTEXT:       return "CONTEXT";
+        case H2Tok_ANYTYPE:       return "ANYTYPE";
+        case H2Tok_LPAREN:        return "LPAREN";
+        case H2Tok_RPAREN:        return "RPAREN";
+        case H2Tok_LBRACE:        return "LBRACE";
+        case H2Tok_RBRACE:        return "RBRACE";
+        case H2Tok_LBRACK:        return "LBRACK";
+        case H2Tok_RBRACK:        return "RBRACK";
+        case H2Tok_COMMA:         return "COMMA";
+        case H2Tok_DOT:           return "DOT";
+        case H2Tok_ELLIPSIS:      return "ELLIPSIS";
+        case H2Tok_SEMICOLON:     return "SEMICOLON";
+        case H2Tok_COLON:         return "COLON";
+        case H2Tok_AT:            return "AT";
+        case H2Tok_SHORT_ASSIGN:  return "SHORT_ASSIGN";
+        case H2Tok_ASSIGN:        return "ASSIGN";
+        case H2Tok_ADD:           return "ADD";
+        case H2Tok_SUB:           return "SUB";
+        case H2Tok_MUL:           return "MUL";
+        case H2Tok_DIV:           return "DIV";
+        case H2Tok_MOD:           return "MOD";
+        case H2Tok_AND:           return "AND";
+        case H2Tok_OR:            return "OR";
+        case H2Tok_XOR:           return "XOR";
+        case H2Tok_NOT:           return "NOT";
+        case H2Tok_LSHIFT:        return "LSHIFT";
+        case H2Tok_RSHIFT:        return "RSHIFT";
+        case H2Tok_EQ:            return "EQ";
+        case H2Tok_NEQ:           return "NEQ";
+        case H2Tok_LT:            return "LT";
+        case H2Tok_GT:            return "GT";
+        case H2Tok_LTE:           return "LTE";
+        case H2Tok_GTE:           return "GTE";
+        case H2Tok_LOGICAL_AND:   return "LOGICAL_AND";
+        case H2Tok_LOGICAL_OR:    return "LOGICAL_OR";
+        case H2Tok_ADD_ASSIGN:    return "ADD_ASSIGN";
+        case H2Tok_SUB_ASSIGN:    return "SUB_ASSIGN";
+        case H2Tok_MUL_ASSIGN:    return "MUL_ASSIGN";
+        case H2Tok_DIV_ASSIGN:    return "DIV_ASSIGN";
+        case H2Tok_MOD_ASSIGN:    return "MOD_ASSIGN";
+        case H2Tok_AND_ASSIGN:    return "AND_ASSIGN";
+        case H2Tok_OR_ASSIGN:     return "OR_ASSIGN";
+        case H2Tok_XOR_ASSIGN:    return "XOR_ASSIGN";
+        case H2Tok_LSHIFT_ASSIGN: return "LSHIFT_ASSIGN";
+        case H2Tok_RSHIFT_ASSIGN: return "RSHIFT_ASSIGN";
+        case H2Tok_QUESTION:      return "QUESTION";
+        case H2Tok_NULL:          return "NULL";
     }
     return "UNKNOWN";
 }
 
-int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nullable diag) {
-    HOPTokenBuf  tokbuf;
-    uint32_t     pos = 0;
-    int          insertedEOFSemicolon = 0;
-    HOPTokenKind prevKind = HOPTok_INVALID;
+int H2Lex(H2Arena* arena, H2StrView src, H2TokenStream* out, H2Diag* _Nullable diag) {
+    H2TokenBuf  tokbuf;
+    uint32_t    pos = 0;
+    int         insertedEOFSemicolon = 0;
+    H2TokenKind prevKind = H2Tok_INVALID;
 
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     out->v = NULL;
     out->len = 0;
@@ -681,10 +680,10 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
     if (tokbuf.cap < 8) {
         tokbuf.cap = 8;
     }
-    tokbuf.v = (HOPToken*)HOPArenaAlloc(
-        arena, tokbuf.cap * (uint32_t)sizeof(HOPToken), (uint32_t)_Alignof(HOPToken));
+    tokbuf.v = (H2Token*)H2ArenaAlloc(
+        arena, tokbuf.cap * (uint32_t)sizeof(H2Token), (uint32_t)_Alignof(H2Token));
     if (tokbuf.v == NULL) {
-        HOPSetDiag(diag, HOPDiag_ARENA_OOM, 0, 0);
+        H2SetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
     }
 
@@ -728,8 +727,8 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                 && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'*')
             {
                 uint32_t commentStart = pos;
-                if (HOPSkipBlockComment(src, &pos, &sawNewline, &newlinePos) != 0) {
-                    HOPSetDiag(diag, HOPDiag_UNTERMINATED_BLOCK_COMMENT, commentStart, pos);
+                if (H2SkipBlockComment(src, &pos, &sawNewline, &newlinePos) != 0) {
+                    H2SetDiag(diag, H2Diag_UNTERMINATED_BLOCK_COMMENT, commentStart, pos);
                     return -1;
                 }
                 continue;
@@ -737,46 +736,46 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
             break;
         }
 
-        if (sawNewline && HOPTokenCanEndStmt(prevKind)) {
-            if (HOPPushToken(&tokbuf, diag, HOPTok_SEMICOLON, newlinePos, newlinePos) != 0) {
+        if (sawNewline && H2TokenCanEndStmt(prevKind)) {
+            if (H2PushToken(&tokbuf, diag, H2Tok_SEMICOLON, newlinePos, newlinePos) != 0) {
                 return -1;
             }
-            prevKind = HOPTok_SEMICOLON;
+            prevKind = H2Tok_SEMICOLON;
             continue;
         }
 
         if (pos >= src.len) {
-            if (!insertedEOFSemicolon && HOPTokenCanEndStmt(prevKind)) {
-                if (HOPPushToken(&tokbuf, diag, HOPTok_SEMICOLON, src.len, src.len) != 0) {
+            if (!insertedEOFSemicolon && H2TokenCanEndStmt(prevKind)) {
+                if (H2PushToken(&tokbuf, diag, H2Tok_SEMICOLON, src.len, src.len) != 0) {
                     return -1;
                 }
-                prevKind = HOPTok_SEMICOLON;
+                prevKind = H2Tok_SEMICOLON;
                 insertedEOFSemicolon = 1;
                 continue;
             }
-            if (HOPPushToken(&tokbuf, diag, HOPTok_EOF, src.len, src.len) != 0) {
+            if (H2PushToken(&tokbuf, diag, H2Tok_EOF, src.len, src.len) != 0) {
                 return -1;
             }
             break;
         }
 
         {
-            HOPTokenKind  kind = HOPTok_INVALID;
+            H2TokenKind   kind = H2Tok_INVALID;
             uint32_t      start = pos;
             unsigned char c = (unsigned char)src.ptr[pos];
 
-            if (HOPIsAlpha(c) || c == (unsigned char)'_') {
+            if (H2IsAlpha(c) || c == (unsigned char)'_') {
                 pos++;
                 while (pos < src.len) {
                     c = (unsigned char)src.ptr[pos];
-                    if (!HOPIsAlnum(c) && c != (unsigned char)'_') {
+                    if (!H2IsAlnum(c) && c != (unsigned char)'_') {
                         break;
                     }
                     pos++;
                 }
-                kind = HOPKeywordKind(src.ptr + start, pos - start);
-            } else if (HOPIsDigit(c)) {
-                kind = HOPTok_INT;
+                kind = H2KeywordKind(src.ptr + start, pos - start);
+            } else if (H2IsDigit(c)) {
+                kind = H2Tok_INT;
 
                 if (c == (unsigned char)'0' && pos + 1 < src.len
                     && ((unsigned char)src.ptr[pos + 1] == (unsigned char)'x'
@@ -785,22 +784,22 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                     uint32_t digitsStart;
                     pos += 2;
                     digitsStart = pos;
-                    while (pos < src.len && HOPIsHexDigit((unsigned char)src.ptr[pos])) {
+                    while (pos < src.len && H2IsHexDigit((unsigned char)src.ptr[pos])) {
                         pos++;
                     }
                     if (pos == digitsStart) {
-                        HOPSetDiag(diag, HOPDiag_INVALID_NUMBER, start, pos);
+                        H2SetDiag(diag, H2Diag_INVALID_NUMBER, start, pos);
                         return -1;
                     }
                 } else {
-                    while (pos < src.len && HOPIsDigit((unsigned char)src.ptr[pos])) {
+                    while (pos < src.len && H2IsDigit((unsigned char)src.ptr[pos])) {
                         pos++;
                     }
 
                     if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'.') {
-                        kind = HOPTok_FLOAT;
+                        kind = H2Tok_FLOAT;
                         pos++;
-                        while (pos < src.len && HOPIsDigit((unsigned char)src.ptr[pos])) {
+                        while (pos < src.len && H2IsDigit((unsigned char)src.ptr[pos])) {
                             pos++;
                         }
                     }
@@ -810,7 +809,7 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                             || (unsigned char)src.ptr[pos] == (unsigned char)'E'))
                     {
                         uint32_t expStart;
-                        kind = HOPTok_FLOAT;
+                        kind = H2Tok_FLOAT;
                         pos++;
                         if (pos < src.len
                             && ((unsigned char)src.ptr[pos] == (unsigned char)'+'
@@ -819,17 +818,17 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                             pos++;
                         }
                         expStart = pos;
-                        while (pos < src.len && HOPIsDigit((unsigned char)src.ptr[pos])) {
+                        while (pos < src.len && H2IsDigit((unsigned char)src.ptr[pos])) {
                             pos++;
                         }
                         if (pos == expStart) {
-                            HOPSetDiag(diag, HOPDiag_INVALID_NUMBER, start, pos);
+                            H2SetDiag(diag, H2Diag_INVALID_NUMBER, start, pos);
                             return -1;
                         }
                     }
                 }
             } else if (c == (unsigned char)'\'') {
-                kind = HOPTok_RUNE;
+                kind = H2Tok_RUNE;
                 pos++;
                 while (pos < src.len) {
                     c = (unsigned char)src.ptr[pos];
@@ -840,7 +839,7 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                     if (c == (unsigned char)'\\') {
                         pos++;
                         if (pos >= src.len) {
-                            HOPSetDiag(diag, HOPDiag_UNTERMINATED_RUNE, start, pos);
+                            H2SetDiag(diag, H2Diag_UNTERMINATED_RUNE, start, pos);
                             return -1;
                         }
                         if ((unsigned char)src.ptr[pos] == (unsigned char)'\r' && pos + 1u < src.len
@@ -855,21 +854,21 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                     pos++;
                 }
                 if (pos > src.len || (unsigned char)src.ptr[pos - 1u] != (unsigned char)'\'') {
-                    HOPSetDiag(diag, HOPDiag_UNTERMINATED_RUNE, start, pos);
+                    H2SetDiag(diag, H2Diag_UNTERMINATED_RUNE, start, pos);
                     return -1;
                 }
                 {
-                    HOPRuneLitErr runeErr = { 0 };
-                    uint32_t      rune = 0;
-                    if (HOPDecodeRuneLiteralValidate(src.ptr, start, pos, &rune, &runeErr) != 0) {
-                        HOPSetDiag(
-                            diag, HOPRuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
+                    H2RuneLitErr runeErr = { 0 };
+                    uint32_t     rune = 0;
+                    if (H2DecodeRuneLiteralValidate(src.ptr, start, pos, &rune, &runeErr) != 0) {
+                        H2SetDiag(
+                            diag, H2RuneLitErrDiagCode(runeErr.kind), runeErr.start, runeErr.end);
                         return -1;
                     }
                 }
             } else if (c == (unsigned char)'"' || c == (unsigned char)'`') {
                 unsigned char quote = c;
-                kind = HOPTok_STRING;
+                kind = H2Tok_STRING;
                 pos++;
                 while (pos < src.len) {
                     c = (unsigned char)src.ptr[pos];
@@ -894,7 +893,7 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                     if (c == (unsigned char)'\\') {
                         pos++;
                         if (pos >= src.len) {
-                            HOPSetDiag(diag, HOPDiag_UNTERMINATED_STRING, start, pos);
+                            H2SetDiag(diag, H2Diag_UNTERMINATED_STRING, start, pos);
                             return -1;
                         }
                         if ((unsigned char)src.ptr[pos] == (unsigned char)'\r' && pos + 1u < src.len
@@ -909,137 +908,137 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                     pos++;
                 }
                 if (pos > src.len || (unsigned char)src.ptr[pos - 1u] != quote) {
-                    HOPSetDiag(diag, HOPDiag_UNTERMINATED_STRING, start, pos);
+                    H2SetDiag(diag, H2Diag_UNTERMINATED_STRING, start, pos);
                     return -1;
                 }
                 {
-                    HOPStringLitErr litErr = { 0 };
-                    if (HOPDecodeStringLiteralValidate(src.ptr, start, pos, &litErr) != 0) {
-                        HOPSetDiag(
-                            diag, HOPStringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
+                    H2StringLitErr litErr = { 0 };
+                    if (H2DecodeStringLiteralValidate(src.ptr, start, pos, &litErr) != 0) {
+                        H2SetDiag(
+                            diag, H2StringLitErrDiagCode(litErr.kind), litErr.start, litErr.end);
                         return -1;
                     }
                 }
             } else {
                 pos++;
                 switch (c) {
-                    case (unsigned char)'(': kind = HOPTok_LPAREN; break;
-                    case (unsigned char)')': kind = HOPTok_RPAREN; break;
-                    case (unsigned char)'{': kind = HOPTok_LBRACE; break;
-                    case (unsigned char)'}': kind = HOPTok_RBRACE; break;
-                    case (unsigned char)'[': kind = HOPTok_LBRACK; break;
-                    case (unsigned char)']': kind = HOPTok_RBRACK; break;
-                    case (unsigned char)',': kind = HOPTok_COMMA; break;
+                    case (unsigned char)'(': kind = H2Tok_LPAREN; break;
+                    case (unsigned char)')': kind = H2Tok_RPAREN; break;
+                    case (unsigned char)'{': kind = H2Tok_LBRACE; break;
+                    case (unsigned char)'}': kind = H2Tok_RBRACE; break;
+                    case (unsigned char)'[': kind = H2Tok_LBRACK; break;
+                    case (unsigned char)']': kind = H2Tok_RBRACK; break;
+                    case (unsigned char)',': kind = H2Tok_COMMA; break;
                     case (unsigned char)'.':
                         if (pos + 1u < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'.'
                             && (unsigned char)src.ptr[pos + 1u] == (unsigned char)'.')
                         {
                             pos += 2u;
-                            kind = HOPTok_ELLIPSIS;
+                            kind = H2Tok_ELLIPSIS;
                         } else {
-                            kind = HOPTok_DOT;
+                            kind = H2Tok_DOT;
                         }
                         break;
-                    case (unsigned char)';': kind = HOPTok_SEMICOLON; break;
+                    case (unsigned char)';': kind = H2Tok_SEMICOLON; break;
                     case (unsigned char)':':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_SHORT_ASSIGN;
+                            kind = H2Tok_SHORT_ASSIGN;
                         } else {
-                            kind = HOPTok_COLON;
+                            kind = H2Tok_COLON;
                         }
                         break;
-                    case (unsigned char)'@': kind = HOPTok_AT; break;
+                    case (unsigned char)'@': kind = H2Tok_AT; break;
 
                     case (unsigned char)'+':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_ADD_ASSIGN;
+                            kind = H2Tok_ADD_ASSIGN;
                         } else {
-                            kind = HOPTok_ADD;
+                            kind = H2Tok_ADD;
                         }
                         break;
                     case (unsigned char)'-':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_SUB_ASSIGN;
+                            kind = H2Tok_SUB_ASSIGN;
                         } else {
-                            kind = HOPTok_SUB;
+                            kind = H2Tok_SUB;
                         }
                         break;
                     case (unsigned char)'*':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_MUL_ASSIGN;
+                            kind = H2Tok_MUL_ASSIGN;
                         } else {
-                            kind = HOPTok_MUL;
+                            kind = H2Tok_MUL;
                         }
                         break;
                     case (unsigned char)'/':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_DIV_ASSIGN;
+                            kind = H2Tok_DIV_ASSIGN;
                         } else {
-                            kind = HOPTok_DIV;
+                            kind = H2Tok_DIV;
                         }
                         break;
                     case (unsigned char)'%':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_MOD_ASSIGN;
+                            kind = H2Tok_MOD_ASSIGN;
                         } else {
-                            kind = HOPTok_MOD;
+                            kind = H2Tok_MOD;
                         }
                         break;
                     case (unsigned char)'&':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'&') {
                             pos++;
-                            kind = HOPTok_LOGICAL_AND;
+                            kind = H2Tok_LOGICAL_AND;
                         } else if (
                             pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                         {
                             pos++;
-                            kind = HOPTok_AND_ASSIGN;
+                            kind = H2Tok_AND_ASSIGN;
                         } else {
-                            kind = HOPTok_AND;
+                            kind = H2Tok_AND;
                         }
                         break;
                     case (unsigned char)'|':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'|') {
                             pos++;
-                            kind = HOPTok_LOGICAL_OR;
+                            kind = H2Tok_LOGICAL_OR;
                         } else if (
                             pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                         {
                             pos++;
-                            kind = HOPTok_OR_ASSIGN;
+                            kind = H2Tok_OR_ASSIGN;
                         } else {
-                            kind = HOPTok_OR;
+                            kind = H2Tok_OR;
                         }
                         break;
                     case (unsigned char)'^':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_XOR_ASSIGN;
+                            kind = H2Tok_XOR_ASSIGN;
                         } else {
-                            kind = HOPTok_XOR;
+                            kind = H2Tok_XOR;
                         }
                         break;
-                    case (unsigned char)'?': kind = HOPTok_QUESTION; break;
+                    case (unsigned char)'?': kind = H2Tok_QUESTION; break;
                     case (unsigned char)'!':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_NEQ;
+                            kind = H2Tok_NEQ;
                         } else {
-                            kind = HOPTok_NOT;
+                            kind = H2Tok_NOT;
                         }
                         break;
                     case (unsigned char)'=':
                         if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=') {
                             pos++;
-                            kind = HOPTok_EQ;
+                            kind = H2Tok_EQ;
                         } else {
-                            kind = HOPTok_ASSIGN;
+                            kind = H2Tok_ASSIGN;
                         }
                         break;
                     case (unsigned char)'<':
@@ -1048,17 +1047,17 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                             if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                             {
                                 pos++;
-                                kind = HOPTok_LSHIFT_ASSIGN;
+                                kind = H2Tok_LSHIFT_ASSIGN;
                             } else {
-                                kind = HOPTok_LSHIFT;
+                                kind = H2Tok_LSHIFT;
                             }
                         } else if (
                             pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                         {
                             pos++;
-                            kind = HOPTok_LTE;
+                            kind = H2Tok_LTE;
                         } else {
-                            kind = HOPTok_LT;
+                            kind = H2Tok_LT;
                         }
                         break;
                     case (unsigned char)'>':
@@ -1067,25 +1066,25 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
                             if (pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                             {
                                 pos++;
-                                kind = HOPTok_RSHIFT_ASSIGN;
+                                kind = H2Tok_RSHIFT_ASSIGN;
                             } else {
-                                kind = HOPTok_RSHIFT;
+                                kind = H2Tok_RSHIFT;
                             }
                         } else if (
                             pos < src.len && (unsigned char)src.ptr[pos] == (unsigned char)'=')
                         {
                             pos++;
-                            kind = HOPTok_GTE;
+                            kind = H2Tok_GTE;
                         } else {
-                            kind = HOPTok_GT;
+                            kind = H2Tok_GT;
                         }
                         break;
 
-                    default: HOPSetDiag(diag, HOPDiag_UNEXPECTED_CHAR, start, pos); return -1;
+                    default: H2SetDiag(diag, H2Diag_UNEXPECTED_CHAR, start, pos); return -1;
                 }
             }
 
-            if (HOPPushToken(&tokbuf, diag, kind, start, pos) != 0) {
+            if (H2PushToken(&tokbuf, diag, kind, start, pos) != 0) {
                 return -1;
             }
             prevKind = kind;
@@ -1097,23 +1096,23 @@ int HOPLex(HOPArena* arena, HOPStrView src, HOPTokenStream* out, HOPDiag* _Nulla
     return 0;
 }
 
-static void HOPWWrite(HOPWriter* w, const char* s, uint32_t len) {
+static void H2WWrite(H2Writer* w, const char* s, uint32_t len) {
     w->write(w->ctx, s, len);
 }
 
-static void HOPWCStr(HOPWriter* w, const char* s) {
+static void H2WCStr(H2Writer* w, const char* s) {
     uint32_t n = 0;
     while (s[n] != '\0') {
         n++;
     }
-    HOPWWrite(w, s, n);
+    H2WWrite(w, s, n);
 }
 
-static void HOPWU32(HOPWriter* w, uint32_t v) {
+static void H2WU32(H2Writer* w, uint32_t v) {
     char     buf[16];
     uint32_t n = 0;
     if (v == 0) {
-        HOPWWrite(w, "0", 1);
+        H2WWrite(w, "0", 1);
         return;
     }
     while (v > 0 && n < (uint32_t)sizeof(buf)) {
@@ -1122,31 +1121,31 @@ static void HOPWU32(HOPWriter* w, uint32_t v) {
     }
     while (n > 0) {
         n--;
-        HOPWWrite(w, &buf[n], 1);
+        H2WWrite(w, &buf[n], 1);
     }
 }
 
-static void HOPWIndent(HOPWriter* w, uint32_t depth) {
+static void H2WIndent(H2Writer* w, uint32_t depth) {
     uint32_t i;
     for (i = 0; i < depth; i++) {
-        HOPWWrite(w, "  ", 2);
+        H2WWrite(w, "  ", 2);
     }
 }
 
-static void HOPWEscaped(HOPWriter* w, HOPStrView src, uint32_t start, uint32_t end) {
+static void H2WEscaped(H2Writer* w, H2StrView src, uint32_t start, uint32_t end) {
     uint32_t i;
-    HOPWWrite(w, "\"", 1);
+    H2WWrite(w, "\"", 1);
     for (i = start; i < end && i < src.len; i++) {
         unsigned char c = (unsigned char)src.ptr[i];
         switch (c) {
-            case '\"': HOPWWrite(w, "\\\"", 2); break;
-            case '\\': HOPWWrite(w, "\\\\", 2); break;
-            case '\n': HOPWWrite(w, "\\n", 2); break;
-            case '\r': HOPWWrite(w, "\\r", 2); break;
-            case '\t': HOPWWrite(w, "\\t", 2); break;
+            case '\"': H2WWrite(w, "\\\"", 2); break;
+            case '\\': H2WWrite(w, "\\\\", 2); break;
+            case '\n': H2WWrite(w, "\\n", 2); break;
+            case '\r': H2WWrite(w, "\\r", 2); break;
+            case '\t': H2WWrite(w, "\\t", 2); break;
             default:
                 if (c >= 0x20 && c <= 0x7e) {
-                    HOPWWrite(w, (const char*)&src.ptr[i], 1);
+                    H2WWrite(w, (const char*)&src.ptr[i], 1);
                 } else {
                     char               hex[4];
                     static const char* digits = "0123456789abcdef";
@@ -1154,46 +1153,46 @@ static void HOPWEscaped(HOPWriter* w, HOPStrView src, uint32_t start, uint32_t e
                     hex[1] = 'x';
                     hex[2] = digits[(c >> 4) & 0x0f];
                     hex[3] = digits[c & 0x0f];
-                    HOPWWrite(w, hex, 4);
+                    H2WWrite(w, hex, 4);
                 }
                 break;
         }
     }
-    HOPWWrite(w, "\"", 1);
+    H2WWrite(w, "\"", 1);
 }
 
-static int HOPAstDumpNode(
-    const HOPAst* ast, int32_t idx, uint32_t depth, HOPStrView src, HOPWriter* w) {
-    const HOPAstNode* n;
-    int32_t           c;
+static int H2AstDumpNode(
+    const H2Ast* ast, int32_t idx, uint32_t depth, H2StrView src, H2Writer* w) {
+    const H2AstNode* n;
+    int32_t          c;
     if (idx < 0 || (uint32_t)idx >= ast->len) {
         return -1;
     }
     n = &ast->nodes[idx];
-    HOPWIndent(w, depth);
-    HOPWCStr(w, HOPAstKindName(n->kind));
+    H2WIndent(w, depth);
+    H2WCStr(w, H2AstKindName(n->kind));
 
     if (n->op != 0) {
-        HOPWCStr(w, " op=");
-        HOPWCStr(w, HOPTokenKindName((HOPTokenKind)n->op));
+        H2WCStr(w, " op=");
+        H2WCStr(w, H2TokenKindName((H2TokenKind)n->op));
     }
     if (n->flags != 0) {
-        HOPWCStr(w, " flags=");
-        HOPWU32(w, n->flags);
+        H2WCStr(w, " flags=");
+        H2WU32(w, n->flags);
     }
     if (n->dataEnd > n->dataStart) {
-        HOPWCStr(w, " ");
-        HOPWEscaped(w, src, n->dataStart, n->dataEnd);
+        H2WCStr(w, " ");
+        H2WEscaped(w, src, n->dataStart, n->dataEnd);
     }
-    HOPWCStr(w, " [");
-    HOPWU32(w, n->start);
-    HOPWCStr(w, ",");
-    HOPWU32(w, n->end);
-    HOPWCStr(w, "]\n");
+    H2WCStr(w, " [");
+    H2WU32(w, n->start);
+    H2WCStr(w, ",");
+    H2WU32(w, n->end);
+    H2WCStr(w, "]\n");
 
     c = n->firstChild;
     while (c >= 0) {
-        if (HOPAstDumpNode(ast, c, depth + 1, src, w) != 0) {
+        if (H2AstDumpNode(ast, c, depth + 1, src, w) != 0) {
             return -1;
         }
         c = ast->nodes[c].nextSibling;
@@ -1201,15 +1200,15 @@ static int HOPAstDumpNode(
     return 0;
 }
 
-int HOPAstDump(const HOPAst* ast, HOPStrView src, HOPWriter* w, HOPDiag* _Nullable diag) {
+int H2AstDump(const H2Ast* ast, H2StrView src, H2Writer* w, H2Diag* _Nullable diag) {
     if (diag != NULL) {
-        *diag = (HOPDiag){ 0 };
+        *diag = (H2Diag){ 0 };
     }
     if (ast == NULL || w == NULL || w->write == NULL || ast->nodes == NULL || ast->root < 0) {
-        HOPSetDiag(diag, HOPDiag_UNEXPECTED_TOKEN, 0, 0);
+        H2SetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
         return -1;
     }
-    return HOPAstDumpNode(ast, ast->root, 0, src, w);
+    return H2AstDumpNode(ast, ast->root, 0, src, w);
 }
 
-HOP_API_END
+H2_API_END

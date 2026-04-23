@@ -1,28 +1,28 @@
 #include "libhop-impl.h"
 #include "codegen.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-#ifndef HOP_WITH_C_BACKEND
-    #define HOP_WITH_C_BACKEND 1
+#ifndef H2_WITH_C_BACKEND
+    #define H2_WITH_C_BACKEND 1
 #endif
 
-#ifndef HOP_WITH_WASM_BACKEND
-    #define HOP_WITH_WASM_BACKEND 1
+#ifndef H2_WITH_WASM_BACKEND
+    #define H2_WITH_WASM_BACKEND 1
 #endif
 
-#if HOP_WITH_C_BACKEND
-extern const HOPCodegenBackend gHOPCodegenBackendC;
+#if H2_WITH_C_BACKEND
+extern const H2CodegenBackend gHOPCodegenBackendC;
 #endif
-#if HOP_WITH_WASM_BACKEND
-extern const HOPCodegenBackend gHOPCodegenBackendWasm;
+#if H2_WITH_WASM_BACKEND
+extern const H2CodegenBackend gHOPCodegenBackendWasm;
 #endif
 
-static const HOPCodegenBackend* const gHOPCodegenBackends[] = {
-#if HOP_WITH_WASM_BACKEND
+static const H2CodegenBackend* const gHOPCodegenBackends[] = {
+#if H2_WITH_WASM_BACKEND
     &gHOPCodegenBackendWasm,
 #endif
-#if HOP_WITH_C_BACKEND
+#if H2_WITH_C_BACKEND
     &gHOPCodegenBackendC,
 #endif
 };
@@ -38,9 +38,9 @@ static int BackendNameEq(const char* a, const char* b) {
     return *a == '\0' && *b == '\0';
 }
 
-const HOPCodegenBackend* _Nullable HOPCodegenFindBackend(const char* _Nullable name) {
+const H2CodegenBackend* _Nullable H2CodegenFindBackend(const char* _Nullable name) {
     uint32_t i;
-#if HOP_WITH_C_BACKEND
+#if H2_WITH_C_BACKEND
     if (name == NULL || name[0] == '\0') {
         return &gHOPCodegenBackendC;
     }
@@ -53,4 +53,4 @@ const HOPCodegenBackend* _Nullable HOPCodegenFindBackend(const char* _Nullable n
     return NULL;
 }
 
-HOP_API_END
+H2_API_END

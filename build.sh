@@ -128,8 +128,8 @@ c_flags=(
     -Werror=return-type \
     -Werror=switch \
     -Werror=enum-conversion \
-    -DHOP_WITH_C_BACKEND=$c_backend \
-    -DHOP_WITH_WASM_BACKEND=$wasm_backend \
+    -DH2_WITH_C_BACKEND=$c_backend \
+    -DH2_WITH_WASM_BACKEND=$wasm_backend \
     $(_if_release -O2 -DNDEBUG -flto=thin) \
 )
 l_flags=()
@@ -284,8 +284,8 @@ for srcfile in "${cli_sources[@]}" "${lib_sources[@]}"; do
     objfiles+=( "$objfile" )
     echo "build $objfile: cc $srcfile | ${diag_outputs[*]}" >> $NF
     if [ $srcfile = "src/hop_main.c" ]; then
-        HOP_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
-        echo "  flags = -DHOP_SOURCE_HASH=\\\"$HOP_SOURCE_HASH\\\"" >> $NF
+        H2_SOURCE_HASH=$(git rev-parse --short=20 HEAD 2>/dev/null || echo src)
+        echo "  flags = -DH2_SOURCE_HASH=\\\"$H2_SOURCE_HASH\\\"" >> $NF
     elif [ $srcfile = "src/platform_cli-eval.c" ]; then
         echo "  flags = -isystem lib" >> $NF
     fi

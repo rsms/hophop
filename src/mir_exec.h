@@ -2,300 +2,300 @@
 #include "ctfe.h"
 #include "mir.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-typedef HOPCTFEValue HOPMirExecValue;
+typedef H2CTFEValue H2MirExecValue;
 
-typedef int (*HOPMirResolveIdentFn)(
+typedef int (*H2MirResolveIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAssignIdentFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAssignIdentFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPMirExecValue* _Nonnull inValue,
+    const H2MirExecValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-typedef int (*HOPMirResolveCallFn)(
+typedef int (*H2MirResolveCallFn)(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPMirExecValue* _Nonnull args,
+    const H2MirExecValue* _Nonnull args,
     uint32_t argCount,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirResolveCallPreFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirResolveCallPreFn)(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAdjustCallArgsFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAdjustCallArgsFn)(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirInst* _Nullable inst,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
     uint32_t calleeFunctionIndex,
-    HOPMirExecValue* _Nonnull args,
+    H2MirExecValue* _Nonnull args,
     uint32_t argCount,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-typedef int (*HOPMirHostCallFn)(
+typedef int (*H2MirHostCallFn)(
     void* _Nullable ctx,
     uint32_t hostId,
-    const HOPMirExecValue* _Nonnull args,
+    const H2MirExecValue* _Nonnull args,
     uint32_t argCount,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-typedef int (*HOPMirZeroInitLocalFn)(
+typedef int (*H2MirZeroInitLocalFn)(
     void* _Nullable ctx,
-    const HOPMirTypeRef* _Nonnull typeRef,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirTypeRef* _Nonnull typeRef,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirCoerceValueForTypeFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirCoerceValueForTypeFn)(
     void* _Nullable ctx,
-    const HOPMirTypeRef* _Nonnull typeRef,
-    HOPMirExecValue* _Nonnull inOutValue,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirIndexValueFn)(
+    const H2MirTypeRef* _Nonnull typeRef,
+    H2MirExecValue* _Nonnull inOutValue,
+    H2Diag* _Nullable diag);
+typedef int (*H2MirIndexValueFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
-    const HOPMirExecValue* _Nonnull index,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirExecValue* _Nonnull base,
+    const H2MirExecValue* _Nonnull index,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirIndexAddrFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirIndexAddrFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
-    const HOPMirExecValue* _Nonnull index,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirExecValue* _Nonnull base,
+    const H2MirExecValue* _Nonnull index,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirSliceValueFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirSliceValueFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
-    const HOPMirExecValue* _Nullable start,
-    const HOPMirExecValue* _Nullable end,
+    const H2MirExecValue* _Nonnull base,
+    const H2MirExecValue* _Nullable start,
+    const H2MirExecValue* _Nullable end,
     uint16_t flags,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirSequenceLenFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirSequenceLenFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirExecValue* _Nonnull base,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirIterInitFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirIterInitFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    const HOPMirExecValue* _Nonnull source,
+    const H2MirExecValue* _Nonnull source,
     uint16_t flags,
-    HOPMirExecValue* _Nonnull outIter,
+    H2MirExecValue* _Nonnull outIter,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirIterNextFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirIterNextFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull iter,
+    const H2MirExecValue* _Nonnull iter,
     uint16_t flags,
     int* _Nonnull outHasItem,
-    HOPMirExecValue* _Nonnull outKey,
+    H2MirExecValue* _Nonnull outKey,
     int* _Nonnull outKeyIsConst,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outValueIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAggGetFieldFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAggGetFieldFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
+    const H2MirExecValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAggAddrFieldFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAggAddrFieldFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull base,
+    const H2MirExecValue* _Nonnull base,
     uint32_t nameStart,
     uint32_t nameEnd,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAggSetFieldFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAggSetFieldFn)(
     void* _Nullable ctx,
-    HOPMirExecValue* _Nonnull inOutBase,
+    H2MirExecValue* _Nonnull inOutBase,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const HOPMirExecValue* _Nonnull inValue,
+    const H2MirExecValue* _Nonnull inValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirMakeAggregateFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirMakeAggregateFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
     uint32_t fieldCount,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirMakeTupleFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirMakeTupleFn)(
     void* _Nullable ctx,
-    const HOPMirExecValue* _Nonnull elems,
+    const H2MirExecValue* _Nonnull elems,
     uint32_t elemCount,
     uint32_t typeNodeHint,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirMakeVariadicPackFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirMakeVariadicPackFn)(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirTypeRef* _Nullable paramTypeRef,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirTypeRef* _Nullable paramTypeRef,
     uint16_t callFlags,
-    const HOPMirExecValue* _Nonnull args,
+    const H2MirExecValue* _Nonnull args,
     uint32_t argCount,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirEvalBinaryFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirEvalBinaryFn)(
     void* _Nullable ctx,
-    HOPTokenKind op,
-    const HOPMirExecValue* _Nonnull lhs,
-    const HOPMirExecValue* _Nonnull rhs,
-    HOPMirExecValue* _Nonnull outValue,
+    H2TokenKind op,
+    const H2MirExecValue* _Nonnull lhs,
+    const H2MirExecValue* _Nonnull rhs,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirAllocNewFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirAllocNewFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef int (*HOPMirContextGetFn)(
+    H2Diag* _Nullable diag);
+typedef int (*H2MirContextGetFn)(
     void* _Nullable ctx,
     uint32_t fieldId,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
-typedef HOPMirContextGetFn HOPMirContextAddrFn;
-typedef int (*HOPMirEvalWithContextFn)(
+    H2Diag* _Nullable diag);
+typedef H2MirContextGetFn H2MirContextAddrFn;
+typedef int (*H2MirEvalWithContextFn)(
     void* _Nullable ctx,
     uint32_t sourceNode,
-    HOPMirExecValue* _Nonnull outValue,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
-    HOPDiag* _Nullable diag);
+    H2Diag* _Nullable diag);
 
-typedef int (*HOPMirEnterFunctionFn)(
-    void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, HOPDiag* _Nullable diag);
+typedef int (*H2MirEnterFunctionFn)(
+    void* _Nullable ctx, uint32_t functionIndex, uint32_t sourceRef, H2Diag* _Nullable diag);
 
-typedef void (*HOPMirLeaveFunctionFn)(void* _Nullable ctx);
-typedef int (*HOPMirBindFrameFn)(
+typedef void (*H2MirLeaveFunctionFn)(void* _Nullable ctx);
+typedef int (*H2MirBindFrameFn)(
     void* _Nullable ctx,
-    const HOPMirProgram* _Nullable program,
-    const HOPMirFunction* _Nullable function,
-    const HOPMirExecValue* _Nullable locals,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirExecValue* _Nullable locals,
     uint32_t localCount,
-    HOPDiag* _Nullable diag);
-typedef void (*HOPMirUnbindFrameFn)(void* _Nullable ctx);
-typedef void (*HOPMirSetReasonFn)(
+    H2Diag* _Nullable diag);
+typedef void (*H2MirUnbindFrameFn)(void* _Nullable ctx);
+typedef void (*H2MirSetReasonFn)(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* _Nonnull reason);
 
 typedef struct {
-    HOPStrView src;
-    HOPMirResolveIdentFn _Nullable resolveIdent;
-    HOPMirAssignIdentFn _Nullable assignIdent;
+    H2StrView src;
+    H2MirResolveIdentFn _Nullable resolveIdent;
+    H2MirAssignIdentFn _Nullable assignIdent;
     void* _Nullable assignIdentCtx;
-    HOPMirResolveCallPreFn _Nullable resolveCallPre;
-    HOPMirResolveCallFn _Nullable resolveCall;
-    HOPMirAdjustCallArgsFn _Nullable adjustCallArgs;
+    H2MirResolveCallPreFn _Nullable resolveCallPre;
+    H2MirResolveCallFn _Nullable resolveCall;
+    H2MirAdjustCallArgsFn _Nullable adjustCallArgs;
     void* _Nullable resolveCtx;
     void* _Nullable adjustCallArgsCtx;
-    HOPMirHostCallFn _Nullable hostCall;
+    H2MirHostCallFn _Nullable hostCall;
     void* _Nullable hostCtx;
-    HOPMirZeroInitLocalFn _Nullable zeroInitLocal;
+    H2MirZeroInitLocalFn _Nullable zeroInitLocal;
     void* _Nullable zeroInitCtx;
-    HOPMirCoerceValueForTypeFn _Nullable coerceValueForType;
+    H2MirCoerceValueForTypeFn _Nullable coerceValueForType;
     void* _Nullable coerceValueCtx;
-    HOPMirIndexValueFn _Nullable indexValue;
+    H2MirIndexValueFn _Nullable indexValue;
     void* _Nullable indexValueCtx;
-    HOPMirIndexAddrFn _Nullable indexAddr;
+    H2MirIndexAddrFn _Nullable indexAddr;
     void* _Nullable indexAddrCtx;
-    HOPMirSliceValueFn _Nullable sliceValue;
+    H2MirSliceValueFn _Nullable sliceValue;
     void* _Nullable sliceValueCtx;
-    HOPMirSequenceLenFn _Nullable sequenceLen;
+    H2MirSequenceLenFn _Nullable sequenceLen;
     void* _Nullable sequenceLenCtx;
-    HOPMirIterInitFn _Nullable iterInit;
+    H2MirIterInitFn _Nullable iterInit;
     void* _Nullable iterInitCtx;
-    HOPMirIterNextFn _Nullable iterNext;
+    H2MirIterNextFn _Nullable iterNext;
     void* _Nullable iterNextCtx;
-    HOPMirAggGetFieldFn _Nullable aggGetField;
+    H2MirAggGetFieldFn _Nullable aggGetField;
     void* _Nullable aggGetFieldCtx;
-    HOPMirAggAddrFieldFn _Nullable aggAddrField;
+    H2MirAggAddrFieldFn _Nullable aggAddrField;
     void* _Nullable aggAddrFieldCtx;
-    HOPMirAggSetFieldFn _Nullable aggSetField;
+    H2MirAggSetFieldFn _Nullable aggSetField;
     void* _Nullable aggSetFieldCtx;
-    HOPMirMakeAggregateFn _Nullable makeAggregate;
+    H2MirMakeAggregateFn _Nullable makeAggregate;
     void* _Nullable makeAggregateCtx;
-    HOPMirMakeTupleFn _Nullable makeTuple;
+    H2MirMakeTupleFn _Nullable makeTuple;
     void* _Nullable makeTupleCtx;
-    HOPMirMakeVariadicPackFn _Nullable makeVariadicPack;
+    H2MirMakeVariadicPackFn _Nullable makeVariadicPack;
     void* _Nullable makeVariadicPackCtx;
-    HOPMirEvalBinaryFn _Nullable evalBinary;
+    H2MirEvalBinaryFn _Nullable evalBinary;
     void* _Nullable evalBinaryCtx;
-    HOPMirAllocNewFn _Nullable allocNew;
+    H2MirAllocNewFn _Nullable allocNew;
     void* _Nullable allocNewCtx;
-    HOPMirContextGetFn _Nullable contextGet;
+    H2MirContextGetFn _Nullable contextGet;
     void* _Nullable contextGetCtx;
-    HOPMirContextAddrFn _Nullable contextAddr;
+    H2MirContextAddrFn _Nullable contextAddr;
     void* _Nullable contextAddrCtx;
-    HOPMirEvalWithContextFn _Nullable evalWithContext;
+    H2MirEvalWithContextFn _Nullable evalWithContext;
     void* _Nullable evalWithContextCtx;
-    HOPMirEnterFunctionFn _Nullable enterFunction;
-    HOPMirLeaveFunctionFn _Nullable leaveFunction;
+    H2MirEnterFunctionFn _Nullable enterFunction;
+    H2MirLeaveFunctionFn _Nullable leaveFunction;
     void* _Nullable functionCtx;
-    HOPMirBindFrameFn _Nullable bindFrame;
-    HOPMirUnbindFrameFn _Nullable unbindFrame;
+    H2MirBindFrameFn _Nullable bindFrame;
+    H2MirUnbindFrameFn _Nullable unbindFrame;
     void* _Nullable frameCtx;
-    HOPMirSetReasonFn _Nullable setReason;
+    H2MirSetReasonFn _Nullable setReason;
     void* _Nullable setReasonCtx;
     uint32_t backwardJumpLimit;
-    HOPDiag* _Nullable diag;
-} HOPMirExecEnv;
+    H2Diag* _Nullable diag;
+} H2MirExecEnv;
 
-int HOPMirEvalChunk(
-    HOPArena* _Nonnull arena,
-    HOPMirChunk chunk,
-    const HOPMirExecEnv* _Nullable env,
-    HOPMirExecValue* _Nonnull outValue,
+int H2MirEvalChunk(
+    H2Arena* _Nonnull arena,
+    H2MirChunk chunk,
+    const H2MirExecEnv* _Nullable env,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-int HOPMirEvalFunction(
-    HOPArena* _Nonnull arena,
-    const HOPMirProgram* _Nonnull program,
+int H2MirEvalFunction(
+    H2Arena* _Nonnull arena,
+    const H2MirProgram* _Nonnull program,
     uint32_t functionIndex,
-    const HOPMirExecValue* _Nullable args,
+    const H2MirExecValue* _Nullable args,
     uint32_t argCount,
-    const HOPMirExecEnv* _Nullable env,
-    HOPMirExecValue* _Nonnull outValue,
+    const H2MirExecEnv* _Nullable env,
+    H2MirExecValue* _Nonnull outValue,
     int* _Nonnull outIsConst);
-void HOPMirExecEnvDisableDynamicResolution(HOPMirExecEnv* _Nonnull env);
-void HOPMirValueSetFunctionRef(HOPMirExecValue* _Nonnull value, uint32_t functionIndex);
-int  HOPMirValueAsFunctionRef(
-    const HOPMirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
-void HOPMirValueSetByteRefProxy(HOPMirExecValue* _Nonnull value, uint8_t* _Nullable targetByte);
-int  HOPMirValueAsByteRefProxy(
-    const HOPMirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
+void H2MirExecEnvDisableDynamicResolution(H2MirExecEnv* _Nonnull env);
+void H2MirValueSetFunctionRef(H2MirExecValue* _Nonnull value, uint32_t functionIndex);
+int  H2MirValueAsFunctionRef(
+    const H2MirExecValue* _Nonnull value, uint32_t* _Nullable outFunctionIndex);
+void H2MirValueSetByteRefProxy(H2MirExecValue* _Nonnull value, uint8_t* _Nullable targetByte);
+int  H2MirValueAsByteRefProxy(
+    const H2MirExecValue* _Nonnull value, uint8_t* _Nullable* _Nullable outTargetByte);
 
-HOP_API_END
+H2_API_END

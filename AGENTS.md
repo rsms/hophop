@@ -154,15 +154,15 @@ Here are a few examples:
 
 Each implementation (.c) file should begin with `#include "libhop-impl.h"` (or `#include "../libhop-impl.h"` if in a subdirectory.) This includes the public API header `libhop.h` as well as some implementation-only parts of libhop.
 
-Bracket every .h and .c file's content with `HOP_API_BEGIN` and `HOP_API_END`. They configure the compiler's nullability checks and sets the compiler to interpret `T*` as being `_Nonnull` by default.
+Bracket every .h and .c file's content with `H2_API_BEGIN` and `H2_API_END`. They configure the compiler's nullability checks and sets the compiler to interpret `T*` as being `_Nonnull` by default.
 
 ```c
-/* all includes before HOP_API_BEGIN */
+/* all includes before H2_API_BEGIN */
 #include "libhop-impl.h"
 #include "other_header.h"
-HOP_API_BEGIN
+H2_API_BEGIN
 /* types, functions etc */
-HOP_API_END
+H2_API_END
 /* end of file*/
 ```
 

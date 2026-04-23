@@ -14,7 +14,7 @@ Numeric literal default-type changes (`const_int` / `const_float`) are split int
 Observed and verified behavior today:
 
 1. Top-level `const` initializers are required to be const-evaluable.
-   - enforced by `HOPTCValidateTopLevelConstEvaluable` in typecheck pipeline
+   - enforced by `H2TCValidateTopLevelConstEvaluable` in typecheck pipeline
    - failures use `HOP2055: const initializer must be a const expression`
 2. Local `const` declarations currently only require an initializer and type compatibility.
    - no general "initializer must be const-evaluable" validation for local const declarations

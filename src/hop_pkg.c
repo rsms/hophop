@@ -24,29 +24,29 @@
 #include "hop_internal.h"
 #include "typecheck/internal.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
 static int ParseSource(
     const char* filename,
     const char* source,
     uint32_t    sourceLen,
-    HOPAst*     outAst,
+    H2Ast*      outAst,
     void**      outArenaMem,
-    HOPArena* _Nullable outArena);
+    H2Arena* _Nullable outArena);
 
 static int ParseSourceEx(
     const char* filename,
     const char* source,
     uint32_t    sourceLen,
-    HOPAst*     outAst,
+    H2Ast*      outAst,
     void**      outArenaMem,
-    HOPArena* _Nullable outArena,
+    H2Arena* _Nullable outArena,
     int useLineColDiag) {
     void*    arenaMem;
     uint64_t arenaCap64;
     size_t   arenaCap;
-    HOPArena arena;
-    HOPDiag  diag = { 0 };
+    H2Arena  arena;
+    H2Diag   diag = { 0 };
 
     *outArenaMem = NULL;
     if (outArena != NULL) {
@@ -61,7 +61,7 @@ static int ParseSourceEx(
         if (outArena == NULL) {
             arenaNodeCap *= 3u;
         }
-        arenaCap64 = arenaNodeCap * (uint64_t)sizeof(HOPAstNode) + 65536u;
+        arenaCap64 = arenaNodeCap * (uint64_t)sizeof(H2AstNode) + 65536u;
     }
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
@@ -75,36 +75,36 @@ static int ParseSourceEx(
         return -1;
     }
 
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
     if (outArena != NULL) {
-        HOPArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+        H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
     }
-    if (HOPParse(&arena, (HOPStrView){ source, sourceLen }, NULL, outAst, NULL, &diag) != 0) {
+    if (H2Parse(&arena, (H2StrView){ source, sourceLen }, NULL, outAst, NULL, &diag) != 0) {
         (void)(useLineColDiag ? PrintHOPDiagLineCol(filename, source, &diag, 0)
                               : PrintHOPDiag(filename, source, &diag, 0));
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
         return -1;
     }
     if (CompactAstInArena(&arena, outAst) != 0) {
-        HOPDiag oomDiag = { 0 };
-        oomDiag.code = HOPDiag_ARENA_OOM;
-        oomDiag.type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
+        H2Diag oomDiag = { 0 };
+        oomDiag.code = H2Diag_ARENA_OOM;
+        oomDiag.type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
         oomDiag.start = 0;
         oomDiag.end = 0;
         oomDiag.argStart = ArenaBytesUsed(&arena);
         oomDiag.argEnd = ArenaBytesCapacity(&arena);
         (void)(useLineColDiag ? PrintHOPDiagLineCol(filename, source, &oomDiag, 0)
                               : PrintHOPDiag(filename, source, &oomDiag, 0));
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
         return -1;
     }
 
     *outArenaMem = arenaMem;
     if (outArena != NULL) {
-        HOPArenaBlock* oldInline = &arena.inlineBlock;
-        int            currentIsInline = arena.current == oldInline;
+        H2ArenaBlock* oldInline = &arena.inlineBlock;
+        int           currentIsInline = arena.current == oldInline;
         *outArena = arena;
         outArena->first = &outArena->inlineBlock;
         if (currentIsInline || outArena->current == NULL) {
@@ -118,45 +118,45 @@ static int ParseSource(
     const char* filename,
     const char* source,
     uint32_t    sourceLen,
-    HOPAst*     outAst,
+    H2Ast*      outAst,
     void**      outArenaMem,
-    HOPArena* _Nullable outArena) {
+    H2Arena* _Nullable outArena) {
     return ParseSourceEx(filename, source, sourceLen, outAst, outArenaMem, outArena, 0);
 }
 
-static void WarnUnknownFeatureImports(const char* filename, const char* source, const HOPAst* ast);
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const H2Ast* ast);
 
 typedef struct {
-    const char*                 filename;
-    const char*                 source;
-    uint32_t                    sourceLen;
-    int                         useLineColDiag;
-    const HOPCombinedSourceMap* remapMap;
-    const char*                 remapSource;
-    int                         suppressUnusedWarnings;
-} HOPCheckRunSpec;
+    const char*                filename;
+    const char*                source;
+    uint32_t                   sourceLen;
+    int                        useLineColDiag;
+    const H2CombinedSourceMap* remapMap;
+    const char*                remapSource;
+    int                        suppressUnusedWarnings;
+} H2CheckRunSpec;
 
-static int IsUnusedWarningDiag(HOPDiagCode code) {
-    return code == HOPDiag_UNUSED_FUNCTION || code == HOPDiag_UNUSED_VARIABLE
-        || code == HOPDiag_UNUSED_VARIABLE_NEVER_READ || code == HOPDiag_UNUSED_PARAMETER
-        || code == HOPDiag_UNUSED_PARAMETER_NEVER_READ;
+static int IsUnusedWarningDiag(H2DiagCode code) {
+    return code == H2Diag_UNUSED_FUNCTION || code == H2Diag_UNUSED_VARIABLE
+        || code == H2Diag_UNUSED_VARIABLE_NEVER_READ || code == H2Diag_UNUSED_PARAMETER
+        || code == H2Diag_UNUSED_PARAMETER_NEVER_READ;
 }
 
-static int CheckRunHasRemap(const HOPCheckRunSpec* spec) {
+static int CheckRunHasRemap(const H2CheckRunSpec* spec) {
     return spec != NULL && spec->remapMap != NULL && spec->remapSource != NULL;
 }
 
 static int EmitCheckDiag(
-    const HOPCheckRunSpec* spec,
-    const HOPDiag*         diag,
-    int                    includeHint,
-    int                    dropUnmappedUnusedWarnings) {
-    const char*        displaySource;
-    const char*        displayFilename;
-    const HOPDiag*     toPrint = diag;
-    HOPDiag            remappedDiag;
-    HOPRemapDiagStatus remapStatus = { 0 };
-    uint32_t           remappedFileIndex = 0;
+    const H2CheckRunSpec* spec,
+    const H2Diag*         diag,
+    int                   includeHint,
+    int                   dropUnmappedUnusedWarnings) {
+    const char*       displaySource;
+    const char*       displayFilename;
+    const H2Diag*     toPrint = diag;
+    H2Diag            remappedDiag;
+    H2RemapDiagStatus remapStatus = { 0 };
+    uint32_t          remappedFileIndex = 0;
 
     if (spec == NULL || diag == NULL) {
         return -1;
@@ -191,8 +191,8 @@ static int EmitCheckDiag(
              : PrintHOPDiag(displayFilename, displaySource, toPrint, includeHint);
 }
 
-static void TypecheckDiagSink(void* ctx, const HOPDiag* diag) {
-    HOPCheckRunSpec* spec = (HOPCheckRunSpec*)ctx;
+static void TypecheckDiagSink(void* ctx, const H2Diag* diag) {
+    H2CheckRunSpec* spec = (H2CheckRunSpec*)ctx;
     if (spec == NULL || diag == NULL) {
         return;
     }
@@ -202,18 +202,18 @@ static void TypecheckDiagSink(void* ctx, const HOPDiag* diag) {
     (void)EmitCheckDiag(spec, diag, 1, 1);
 }
 
-static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
-    void*               arenaMem;
-    uint64_t            arenaCap64;
-    size_t              arenaCap;
-    HOPArena            arena;
-    HOPAst              ast;
-    HOPDiag             diag = { 0 };
-    uint32_t            beforeTypecheckUsed;
-    uint32_t            beforeTypecheckCap;
-    uint32_t            afterTypecheckUsed;
-    uint32_t            afterTypecheckCap;
-    HOPTypeCheckOptions checkOptions = {
+static int CheckSourceWithSpec(const H2CheckRunSpec* spec) {
+    void*              arenaMem;
+    uint64_t           arenaCap64;
+    size_t             arenaCap;
+    H2Arena            arena;
+    H2Ast              ast;
+    H2Diag             diag = { 0 };
+    uint32_t           beforeTypecheckUsed;
+    uint32_t           beforeTypecheckCap;
+    uint32_t           afterTypecheckUsed;
+    uint32_t           afterTypecheckCap;
+    H2TypeCheckOptions checkOptions = {
         .ctx = (void*)spec,
         .onDiag = TypecheckDiagSink,
         .flags = 0,
@@ -226,7 +226,7 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
     ast.len = 0;
     ast.root = -1;
     ast.features = 0;
-    arenaCap64 = (uint64_t)(spec->sourceLen + 128u) * (uint64_t)sizeof(HOPAstNode) + 65536u;
+    arenaCap64 = (uint64_t)(spec->sourceLen + 128u) * (uint64_t)sizeof(H2AstNode) + 65536u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         fprintf(stderr, "arena too large\n");
         return -1;
@@ -237,26 +237,25 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
         fprintf(stderr, "failed to allocate arena\n");
         return -1;
     }
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    HOPArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
-    if (HOPParse(&arena, (HOPStrView){ spec->source, spec->sourceLen }, NULL, &ast, NULL, &diag)
-        != 0)
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    if (H2Parse(&arena, (H2StrView){ spec->source, spec->sourceLen }, NULL, &ast, NULL, &diag) != 0)
     {
         (void)EmitCheckDiag(spec, &diag, 0, 0);
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
         return -1;
     }
     if (CompactAstInArena(&arena, &ast) != 0) {
-        HOPDiag oomDiag = { 0 };
-        oomDiag.code = HOPDiag_ARENA_OOM;
-        oomDiag.type = HOPDiagTypeOfCode(HOPDiag_ARENA_OOM);
+        H2Diag oomDiag = { 0 };
+        oomDiag.code = H2Diag_ARENA_OOM;
+        oomDiag.type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
         oomDiag.start = 0;
         oomDiag.end = 0;
         oomDiag.argStart = ArenaBytesUsed(&arena);
         oomDiag.argEnd = ArenaBytesCapacity(&arena);
         (void)EmitCheckDiag(spec, &oomDiag, 0, 0);
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
         return -1;
     }
@@ -265,11 +264,11 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
     beforeTypecheckUsed = ArenaBytesUsed(&arena);
     beforeTypecheckCap = ArenaBytesCapacity(&arena);
 
-    if (HOPTypeCheckEx(
-            &arena, &ast, (HOPStrView){ spec->source, spec->sourceLen }, &checkOptions, &diag)
+    if (H2TypeCheckEx(
+            &arena, &ast, (H2StrView){ spec->source, spec->sourceLen }, &checkOptions, &diag)
         != 0)
     {
-        if (diag.code == HOPDiag_ARENA_OOM) {
+        if (diag.code == H2Diag_ARENA_OOM) {
             uint32_t afterUsed = ArenaBytesUsed(&arena);
             uint32_t afterCap = ArenaBytesCapacity(&arena);
             diag.argStart = afterUsed;
@@ -284,7 +283,7 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
                 afterCap);
         }
         int diagStatus = EmitCheckDiag(spec, &diag, 1, 0);
-        HOPArenaDispose(&arena);
+        H2ArenaDispose(&arena);
         free(arenaMem);
         return diagStatus;
     }
@@ -296,8 +295,8 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
             stderr,
             "arena debug: ast=%u nodes (%u bytes), before check=%u/%u, after check=%u/%u\n",
             ast.len,
-            ast.len <= UINT32_MAX / (uint32_t)sizeof(HOPAstNode)
-                ? ast.len * (uint32_t)sizeof(HOPAstNode)
+            ast.len <= UINT32_MAX / (uint32_t)sizeof(H2AstNode)
+                ? ast.len * (uint32_t)sizeof(H2AstNode)
                 : UINT32_MAX,
             beforeTypecheckUsed,
             beforeTypecheckCap,
@@ -305,7 +304,7 @@ static int CheckSourceWithSpec(const HOPCheckRunSpec* spec) {
             afterTypecheckCap);
     }
 
-    HOPArenaDispose(&arena);
+    H2ArenaDispose(&arena);
     free(arenaMem);
     return 0;
 }
@@ -319,7 +318,7 @@ static int CheckSourceEx(
     if (filename == NULL || source == NULL) {
         return -1;
     }
-    HOPCheckRunSpec spec = {
+    H2CheckRunSpec spec = {
         .filename = filename,
         .source = source,
         .sourceLen = sourceLen,
@@ -337,12 +336,12 @@ static int CheckSourceExWithSingleFileRemap(
     uint32_t sourceLen,
     int      useLineColDiag,
     const char* _Nullable remapSource,
-    const HOPCombinedSourceMap* remapMap,
-    int                         suppressUnusedWarnings) {
+    const H2CombinedSourceMap* remapMap,
+    int                        suppressUnusedWarnings) {
     if (filename == NULL || source == NULL) {
         return -1;
     }
-    HOPCheckRunSpec spec = {
+    H2CheckRunSpec spec = {
         .filename = filename,
         .source = source,
         .sourceLen = sourceLen,
@@ -358,19 +357,19 @@ int CheckSource(const char* filename, const char* source, uint32_t sourceLen) {
     return CheckSourceEx(filename, source, sourceLen, 0, 0);
 }
 
-static int IsDeclKind(HOPAstKind kind) {
-    return kind == HOPAst_FN || kind == HOPAst_STRUCT || kind == HOPAst_UNION || kind == HOPAst_ENUM
-        || kind == HOPAst_TYPE_ALIAS || kind == HOPAst_VAR || kind == HOPAst_CONST;
+static int IsDeclKind(H2AstKind kind) {
+    return kind == H2Ast_FN || kind == H2Ast_STRUCT || kind == H2Ast_UNION || kind == H2Ast_ENUM
+        || kind == H2Ast_TYPE_ALIAS || kind == H2Ast_VAR || kind == H2Ast_CONST;
 }
 
-static int IsPubDeclNode(const HOPAstNode* n) {
-    return (n->flags & HOPAstFlag_PUB) != 0;
+static int IsPubDeclNode(const H2AstNode* n) {
+    return (n->flags & H2AstFlag_PUB) != 0;
 }
 
-static int FnNodeHasBody(const HOPAst* ast, int32_t nodeId) {
+static int FnNodeHasBody(const H2Ast* ast, int32_t nodeId) {
     int32_t child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_BLOCK) {
+        if (ast->nodes[child].kind == H2Ast_BLOCK) {
             return 1;
         }
         child = ASTNextSibling(ast, child);
@@ -378,17 +377,17 @@ static int FnNodeHasBody(const HOPAst* ast, int32_t nodeId) {
     return 0;
 }
 
-static int FnNodeHasAnytypeParam(const HOPParsedFile* file, int32_t nodeId) {
+static int FnNodeHasAnytypeParam(const H2ParsedFile* file, int32_t nodeId) {
     int32_t child = ASTFirstChild(&file->ast, nodeId);
     while (child >= 0) {
-        const HOPAstNode* n = &file->ast.nodes[child];
-        if (n->kind == HOPAst_PARAM) {
-            int32_t           typeNode = ASTFirstChild(&file->ast, child);
-            const HOPAstNode* t =
+        const H2AstNode* n = &file->ast.nodes[child];
+        if (n->kind == H2Ast_PARAM) {
+            int32_t          typeNode = ASTFirstChild(&file->ast, child);
+            const H2AstNode* t =
                 (typeNode >= 0 && (uint32_t)typeNode < file->ast.len)
                     ? &file->ast.nodes[typeNode]
                     : NULL;
-            if (t != NULL && t->kind == HOPAst_TYPE_NAME && t->dataEnd > t->dataStart
+            if (t != NULL && t->kind == H2Ast_TYPE_NAME && t->dataEnd > t->dataStart
                 && (size_t)(t->dataEnd - t->dataStart) == strlen("anytype")
                 && memcmp(file->source + t->dataStart, "anytype", strlen("anytype")) == 0)
             {
@@ -400,10 +399,10 @@ static int FnNodeHasAnytypeParam(const HOPParsedFile* file, int32_t nodeId) {
     return 0;
 }
 
-static int FnNodeHasContextClause(const HOPAst* ast, int32_t nodeId) {
+static int FnNodeHasContextClause(const H2Ast* ast, int32_t nodeId) {
     int32_t child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
-        if (ast->nodes[child].kind == HOPAst_CONTEXT_CLAUSE) {
+        if (ast->nodes[child].kind == H2Ast_CONTEXT_CLAUSE) {
             return 1;
         }
         child = ASTNextSibling(ast, child);
@@ -411,16 +410,16 @@ static int FnNodeHasContextClause(const HOPAst* ast, int32_t nodeId) {
     return 0;
 }
 
-int DirectiveNameEq(const HOPParsedFile* file, int32_t nodeId, const char* name) {
-    const HOPAstNode* n =
+int DirectiveNameEq(const H2ParsedFile* file, int32_t nodeId, const char* name) {
+    const H2AstNode* n =
         nodeId >= 0 && (uint32_t)nodeId < file->ast.len ? &file->ast.nodes[nodeId] : NULL;
     size_t len = strlen(name);
-    return n != NULL && n->kind == HOPAst_DIRECTIVE && n->dataEnd >= n->dataStart
+    return n != NULL && n->kind == H2Ast_DIRECTIVE && n->dataEnd >= n->dataStart
         && (size_t)(n->dataEnd - n->dataStart) == len
         && memcmp(file->source + n->dataStart, name, len) == 0;
 }
 
-static uint32_t DirectiveArgCount(const HOPAst* ast, int32_t nodeId) {
+static uint32_t DirectiveArgCount(const H2Ast* ast, int32_t nodeId) {
     uint32_t count = 0;
     int32_t  child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
@@ -430,7 +429,7 @@ static uint32_t DirectiveArgCount(const HOPAst* ast, int32_t nodeId) {
     return count;
 }
 
-int32_t DirectiveArgAt(const HOPAst* ast, int32_t nodeId, uint32_t index) {
+int32_t DirectiveArgAt(const H2Ast* ast, int32_t nodeId, uint32_t index) {
     uint32_t i = 0;
     int32_t  child = ASTFirstChild(ast, nodeId);
     while (child >= 0) {
@@ -444,7 +443,7 @@ int32_t DirectiveArgAt(const HOPAst* ast, int32_t nodeId, uint32_t index) {
 }
 
 int FindAttachedDirectiveRun(
-    const HOPAst* ast, int32_t declNodeId, int32_t* outFirstDirective, int32_t* outLastDirective) {
+    const H2Ast* ast, int32_t declNodeId, int32_t* outFirstDirective, int32_t* outLastDirective) {
     int32_t child;
     int32_t first = -1;
     int32_t last = -1;
@@ -453,8 +452,8 @@ int FindAttachedDirectiveRun(
     }
     child = ASTFirstChild(ast, ast->root);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_DIRECTIVE) {
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_DIRECTIVE) {
             if (first < 0) {
                 first = child;
             }
@@ -475,7 +474,7 @@ int FindAttachedDirectiveRun(
     return -1;
 }
 
-static uint32_t DeclTextSourceStart(const HOPParsedFile* file, int32_t nodeId) {
+static uint32_t DeclTextSourceStart(const H2ParsedFile* file, int32_t nodeId) {
     int32_t firstDirective = -1;
     int32_t lastDirective = -1;
     if (FindAttachedDirectiveRun(&file->ast, nodeId, &firstDirective, &lastDirective) == 0
@@ -487,7 +486,7 @@ static uint32_t DeclTextSourceStart(const HOPParsedFile* file, int32_t nodeId) {
 }
 
 static int AppendDirectiveRunForDecl(
-    HOPStringBuilder* b, const HOPParsedFile* file, int32_t nodeId, int omitExportDirective) {
+    H2StringBuilder* b, const H2ParsedFile* file, int32_t nodeId, int omitExportDirective) {
     int32_t firstDirective = -1;
     int32_t lastDirective = -1;
     int32_t child;
@@ -499,8 +498,8 @@ static int AppendDirectiveRunForDecl(
     }
     child = firstDirective;
     while (child >= 0) {
-        const HOPAstNode* n = &file->ast.nodes[child];
-        if (n->kind != HOPAst_DIRECTIVE) {
+        const H2AstNode* n = &file->ast.nodes[child];
+        if (n->kind != H2Ast_DIRECTIVE) {
             break;
         }
         if (!(omitExportDirective && DirectiveNameEq(file, child, "export"))) {
@@ -520,21 +519,21 @@ static int AppendDirectiveRunForDecl(
 }
 
 static char* _Nullable BuildDeclTextForNode(
-    const HOPParsedFile* file, int32_t nodeId, int isPubSurface) {
-    const HOPAstNode* n = &file->ast.nodes[nodeId];
-    uint32_t          declStart = n->start;
-    uint32_t          declEnd = n->end;
-    HOPStringBuilder  b = { 0 };
+    const H2ParsedFile* file, int32_t nodeId, int isPubSurface) {
+    const H2AstNode* n = &file->ast.nodes[nodeId];
+    uint32_t         declStart = n->start;
+    uint32_t         declEnd = n->end;
+    H2StringBuilder  b = { 0 };
 
     if (!isPubSurface) {
-        return HOPCDupSlice(file->source, DeclTextSourceStart(file, nodeId), n->end);
+        return H2CDupSlice(file->source, DeclTextSourceStart(file, nodeId), n->end);
     }
 
     if (AppendDirectiveRunForDecl(&b, file, nodeId, 1) != 0) {
         free(b.v);
         return NULL;
     }
-    if ((n->flags & HOPAstFlag_PUB) != 0 && declStart + 3u <= declEnd
+    if ((n->flags & H2AstFlag_PUB) != 0 && declStart + 3u <= declEnd
         && memcmp(file->source + declStart, "pub", 3u) == 0)
     {
         declStart += 3u;
@@ -542,12 +541,12 @@ static char* _Nullable BuildDeclTextForNode(
             declStart++;
         }
     }
-    if (n->kind == HOPAst_FN && FnNodeHasBody(&file->ast, nodeId)
+    if (n->kind == H2Ast_FN && FnNodeHasBody(&file->ast, nodeId)
         && !FnNodeHasAnytypeParam(file, nodeId))
     {
         int32_t body = ASTFirstChild(&file->ast, nodeId);
         while (body >= 0) {
-            if (file->ast.nodes[body].kind == HOPAst_BLOCK) {
+            if (file->ast.nodes[body].kind == H2Ast_BLOCK) {
                 declEnd = file->ast.nodes[body].start;
                 break;
             }
@@ -569,16 +568,16 @@ static char* _Nullable BuildDeclTextForNode(
 }
 
 static int PackageFnDeclCountByNode(
-    const HOPPackage* pkg, const HOPParsedFile* file, int32_t nodeId) {
-    const HOPAstNode* target = &file->ast.nodes[nodeId];
-    uint32_t          fileIndex;
-    uint32_t          count = 0;
+    const H2Package* pkg, const H2ParsedFile* file, int32_t nodeId) {
+    const H2AstNode* target = &file->ast.nodes[nodeId];
+    uint32_t         fileIndex;
+    uint32_t         count = 0;
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* scanFile = &pkg->files[fileIndex];
-        int32_t              child = ASTFirstChild(&scanFile->ast, scanFile->ast.root);
+        const H2ParsedFile* scanFile = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&scanFile->ast, scanFile->ast.root);
         while (child >= 0) {
-            const HOPAstNode* n = &scanFile->ast.nodes[child];
-            if (n->kind == HOPAst_FN && n->dataEnd > n->dataStart
+            const H2AstNode* n = &scanFile->ast.nodes[child];
+            if (n->kind == H2Ast_FN && n->dataEnd > n->dataStart
                 && SliceEqSlice(
                     scanFile->source,
                     n->dataStart,
@@ -595,59 +594,59 @@ static int PackageFnDeclCountByNode(
     return (int)count;
 }
 
-static int VarLikeNodeHasInitializer(const HOPAst* ast, int32_t nodeId) {
+static int VarLikeNodeHasInitializer(const H2Ast* ast, int32_t nodeId) {
     int32_t firstChild = ASTFirstChild(ast, nodeId);
     int32_t afterNames =
-        firstChild >= 0 && ast->nodes[firstChild].kind == HOPAst_NAME_LIST
+        firstChild >= 0 && ast->nodes[firstChild].kind == H2Ast_NAME_LIST
             ? ASTNextSibling(ast, firstChild)
             : firstChild;
     if (afterNames < 0) {
         return 0;
     }
-    if ((ast->nodes[afterNames].kind == HOPAst_TYPE_NAME
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_PTR
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_REF
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_MUTREF
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_ARRAY
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_VARRAY
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_SLICE
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_MUTSLICE
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_OPTIONAL
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_FN
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_ANON_STRUCT
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_ANON_UNION
-         || ast->nodes[afterNames].kind == HOPAst_TYPE_TUPLE))
+    if ((ast->nodes[afterNames].kind == H2Ast_TYPE_NAME
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_PTR
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_REF
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_MUTREF
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_ARRAY
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_VARRAY
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_SLICE
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_MUTSLICE
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_OPTIONAL
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_FN
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_ANON_STRUCT
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_ANON_UNION
+         || ast->nodes[afterNames].kind == H2Ast_TYPE_TUPLE))
     {
         return ASTNextSibling(ast, afterNames) >= 0;
     }
     return 1;
 }
 
-static int VarLikeNodeUsesGroupedNames(const HOPAst* ast, int32_t nodeId) {
+static int VarLikeNodeUsesGroupedNames(const H2Ast* ast, int32_t nodeId) {
     int32_t firstChild = ASTFirstChild(ast, nodeId);
-    return firstChild >= 0 && ast->nodes[firstChild].kind == HOPAst_NAME_LIST;
+    return firstChild >= 0 && ast->nodes[firstChild].kind == H2Ast_NAME_LIST;
 }
 
 static int ValidateDirectiveRunOnDecl(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
     const char* _Nullable platformTarget,
     int32_t firstDirective,
     int32_t lastDirective,
     int32_t declNodeId) {
-    const HOPAstNode* decl = &file->ast.nodes[declNodeId];
-    int32_t           child = firstDirective;
-    int32_t           cImportNode = -1;
-    int32_t           wasmImportNode = -1;
-    int32_t           exportNode = -1;
-    int               hasForeignFnDirective = 0;
+    const H2AstNode* decl = &file->ast.nodes[declNodeId];
+    int32_t          child = firstDirective;
+    int32_t          cImportNode = -1;
+    int32_t          wasmImportNode = -1;
+    int32_t          exportNode = -1;
+    int              hasForeignFnDirective = 0;
 
     while (child >= 0) {
-        const HOPAstNode* dir = &file->ast.nodes[child];
-        uint32_t          argCount = DirectiveArgCount(&file->ast, child);
-        int32_t           arg0;
-        int32_t           arg1;
-        if (dir->kind != HOPAst_DIRECTIVE) {
+        const H2AstNode* dir = &file->ast.nodes[child];
+        uint32_t         argCount = DirectiveArgCount(&file->ast, child);
+        int32_t          arg0;
+        int32_t          arg1;
+        if (dir->kind != H2Ast_DIRECTIVE) {
             break;
         }
         if (DirectiveNameEq(file, child, "c_import")) {
@@ -655,7 +654,7 @@ static int ValidateDirectiveRunOnDecl(
                 return Errorf(
                     file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
             }
-            if (decl->kind != HOPAst_FN && decl->kind != HOPAst_VAR && decl->kind != HOPAst_CONST) {
+            if (decl->kind != H2Ast_FN && decl->kind != H2Ast_VAR && decl->kind != H2Ast_CONST) {
                 return Errorf(
                     file->path,
                     file->source,
@@ -672,7 +671,7 @@ static int ValidateDirectiveRunOnDecl(
                     "@c_import expects 1 string argument");
             }
             arg0 = DirectiveArgAt(&file->ast, child, 0u);
-            if (arg0 < 0 || file->ast.nodes[arg0].kind != HOPAst_STRING) {
+            if (arg0 < 0 || file->ast.nodes[arg0].kind != H2Ast_STRING) {
                 return Errorf(
                     file->path,
                     file->source,
@@ -681,13 +680,13 @@ static int ValidateDirectiveRunOnDecl(
                     "@c_import expects string arguments");
             }
             cImportNode = child;
-            hasForeignFnDirective = decl->kind == HOPAst_FN;
+            hasForeignFnDirective = decl->kind == H2Ast_FN;
         } else if (DirectiveNameEq(file, child, "wasm_import")) {
             if (cImportNode >= 0 || wasmImportNode >= 0 || exportNode >= 0) {
                 return Errorf(
                     file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
             }
-            if (decl->kind != HOPAst_FN && decl->kind != HOPAst_VAR && decl->kind != HOPAst_CONST) {
+            if (decl->kind != H2Ast_FN && decl->kind != H2Ast_VAR && decl->kind != H2Ast_CONST) {
                 return Errorf(
                     file->path,
                     file->source,
@@ -705,8 +704,8 @@ static int ValidateDirectiveRunOnDecl(
             }
             arg0 = DirectiveArgAt(&file->ast, child, 0u);
             arg1 = DirectiveArgAt(&file->ast, child, 1u);
-            if (arg0 < 0 || arg1 < 0 || file->ast.nodes[arg0].kind != HOPAst_STRING
-                || file->ast.nodes[arg1].kind != HOPAst_STRING)
+            if (arg0 < 0 || arg1 < 0 || file->ast.nodes[arg0].kind != H2Ast_STRING
+                || file->ast.nodes[arg1].kind != H2Ast_STRING)
             {
                 return Errorf(
                     file->path,
@@ -716,13 +715,13 @@ static int ValidateDirectiveRunOnDecl(
                     "@wasm_import expects string arguments");
             }
             wasmImportNode = child;
-            hasForeignFnDirective = decl->kind == HOPAst_FN;
+            hasForeignFnDirective = decl->kind == H2Ast_FN;
         } else if (DirectiveNameEq(file, child, "export")) {
             if (cImportNode >= 0 || wasmImportNode >= 0 || exportNode >= 0) {
                 return Errorf(
                     file->path, file->source, dir->start, dir->end, "duplicate foreign directive");
             }
-            if (decl->kind != HOPAst_FN || !IsPubDeclNode(decl)
+            if (decl->kind != H2Ast_FN || !IsPubDeclNode(decl)
                 || !FnNodeHasBody(&file->ast, declNodeId))
             {
                 return Errorf(
@@ -741,7 +740,7 @@ static int ValidateDirectiveRunOnDecl(
                     "@export expects 1 string argument");
             }
             arg0 = DirectiveArgAt(&file->ast, child, 0u);
-            if (arg0 < 0 || file->ast.nodes[arg0].kind != HOPAst_STRING) {
+            if (arg0 < 0 || file->ast.nodes[arg0].kind != H2Ast_STRING) {
                 return Errorf(
                     file->path,
                     file->source,
@@ -760,7 +759,7 @@ static int ValidateDirectiveRunOnDecl(
         child = ASTNextSibling(&file->ast, child);
     }
 
-    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == HOPAst_FN
+    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == H2Ast_FN
         && PackageFnDeclCountByNode(pkg, file, declNodeId) != 1)
     {
         return Errorf(
@@ -786,7 +785,7 @@ static int ValidateDirectiveRunOnDecl(
             decl->end,
             "context is not supported on foreign-linkage functions");
     }
-    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == HOPAst_FN
+    if ((cImportNode >= 0 || wasmImportNode >= 0) && decl->kind == H2Ast_FN
         && FnNodeHasBody(&file->ast, declNodeId))
     {
         return Errorf(
@@ -797,7 +796,7 @@ static int ValidateDirectiveRunOnDecl(
             "foreign imports must be declarations only");
     }
     if ((cImportNode >= 0 || wasmImportNode >= 0)
-        && (decl->kind == HOPAst_VAR || decl->kind == HOPAst_CONST))
+        && (decl->kind == H2Ast_VAR || decl->kind == H2Ast_CONST))
     {
         if (VarLikeNodeUsesGroupedNames(&file->ast, declNodeId)) {
             return Errorf(
@@ -817,7 +816,7 @@ static int ValidateDirectiveRunOnDecl(
         }
     }
     if ((cImportNode >= 0 || wasmImportNode >= 0) && platformTarget != NULL
-        && StrEq(platformTarget, HOP_EVAL_PLATFORM_TARGET))
+        && StrEq(platformTarget, H2_EVAL_PLATFORM_TARGET))
     {
         return Errorf(
             file->path,
@@ -831,16 +830,16 @@ static int ValidateDirectiveRunOnDecl(
 }
 
 static int ValidatePackageForeignDirectives(
-    const HOPPackage* pkg, const char* _Nullable platformTarget) {
+    const H2Package* pkg, const char* _Nullable platformTarget) {
     uint32_t fileIndex;
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* file = &pkg->files[fileIndex];
-        int32_t              child = ASTFirstChild(&file->ast, file->ast.root);
-        int32_t              firstDirective = -1;
-        int32_t              lastDirective = -1;
+        const H2ParsedFile* file = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
+        int32_t             firstDirective = -1;
+        int32_t             lastDirective = -1;
         while (child >= 0) {
-            const HOPAstNode* n = &file->ast.nodes[child];
-            if (n->kind == HOPAst_DIRECTIVE) {
+            const H2AstNode* n = &file->ast.nodes[child];
+            if (n->kind == H2Ast_DIRECTIVE) {
                 if (firstDirective < 0) {
                     firstDirective = child;
                 }
@@ -862,11 +861,11 @@ static int ValidatePackageForeignDirectives(
     return 0;
 }
 
-static int PackageUsesWasmImportDirective(const HOPPackage* pkg) {
+static int PackageUsesWasmImportDirective(const H2Package* pkg) {
     uint32_t fileIndex;
     for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
-        const HOPParsedFile* file = &pkg->files[fileIndex];
-        int32_t              child = ASTFirstChild(&file->ast, file->ast.root);
+        const H2ParsedFile* file = &pkg->files[fileIndex];
+        int32_t             child = ASTFirstChild(&file->ast, file->ast.root);
         while (child >= 0) {
             if (DirectiveNameEq(file, child, "wasm_import")) {
                 return 1;
@@ -877,7 +876,7 @@ static int PackageUsesWasmImportDirective(const HOPPackage* pkg) {
     return 0;
 }
 
-int LoaderUsesWasmImportDirective(const HOPPackageLoader* loader) {
+int LoaderUsesWasmImportDirective(const H2PackageLoader* loader) {
     uint32_t i;
     for (i = 0; i < loader->packageLen; i++) {
         if (PackageUsesWasmImportDirective(&loader->packages[i])) {
@@ -896,7 +895,7 @@ static char* _Nullable DefaultImportAlias(const char* importPath) {
     if (!IsValidIdentifier(name)) {
         return NULL;
     }
-    return HOPCDupCStr(name);
+    return H2CDupCStr(name);
 }
 
 static const char* LastPathSegment(const char* path) {
@@ -912,7 +911,7 @@ static int IsFeatureImportPath(const char* importPath) {
         || strncmp(importPath, "feature/", 8u) == 0;
 }
 
-static int IsImportAliasUsed(const HOPPackage* pkg, const char* alias) {
+static int IsImportAliasUsed(const H2Package* pkg, const char* alias) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
         if (StrEq(pkg->imports[i].alias, alias)) {
@@ -922,18 +921,18 @@ static int IsImportAliasUsed(const HOPPackage* pkg, const char* alias) {
     return 0;
 }
 
-static char* _Nullable MakeUniqueImportAlias(const HOPPackage* pkg, const char* preferred) {
+static char* _Nullable MakeUniqueImportAlias(const H2Package* pkg, const char* preferred) {
     char*    alias;
     uint32_t n;
     if (preferred != NULL && preferred[0] != '\0' && IsValidIdentifier(preferred)
         && !IsImportAliasUsed(pkg, preferred))
     {
-        return HOPCDupCStr(preferred);
+        return H2CDupCStr(preferred);
     }
     if (preferred == NULL || preferred[0] == '\0' || !IsValidIdentifier(preferred)) {
         preferred = "imp";
     }
-    alias = HOPCDupCStr(preferred);
+    alias = H2CDupCStr(preferred);
     if (alias == NULL) {
         return NULL;
     }
@@ -960,7 +959,7 @@ static char* _Nullable MakeUniqueImportAlias(const HOPPackage* pkg, const char* 
     return NULL;
 }
 
-static int StringLiteralHasDirectOffsetMapping(const char* source, const HOPAstNode* n) {
+static int StringLiteralHasDirectOffsetMapping(const char* source, const H2AstNode* n) {
     uint32_t      i;
     unsigned char delim;
     if (n->dataEnd <= n->dataStart + 1u) {
@@ -989,14 +988,14 @@ static int StringLiteralHasDirectOffsetMapping(const char* source, const HOPAstN
     return 1;
 }
 
-static void WarnUnknownFeatureImports(const char* filename, const char* source, const HOPAst* ast) {
+static void WarnUnknownFeatureImports(const char* filename, const char* source, const H2Ast* ast) {
     int32_t child = ASTFirstChild(ast, ast->root);
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_IMPORT) {
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_IMPORT) {
             uint8_t* decoded = NULL;
             uint32_t decodedLen = 0;
-            if (HOPDecodeStringLiteralMalloc(
+            if (H2DecodeStringLiteralMalloc(
                     source, n->dataStart, n->dataEnd, &decoded, &decodedLen, NULL)
                 != 0)
             {
@@ -1023,9 +1022,9 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
                                 argStart += featureStart;
                             }
                         }
-                        HOPDiag diag = {
-                            .code = HOPDiag_UNKNOWN_FEATURE,
-                            .type = HOPDiagTypeOfCode(HOPDiag_UNKNOWN_FEATURE),
+                        H2Diag diag = {
+                            .code = H2Diag_UNKNOWN_FEATURE,
+                            .type = H2DiagTypeOfCode(H2Diag_UNKNOWN_FEATURE),
                             .start = n->start,
                             .end = n->end,
                             .argStart = argStart,
@@ -1042,21 +1041,20 @@ static void WarnUnknownFeatureImports(const char* filename, const char* source, 
 }
 
 static int AddPackageFile(
-    HOPPackage* pkg,
+    H2Package*  pkg,
     const char* filePath,
     char*       source,
     uint32_t    sourceLen,
-    HOPAst      ast,
+    H2Ast       ast,
     void*       arenaMem) {
-    HOPParsedFile* f;
-    if (EnsureCap((void**)&pkg->files, &pkg->fileCap, pkg->fileLen + 1u, sizeof(HOPParsedFile))
-        != 0)
+    H2ParsedFile* f;
+    if (EnsureCap((void**)&pkg->files, &pkg->fileCap, pkg->fileLen + 1u, sizeof(H2ParsedFile)) != 0)
     {
         return -1;
     }
     f = &pkg->files[pkg->fileLen++];
     memset(f, 0, sizeof(*f));
-    f->path = HOPCDupCStr(filePath);
+    f->path = H2CDupCStr(filePath);
     f->source = source;
     f->sourceLen = sourceLen;
     f->arenaMem = arenaMem;
@@ -1068,15 +1066,15 @@ static int AddPackageFile(
 }
 
 static int AddDeclText(
-    HOPPackage* pkg,
-    char*       text,
-    uint32_t    fileIndex,
-    int32_t     nodeId,
-    uint32_t    sourceStart,
-    uint32_t    sourceEnd) {
-    HOPDeclText* t;
+    H2Package* pkg,
+    char*      text,
+    uint32_t   fileIndex,
+    int32_t    nodeId,
+    uint32_t   sourceStart,
+    uint32_t   sourceEnd) {
+    H2DeclText* t;
     if (EnsureCap(
-            (void**)&pkg->declTexts, &pkg->declTextCap, pkg->declTextLen + 1u, sizeof(HOPDeclText))
+            (void**)&pkg->declTexts, &pkg->declTextCap, pkg->declTextLen + 1u, sizeof(H2DeclText))
         != 0)
     {
         return -1;
@@ -1091,17 +1089,17 @@ static int AddDeclText(
 }
 
 static int AddSymbolDecl(
-    HOPSymbolDecl** arr,
-    uint32_t*       len,
-    uint32_t*       cap,
-    HOPAstKind      kind,
-    char*           name,
-    char*           declText,
-    int             hasBody,
-    uint32_t        fileIndex,
-    int32_t         nodeId) {
-    HOPSymbolDecl* d;
-    if (EnsureCap((void**)arr, cap, *len + 1u, sizeof(HOPSymbolDecl)) != 0) {
+    H2SymbolDecl** arr,
+    uint32_t*      len,
+    uint32_t*      cap,
+    H2AstKind      kind,
+    char*          name,
+    char*          declText,
+    int            hasBody,
+    uint32_t       fileIndex,
+    int32_t        nodeId) {
+    H2SymbolDecl* d;
+    if (EnsureCap((void**)arr, cap, *len + 1u, sizeof(H2SymbolDecl)) != 0) {
         return -1;
     }
     d = &(*arr)[(*len)++];
@@ -1115,16 +1113,16 @@ static int AddSymbolDecl(
 }
 
 static int AddImportRef(
-    HOPPackage* pkg,
-    char*       alias,
+    H2Package* pkg,
+    char*      alias,
     char* _Nullable bindName,
     char*     importPath,
     uint32_t  fileIndex,
     uint32_t  start,
     uint32_t  end,
     uint32_t* outIndex) {
-    HOPImportRef* imp;
-    if (EnsureCap((void**)&pkg->imports, &pkg->importCap, pkg->importLen + 1u, sizeof(HOPImportRef))
+    H2ImportRef* imp;
+    if (EnsureCap((void**)&pkg->imports, &pkg->importCap, pkg->importLen + 1u, sizeof(H2ImportRef))
         != 0)
     {
         return -1;
@@ -1142,19 +1140,19 @@ static int AddImportRef(
 }
 
 static int AddImportSymbolRef(
-    HOPPackage* pkg,
-    uint32_t    importIndex,
-    char*       sourceName,
-    char*       localName,
-    uint32_t    fileIndex,
-    uint32_t    start,
-    uint32_t    end) {
-    HOPImportSymbolRef* sym;
+    H2Package* pkg,
+    uint32_t   importIndex,
+    char*      sourceName,
+    char*      localName,
+    uint32_t   fileIndex,
+    uint32_t   start,
+    uint32_t   end) {
+    H2ImportSymbolRef* sym;
     if (EnsureCap(
             (void**)&pkg->importSymbols,
             &pkg->importSymbolCap,
             pkg->importSymbolLen + 1u,
-            sizeof(HOPImportSymbolRef))
+            sizeof(H2ImportSymbolRef))
         != 0)
     {
         return -1;
@@ -1177,10 +1175,10 @@ static int AddImportSymbolRef(
     return 0;
 }
 
-static char* _Nullable DupPubDeclText(const HOPParsedFile* file, int32_t nodeId) {
-    const HOPAstNode* n = &file->ast.nodes[nodeId];
-    uint32_t          start = n->start;
-    uint32_t          end = n->end;
+static char* _Nullable DupPubDeclText(const H2ParsedFile* file, int32_t nodeId) {
+    const H2AstNode* n = &file->ast.nodes[nodeId];
+    uint32_t         start = n->start;
+    uint32_t         end = n->end;
 
     if (start + 3u <= end && memcmp(file->source + start, "pub", 3u) == 0) {
         start += 3u;
@@ -1189,12 +1187,12 @@ static char* _Nullable DupPubDeclText(const HOPParsedFile* file, int32_t nodeId)
         }
     }
 
-    if (n->kind == HOPAst_FN && FnNodeHasBody(&file->ast, nodeId)
+    if (n->kind == H2Ast_FN && FnNodeHasBody(&file->ast, nodeId)
         && !FnNodeHasAnytypeParam(file, nodeId))
     {
         int32_t body = ASTFirstChild(&file->ast, nodeId);
         while (body >= 0) {
-            if (file->ast.nodes[body].kind == HOPAst_BLOCK) {
+            if (file->ast.nodes[body].kind == H2Ast_BLOCK) {
                 end = file->ast.nodes[body].start;
                 break;
             }
@@ -1215,13 +1213,13 @@ static char* _Nullable DupPubDeclText(const HOPParsedFile* file, int32_t nodeId)
         }
     }
 
-    return HOPCDupSlice(file->source, start, end);
+    return H2CDupSlice(file->source, start, end);
 }
 
 static int AddDeclFromNode(
-    HOPPackage* pkg, const HOPParsedFile* file, uint32_t fileIndex, int32_t nodeId, int isPub) {
-    const HOPAstNode* n = &file->ast.nodes[nodeId];
-    int32_t           firstChild;
+    H2Package* pkg, const H2ParsedFile* file, uint32_t fileIndex, int32_t nodeId, int isPub) {
+    const H2AstNode* n = &file->ast.nodes[nodeId];
+    int32_t          firstChild;
 
     if (!IsDeclKind(n->kind)) {
         return 0;
@@ -1230,14 +1228,14 @@ static int AddDeclFromNode(
         return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
     }
     firstChild = ASTFirstChild(&file->ast, nodeId);
-    if ((n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) && firstChild >= 0
-        && file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST)
+    if ((n->kind == H2Ast_VAR || n->kind == H2Ast_CONST) && firstChild >= 0
+        && file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST)
     {
         uint32_t i;
         uint32_t nameCount = AstListCount(&file->ast, firstChild);
         for (i = 0; i < nameCount; i++) {
-            int32_t           nameNode = AstListItemAt(&file->ast, firstChild, i);
-            const HOPAstNode* nameAst =
+            int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+            const H2AstNode* nameAst =
                 (nameNode >= 0 && (uint32_t)nameNode < file->ast.len)
                     ? &file->ast.nodes[nameNode]
                     : NULL;
@@ -1246,7 +1244,7 @@ static int AddDeclFromNode(
             if (nameAst == NULL || nameAst->dataEnd <= nameAst->dataStart) {
                 return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
             }
-            name = HOPCDupSlice(file->source, nameAst->dataStart, nameAst->dataEnd);
+            name = H2CDupSlice(file->source, nameAst->dataStart, nameAst->dataEnd);
             declText = BuildDeclTextForNode(file, nodeId, isPub);
             if (name == NULL || declText == NULL) {
                 free(name);
@@ -1257,7 +1255,7 @@ static int AddDeclFromNode(
                 uint32_t j;
                 for (j = 0; j < pkg->pubDeclLen; j++) {
                     if (pkg->pubDecls[j].kind == n->kind && StrEq(pkg->pubDecls[j].name, name)
-                        && n->kind != HOPAst_FN)
+                        && n->kind != H2Ast_FN)
                     {
                         free(name);
                         free(declText);
@@ -1310,7 +1308,7 @@ static int AddDeclFromNode(
         return Errorf(file->path, file->source, n->start, n->end, "invalid declaration");
     }
     {
-        char* name = HOPCDupSlice(file->source, n->dataStart, n->dataEnd);
+        char* name = H2CDupSlice(file->source, n->dataStart, n->dataEnd);
         char* declText = BuildDeclTextForNode(file, nodeId, isPub);
         if (name == NULL || declText == NULL) {
             free(name);
@@ -1321,7 +1319,7 @@ static int AddDeclFromNode(
             uint32_t i;
             for (i = 0; i < pkg->pubDeclLen; i++) {
                 if (pkg->pubDecls[i].kind == n->kind && StrEq(pkg->pubDecls[i].name, name)
-                    && n->kind != HOPAst_FN)
+                    && n->kind != H2Ast_FN)
                 {
                     free(name);
                     free(declText);
@@ -1371,33 +1369,33 @@ static int AddDeclFromNode(
     }
 }
 
-static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
-    const HOPParsedFile* file = &pkg->files[fileIndex];
-    const HOPAst*        ast = &file->ast;
-    int32_t              child = ASTFirstChild(ast, ast->root);
+static int ProcessParsedFile(H2Package* pkg, uint32_t fileIndex) {
+    const H2ParsedFile* file = &pkg->files[fileIndex];
+    const H2Ast*        ast = &file->ast;
+    int32_t             child = ASTFirstChild(ast, ast->root);
 
     /* Accumulate feature flags from this file into the package. */
     pkg->features |= ast->features;
 
     while (child >= 0) {
-        const HOPAstNode* n = &ast->nodes[child];
-        if (n->kind == HOPAst_IMPORT) {
-            int32_t           importChild = ASTFirstChild(ast, child);
-            const HOPAstNode* aliasNode = NULL;
-            int               hasSymbols = 0;
-            uint8_t*          decodedPathBytes = NULL;
-            const char*       pathErr = NULL;
-            char*             decodedPath = NULL;
-            char*             importPath = NULL;
-            uint32_t          decodedPathLen = 0;
+        const H2AstNode* n = &ast->nodes[child];
+        if (n->kind == H2Ast_IMPORT) {
+            int32_t          importChild = ASTFirstChild(ast, child);
+            const H2AstNode* aliasNode = NULL;
+            int              hasSymbols = 0;
+            uint8_t*         decodedPathBytes = NULL;
+            const char*      pathErr = NULL;
+            char*            decodedPath = NULL;
+            char*            importPath = NULL;
+            uint32_t         decodedPathLen = 0;
             char* _Nullable bindName = NULL;
             int aliasIsUnderscore = 0;
             char* _Nullable mangleAlias = NULL;
             uint32_t importIndex = 0;
 
             while (importChild >= 0) {
-                const HOPAstNode* ch = &ast->nodes[importChild];
-                if (ch->kind == HOPAst_IDENT) {
+                const H2AstNode* ch = &ast->nodes[importChild];
+                if (ch->kind == H2Ast_IDENT) {
                     if (aliasNode != NULL) {
                         return Errorf(
                             file->path,
@@ -1407,7 +1405,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                             "invalid import declaration");
                     }
                     aliasNode = ch;
-                } else if (ch->kind == HOPAst_IMPORT_SYMBOL) {
+                } else if (ch->kind == H2Ast_IMPORT_SYMBOL) {
                     hasSymbols = 1;
                 } else {
                     return Errorf(
@@ -1416,7 +1414,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                 importChild = ASTNextSibling(ast, importChild);
             }
 
-            if (HOPDecodeStringLiteralMalloc(
+            if (H2DecodeStringLiteralMalloc(
                     file->source,
                     n->dataStart,
                     n->dataEnd,
@@ -1443,7 +1441,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                             file->source,
                             n->start,
                             n->end,
-                            HOPDiag_IMPORT_INVALID_PATH,
+                            H2Diag_IMPORT_INVALID_PATH,
                             "contains NUL byte");
                     }
                 }
@@ -1463,7 +1461,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                 free(decodedPath);
                 return ErrorSimple("out of memory");
             }
-            if (HOPNormalizeImportPath(decodedPath, importPath, decodedPathLen + 1u, &pathErr) != 0)
+            if (H2NormalizeImportPath(decodedPath, importPath, decodedPathLen + 1u, &pathErr) != 0)
             {
                 free(importPath);
                 importPath = NULL;
@@ -1476,7 +1474,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                         file->source,
                         n->start,
                         n->end,
-                        HOPDiag_IMPORT_INVALID_PATH,
+                        H2Diag_IMPORT_INVALID_PATH,
                         pathErr);
                 }
                 return ErrorSimple("out of memory");
@@ -1489,7 +1487,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                         file->source,
                         n->start,
                         n->end,
-                        HOPDiag_IMPORT_FEATURE_IMPORT_EXTRAS);
+                        H2Diag_IMPORT_FEATURE_IMPORT_EXTRAS);
                     free(importPath);
                     return rc;
                 }
@@ -1499,7 +1497,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
             }
 
             if (aliasNode != NULL) {
-                bindName = HOPCDupSlice(file->source, aliasNode->dataStart, aliasNode->dataEnd);
+                bindName = H2CDupSlice(file->source, aliasNode->dataStart, aliasNode->dataEnd);
                 if (bindName == NULL) {
                     free(importPath);
                     return ErrorSimple("out of memory");
@@ -1517,7 +1515,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                     file->source,
                     n->start,
                     n->end,
-                    HOPDiag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS);
+                    H2Diag_IMPORT_SIDE_EFFECT_ALIAS_WITH_SYMBOLS);
                 free(importPath);
                 return rc;
             }
@@ -1530,7 +1528,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                         file->source,
                         n->start,
                         n->end,
-                        HOPDiag_IMPORT_ALIAS_INFERENCE_FAILED,
+                        H2Diag_IMPORT_ALIAS_INFERENCE_FAILED,
                         importPath);
                     free(importPath);
                     return rc;
@@ -1575,19 +1573,19 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
 
             importChild = ASTFirstChild(ast, child);
             while (importChild >= 0) {
-                const HOPAstNode* ch = &ast->nodes[importChild];
-                if (ch->kind == HOPAst_IMPORT_SYMBOL) {
+                const H2AstNode* ch = &ast->nodes[importChild];
+                if (ch->kind == H2Ast_IMPORT_SYMBOL) {
                     int32_t localAliasNode = ASTFirstChild(ast, importChild);
-                    char*   sourceName = HOPCDupSlice(file->source, ch->dataStart, ch->dataEnd);
+                    char*   sourceName = H2CDupSlice(file->source, ch->dataStart, ch->dataEnd);
                     char*   localName;
                     if (sourceName == NULL) {
                         return ErrorSimple("out of memory");
                     }
-                    if (localAliasNode >= 0 && ast->nodes[localAliasNode].kind == HOPAst_IDENT) {
-                        const HOPAstNode* ln = &ast->nodes[localAliasNode];
-                        localName = HOPCDupSlice(file->source, ln->dataStart, ln->dataEnd);
+                    if (localAliasNode >= 0 && ast->nodes[localAliasNode].kind == H2Ast_IDENT) {
+                        const H2AstNode* ln = &ast->nodes[localAliasNode];
+                        localName = H2CDupSlice(file->source, ln->dataStart, ln->dataEnd);
                     } else {
-                        localName = HOPCDupCStr(sourceName);
+                        localName = H2CDupCStr(sourceName);
                     }
                     if (localName == NULL) {
                         free(sourceName);
@@ -1599,7 +1597,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                             file->source,
                             ch->start,
                             ch->end,
-                            HOPDiag_IMPORT_SYMBOL_ALIAS_INVALID);
+                            H2Diag_IMPORT_SYMBOL_ALIAS_INVALID);
                         free(sourceName);
                         free(localName);
                         return rc;
@@ -1615,7 +1613,7 @@ static int ProcessParsedFile(HOPPackage* pkg, uint32_t fileIndex) {
                 }
                 importChild = ASTNextSibling(ast, importChild);
             }
-        } else if (n->kind != HOPAst_DIRECTIVE) {
+        } else if (n->kind != H2Ast_DIRECTIVE) {
             char*    declText = BuildDeclTextForNode(file, child, 0);
             uint32_t sourceStart = DeclTextSourceStart(file, child);
             if (declText == NULL) {
@@ -1646,7 +1644,7 @@ static int IsBuiltinTypeName(const char* src, uint32_t start, uint32_t end) {
         || SliceEqCStr(src, start, end, "f64");
 }
 
-static int PackageHasExport(const HOPPackage* pkg, const char* name) {
+static int PackageHasExport(const H2Package* pkg, const char* name) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
         if (StrEq(pkg->pubDecls[i].name, name)) {
@@ -1657,7 +1655,7 @@ static int PackageHasExport(const HOPPackage* pkg, const char* name) {
 }
 
 static int PackageHasExportSlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
         size_t nameLen = strlen(pkg->pubDecls[i].name);
@@ -1671,7 +1669,7 @@ static int PackageHasExportSlice(
 }
 
 static int PackageHasExportedTypeSlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
         if (!IsTypeDeclKind(pkg->pubDecls[i].kind)) {
@@ -1687,11 +1685,11 @@ static int PackageHasExportedTypeSlice(
 }
 
 static int PackageHasImportedTypeSymbolSlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if (!sym->isType) {
             continue;
         }
@@ -1704,13 +1702,13 @@ static int PackageHasImportedTypeSymbolSlice(
 }
 
 static int PackageHasBuiltinExportedTypeSlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end) {
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
     if (pkg == NULL) {
         return 0;
     }
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPImportRef* imp = &pkg->imports[i];
+        const H2ImportRef* imp = &pkg->imports[i];
         if (StrEq(imp->path, "builtin") && imp->target != NULL) {
             return PackageHasExportedTypeSlice(imp->target, src, start, end);
         }
@@ -1728,23 +1726,23 @@ static uint32_t FindSliceDot(const char* src, uint32_t start, uint32_t end) {
     return end;
 }
 
-const HOPImportRef* _Nullable FindImportByAliasSlice(
-    const HOPPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
-static int FindImportIndexByPath(const HOPPackage* pkg, const char* importPath);
-static int IsBuiltinPackage(const HOPPackage* pkg);
+const H2ImportRef* _Nullable FindImportByAliasSlice(
+    const H2Package* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd);
+static int FindImportIndexByPath(const H2Package* pkg, const char* importPath);
+static int IsBuiltinPackage(const H2Package* pkg);
 
 static int ValidatePubTypeNode(
-    const HOPPackage* pkg, const HOPParsedFile* file, int32_t typeNodeId, const char* contextMsg) {
-    const HOPAstNode* n;
+    const H2Package* pkg, const H2ParsedFile* file, int32_t typeNodeId, const char* contextMsg) {
+    const H2AstNode* n;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= file->ast.len) {
         return ErrorSimple("invalid type node");
     }
     n = &file->ast.nodes[typeNodeId];
     switch (n->kind) {
-        case HOPAst_TYPE_NAME: {
+        case H2Ast_TYPE_NAME: {
             uint32_t dotPos = FindSliceDot(file->source, n->dataStart, n->dataEnd);
             if (dotPos < n->dataEnd) {
-                const HOPImportRef* imp = FindImportByAliasSlice(
+                const H2ImportRef* imp = FindImportByAliasSlice(
                     pkg, file->source, n->dataStart, dotPos);
                 if (imp == NULL) {
                     if (PackageHasExportedTypeSlice(pkg, file->source, n->dataStart, dotPos)
@@ -1804,18 +1802,18 @@ static int ValidatePubTypeNode(
                 (int)(n->dataEnd - n->dataStart),
                 file->source + n->dataStart);
         }
-        case HOPAst_TYPE_PTR:
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF:
-        case HOPAst_TYPE_ARRAY:
-        case HOPAst_TYPE_SLICE:
-        case HOPAst_TYPE_MUTSLICE:
-        case HOPAst_TYPE_VARRAY:
-        case HOPAst_TYPE_OPTIONAL: {
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF:
+        case H2Ast_TYPE_ARRAY:
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE:
+        case H2Ast_TYPE_VARRAY:
+        case H2Ast_TYPE_OPTIONAL: {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             return ValidatePubTypeNode(pkg, file, child, contextMsg);
         }
-        case HOPAst_TYPE_TUPLE: {
+        case H2Ast_TYPE_TUPLE: {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             while (child >= 0) {
                 if (ValidatePubTypeNode(pkg, file, child, contextMsg) != 0) {
@@ -1825,7 +1823,7 @@ static int ValidatePubTypeNode(
             }
             return 0;
         }
-        case HOPAst_TYPE_FN: {
+        case H2Ast_TYPE_FN: {
             int32_t child = ASTFirstChild(&file->ast, typeNodeId);
             while (child >= 0) {
                 if (ValidatePubTypeNode(pkg, file, child, contextMsg) != 0) {
@@ -1840,16 +1838,16 @@ static int ValidatePubTypeNode(
     }
 }
 
-static int ValidatePubClosure(const HOPPackage* pkg) {
+static int ValidatePubClosure(const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        const HOPSymbolDecl* pubDecl = &pkg->pubDecls[i];
-        const HOPParsedFile* file = &pkg->files[pubDecl->fileIndex];
-        int32_t              child = ASTFirstChild(&file->ast, pubDecl->nodeId);
-        if (pubDecl->kind == HOPAst_FN) {
+        const H2SymbolDecl* pubDecl = &pkg->pubDecls[i];
+        const H2ParsedFile* file = &pkg->files[pubDecl->fileIndex];
+        int32_t             child = ASTFirstChild(&file->ast, pubDecl->nodeId);
+        if (pubDecl->kind == H2Ast_FN) {
             while (child >= 0) {
-                const HOPAstNode* n = &file->ast.nodes[child];
-                if (n->kind == HOPAst_PARAM) {
+                const H2AstNode* n = &file->ast.nodes[child];
+                if (n->kind == H2Ast_PARAM) {
                     int32_t typeNode = ASTFirstChild(&file->ast, child);
                     if (ValidatePubTypeNode(pkg, file, typeNode, "function parameter") != 0) {
                         return -1;
@@ -1861,10 +1859,10 @@ static int ValidatePubClosure(const HOPPackage* pkg) {
                 }
                 child = ASTNextSibling(&file->ast, child);
             }
-        } else if (pubDecl->kind == HOPAst_STRUCT || pubDecl->kind == HOPAst_UNION) {
+        } else if (pubDecl->kind == H2Ast_STRUCT || pubDecl->kind == H2Ast_UNION) {
             while (child >= 0) {
-                const HOPAstNode* n = &file->ast.nodes[child];
-                if (n->kind == HOPAst_FIELD) {
+                const H2AstNode* n = &file->ast.nodes[child];
+                if (n->kind == H2Ast_FIELD) {
                     int32_t typeNode = ASTFirstChild(&file->ast, child);
                     if (ValidatePubTypeNode(pkg, file, typeNode, "field type") != 0) {
                         return -1;
@@ -1872,34 +1870,34 @@ static int ValidatePubClosure(const HOPPackage* pkg) {
                 }
                 child = ASTNextSibling(&file->ast, child);
             }
-        } else if (pubDecl->kind == HOPAst_ENUM) {
+        } else if (pubDecl->kind == H2Ast_ENUM) {
             if (child >= 0) {
-                const HOPAstNode* n = &file->ast.nodes[child];
-                if (n->kind == HOPAst_TYPE_NAME || n->kind == HOPAst_TYPE_PTR
-                    || n->kind == HOPAst_TYPE_REF || n->kind == HOPAst_TYPE_MUTREF
-                    || n->kind == HOPAst_TYPE_ARRAY || n->kind == HOPAst_TYPE_VARRAY
-                    || n->kind == HOPAst_TYPE_SLICE || n->kind == HOPAst_TYPE_MUTSLICE
-                    || n->kind == HOPAst_TYPE_FN || n->kind == HOPAst_TYPE_TUPLE)
+                const H2AstNode* n = &file->ast.nodes[child];
+                if (n->kind == H2Ast_TYPE_NAME || n->kind == H2Ast_TYPE_PTR
+                    || n->kind == H2Ast_TYPE_REF || n->kind == H2Ast_TYPE_MUTREF
+                    || n->kind == H2Ast_TYPE_ARRAY || n->kind == H2Ast_TYPE_VARRAY
+                    || n->kind == H2Ast_TYPE_SLICE || n->kind == H2Ast_TYPE_MUTSLICE
+                    || n->kind == H2Ast_TYPE_FN || n->kind == H2Ast_TYPE_TUPLE)
                 {
                     if (ValidatePubTypeNode(pkg, file, child, "enum base type") != 0) {
                         return -1;
                     }
                 }
             }
-        } else if (pubDecl->kind == HOPAst_VAR || pubDecl->kind == HOPAst_CONST) {
+        } else if (pubDecl->kind == H2Ast_VAR || pubDecl->kind == H2Ast_CONST) {
             if (child >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[child].kind)) {
                 if (ValidatePubTypeNode(
                         pkg,
                         file,
                         child,
-                        pubDecl->kind == HOPAst_VAR ? "variable type" : "constant type")
+                        pubDecl->kind == H2Ast_VAR ? "variable type" : "constant type")
                     != 0)
                 {
                     return -1;
                 }
             }
-        } else if (pubDecl->kind == HOPAst_TYPE_ALIAS) {
-            const HOPAstNode* aliasNode = &file->ast.nodes[pubDecl->nodeId];
+        } else if (pubDecl->kind == H2Ast_TYPE_ALIAS) {
+            const H2AstNode* aliasNode = &file->ast.nodes[pubDecl->nodeId];
             if (child < 0) {
                 return Errorf(
                     file->path,
@@ -1916,25 +1914,25 @@ static int ValidatePubClosure(const HOPPackage* pkg) {
     return 0;
 }
 
-static int ValidatePubFnDefinitions(const HOPPackage* pkg) {
+static int ValidatePubFnDefinitions(const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        const HOPSymbolDecl* pubDecl = &pkg->pubDecls[i];
-        uint32_t             j;
-        int                  found = pubDecl->hasBody;
-        if (pubDecl->kind != HOPAst_FN) {
+        const H2SymbolDecl* pubDecl = &pkg->pubDecls[i];
+        uint32_t            j;
+        int                 found = pubDecl->hasBody;
+        if (pubDecl->kind != H2Ast_FN) {
             continue;
         }
         for (j = 0; j < pkg->declLen; j++) {
-            const HOPSymbolDecl* decl = &pkg->decls[j];
-            if (decl->kind == HOPAst_FN && StrEq(decl->name, pubDecl->name) && decl->hasBody) {
+            const H2SymbolDecl* decl = &pkg->decls[j];
+            if (decl->kind == H2Ast_FN && StrEq(decl->name, pubDecl->name) && decl->hasBody) {
                 found = 1;
                 break;
             }
         }
         if (!found) {
-            const HOPParsedFile* file = &pkg->files[pubDecl->fileIndex];
-            const HOPAstNode*    n = &file->ast.nodes[pubDecl->nodeId];
+            const H2ParsedFile* file = &pkg->files[pubDecl->fileIndex];
+            const H2AstNode*    n = &file->ast.nodes[pubDecl->nodeId];
             return Errorf(
                 file->path,
                 file->source,
@@ -1947,8 +1945,8 @@ static int ValidatePubFnDefinitions(const HOPPackage* pkg) {
     return 0;
 }
 
-const HOPImportRef* _Nullable FindImportByAliasSlice(
-    const HOPPackage* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd) {
+const H2ImportRef* _Nullable FindImportByAliasSlice(
+    const H2Package* pkg, const char* src, uint32_t aliasStart, uint32_t aliasEnd) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
         if (pkg->imports[i].bindName != NULL
@@ -1963,18 +1961,18 @@ const HOPImportRef* _Nullable FindImportByAliasSlice(
 }
 
 static int PackageHasEnumDeclBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t nameStart, uint32_t nameEnd) {
+    const H2Package* pkg, const char* src, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     size_t   n = (size_t)(nameEnd - nameStart);
     for (i = 0; i < pkg->declLen; i++) {
-        if (pkg->decls[i].kind == HOPAst_ENUM && strlen(pkg->decls[i].name) == n
+        if (pkg->decls[i].kind == H2Ast_ENUM && strlen(pkg->decls[i].name) == n
             && memcmp(pkg->decls[i].name, src + nameStart, n) == 0)
         {
             return 1;
         }
     }
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (pkg->pubDecls[i].kind == HOPAst_ENUM && strlen(pkg->pubDecls[i].name) == n
+        if (pkg->pubDecls[i].kind == H2Ast_ENUM && strlen(pkg->pubDecls[i].name) == n
             && memcmp(pkg->pubDecls[i].name, src + nameStart, n) == 0)
         {
             return 1;
@@ -1983,18 +1981,18 @@ static int PackageHasEnumDeclBySlice(
     return 0;
 }
 
-static int ValidateSelectorsNode(const HOPPackage* pkg, const HOPParsedFile* file, int32_t nodeId) {
-    const HOPAstNode* n;
-    int32_t           child;
+static int ValidateSelectorsNode(const H2Package* pkg, const H2ParsedFile* file, int32_t nodeId) {
+    const H2AstNode* n;
+    int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[nodeId];
 
-    if (n->kind == HOPAst_TYPE_NAME) {
+    if (n->kind == H2Ast_TYPE_NAME) {
         uint32_t dot = FindSliceDot(file->source, n->dataStart, n->dataEnd);
         if (dot < n->dataEnd) {
-            const HOPImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, dot);
+            const H2ImportRef* imp = FindImportByAliasSlice(pkg, file->source, n->dataStart, dot);
             if (imp == NULL) {
                 if (!PackageHasEnumDeclBySlice(pkg, file->source, n->dataStart, dot)
                     && !PackageHasExportedTypeSlice(pkg, file->source, n->dataStart, dot)
@@ -2014,11 +2012,11 @@ static int ValidateSelectorsNode(const HOPPackage* pkg, const HOPParsedFile* fil
                 }
             }
         }
-    } else if (n->kind == HOPAst_FIELD_EXPR) {
+    } else if (n->kind == H2Ast_FIELD_EXPR) {
         int32_t recvNode = ASTFirstChild(&file->ast, nodeId);
-        if (recvNode >= 0 && file->ast.nodes[recvNode].kind == HOPAst_IDENT) {
-            const HOPAstNode*   recv = &file->ast.nodes[recvNode];
-            const HOPImportRef* imp = FindImportByAliasSlice(
+        if (recvNode >= 0 && file->ast.nodes[recvNode].kind == H2Ast_IDENT) {
+            const H2AstNode*   recv = &file->ast.nodes[recvNode];
+            const H2ImportRef* imp = FindImportByAliasSlice(
                 pkg, file->source, recv->dataStart, recv->dataEnd);
             if (imp != NULL) {
                 if (!PackageHasExportSlice(imp->target, file->source, n->dataStart, n->dataEnd)) {
@@ -2039,10 +2037,10 @@ static int ValidateSelectorsNode(const HOPPackage* pkg, const HOPParsedFile* fil
     return 0;
 }
 
-static int ValidatePackageSelectors(const HOPPackage* pkg) {
+static int ValidatePackageSelectors(const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->fileLen; i++) {
-        const HOPParsedFile* file = &pkg->files[i];
+        const H2ParsedFile* file = &pkg->files[i];
         if (ValidateSelectorsNode(pkg, file, file->ast.root) != 0) {
             return -1;
         }
@@ -2050,7 +2048,7 @@ static int ValidatePackageSelectors(const HOPPackage* pkg) {
     return 0;
 }
 
-static int PackageHasAnyDeclName(const HOPPackage* pkg, const char* name) {
+static int PackageHasAnyDeclName(const H2Package* pkg, const char* name) {
     uint32_t i;
     for (i = 0; i < pkg->declLen; i++) {
         if (StrEq(pkg->decls[i].name, name)) {
@@ -2088,9 +2086,9 @@ static void PackageDiagOffsetToLineCol(
 }
 
 static int FindSymbolDeclNameSpan(
-    const HOPPackage* pkg, const HOPSymbolDecl* decl, uint32_t* outStart, uint32_t* outEnd) {
-    const HOPParsedFile* file;
-    const HOPAstNode*    n;
+    const H2Package* pkg, const H2SymbolDecl* decl, uint32_t* outStart, uint32_t* outEnd) {
+    const H2ParsedFile* file;
+    const H2AstNode*    n;
     if (outStart != NULL) {
         *outStart = 0;
     }
@@ -2105,13 +2103,13 @@ static int FindSymbolDeclNameSpan(
         return 0;
     }
     n = &file->ast.nodes[decl->nodeId];
-    if ((n->kind == HOPAst_VAR || n->kind == HOPAst_CONST) && n->firstChild >= 0
+    if ((n->kind == H2Ast_VAR || n->kind == H2Ast_CONST) && n->firstChild >= 0
         && (uint32_t)n->firstChild < file->ast.len
-        && file->ast.nodes[n->firstChild].kind == HOPAst_NAME_LIST)
+        && file->ast.nodes[n->firstChild].kind == H2Ast_NAME_LIST)
     {
         int32_t child = file->ast.nodes[n->firstChild].firstChild;
         while (child >= 0) {
-            const HOPAstNode* nameNode;
+            const H2AstNode* nameNode;
             if ((uint32_t)child >= file->ast.len) {
                 break;
             }
@@ -2147,16 +2145,16 @@ static int FindSymbolDeclNameSpan(
 }
 
 static int ErrorDuplicateBuiltinDecl(
-    const HOPPackage*    pkg,
-    const HOPSymbolDecl* decl,
-    const HOPPackage*    builtinPkg,
-    const HOPSymbolDecl* builtinDecl) {
-    const HOPParsedFile* file;
-    const HOPParsedFile* builtinFile = NULL;
-    uint32_t             start = 0;
-    uint32_t             end = 0;
-    uint32_t             line = 0;
-    uint32_t             col = 0;
+    const H2Package*    pkg,
+    const H2SymbolDecl* decl,
+    const H2Package*    builtinPkg,
+    const H2SymbolDecl* builtinDecl) {
+    const H2ParsedFile* file;
+    const H2ParsedFile* builtinFile = NULL;
+    uint32_t            start = 0;
+    uint32_t            end = 0;
+    uint32_t            line = 0;
+    uint32_t            col = 0;
     if (pkg == NULL || decl == NULL || decl->fileIndex >= pkg->fileLen) {
         return ErrorSimple("internal error: invalid declaration");
     }
@@ -2197,8 +2195,8 @@ static int ErrorDuplicateBuiltinDecl(
     return -1;
 }
 
-static const HOPSymbolDecl* _Nullable FindBuiltinPubDeclByName(
-    const HOPPackage* builtinPkg, const char* name) {
+static const H2SymbolDecl* _Nullable FindBuiltinPubDeclByName(
+    const H2Package* builtinPkg, const char* name) {
     uint32_t i;
     if (builtinPkg == NULL || name == NULL) {
         return NULL;
@@ -2211,15 +2209,14 @@ static const HOPSymbolDecl* _Nullable FindBuiltinPubDeclByName(
     return NULL;
 }
 
-static const HOPSymbolDecl* _Nullable FindBuiltinNonFunctionPubDeclByName(
-    const HOPPackage* builtinPkg, const char* name) {
+static const H2SymbolDecl* _Nullable FindBuiltinNonFunctionPubDeclByName(
+    const H2Package* builtinPkg, const char* name) {
     uint32_t i;
     if (builtinPkg == NULL || name == NULL) {
         return NULL;
     }
     for (i = 0; i < builtinPkg->pubDeclLen; i++) {
-        if (builtinPkg->pubDecls[i].kind != HOPAst_FN && StrEq(builtinPkg->pubDecls[i].name, name))
-        {
+        if (builtinPkg->pubDecls[i].kind != H2Ast_FN && StrEq(builtinPkg->pubDecls[i].name, name)) {
             return &builtinPkg->pubDecls[i];
         }
     }
@@ -2227,15 +2224,15 @@ static const HOPSymbolDecl* _Nullable FindBuiltinNonFunctionPubDeclByName(
 }
 
 static int ValidateBuiltinNameConflictsForDecls(
-    const HOPPackage*    pkg,
-    const HOPPackage*    builtinPkg,
-    const HOPSymbolDecl* decls,
-    uint32_t             declLen) {
+    const H2Package*    pkg,
+    const H2Package*    builtinPkg,
+    const H2SymbolDecl* decls,
+    uint32_t            declLen) {
     uint32_t i;
     for (i = 0; i < declLen; i++) {
-        const HOPSymbolDecl* decl = &decls[i];
-        const HOPSymbolDecl* builtinDecl;
-        if (decl->kind == HOPAst_FN) {
+        const H2SymbolDecl* decl = &decls[i];
+        const H2SymbolDecl* builtinDecl;
+        if (decl->kind == H2Ast_FN) {
             builtinDecl = FindBuiltinNonFunctionPubDeclByName(builtinPkg, decl->name);
         } else {
             builtinDecl = FindBuiltinPubDeclByName(builtinPkg, decl->name);
@@ -2247,10 +2244,10 @@ static int ValidateBuiltinNameConflictsForDecls(
     return 0;
 }
 
-static int ValidateBuiltinNameConflicts(HOPPackage* pkg) {
-    int               builtinImportIndex;
-    const HOPPackage* builtinPkg;
-    uint32_t          i;
+static int ValidateBuiltinNameConflicts(H2Package* pkg) {
+    int              builtinImportIndex;
+    const H2Package* builtinPkg;
+    uint32_t         i;
     if (IsBuiltinPackage(pkg)) {
         return 0;
     }
@@ -2269,21 +2266,21 @@ static int ValidateBuiltinNameConflicts(HOPPackage* pkg) {
         return -1;
     }
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPImportRef* imp = &pkg->imports[i];
+        const H2ImportRef* imp = &pkg->imports[i];
         if (imp->bindName != NULL && FindBuiltinPubDeclByName(builtinPkg, imp->bindName) != NULL) {
-            const HOPParsedFile* file = &pkg->files[imp->fileIndex];
+            const H2ParsedFile* file = &pkg->files[imp->fileIndex];
             return Errorf(
                 file->path, file->source, imp->start, imp->end, "import binding conflict");
         }
     }
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        const HOPSymbolDecl* builtinDecl = FindBuiltinPubDeclByName(builtinPkg, sym->localName);
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        const H2SymbolDecl*      builtinDecl = FindBuiltinPubDeclByName(builtinPkg, sym->localName);
         if (builtinDecl == NULL) {
             continue;
         }
-        if (!(sym->isFunction && builtinDecl->kind == HOPAst_FN)) {
-            const HOPParsedFile* file = &pkg->files[sym->fileIndex];
+        if (!(sym->isFunction && builtinDecl->kind == H2Ast_FN)) {
+            const H2ParsedFile* file = &pkg->files[sym->fileIndex];
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "import binding conflict");
         }
@@ -2291,23 +2288,23 @@ static int ValidateBuiltinNameConflicts(HOPPackage* pkg) {
     return 0;
 }
 
-static int ValidateImportBindingConflicts(HOPPackage* pkg) {
+static int ValidateImportBindingConflicts(H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPImportRef* imp = &pkg->imports[i];
-        uint32_t            j;
+        const H2ImportRef* imp = &pkg->imports[i];
+        uint32_t           j;
         if (imp->bindName == NULL) {
             continue;
         }
         if (PackageHasAnyDeclName(pkg, imp->bindName)) {
-            const HOPParsedFile* file = &pkg->files[imp->fileIndex];
+            const H2ParsedFile* file = &pkg->files[imp->fileIndex];
             return Errorf(
                 file->path, file->source, imp->start, imp->end, "import binding conflict");
         }
         for (j = i + 1u; j < pkg->importLen; j++) {
             if (pkg->imports[j].bindName != NULL && StrEq(pkg->imports[j].bindName, imp->bindName))
             {
-                const HOPParsedFile* file = &pkg->files[pkg->imports[j].fileIndex];
+                const H2ParsedFile* file = &pkg->files[pkg->imports[j].fileIndex];
                 return Errorf(
                     file->path,
                     file->source,
@@ -2318,7 +2315,7 @@ static int ValidateImportBindingConflicts(HOPPackage* pkg) {
         }
         for (j = 0; j < pkg->importSymbolLen; j++) {
             if (StrEq(pkg->importSymbols[j].localName, imp->bindName)) {
-                const HOPParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
+                const H2ParsedFile* file = &pkg->files[pkg->importSymbols[j].fileIndex];
                 return Errorf(
                     file->path,
                     file->source,
@@ -2330,15 +2327,15 @@ static int ValidateImportBindingConflicts(HOPPackage* pkg) {
     }
 
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        uint32_t            j;
+        H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        uint32_t           j;
         if (PackageHasAnyDeclName(pkg, sym->localName)) {
-            const HOPParsedFile* file = &pkg->files[sym->fileIndex];
+            const H2ParsedFile* file = &pkg->files[sym->fileIndex];
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "import binding conflict");
         }
         for (j = i + 1u; j < pkg->importSymbolLen; j++) {
-            HOPImportSymbolRef* other = &pkg->importSymbols[j];
+            H2ImportSymbolRef* other = &pkg->importSymbols[j];
             if (!StrEq(other->localName, sym->localName)) {
                 continue;
             }
@@ -2353,7 +2350,7 @@ static int ValidateImportBindingConflicts(HOPPackage* pkg) {
                 }
             }
             {
-                const HOPParsedFile* file = &pkg->files[other->fileIndex];
+                const H2ParsedFile* file = &pkg->files[other->fileIndex];
                 return Errorf(
                     file->path, file->source, other->start, other->end, "import binding conflict");
             }
@@ -2362,15 +2359,15 @@ static int ValidateImportBindingConflicts(HOPPackage* pkg) {
     return 0;
 }
 
-static int ValidateAndFinalizeImportSymbols(HOPPackage* pkg) {
+static int ValidateAndFinalizeImportSymbols(H2Package* pkg) {
     uint32_t baseLen = pkg->importSymbolLen;
     uint32_t i;
     for (i = 0; i < baseLen; i++) {
-        HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        const HOPImportRef* imp;
-        const HOPPackage*   dep;
-        uint32_t            j;
-        uint32_t            matchCount = 0;
+        H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        const H2ImportRef* imp;
+        const H2Package*   dep;
+        uint32_t           j;
+        uint32_t           matchCount = 0;
         if (sym->importIndex >= pkg->importLen) {
             return ErrorSimple("internal error: invalid import symbol mapping");
         }
@@ -2380,17 +2377,17 @@ static int ValidateAndFinalizeImportSymbols(HOPPackage* pkg) {
             return ErrorSimple("internal error: unresolved import");
         }
         for (j = 0; j < dep->pubDeclLen; j++) {
-            const HOPSymbolDecl* exportDecl = &dep->pubDecls[j];
-            HOPImportSymbolRef*  dstSym = sym;
-            char*                rewrittenDecl = NULL;
-            char*                shapeKey = NULL;
-            char*                wrapperDecl = NULL;
+            const H2SymbolDecl* exportDecl = &dep->pubDecls[j];
+            H2ImportSymbolRef*  dstSym = sym;
+            char*               rewrittenDecl = NULL;
+            char*               shapeKey = NULL;
+            char*               wrapperDecl = NULL;
             if (!StrEq(exportDecl->name, sym->sourceName)) {
                 continue;
             }
             if (matchCount > 0) {
-                char* sourceName = HOPCDupCStr(sym->sourceName);
-                char* localName = HOPCDupCStr(sym->localName);
+                char* sourceName = H2CDupCStr(sym->sourceName);
+                char* localName = H2CDupCStr(sym->localName);
                 if (sourceName == NULL || localName == NULL) {
                     free(sourceName);
                     free(localName);
@@ -2413,7 +2410,7 @@ static int ValidateAndFinalizeImportSymbols(HOPPackage* pkg) {
                 dstSym = &pkg->importSymbols[pkg->importSymbolLen - 1u];
             }
             dstSym->isType = IsTypeDeclKind(exportDecl->kind) ? 1u : 0u;
-            dstSym->isFunction = exportDecl->kind == HOPAst_FN ? 1u : 0u;
+            dstSym->isFunction = exportDecl->kind == H2Ast_FN ? 1u : 0u;
             dstSym->useWrapper = 0;
             dstSym->exportFileIndex = exportDecl->fileIndex;
             dstSym->exportNodeId = exportDecl->nodeId;
@@ -2444,7 +2441,7 @@ static int ValidateAndFinalizeImportSymbols(HOPPackage* pkg) {
             matchCount++;
         }
         if (matchCount == 0) {
-            const HOPParsedFile* file = &pkg->files[sym->fileIndex];
+            const H2ParsedFile* file = &pkg->files[sym->fileIndex];
             return Errorf(
                 file->path, file->source, sym->start, sym->end, "unknown imported symbol");
         }
@@ -2452,7 +2449,7 @@ static int ValidateAndFinalizeImportSymbols(HOPPackage* pkg) {
     return 0;
 }
 
-static HOPPackage* _Nullable FindPackageByDir(const HOPPackageLoader* loader, const char* dirPath) {
+static H2Package* _Nullable FindPackageByDir(const H2PackageLoader* loader, const char* dirPath) {
     uint32_t i;
     for (i = 0; i < loader->packageLen; i++) {
         if (StrEq(loader->packages[i].dirPath, dirPath)) {
@@ -2500,9 +2497,9 @@ static char* _Nullable InferPackageNameFromSingleFile(const char* filePath) {
     return NULL;
 }
 
-static int AddPackageSlot(HOPPackageLoader* loader, const char* dirPath, HOPPackage** outPkg) {
-    HOPPackage* pkg;
-    uint32_t    needCap;
+static int AddPackageSlot(H2PackageLoader* loader, const char* dirPath, H2Package** outPkg) {
+    H2Package* pkg;
+    uint32_t   needCap;
     if (loader == NULL || outPkg == NULL) {
         return -1;
     }
@@ -2510,13 +2507,13 @@ static int AddPackageSlot(HOPPackageLoader* loader, const char* dirPath, HOPPack
     if (loader->packageCap == 0u && needCap < 256u) {
         needCap = 256u;
     }
-    if (EnsureCap((void**)&loader->packages, &loader->packageCap, needCap, sizeof(HOPPackage)) != 0)
+    if (EnsureCap((void**)&loader->packages, &loader->packageCap, needCap, sizeof(H2Package)) != 0)
     {
         return -1;
     }
     pkg = &loader->packages[loader->packageLen++];
     memset(pkg, 0, sizeof(*pkg));
-    pkg->dirPath = HOPCDupCStr(dirPath);
+    pkg->dirPath = H2CDupCStr(dirPath);
     if (pkg->dirPath == NULL) {
         return -1;
     }
@@ -2598,7 +2595,7 @@ static char* _Nullable ResolveLibImportDir(const char* startDir, const char* imp
     if (!IsLibImportPath(importPath)) {
         return NULL;
     }
-    dir = HOPCDupCStr(startDir);
+    dir = H2CDupCStr(startDir);
     if (dir == NULL) {
         return NULL;
     }
@@ -2637,7 +2634,7 @@ static char* _Nullable ResolveLibImportDirFromExe(const char* importPath) {
     return resolved;
 }
 
-static int LoadPackageRecursive(HOPPackageLoader* loader, const char* dirPath, HOPPackage** outPkg);
+static int LoadPackageRecursive(H2PackageLoader* loader, const char* dirPath, H2Package** outPkg);
 
 static void FreeStringList(char** _Nullable items, uint32_t len) {
     uint32_t i;
@@ -2655,7 +2652,7 @@ static int IsBuildTagChar(unsigned char c) {
 }
 
 static int BuildTagSliceIsActive(
-    const HOPPackageLoader* loader, const char* tagStart, size_t tagLen) {
+    const H2PackageLoader* loader, const char* tagStart, size_t tagLen) {
     if (loader == NULL || tagStart == NULL || tagLen == 0) {
         return 0;
     }
@@ -2673,7 +2670,7 @@ static int BuildTagSliceIsActive(
 }
 
 static int FilenameBuildTagsMatch(
-    const HOPPackageLoader* loader, const char* filePath, int* outMatch) {
+    const H2PackageLoader* loader, const char* filePath, int* outMatch) {
     const char* base = strrchr(filePath, '/');
     size_t      baseLen;
     size_t      stemLen;
@@ -2782,7 +2779,7 @@ static int FilenameBuildTagsMatch(
 }
 
 static int FilterPackageFilesByBuildTags(
-    const HOPPackageLoader* loader, const char* dirPath, char** filePaths, uint32_t* fileCount) {
+    const H2PackageLoader* loader, const char* dirPath, char** filePaths, uint32_t* fileCount) {
     uint32_t readIndex;
     uint32_t writeIndex = 0;
     for (readIndex = 0; readIndex < *fileCount; readIndex++) {
@@ -2808,7 +2805,7 @@ static int FilterPackageFilesByBuildTags(
     return 0;
 }
 
-static int FindImportIndexByPath(const HOPPackage* pkg, const char* importPath) {
+static int FindImportIndexByPath(const H2Package* pkg, const char* importPath) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
         if (StrEq(pkg->imports[i].path, importPath)) {
@@ -2818,7 +2815,7 @@ static int FindImportIndexByPath(const HOPPackage* pkg, const char* importPath) 
     return -1;
 }
 
-static int IsBuiltinPackage(const HOPPackage* pkg) {
+static int IsBuiltinPackage(const H2Package* pkg) {
     const char* base;
     if (pkg == NULL || pkg->dirPath == NULL) {
         return 0;
@@ -2828,7 +2825,7 @@ static int IsBuiltinPackage(const HOPPackage* pkg) {
     return StrEq(base, "builtin");
 }
 
-static int IsReflectPackage(const HOPPackage* pkg) {
+static int IsReflectPackage(const H2Package* pkg) {
     const char* base;
     if (pkg == NULL || pkg->dirPath == NULL) {
         return 0;
@@ -2838,7 +2835,7 @@ static int IsReflectPackage(const HOPPackage* pkg) {
     return StrEq(base, "reflect");
 }
 
-static int EnsureImplicitBuiltinImport(HOPPackage* pkg) {
+static int EnsureImplicitBuiltinImport(H2Package* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
     uint32_t importIndex = 0;
@@ -2849,7 +2846,7 @@ static int EnsureImplicitBuiltinImport(HOPPackage* pkg) {
         return 0;
     }
     alias = MakeUniqueImportAlias(pkg, "builtin");
-    importPath = HOPCDupCStr("builtin");
+    importPath = H2CDupCStr("builtin");
     if (alias == NULL || importPath == NULL) {
         free(alias);
         free(importPath);
@@ -2863,7 +2860,7 @@ static int EnsureImplicitBuiltinImport(HOPPackage* pkg) {
     return 0;
 }
 
-static int EnsureImplicitReflectImport(HOPPackage* pkg) {
+static int EnsureImplicitReflectImport(H2Package* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
     uint32_t importIndex = 0;
@@ -2874,7 +2871,7 @@ static int EnsureImplicitReflectImport(HOPPackage* pkg) {
         return 0;
     }
     alias = MakeUniqueImportAlias(pkg, "reflect");
-    importPath = HOPCDupCStr("reflect");
+    importPath = H2CDupCStr("reflect");
     if (alias == NULL || importPath == NULL) {
         free(alias);
         free(importPath);
@@ -2889,7 +2886,7 @@ static int EnsureImplicitReflectImport(HOPPackage* pkg) {
 }
 
 static int LoadSelectedPlatformTargetPackage(
-    HOPPackageLoader* loader, const char* startDir, HOPPackage** outPkg) {
+    H2PackageLoader* loader, const char* startDir, H2Package** outPkg) {
     char* importPath = NULL;
     char* resolvedDir = NULL;
     int   rc = -1;
@@ -2899,7 +2896,7 @@ static int LoadSelectedPlatformTargetPackage(
     }
 
     {
-        HOPStringBuilder b = { 0 };
+        H2StringBuilder b = { 0 };
         if (SBAppendCStr(&b, "platform/") != 0 || SBAppendCStr(&b, loader->platformTarget) != 0) {
             free(b.v);
             return ErrorSimple("out of memory");
@@ -2926,8 +2923,8 @@ static int LoadSelectedPlatformTargetPackage(
         return ErrorSimple("out of memory");
     }
     {
-        HOPPackage*  tmpPkg = NULL;
-        HOPPackage** outPtr = outPkg != NULL ? outPkg : &tmpPkg;
+        H2Package*  tmpPkg = NULL;
+        H2Package** outPtr = outPkg != NULL ? outPkg : &tmpPkg;
         if (LoadPackageRecursive(loader, resolvedDir, outPtr) != 0) {
             rc = ErrorSimple("failed to resolve platform target package %s", importPath);
         } else {
@@ -2941,7 +2938,7 @@ static int LoadSelectedPlatformTargetPackage(
 }
 
 static int IsSelectedPlatformImportPath(
-    const HOPPackageLoader* loader, const char* _Nullable importPath) {
+    const H2PackageLoader* loader, const char* _Nullable importPath) {
     size_t prefixLen = 9u;
     if (loader == NULL || loader->platformTarget == NULL || importPath == NULL) {
         return 0;
@@ -2953,7 +2950,7 @@ static int IsSelectedPlatformImportPath(
         && StrEq(importPath + prefixLen, loader->platformTarget);
 }
 
-static int ResolvePackageImportsAndSelectors(HOPPackageLoader* loader, HOPPackage* pkg) {
+static int ResolvePackageImportsAndSelectors(H2PackageLoader* loader, H2Package* pkg) {
     uint32_t i;
     int      pkgIndex;
     if (loader == NULL || pkg == NULL) {
@@ -3005,7 +3002,7 @@ static int ResolvePackageImportsAndSelectors(HOPPackageLoader* loader, HOPPackag
             return ErrorSimple("out of memory");
         }
         if (LoadPackageRecursive(loader, resolvedDir, &pkg->imports[i].target) != 0) {
-            const HOPParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
+            const H2ParsedFile* file = &pkg->files[pkg->imports[i].fileIndex];
             free(resolvedDir);
             return Errorf(
                 file->path,
@@ -3038,13 +3035,12 @@ static int ResolvePackageImportsAndSelectors(HOPPackageLoader* loader, HOPPackag
     return 0;
 }
 
-static int LoadPackageRecursive(
-    HOPPackageLoader* loader, const char* dirPath, HOPPackage** outPkg) {
-    char*       canonical = CanonicalizePath(dirPath);
-    HOPPackage* pkg;
-    char**      filePaths = NULL;
-    uint32_t    fileCount = 0;
-    uint32_t    i;
+static int LoadPackageRecursive(H2PackageLoader* loader, const char* dirPath, H2Package** outPkg) {
+    char*      canonical = CanonicalizePath(dirPath);
+    H2Package* pkg;
+    char**     filePaths = NULL;
+    uint32_t   fileCount = 0;
+    uint32_t   i;
 
     if (canonical == NULL) {
         return ErrorSimple("failed to resolve package path %s", dirPath);
@@ -3079,7 +3075,7 @@ static int LoadPackageRecursive(
     for (i = 0; i < fileCount; i++) {
         char*    source = NULL;
         uint32_t sourceLen = 0;
-        HOPAst   ast;
+        H2Ast    ast;
         void*    arenaMem = NULL;
         if (ReadFile(filePaths[i], &source, &sourceLen) != 0) {
             FreeStringList(filePaths, fileCount);
@@ -3120,14 +3116,14 @@ static int LoadPackageRecursive(
 }
 
 static int LoadSingleFilePackage(
-    HOPPackageLoader* loader, const char* filePath, HOPPackage** outPkg) {
-    char*       dirPath = DirNameDup(filePath);
-    HOPPackage* pkg;
-    char*       source = NULL;
-    uint32_t    sourceLen = 0;
-    HOPAst      ast;
-    void*       arenaMem = NULL;
-    uint32_t    i;
+    H2PackageLoader* loader, const char* filePath, H2Package** outPkg) {
+    char*      dirPath = DirNameDup(filePath);
+    H2Package* pkg;
+    char*      source = NULL;
+    uint32_t   sourceLen = 0;
+    H2Ast      ast;
+    void*      arenaMem = NULL;
+    uint32_t   i;
 
     if (dirPath == NULL) {
         return ErrorSimple("out of memory");
@@ -3178,7 +3174,7 @@ static int LoadSingleFilePackage(
 }
 
 static const char* _Nullable FindIdentReplacement(
-    const HOPIdentMap* _Nullable maps,
+    const H2IdentMap* _Nullable maps,
     uint32_t    mapLen,
     const char* src,
     uint32_t    start,
@@ -3200,16 +3196,16 @@ typedef struct {
     uint32_t    start;
     uint32_t    end;
     const char* replacement;
-} HOPTextRewrite;
+} H2TextRewrite;
 
 static int AddTextRewrite(
-    HOPTextRewrite** rewrites,
-    uint32_t*        len,
-    uint32_t*        cap,
-    uint32_t         start,
-    uint32_t         end,
-    const char*      replacement) {
-    if (EnsureCap((void**)rewrites, cap, *len + 1u, sizeof(HOPTextRewrite)) != 0) {
+    H2TextRewrite** rewrites,
+    uint32_t*       len,
+    uint32_t*       cap,
+    uint32_t        start,
+    uint32_t        end,
+    const char*     replacement) {
+    if (EnsureCap((void**)rewrites, cap, *len + 1u, sizeof(H2TextRewrite)) != 0) {
         return -1;
     }
     (*rewrites)[*len].start = start;
@@ -3220,11 +3216,11 @@ static int AddTextRewrite(
 }
 
 static int FindImportSymbolBindingIndexBySlice(
-    const HOPPackage* pkg, const char* src, uint32_t start, uint32_t end, int wantType) {
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end, int wantType) {
     uint32_t i;
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen;
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen;
         if ((sym->isType ? 1 : 0) != (wantType ? 1 : 0)) {
             continue;
         }
@@ -3240,19 +3236,19 @@ static int FindImportSymbolBindingIndexBySlice(
 }
 
 static int CollectTypeNameImportRewritesNode(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    HOPTextRewrite**     rewrites,
-    uint32_t*            rewriteLen,
-    uint32_t*            rewriteCap) {
-    const HOPAstNode* n;
-    int32_t           child;
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    H2TextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const H2AstNode* n;
+    int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[nodeId];
-    if (n->kind == HOPAst_TYPE_NAME) {
+    if (n->kind == H2Ast_TYPE_NAME) {
         uint32_t dot = FindSliceDot(file->source, n->dataStart, n->dataEnd);
         if (dot >= n->dataEnd) {
             int idx = FindImportSymbolBindingIndexBySlice(
@@ -3300,21 +3296,21 @@ static int CollectTypeNameImportRewritesNode(
 }
 
 static int CollectExprImportRewritesNode(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    uint8_t*             shadowCounts,
-    HOPTextRewrite**     rewrites,
-    uint32_t*            rewriteLen,
-    uint32_t*            rewriteCap) {
-    const HOPAstNode* n;
-    int32_t           child;
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    H2TextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const H2AstNode* n;
+    int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[nodeId];
     switch (n->kind) {
-        case HOPAst_IDENT: {
+        case H2Ast_IDENT: {
             int idx = FindImportSymbolBindingIndexBySlice(
                 pkg, file->source, n->dataStart, n->dataEnd, 0);
             if (idx >= 0 && shadowCounts[(uint32_t)idx] == 0) {
@@ -3332,19 +3328,19 @@ static int CollectExprImportRewritesNode(
             }
             return 0;
         }
-        case HOPAst_CALL:
-        case HOPAst_CALL_WITH_CONTEXT: {
+        case H2Ast_CALL:
+        case H2Ast_CALL_WITH_CONTEXT: {
             int32_t callee = ASTFirstChild(&file->ast, nodeId);
             if (callee >= 0 && (uint32_t)callee < file->ast.len
-                && file->ast.nodes[callee].kind == HOPAst_FIELD_EXPR)
+                && file->ast.nodes[callee].kind == H2Ast_FIELD_EXPR)
             {
-                int32_t             recv = ASTFirstChild(&file->ast, callee);
-                const HOPAstNode*   fieldExpr = &file->ast.nodes[callee];
-                const HOPImportRef* imp = NULL;
+                int32_t            recv = ASTFirstChild(&file->ast, callee);
+                const H2AstNode*   fieldExpr = &file->ast.nodes[callee];
+                const H2ImportRef* imp = NULL;
                 if (recv >= 0 && (uint32_t)recv < file->ast.len
-                    && file->ast.nodes[recv].kind == HOPAst_IDENT)
+                    && file->ast.nodes[recv].kind == H2Ast_IDENT)
                 {
-                    const HOPAstNode* recvNode = &file->ast.nodes[recv];
+                    const H2AstNode* recvNode = &file->ast.nodes[recv];
                     imp = FindImportByAliasSlice(
                         pkg, file->source, recvNode->dataStart, recvNode->dataEnd);
                 }
@@ -3378,16 +3374,16 @@ static int CollectExprImportRewritesNode(
             }
             return 0;
         }
-        case HOPAst_UNARY:
-        case HOPAst_BINARY:
-        case HOPAst_CONTEXT_OVERLAY:
-        case HOPAst_CONTEXT_BIND:
-        case HOPAst_INDEX:
-        case HOPAst_CAST:
-        case HOPAst_SIZEOF:
-        case HOPAst_NEW:
-        case HOPAst_UNWRAP:
-        case HOPAst_CALL_ARG:
+        case H2Ast_UNARY:
+        case H2Ast_BINARY:
+        case H2Ast_CONTEXT_OVERLAY:
+        case H2Ast_CONTEXT_BIND:
+        case H2Ast_INDEX:
+        case H2Ast_CAST:
+        case H2Ast_SIZEOF:
+        case H2Ast_NEW:
+        case H2Ast_UNWRAP:
+        case H2Ast_CALL_ARG:
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
                 if (CollectExprImportRewritesNode(
@@ -3399,13 +3395,13 @@ static int CollectExprImportRewritesNode(
                 child = ASTNextSibling(&file->ast, child);
             }
             return 0;
-        case HOPAst_FIELD_EXPR: {
+        case H2Ast_FIELD_EXPR: {
             int32_t recv = ASTFirstChild(&file->ast, nodeId);
             if (recv >= 0 && (uint32_t)recv < file->ast.len
-                && file->ast.nodes[recv].kind == HOPAst_IDENT)
+                && file->ast.nodes[recv].kind == H2Ast_IDENT)
             {
-                const HOPAstNode* recvNode = &file->ast.nodes[recv];
-                int               idx = FindImportSymbolBindingIndexBySlice(
+                const H2AstNode* recvNode = &file->ast.nodes[recv];
+                int              idx = FindImportSymbolBindingIndexBySlice(
                     pkg, file->source, recvNode->dataStart, recvNode->dataEnd, 1);
                 if (idx >= 0 && shadowCounts[(uint32_t)idx] == 0) {
                     if (AddTextRewrite(
@@ -3438,18 +3434,18 @@ static int CollectExprImportRewritesNode(
 }
 
 static int PushShadowIfValueImportName(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    uint32_t             start,
-    uint32_t             end,
-    uint8_t*             shadowCounts,
-    uint32_t**           shadowStack,
-    uint32_t*            shadowLen,
-    uint32_t*            shadowCap) {
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    uint32_t            start,
+    uint32_t            end,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap) {
     uint32_t i;
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
-        size_t                    nameLen = strlen(sym->localName);
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
+        size_t                   nameLen = strlen(sym->localName);
         if (nameLen != (size_t)(end - start)
             || memcmp(sym->localName, file->source + start, nameLen) != 0)
         {
@@ -3481,28 +3477,28 @@ static void PopShadowToMark(
 }
 
 static int CollectStmtImportRewritesNode(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    uint8_t*             shadowCounts,
-    uint32_t**           shadowStack,
-    uint32_t*            shadowLen,
-    uint32_t*            shadowCap,
-    HOPTextRewrite**     rewrites,
-    uint32_t*            rewriteLen,
-    uint32_t*            rewriteCap);
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    H2TextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap);
 
 static int CollectBlockImportRewritesNode(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              blockNodeId,
-    uint8_t*             shadowCounts,
-    uint32_t**           shadowStack,
-    uint32_t*            shadowLen,
-    uint32_t*            shadowCap,
-    HOPTextRewrite**     rewrites,
-    uint32_t*            rewriteLen,
-    uint32_t*            rewriteCap) {
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             blockNodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    H2TextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
     uint32_t mark = *shadowLen;
     int32_t  child = ASTFirstChild(&file->ast, blockNodeId);
     while (child >= 0) {
@@ -3528,13 +3524,13 @@ static int CollectBlockImportRewritesNode(
     return 0;
 }
 
-static int32_t VarLikeInitNode(const HOPParsedFile* file, int32_t varLikeNodeId) {
+static int32_t VarLikeInitNode(const H2ParsedFile* file, int32_t varLikeNodeId) {
     int32_t firstChild = ASTFirstChild(&file->ast, varLikeNodeId);
     int32_t afterNames;
     if (firstChild < 0) {
         return -1;
     }
-    if (file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST) {
+    if (file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST) {
         afterNames = ASTNextSibling(&file->ast, firstChild);
         if (afterNames >= 0 && IsFnReturnTypeNodeKind(file->ast.nodes[afterNames].kind)) {
             return ASTNextSibling(&file->ast, afterNames);
@@ -3547,7 +3543,7 @@ static int32_t VarLikeInitNode(const HOPParsedFile* file, int32_t varLikeNodeId)
     return firstChild;
 }
 
-uint32_t AstListCount(const HOPAst* ast, int32_t listNode) {
+uint32_t AstListCount(const H2Ast* ast, int32_t listNode) {
     uint32_t count = 0;
     int32_t  child;
     if (listNode < 0 || (uint32_t)listNode >= ast->len) {
@@ -3561,7 +3557,7 @@ uint32_t AstListCount(const HOPAst* ast, int32_t listNode) {
     return count;
 }
 
-int32_t AstListItemAt(const HOPAst* ast, int32_t listNode, uint32_t index) {
+int32_t AstListItemAt(const H2Ast* ast, int32_t listNode, uint32_t index) {
     uint32_t i = 0;
     int32_t  child;
     if (listNode < 0 || (uint32_t)listNode >= ast->len) {
@@ -3579,24 +3575,24 @@ int32_t AstListItemAt(const HOPAst* ast, int32_t listNode, uint32_t index) {
 }
 
 static int CollectStmtImportRewritesNode(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    uint8_t*             shadowCounts,
-    uint32_t**           shadowStack,
-    uint32_t*            shadowLen,
-    uint32_t*            shadowCap,
-    HOPTextRewrite**     rewrites,
-    uint32_t*            rewriteLen,
-    uint32_t*            rewriteCap) {
-    const HOPAstNode* n;
-    int32_t           child;
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    uint8_t*            shadowCounts,
+    uint32_t**          shadowStack,
+    uint32_t*           shadowLen,
+    uint32_t*           shadowCap,
+    H2TextRewrite**     rewrites,
+    uint32_t*           rewriteLen,
+    uint32_t*           rewriteCap) {
+    const H2AstNode* n;
+    int32_t          child;
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
         return 0;
     }
     n = &file->ast.nodes[nodeId];
     switch (n->kind) {
-        case HOPAst_BLOCK:
+        case H2Ast_BLOCK:
             return CollectBlockImportRewritesNode(
                 pkg,
                 file,
@@ -3608,15 +3604,15 @@ static int CollectStmtImportRewritesNode(
                 rewrites,
                 rewriteLen,
                 rewriteCap);
-        case HOPAst_VAR:
-        case HOPAst_CONST: {
+        case H2Ast_VAR:
+        case H2Ast_CONST: {
             int32_t initNode = VarLikeInitNode(file, nodeId);
             int32_t firstChild = ASTFirstChild(&file->ast, nodeId);
-            if (firstChild >= 0 && file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST) {
+            if (firstChild >= 0 && file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST) {
                 uint32_t i;
                 uint32_t nameCount = AstListCount(&file->ast, firstChild);
                 if (initNode >= 0) {
-                    if (file->ast.nodes[initNode].kind == HOPAst_EXPR_LIST) {
+                    if (file->ast.nodes[initNode].kind == H2Ast_EXPR_LIST) {
                         uint32_t initCount = AstListCount(&file->ast, initNode);
                         for (i = 0; i < initCount; i++) {
                             int32_t exprNode = AstListItemAt(&file->ast, initNode, i);
@@ -3643,8 +3639,8 @@ static int CollectStmtImportRewritesNode(
                     }
                 }
                 for (i = 0; i < nameCount; i++) {
-                    int32_t           nameNode = AstListItemAt(&file->ast, firstChild, i);
-                    const HOPAstNode* name = nameNode >= 0 ? &file->ast.nodes[nameNode] : NULL;
+                    int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+                    const H2AstNode* name = nameNode >= 0 ? &file->ast.nodes[nameNode] : NULL;
                     if (name == NULL) {
                         continue;
                     }
@@ -3681,7 +3677,7 @@ static int CollectStmtImportRewritesNode(
                 shadowLen,
                 shadowCap);
         }
-        case HOPAst_IF: {
+        case H2Ast_IF: {
             int32_t cond = ASTFirstChild(&file->ast, nodeId);
             int32_t thenNode = cond >= 0 ? ASTNextSibling(&file->ast, cond) : -1;
             int32_t elseNode = thenNode >= 0 ? ASTNextSibling(&file->ast, thenNode) : -1;
@@ -3726,18 +3722,18 @@ static int CollectStmtImportRewritesNode(
             }
             return 0;
         }
-        case HOPAst_FOR: {
-            int32_t           parts[4];
-            uint32_t          partCount = 0;
-            uint32_t          mark = *shadowLen;
-            const HOPAstNode* forNode = &file->ast.nodes[nodeId];
+        case H2Ast_FOR: {
+            int32_t          parts[4];
+            uint32_t         partCount = 0;
+            uint32_t         mark = *shadowLen;
+            const H2AstNode* forNode = &file->ast.nodes[nodeId];
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0 && partCount < 4u) {
                 parts[partCount++] = child;
                 child = ASTNextSibling(&file->ast, child);
             }
-            if ((forNode->flags & HOPAstFlag_FOR_IN) != 0) {
-                int      hasKey = (forNode->flags & HOPAstFlag_FOR_IN_HAS_KEY) != 0;
+            if ((forNode->flags & H2AstFlag_FOR_IN) != 0) {
+                int      hasKey = (forNode->flags & H2AstFlag_FOR_IN_HAS_KEY) != 0;
                 int32_t  keyNode = -1;
                 int32_t  valueNode = -1;
                 int32_t  sourceNode = -1;
@@ -3767,7 +3763,7 @@ static int CollectStmtImportRewritesNode(
                 }
                 bodyMark = *shadowLen;
                 if (hasKey && keyNode >= 0) {
-                    const HOPAstNode* key = &file->ast.nodes[keyNode];
+                    const H2AstNode* key = &file->ast.nodes[keyNode];
                     if (PushShadowIfValueImportName(
                             pkg,
                             file,
@@ -3783,8 +3779,8 @@ static int CollectStmtImportRewritesNode(
                         return -1;
                     }
                 }
-                if (valueNode >= 0 && (forNode->flags & HOPAstFlag_FOR_IN_VALUE_DISCARD) == 0) {
-                    const HOPAstNode* value = &file->ast.nodes[valueNode];
+                if (valueNode >= 0 && (forNode->flags & H2AstFlag_FOR_IN_VALUE_DISCARD) == 0) {
+                    const H2AstNode* value = &file->ast.nodes[valueNode];
                     if (PushShadowIfValueImportName(
                             pkg,
                             file,
@@ -3800,7 +3796,7 @@ static int CollectStmtImportRewritesNode(
                         return -1;
                     }
                 }
-                if (bodyNode >= 0 && file->ast.nodes[bodyNode].kind == HOPAst_BLOCK) {
+                if (bodyNode >= 0 && file->ast.nodes[bodyNode].kind == H2Ast_BLOCK) {
                     if (CollectBlockImportRewritesNode(
                             pkg,
                             file,
@@ -3825,14 +3821,14 @@ static int CollectStmtImportRewritesNode(
             if (partCount > 0) {
                 uint32_t last = partCount - 1u;
                 uint32_t idx = 0;
-                if (partCount >= 2u && file->ast.nodes[parts[0]].kind == HOPAst_VAR) {
+                if (partCount >= 2u && file->ast.nodes[parts[0]].kind == H2Ast_VAR) {
                     int32_t initNode = VarLikeInitNode(file, parts[0]);
                     int32_t firstChild = ASTFirstChild(&file->ast, parts[0]);
-                    if (firstChild >= 0 && file->ast.nodes[firstChild].kind == HOPAst_NAME_LIST) {
+                    if (firstChild >= 0 && file->ast.nodes[firstChild].kind == H2Ast_NAME_LIST) {
                         uint32_t i;
                         uint32_t nameCount = AstListCount(&file->ast, firstChild);
                         if (initNode >= 0) {
-                            if (file->ast.nodes[initNode].kind == HOPAst_EXPR_LIST) {
+                            if (file->ast.nodes[initNode].kind == H2Ast_EXPR_LIST) {
                                 uint32_t initCount = AstListCount(&file->ast, initNode);
                                 for (i = 0; i < initCount; i++) {
                                     int32_t exprNode = AstListItemAt(&file->ast, initNode, i);
@@ -3868,8 +3864,8 @@ static int CollectStmtImportRewritesNode(
                             }
                         }
                         for (i = 0; i < nameCount; i++) {
-                            int32_t           nameNode = AstListItemAt(&file->ast, firstChild, i);
-                            const HOPAstNode* name =
+                            int32_t          nameNode = AstListItemAt(&file->ast, firstChild, i);
+                            const H2AstNode* name =
                                 nameNode >= 0 ? &file->ast.nodes[nameNode] : NULL;
                             if (name == NULL) {
                                 continue;
@@ -3920,7 +3916,7 @@ static int CollectStmtImportRewritesNode(
                         }
                     }
                     idx = 1;
-                } else if (partCount >= 2u && file->ast.nodes[parts[0]].kind != HOPAst_BLOCK) {
+                } else if (partCount >= 2u && file->ast.nodes[parts[0]].kind != H2Ast_BLOCK) {
                     if (CollectExprImportRewritesNode(
                             pkg, file, parts[0], shadowCounts, rewrites, rewriteLen, rewriteCap)
                         != 0)
@@ -3931,7 +3927,7 @@ static int CollectStmtImportRewritesNode(
                     idx = 1;
                 }
                 while (idx < last) {
-                    if (file->ast.nodes[parts[idx]].kind != HOPAst_BLOCK
+                    if (file->ast.nodes[parts[idx]].kind != H2Ast_BLOCK
                         && CollectExprImportRewritesNode(
                                pkg,
                                file,
@@ -3947,7 +3943,7 @@ static int CollectStmtImportRewritesNode(
                     }
                     idx++;
                 }
-                if (file->ast.nodes[parts[last]].kind == HOPAst_BLOCK) {
+                if (file->ast.nodes[parts[last]].kind == H2Ast_BLOCK) {
                     if (CollectBlockImportRewritesNode(
                             pkg,
                             file,
@@ -3969,11 +3965,11 @@ static int CollectStmtImportRewritesNode(
             PopShadowToMark(shadowCounts, *shadowStack, shadowLen, mark);
             return 0;
         }
-        case HOPAst_SWITCH: {
+        case H2Ast_SWITCH: {
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
-                const HOPAstNode* c = &file->ast.nodes[child];
-                if (c->kind == HOPAst_CASE) {
+                const H2AstNode* c = &file->ast.nodes[child];
+                if (c->kind == H2Ast_CASE) {
                     int32_t k = ASTFirstChild(&file->ast, child);
                     int32_t last = -1;
                     while (k >= 0) {
@@ -4010,7 +4006,7 @@ static int CollectStmtImportRewritesNode(
                     {
                         return -1;
                     }
-                } else if (c->kind == HOPAst_DEFAULT) {
+                } else if (c->kind == H2Ast_DEFAULT) {
                     int32_t blk = ASTFirstChild(&file->ast, child);
                     if (blk >= 0
                         && CollectStmtImportRewritesNode(
@@ -4040,10 +4036,10 @@ static int CollectStmtImportRewritesNode(
             }
             return 0;
         }
-        case HOPAst_RETURN:
-        case HOPAst_ASSERT:
-        case HOPAst_DEL:
-        case HOPAst_EXPR_STMT: {
+        case H2Ast_RETURN:
+        case H2Ast_ASSERT:
+        case H2Ast_DEL:
+        case H2Ast_EXPR_STMT: {
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
                 if (CollectExprImportRewritesNode(
@@ -4056,7 +4052,7 @@ static int CollectStmtImportRewritesNode(
             }
             return 0;
         }
-        case HOPAst_DEFER: {
+        case H2Ast_DEFER: {
             int32_t d = ASTFirstChild(&file->ast, nodeId);
             if (d >= 0) {
                 return CollectStmtImportRewritesNode(
@@ -4078,8 +4074,8 @@ static int CollectStmtImportRewritesNode(
 }
 
 static int CompareTextRewrite(const void* a, const void* b) {
-    const HOPTextRewrite* ra = (const HOPTextRewrite*)a;
-    const HOPTextRewrite* rb = (const HOPTextRewrite*)b;
+    const H2TextRewrite* ra = (const H2TextRewrite*)a;
+    const H2TextRewrite* rb = (const H2TextRewrite*)b;
     if (ra->start < rb->start) {
         return -1;
     }
@@ -4099,19 +4095,19 @@ static int ApplyTextRewrites(
     const char* text,
     uint32_t    textLen,
     uint32_t    baseStart,
-    HOPTextRewrite* _Nullable rewrites,
+    H2TextRewrite* _Nullable rewrites,
     uint32_t rewriteLen,
     char**   outText) {
-    HOPStringBuilder b = { 0 };
-    uint32_t         i;
-    uint32_t         copyPos = 0;
+    H2StringBuilder b = { 0 };
+    uint32_t        i;
+    uint32_t        copyPos = 0;
     *outText = NULL;
 
     if (rewriteLen == 0) {
-        *outText = HOPCDupSlice(text, 0, textLen);
+        *outText = H2CDupSlice(text, 0, textLen);
         return *outText == NULL ? -1 : 0;
     }
-    qsort(rewrites, rewriteLen, sizeof(HOPTextRewrite), CompareTextRewrite);
+    qsort(rewrites, rewriteLen, sizeof(H2TextRewrite), CompareTextRewrite);
 
     for (i = 0; i < rewriteLen; i++) {
         uint32_t relStart;
@@ -4144,27 +4140,27 @@ static int ApplyTextRewrites(
 }
 
 static int RewriteDeclTextForNamedImports(
-    const HOPPackage*    pkg,
-    const HOPParsedFile* file,
-    int32_t              nodeId,
-    const char*          text,
-    char**               outText) {
-    const HOPAstNode* n;
-    HOPTextRewrite*   rewrites = NULL;
-    uint32_t          rewriteLen = 0;
-    uint32_t          rewriteCap = 0;
-    uint8_t*          shadowCounts = NULL;
-    uint32_t*         shadowStack = NULL;
-    uint32_t          shadowLen = 0;
-    uint32_t          shadowCap = 0;
-    uint32_t          mark = 0;
-    uint32_t          baseStart;
-    int32_t           child;
-    int               rc = -1;
+    const H2Package*    pkg,
+    const H2ParsedFile* file,
+    int32_t             nodeId,
+    const char*         text,
+    char**              outText) {
+    const H2AstNode* n;
+    H2TextRewrite*   rewrites = NULL;
+    uint32_t         rewriteLen = 0;
+    uint32_t         rewriteCap = 0;
+    uint8_t*         shadowCounts = NULL;
+    uint32_t*        shadowStack = NULL;
+    uint32_t         shadowLen = 0;
+    uint32_t         shadowCap = 0;
+    uint32_t         mark = 0;
+    uint32_t         baseStart;
+    int32_t          child;
+    int              rc = -1;
 
     *outText = NULL;
     if (pkg->importSymbolLen == 0) {
-        *outText = HOPCDupCStr(text);
+        *outText = H2CDupCStr(text);
         return *outText == NULL ? -1 : 0;
     }
     if (nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
@@ -4185,12 +4181,12 @@ static int RewriteDeclTextForNamedImports(
     }
 
     switch (n->kind) {
-        case HOPAst_FN:
+        case H2Ast_FN:
             mark = shadowLen;
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
-                const HOPAstNode* ch = &file->ast.nodes[child];
-                if (ch->kind == HOPAst_PARAM) {
+                const H2AstNode* ch = &file->ast.nodes[child];
+                if (ch->kind == H2Ast_PARAM) {
                     if (PushShadowIfValueImportName(
                             pkg,
                             file,
@@ -4204,7 +4200,7 @@ static int RewriteDeclTextForNamedImports(
                     {
                         goto done;
                     }
-                } else if (ch->kind == HOPAst_BLOCK) {
+                } else if (ch->kind == H2Ast_BLOCK) {
                     if (CollectBlockImportRewritesNode(
                             pkg,
                             file,
@@ -4225,7 +4221,7 @@ static int RewriteDeclTextForNamedImports(
             }
             PopShadowToMark(shadowCounts, shadowStack, &shadowLen, mark);
             break;
-        case HOPAst_CONST: {
+        case H2Ast_CONST: {
             int32_t initNode = VarLikeInitNode(file, nodeId);
             if (initNode >= 0
                 && CollectExprImportRewritesNode(
@@ -4236,11 +4232,11 @@ static int RewriteDeclTextForNamedImports(
             }
             break;
         }
-        case HOPAst_ENUM: {
+        case H2Ast_ENUM: {
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {
-                const HOPAstNode* c = &file->ast.nodes[child];
-                if (c->kind == HOPAst_FIELD) {
+                const H2AstNode* c = &file->ast.nodes[child];
+                if (c->kind == H2Ast_FIELD) {
                     int32_t expr = ASTFirstChild(&file->ast, child);
                     if (expr >= 0
                         && CollectExprImportRewritesNode(
@@ -4274,26 +4270,26 @@ done:
 static int RewriteText(
     const char* src,
     uint32_t    srcLen,
-    const HOPImportRef* _Nullable imports,
+    const H2ImportRef* _Nullable imports,
     uint32_t importLen,
-    const HOPIdentMap* _Nullable maps,
+    const H2IdentMap* _Nullable maps,
     uint32_t mapLen,
     char**   outText) {
-    void*            arenaMem = NULL;
-    size_t           arenaCap;
-    uint64_t         arenaCap64;
-    HOPArena         arena;
-    HOPTokenStream   stream;
-    HOPDiag          diag = { 0 };
-    HOPStringBuilder b = { 0 };
-    uint32_t         i;
-    uint32_t         copyPos = 0;
+    void*           arenaMem = NULL;
+    size_t          arenaCap;
+    uint64_t        arenaCap64;
+    H2Arena         arena;
+    H2TokenStream   stream;
+    H2Diag          diag = { 0 };
+    H2StringBuilder b = { 0 };
+    uint32_t        i;
+    uint32_t        copyPos = 0;
 
     *outText = NULL;
     if ((importLen > 0 && imports == NULL) || (mapLen > 0 && maps == NULL)) {
         return ErrorSimple("internal error: missing rewrite mappings");
     }
-    arenaCap64 = (uint64_t)(srcLen + 16u) * (uint64_t)sizeof(HOPToken) + 4096u;
+    arenaCap64 = (uint64_t)(srcLen + 16u) * (uint64_t)sizeof(H2Token) + 4096u;
     if (arenaCap64 > (uint64_t)SIZE_MAX) {
         return ErrorSimple("arena too large");
     }
@@ -4303,20 +4299,20 @@ static int RewriteText(
         return ErrorSimple("out of memory");
     }
 
-    HOPArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
-    if (HOPLex(&arena, (HOPStrView){ src, srcLen }, &stream, &diag) != 0) {
+    H2ArenaInit(&arena, arenaMem, (uint32_t)arenaCap);
+    if (H2Lex(&arena, (H2StrView){ src, srcLen }, &stream, &diag) != 0) {
         free(arenaMem);
         return ErrorSimple("rewrite lex failed");
     }
 
     for (i = 0; i < stream.len; i++) {
-        const HOPToken* t = &stream.v[i];
-        if (t->kind == HOPTok_EOF) {
+        const H2Token* t = &stream.v[i];
+        if (t->kind == H2Tok_EOF) {
             break;
         }
 
-        if (importLen > 0 && i + 2u < stream.len && t->kind == HOPTok_IDENT
-            && stream.v[i + 1u].kind == HOPTok_DOT && stream.v[i + 2u].kind == HOPTok_IDENT)
+        if (importLen > 0 && i + 2u < stream.len && t->kind == H2Tok_IDENT
+            && stream.v[i + 1u].kind == H2Tok_DOT && stream.v[i + 2u].kind == H2Tok_IDENT)
         {
             uint32_t j;
             for (j = 0; j < importLen; j++) {
@@ -4351,7 +4347,7 @@ static int RewriteText(
             free(arenaMem);
             return ErrorSimple("out of memory");
         }
-        if (t->kind == HOPTok_IDENT && mapLen > 0) {
+        if (t->kind == H2Tok_IDENT && mapLen > 0) {
             const char* repl = FindIdentReplacement(maps, mapLen, src, t->start, t->end);
             if (repl != NULL) {
                 if (SBAppendCStr(&b, repl) != 0) {
@@ -4386,7 +4382,7 @@ static int RewriteText(
 }
 
 int BuildPrefixedName(const char* alias, const char* name, char** outName) {
-    HOPStringBuilder b = { 0 };
+    H2StringBuilder b = { 0 };
     *outName = NULL;
     if (SBAppendCStr(&b, alias) != 0 || SBAppendCStr(&b, "__") != 0 || SBAppendCStr(&b, name) != 0)
     {
@@ -4398,15 +4394,15 @@ int BuildPrefixedName(const char* alias, const char* name, char** outName) {
 }
 
 int RewriteAliasedPubDeclText(
-    const HOPPackage* sourcePkg, const HOPSymbolDecl* pubDecl, const char* alias, char** outText) {
-    HOPIdentMap* maps = NULL;
-    uint32_t     i;
-    int          rc = -1;
+    const H2Package* sourcePkg, const H2SymbolDecl* pubDecl, const char* alias, char** outText) {
+    H2IdentMap* maps = NULL;
+    uint32_t    i;
+    int         rc = -1;
     *outText = NULL;
     if (sourcePkg->pubDeclLen == 0) {
         return ErrorSimple("internal error: empty public declaration set");
     }
-    maps = (HOPIdentMap*)calloc(sourcePkg->pubDeclLen, sizeof(HOPIdentMap));
+    maps = (H2IdentMap*)calloc(sourcePkg->pubDeclLen, sizeof(H2IdentMap));
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -4444,16 +4440,16 @@ int BuildFnImportShapeAndWrapper(
     const char* _Nullable qualifiedName,
     char** _Nullable outShapeKey,
     char** _Nullable outWrapperDeclText) {
-    HOPAst           ast = { 0 };
-    void*            arenaMem = NULL;
-    int32_t          fnNode = -1;
-    int32_t          child;
-    int32_t          returnTypeNode = -1;
-    int32_t          contextTypeNode = -1;
-    HOPStringBuilder shape = { 0 };
-    HOPStringBuilder wrapper = { 0 };
-    HOPStringBuilder callArgs = { 0 };
-    uint32_t         paramIndex = 0;
+    H2Ast           ast = { 0 };
+    void*           arenaMem = NULL;
+    int32_t         fnNode = -1;
+    int32_t         child;
+    int32_t         returnTypeNode = -1;
+    int32_t         contextTypeNode = -1;
+    H2StringBuilder shape = { 0 };
+    H2StringBuilder wrapper = { 0 };
+    H2StringBuilder callArgs = { 0 };
+    uint32_t        paramIndex = 0;
 
     if (aliasedDeclText == NULL || localName == NULL || qualifiedName == NULL || outShapeKey == NULL
         || outWrapperDeclText == NULL)
@@ -4477,7 +4473,7 @@ int BuildFnImportShapeAndWrapper(
     }
 
     fnNode = ASTFirstChild(&ast, ast.root);
-    if (fnNode < 0 || (uint32_t)fnNode >= ast.len || ast.nodes[fnNode].kind != HOPAst_FN) {
+    if (fnNode < 0 || (uint32_t)fnNode >= ast.len || ast.nodes[fnNode].kind != H2Ast_FN) {
         free(arenaMem);
         return ErrorSimple("internal error: expected function declaration in rewritten import");
     }
@@ -4488,10 +4484,10 @@ int BuildFnImportShapeAndWrapper(
     }
     child = ASTFirstChild(&ast, fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast.nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &ast.nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             /* handled later */
-        } else if (n->kind == HOPAst_CONTEXT_CLAUSE) {
+        } else if (n->kind == H2Ast_CONTEXT_CLAUSE) {
             contextTypeNode = ASTFirstChild(&ast, child);
         } else if (IsFnReturnTypeNodeKind(n->kind) && n->flags == 1u) {
             returnTypeNode = child;
@@ -4527,8 +4523,8 @@ int BuildFnImportShapeAndWrapper(
 
     child = ASTFirstChild(&ast, fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &ast.nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &ast.nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             int32_t     typeNode = ASTFirstChild(&ast, child);
             uint32_t    nameStart = n->dataStart;
             uint32_t    nameEnd = n->dataEnd;
@@ -4659,24 +4655,24 @@ oom:
 }
 
 static int AppendAliasedPubDecls(
-    HOPStringBuilder* b,
-    const HOPPackage* sourcePkg,
-    const char*       alias,
-    const HOPImportRef* _Nullable imports,
+    H2StringBuilder* b,
+    const H2Package* sourcePkg,
+    const char*      alias,
+    const H2ImportRef* _Nullable imports,
     uint32_t importLen,
     int      includePrivateDecls,
     int      forceFunctionDeclsOnly) {
-    HOPIdentMap* maps = NULL;
-    uint32_t     mapLen = 0;
-    uint32_t     declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
-    uint32_t     j;
-    int          rc = -1;
+    H2IdentMap* maps = NULL;
+    uint32_t    mapLen = 0;
+    uint32_t    declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
+    uint32_t    j;
+    int         rc = -1;
 
     if (declLen == 0 && sourcePkg->pubDeclLen == 0) {
         return 0;
     }
     mapLen = declLen + sourcePkg->pubDeclLen;
-    maps = (HOPIdentMap*)calloc(mapLen, sizeof(HOPIdentMap));
+    maps = (H2IdentMap*)calloc(mapLen, sizeof(H2IdentMap));
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
@@ -4704,7 +4700,7 @@ static int AppendAliasedPubDecls(
         const char* rewriteSource = declText;
         uint32_t    rewriteSourceLen;
         char*       rewritten = NULL;
-        if (forceFunctionDeclsOnly && sourcePkg->pubDecls[j].kind == HOPAst_FN) {
+        if (forceFunctionDeclsOnly && sourcePkg->pubDecls[j].kind == H2Ast_FN) {
             const char* bodyStart = strchr(declText, '{');
             if (bodyStart != NULL) {
                 size_t declLenNoBody = (size_t)(bodyStart - declText);
@@ -4736,10 +4732,10 @@ static int AppendAliasedPubDecls(
         free(rewritten);
     }
     for (j = 0; j < declLen; j++) {
-        const HOPSymbolDecl* decl = &sourcePkg->decls[j];
-        const HOPParsedFile* file = &sourcePkg->files[decl->fileIndex];
-        char*                namedRewritten = NULL;
-        char*                rewritten = NULL;
+        const H2SymbolDecl* decl = &sourcePkg->decls[j];
+        const H2ParsedFile* file = &sourcePkg->files[decl->fileIndex];
+        char*               namedRewritten = NULL;
+        char*               rewritten = NULL;
         rc = RewriteDeclTextForNamedImports(
             sourcePkg, file, decl->nodeId, decl->declText, &namedRewritten);
         if (rc != 0) {
@@ -4781,25 +4777,25 @@ done:
 }
 
 typedef struct {
-    const HOPPackage* pkg;
-    const char*       alias;
-} HOPEmittedImportSurface;
+    const H2Package* pkg;
+    const char*      alias;
+} H2EmittedImportSurface;
 
 static int EnsureEmittedImportSurfaceCap(
-    HOPEmittedImportSurface** outArr, uint32_t* outCap, uint32_t needLen) {
+    H2EmittedImportSurface** outArr, uint32_t* outCap, uint32_t needLen) {
     if (needLen <= *outCap) {
         return 0;
     }
     {
-        uint32_t                 nextCap = *outCap == 0 ? 8u : *outCap;
-        HOPEmittedImportSurface* p;
+        uint32_t                nextCap = *outCap == 0 ? 8u : *outCap;
+        H2EmittedImportSurface* p;
         while (nextCap < needLen) {
             if (nextCap > UINT32_MAX / 2u) {
                 return -1;
             }
             nextCap *= 2u;
         }
-        p = (HOPEmittedImportSurface*)realloc(*outArr, (size_t)nextCap * sizeof(**outArr));
+        p = (H2EmittedImportSurface*)realloc(*outArr, (size_t)nextCap * sizeof(**outArr));
         if (p == NULL) {
             return -1;
         }
@@ -4810,9 +4806,9 @@ static int EnsureEmittedImportSurfaceCap(
 }
 
 static int HasEmittedImportSurface(
-    const HOPEmittedImportSurface* _Nullable arr,
+    const H2EmittedImportSurface* _Nullable arr,
     uint32_t len,
-    const HOPPackage* _Nullable pkg,
+    const H2Package* _Nullable pkg,
     const char* _Nullable alias) {
     uint32_t i;
     if (arr == NULL || pkg == NULL || alias == NULL) {
@@ -4826,13 +4822,13 @@ static int HasEmittedImportSurface(
     return 0;
 }
 
-static int PackageNeedsPrivateDeclSurface(const HOPPackage* pkg) {
+static int PackageNeedsPrivateDeclSurface(const H2Package* pkg) {
     uint32_t i;
     if (pkg->name != NULL && StrEq(pkg->name, "builtin")) {
         return 0;
     }
     for (i = 0; i < pkg->pubDeclLen; i++) {
-        if (pkg->pubDecls[i].kind == HOPAst_FN) {
+        if (pkg->pubDecls[i].kind == H2Ast_FN) {
             return 1;
         }
     }
@@ -4840,14 +4836,14 @@ static int PackageNeedsPrivateDeclSurface(const HOPPackage* pkg) {
 }
 
 static int AppendImportedPackageSurface(
-    HOPStringBuilder*         b,
-    const HOPPackageLoader*   loader,
-    const HOPPackage*         dep,
-    const char*               alias,
-    int                       includePrivateImportDecls,
-    HOPEmittedImportSurface** emitted,
-    uint32_t*                 emittedLen,
-    uint32_t*                 emittedCap) {
+    H2StringBuilder*         b,
+    const H2PackageLoader*   loader,
+    const H2Package*         dep,
+    const char*              alias,
+    int                      includePrivateImportDecls,
+    H2EmittedImportSurface** emitted,
+    uint32_t*                emittedLen,
+    uint32_t*                emittedCap) {
     uint32_t j;
     int      includePrivateDecls;
     if (b == NULL || dep == NULL || alias == NULL || emitted == NULL || emittedLen == NULL
@@ -4862,7 +4858,7 @@ static int AppendImportedPackageSurface(
     /* Make direct imported exported types/symbols from dep available when dep's
      * own exported API references them. */
     for (j = 0; j < dep->importLen; j++) {
-        const HOPPackage* subDep = dep->imports[j].target;
+        const H2Package* subDep = dep->imports[j].target;
         if (subDep == NULL) {
             return ErrorSimple("internal error: unresolved import");
         }
@@ -4916,10 +4912,10 @@ static int AppendImportedPackageSurface(
     return 0;
 }
 
-static int AppendImportFunctionWrappers(HOPStringBuilder* b, const HOPPackage* pkg) {
+static int AppendImportFunctionWrappers(H2StringBuilder* b, const H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importSymbolLen; i++) {
-        const HOPImportSymbolRef* sym = &pkg->importSymbols[i];
+        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
         if (!sym->isFunction || !sym->useWrapper || sym->wrapperDeclText == NULL) {
             continue;
         }
@@ -4931,18 +4927,18 @@ static int AppendImportFunctionWrappers(HOPStringBuilder* b, const HOPPackage* p
 }
 
 int BuildCombinedPackageSource(
-    HOPPackageLoader* loader,
-    const HOPPackage* pkg,
-    int               includePrivateImportDecls,
-    char**            outSource,
-    uint32_t*         outLen,
-    HOPCombinedSourceMap* _Nullable sourceMap,
+    H2PackageLoader* loader,
+    const H2Package* pkg,
+    int              includePrivateImportDecls,
+    char**           outSource,
+    uint32_t*        outLen,
+    H2CombinedSourceMap* _Nullable sourceMap,
     uint32_t* _Nullable outOwnDeclStartOffset) {
-    HOPStringBuilder         b = { 0 };
-    uint32_t                 i;
-    HOPEmittedImportSurface* emitted = NULL;
-    uint32_t                 emittedLen = 0;
-    uint32_t                 emittedCap = 0;
+    H2StringBuilder         b = { 0 };
+    uint32_t                i;
+    H2EmittedImportSurface* emitted = NULL;
+    uint32_t                emittedLen = 0;
+    uint32_t                emittedCap = 0;
     (void)loader;
     *outSource = NULL;
     *outLen = 0;
@@ -4954,7 +4950,7 @@ int BuildCombinedPackageSource(
     }
 
     for (i = 0; i < pkg->importLen; i++) {
-        const HOPPackage* dep = pkg->imports[i].target;
+        const H2Package* dep = pkg->imports[i].target;
         if (AppendImportedPackageSurface(
                 &b,
                 loader,
@@ -4981,15 +4977,15 @@ int BuildCombinedPackageSource(
     }
 
     for (i = 0; i < pkg->declTextLen; i++) {
-        const HOPDeclText*   decl = &pkg->declTexts[i];
-        const HOPParsedFile* file = &pkg->files[decl->fileIndex];
-        char*                namedRewritten = NULL;
-        char*                rewritten = NULL;
-        uint32_t             combinedStart;
-        uint32_t             combinedEnd;
-        uint32_t             sourceStart = decl->sourceStart;
-        uint32_t             sourceEnd = decl->sourceEnd;
-        uint32_t             rewrittenLen;
+        const H2DeclText*   decl = &pkg->declTexts[i];
+        const H2ParsedFile* file = &pkg->files[decl->fileIndex];
+        char*               namedRewritten = NULL;
+        char*               rewritten = NULL;
+        uint32_t            combinedStart;
+        uint32_t            combinedEnd;
+        uint32_t            sourceStart = decl->sourceStart;
+        uint32_t            sourceEnd = decl->sourceEnd;
+        uint32_t            rewrittenLen;
         if (RewriteDeclTextForNamedImports(pkg, file, decl->nodeId, decl->text, &namedRewritten)
             != 0)
         {
@@ -5064,16 +5060,15 @@ int BuildCombinedPackageSource(
     return 0;
 }
 
-static int CheckLoadedPackage(
-    HOPPackageLoader* loader, HOPPackage* pkg, int suppressUnusedWarnings) {
-    char*                source = NULL;
-    uint32_t             sourceLen = 0;
-    int                  lineColDiag = 0;
-    const char*          checkPath = pkg->dirPath;
-    const char*          checkSource = NULL;
-    uint32_t             checkSourceLen = 0;
-    HOPCombinedSourceMap sourceMap = { 0 };
-    int                  useSingleFileRemap = (pkg->fileLen == 1 && pkg->importLen > 0);
+static int CheckLoadedPackage(H2PackageLoader* loader, H2Package* pkg, int suppressUnusedWarnings) {
+    char*               source = NULL;
+    uint32_t            sourceLen = 0;
+    int                 lineColDiag = 0;
+    const char*         checkPath = pkg->dirPath;
+    const char*         checkSource = NULL;
+    uint32_t            checkSourceLen = 0;
+    H2CombinedSourceMap sourceMap = { 0 };
+    int                 useSingleFileRemap = (pkg->fileLen == 1 && pkg->importLen > 0);
     if (pkg->checked) {
         return 0;
     }
@@ -5114,11 +5109,11 @@ static int CheckLoadedPackage(
     CombinedSourceMapFree(&sourceMap);
     free(source);
     if (pkg->fileLen == 1 && pkg->files[0].source != NULL) {
-        uint64_t            tcArenaCap64;
-        uint32_t            tcArenaCap;
-        HOPTypeCheckCtx*    tcCtx;
-        HOPDiag             tcDiag = { 0 };
-        HOPTypeCheckOptions tcOptions = { 0 };
+        uint64_t           tcArenaCap64;
+        uint32_t           tcArenaCap;
+        H2TypeCheckCtx*    tcCtx;
+        H2Diag             tcDiag = { 0 };
+        H2TypeCheckOptions tcOptions = { 0 };
         tcArenaCap64 = (uint64_t)pkg->files[0].sourceLen * 256u + 1024u * 1024u;
         if (tcArenaCap64 > UINT32_MAX) {
             return ErrorSimple("typecheck arena too large");
@@ -5128,26 +5123,26 @@ static int CheckLoadedPackage(
         if (pkg->files[0].typecheckArenaMem == NULL) {
             return ErrorSimple("out of memory");
         }
-        HOPArenaInit(&pkg->files[0].typecheckArena, pkg->files[0].typecheckArenaMem, tcArenaCap);
-        HOPArenaSetAllocator(
+        H2ArenaInit(&pkg->files[0].typecheckArena, pkg->files[0].typecheckArenaMem, tcArenaCap);
+        H2ArenaSetAllocator(
             &pkg->files[0].typecheckArena, NULL, CodegenArenaGrow, CodegenArenaFree);
-        tcCtx = (HOPTypeCheckCtx*)HOPArenaAlloc(
+        tcCtx = (H2TypeCheckCtx*)H2ArenaAlloc(
             &pkg->files[0].typecheckArena,
-            sizeof(HOPTypeCheckCtx),
-            (uint32_t)_Alignof(HOPTypeCheckCtx));
+            sizeof(H2TypeCheckCtx),
+            (uint32_t)_Alignof(H2TypeCheckCtx));
         if (tcCtx == NULL) {
             return ErrorSimple("out of memory");
         }
-        if (HOPTCBuildCheckedContext(
+        if (H2TCBuildCheckedContext(
                 &pkg->files[0].typecheckArena,
                 &pkg->files[0].ast,
-                (HOPStrView){ pkg->files[0].source, pkg->files[0].sourceLen },
+                (H2StrView){ pkg->files[0].source, pkg->files[0].sourceLen },
                 &tcOptions,
                 &tcDiag,
                 tcCtx)
             != 0)
         {
-            HOPArenaDispose(&pkg->files[0].typecheckArena);
+            H2ArenaDispose(&pkg->files[0].typecheckArena);
             free(pkg->files[0].typecheckArenaMem);
             pkg->files[0].typecheckArenaMem = NULL;
             pkg->files[0].typecheckCtx = NULL;
@@ -5161,7 +5156,7 @@ static int CheckLoadedPackage(
     return 0;
 }
 
-static void FreePackage(HOPPackage* pkg) {
+static void FreePackage(H2Package* pkg) {
     uint32_t i;
     free(pkg->dirPath);
     free(pkg->name);
@@ -5170,7 +5165,7 @@ static void FreePackage(HOPPackage* pkg) {
         free(pkg->files[i].source);
         free(pkg->files[i].arenaMem);
         if (pkg->files[i].typecheckArenaMem != NULL) {
-            HOPArenaDispose(&pkg->files[i].typecheckArena);
+            H2ArenaDispose(&pkg->files[i].typecheckArena);
         }
         free(pkg->files[i].typecheckArenaMem);
     }
@@ -5206,7 +5201,7 @@ static void FreePackage(HOPPackage* pkg) {
     memset(pkg, 0, sizeof(*pkg));
 }
 
-void FreeLoader(HOPPackageLoader* loader) {
+void FreeLoader(H2PackageLoader* loader) {
     uint32_t i;
     for (i = 0; i < loader->packageLen; i++) {
         FreePackage(&loader->packages[i]);
@@ -5221,14 +5216,14 @@ void FreeLoader(HOPPackageLoader* loader) {
 int LoadPackageForFmt(
     const char* entryPath,
     const char* _Nullable platformTarget,
-    HOPPackageLoader* outLoader,
-    HOPPackage**      outEntryPkg) {
-    char*            canonical = CanonicalizePath(entryPath);
-    struct stat      st;
-    char*            pkgDir = NULL;
-    char*            rootDir;
-    HOPPackageLoader loader;
-    HOPPackage*      entryPkg = NULL;
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg) {
+    char*           canonical = CanonicalizePath(entryPath);
+    struct stat     st;
+    char*           pkgDir = NULL;
+    char*           rootDir;
+    H2PackageLoader loader;
+    H2Package*      entryPkg = NULL;
     memset(outLoader, 0, sizeof(*outLoader));
     *outEntryPkg = NULL;
     if (canonical == NULL) {
@@ -5258,11 +5253,11 @@ int LoadPackageForFmt(
     }
     memset(&loader, 0, sizeof(loader));
     loader.rootDir = rootDir;
-    loader.platformTarget = HOPCDupCStr(
+    loader.platformTarget = H2CDupCStr(
         (platformTarget != NULL && platformTarget[0] != '\0')
             ? platformTarget
-            : HOP_DEFAULT_PLATFORM_TARGET);
-    loader.archTarget = HOPCDupCStr(HOP_DEFAULT_ARCH_TARGET);
+            : H2_DEFAULT_PLATFORM_TARGET);
+    loader.archTarget = H2CDupCStr(H2_DEFAULT_ARCH_TARGET);
     if (loader.platformTarget == NULL || loader.archTarget == NULL) {
         free(pkgDir);
         free(canonical);
@@ -5302,16 +5297,16 @@ int LoadAndCheckPackage(
     const char* entryPath,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
-    int               testingBuild,
-    HOPPackageLoader* outLoader,
-    HOPPackage**      outEntryPkg) {
-    char*            canonical = CanonicalizePath(entryPath);
-    struct stat      st;
-    char*            pkgDir = NULL;
-    char*            rootDir;
-    HOPPackageLoader loader;
-    HOPPackage*      entryPkg = NULL;
-    uint32_t         i;
+    int              testingBuild,
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg) {
+    char*           canonical = CanonicalizePath(entryPath);
+    struct stat     st;
+    char*           pkgDir = NULL;
+    char*           rootDir;
+    H2PackageLoader loader;
+    H2Package*      entryPkg = NULL;
+    uint32_t        i;
     memset(outLoader, 0, sizeof(*outLoader));
     *outEntryPkg = NULL;
     if (canonical == NULL) {
@@ -5344,12 +5339,12 @@ int LoadAndCheckPackage(
 
     memset(&loader, 0, sizeof(loader));
     loader.rootDir = rootDir;
-    loader.platformTarget = HOPCDupCStr(
+    loader.platformTarget = H2CDupCStr(
         (platformTarget != NULL && platformTarget[0] != '\0')
             ? platformTarget
-            : HOP_DEFAULT_PLATFORM_TARGET);
-    loader.archTarget = HOPCDupCStr(
-        (archTarget != NULL && archTarget[0] != '\0') ? archTarget : HOP_DEFAULT_ARCH_TARGET);
+            : H2_DEFAULT_PLATFORM_TARGET);
+    loader.archTarget = H2CDupCStr(
+        (archTarget != NULL && archTarget[0] != '\0') ? archTarget : H2_DEFAULT_ARCH_TARGET);
     loader.testingBuild = testingBuild;
     if (loader.platformTarget == NULL || loader.archTarget == NULL) {
         free(pkgDir);
@@ -5398,7 +5393,7 @@ int LoadAndCheckPackage(
     return 0;
 }
 
-int ValidateEntryMainSignature(const HOPPackage* _Nullable entryPkg) {
+int ValidateEntryMainSignature(const H2Package* _Nullable entryPkg) {
     uint32_t fileIndex;
     int      hasMainDefinition = 0;
 
@@ -5407,13 +5402,13 @@ int ValidateEntryMainSignature(const HOPPackage* _Nullable entryPkg) {
     }
 
     for (fileIndex = 0; fileIndex < entryPkg->fileLen; fileIndex++) {
-        const HOPParsedFile* file = &entryPkg->files[fileIndex];
-        const HOPAst*        ast = &file->ast;
-        int32_t              nodeId = ASTFirstChild(ast, ast->root);
+        const H2ParsedFile* file = &entryPkg->files[fileIndex];
+        const H2Ast*        ast = &file->ast;
+        int32_t             nodeId = ASTFirstChild(ast, ast->root);
 
         while (nodeId >= 0) {
-            const HOPAstNode* n = &ast->nodes[nodeId];
-            if (n->kind == HOPAst_FN && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "main"))
+            const H2AstNode* n = &ast->nodes[nodeId];
+            if (n->kind == H2Ast_FN && SliceEqCStr(file->source, n->dataStart, n->dataEnd, "main"))
             {
                 int32_t child = ASTFirstChild(ast, nodeId);
                 int     paramCount = 0;
@@ -5421,12 +5416,12 @@ int ValidateEntryMainSignature(const HOPPackage* _Nullable entryPkg) {
                 int     hasBody = 0;
 
                 while (child >= 0) {
-                    const HOPAstNode* ch = &ast->nodes[child];
-                    if (ch->kind == HOPAst_PARAM) {
+                    const H2AstNode* ch = &ast->nodes[child];
+                    if (ch->kind == H2Ast_PARAM) {
                         paramCount++;
                     } else if (IsFnReturnTypeNodeKind(ch->kind) && ch->flags == 1) {
                         hasReturnType = 1;
-                    } else if (ch->kind == HOPAst_BLOCK) {
+                    } else if (ch->kind == H2Ast_BLOCK) {
                         hasBody = 1;
                     }
                     child = ASTNextSibling(ast, child);
@@ -5460,8 +5455,8 @@ int CheckPackageDir(
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild) {
-    HOPPackageLoader loader;
-    HOPPackage*      entryPkg = NULL;
+    H2PackageLoader loader;
+    H2Package*      entryPkg = NULL;
     if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
     {
@@ -5472,4 +5467,4 @@ int CheckPackageDir(
     return 0;
 }
 
-HOP_API_END
+H2_API_END

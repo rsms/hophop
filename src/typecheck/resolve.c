@@ -2,67 +2,67 @@
 #include "../mir_exec.h"
 #include "../mir_lower_stmt.h"
 
-HOP_API_BEGIN
+H2_API_BEGIN
 
-static int HOPTCFailGenericTypeArgArity(
-    HOPTypeCheckCtx* c,
-    int32_t          nodeId,
-    uint32_t         nameStart,
-    uint32_t         nameEnd,
-    uint16_t         expected,
-    uint16_t         got) {
-    char         detailBuf[256];
-    char         expectedBuf[16];
-    char         gotBuf[16];
-    HOPTCTextBuf detailText;
-    HOPTCTextBuf expectedText;
-    HOPTCTextBuf gotText;
-    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
-    HOPTCTextBufInit(&expectedText, expectedBuf, (uint32_t)sizeof(expectedBuf));
-    HOPTCTextBufInit(&gotText, gotBuf, (uint32_t)sizeof(gotBuf));
-    HOPTCTextBufAppendU32(&expectedText, expected);
-    HOPTCTextBufAppendU32(&gotText, got);
-    HOPTCTextBufAppendCStr(&detailText, "generic type '");
-    HOPTCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
-    HOPTCTextBufAppendCStr(&detailText, "' expects ");
-    HOPTCTextBufAppendCStr(&detailText, expectedBuf);
-    HOPTCTextBufAppendCStr(&detailText, " type arguments, got ");
-    HOPTCTextBufAppendCStr(&detailText, gotBuf);
-    return HOPTCFailDiagText(c, nodeId, HOPDiag_GENERIC_TYPE_ARITY_MISMATCH, detailBuf);
+static int H2TCFailGenericTypeArgArity(
+    H2TypeCheckCtx* c,
+    int32_t         nodeId,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    uint16_t        expected,
+    uint16_t        got) {
+    char        detailBuf[256];
+    char        expectedBuf[16];
+    char        gotBuf[16];
+    H2TCTextBuf detailText;
+    H2TCTextBuf expectedText;
+    H2TCTextBuf gotText;
+    H2TCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    H2TCTextBufInit(&expectedText, expectedBuf, (uint32_t)sizeof(expectedBuf));
+    H2TCTextBufInit(&gotText, gotBuf, (uint32_t)sizeof(gotBuf));
+    H2TCTextBufAppendU32(&expectedText, expected);
+    H2TCTextBufAppendU32(&gotText, got);
+    H2TCTextBufAppendCStr(&detailText, "generic type '");
+    H2TCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
+    H2TCTextBufAppendCStr(&detailText, "' expects ");
+    H2TCTextBufAppendCStr(&detailText, expectedBuf);
+    H2TCTextBufAppendCStr(&detailText, " type arguments, got ");
+    H2TCTextBufAppendCStr(&detailText, gotBuf);
+    return H2TCFailDiagText(c, nodeId, H2Diag_GENERIC_TYPE_ARITY_MISMATCH, detailBuf);
 }
 
-static int HOPTCFailGenericTypeArgsRequired(
-    HOPTypeCheckCtx* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
-    char         detailBuf[256];
-    HOPTCTextBuf detailText;
-    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
-    HOPTCTextBufAppendCStr(&detailText, "generic type '");
-    HOPTCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
-    HOPTCTextBufAppendCStr(&detailText, "' requires explicit type arguments");
-    return HOPTCFailDiagText(c, nodeId, HOPDiag_GENERIC_TYPE_ARGS_REQUIRED, detailBuf);
+static int H2TCFailGenericTypeArgsRequired(
+    H2TypeCheckCtx* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
+    char        detailBuf[256];
+    H2TCTextBuf detailText;
+    H2TCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    H2TCTextBufAppendCStr(&detailText, "generic type '");
+    H2TCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
+    H2TCTextBufAppendCStr(&detailText, "' requires explicit type arguments");
+    return H2TCFailDiagText(c, nodeId, H2Diag_GENERIC_TYPE_ARGS_REQUIRED, detailBuf);
 }
 
-static void HOPTCResolveMirSetReasonCb(
+static void H2TCResolveMirSetReasonCb(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
-    HOPTCConstSetReason((HOPTCConstEvalCtx*)ctx, start, end, reason);
+    H2TCConstSetReason((H2TCConstEvalCtx*)ctx, start, end, reason);
 }
 
-static int HOPTCTryMirConstBlock(
-    HOPTCConstEvalCtx* evalCtx,
-    int32_t            blockNode,
-    HOPCTFEValue*      outValue,
-    int*               outDidReturn,
-    int*               outIsConst,
-    int*               outSupported) {
-    HOPTypeCheckCtx*      c;
-    HOPMirProgram         program = { 0 };
-    HOPMirExecEnv         env = { 0 };
-    HOPMirLowerOptions    options = { 0 };
-    HOPTCMirConstLowerCtx lowerCtx;
-    uint32_t              mirFnIndex = UINT32_MAX;
-    int                   supported = 0;
-    int                   mirIsConst = 0;
-    int                   rewriteRc;
+static int H2TCTryMirConstBlock(
+    H2TCConstEvalCtx* evalCtx,
+    int32_t           blockNode,
+    H2CTFEValue*      outValue,
+    int*              outDidReturn,
+    int*              outIsConst,
+    int*              outSupported) {
+    H2TypeCheckCtx*      c;
+    H2MirProgram         program = { 0 };
+    H2MirExecEnv         env = { 0 };
+    H2MirLowerOptions    options = { 0 };
+    H2TCMirConstLowerCtx lowerCtx;
+    uint32_t             mirFnIndex = UINT32_MAX;
+    int                  supported = 0;
+    int                  mirIsConst = 0;
+    int                  rewriteRc;
     if (outDidReturn != NULL) {
         *outDidReturn = 0;
     }
@@ -81,12 +81,12 @@ static int HOPTCTryMirConstBlock(
     if (c == NULL) {
         return -1;
     }
-    if (HOPTCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
+    if (H2TCMirConstInitLowerCtx(evalCtx, &lowerCtx) != 0) {
         return -1;
     }
-    options.lowerConstExpr = HOPTCMirConstLowerConstExpr;
+    options.lowerConstExpr = H2TCMirConstLowerConstExpr;
     options.lowerConstExprCtx = evalCtx;
-    if (HOPMirLowerAppendSimpleFunctionWithOptions(
+    if (H2MirLowerAppendSimpleFunctionWithOptions(
             &lowerCtx.builder,
             c->arena,
             c->ast,
@@ -102,51 +102,51 @@ static int HOPTCTryMirConstBlock(
         return -1;
     }
     if (!supported || mirFnIndex == UINT32_MAX) {
-        HOPTCMirConstAdoptLowerDiagReason(evalCtx, c->diag);
+        H2TCMirConstAdoptLowerDiagReason(evalCtx, c->diag);
         return 0;
     }
-    rewriteRc = HOPTCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex, blockNode);
+    rewriteRc = H2TCMirConstRewriteDirectCalls(&lowerCtx, mirFnIndex, blockNode);
     if (rewriteRc < 0) {
         return -1;
     }
     if (rewriteRc == 0) {
         return 0;
     }
-    HOPMirProgramBuilderFinish(&lowerCtx.builder, &program);
+    H2MirProgramBuilderFinish(&lowerCtx.builder, &program);
     env.src = c->src;
-    env.resolveIdent = HOPTCResolveConstIdent;
-    env.resolveCallPre = HOPTCResolveConstCallMirPre;
-    env.resolveCall = HOPTCResolveConstCallMir;
+    env.resolveIdent = H2TCResolveConstIdent;
+    env.resolveCallPre = H2TCResolveConstCallMirPre;
+    env.resolveCall = H2TCResolveConstCallMir;
     env.resolveCtx = evalCtx;
-    env.zeroInitLocal = HOPTCMirConstZeroInitLocal;
+    env.zeroInitLocal = H2TCMirConstZeroInitLocal;
     env.zeroInitCtx = evalCtx;
-    env.coerceValueForType = HOPTCMirConstCoerceValueForType;
+    env.coerceValueForType = H2TCMirConstCoerceValueForType;
     env.coerceValueCtx = evalCtx;
-    env.indexValue = HOPTCMirConstIndexValue;
+    env.indexValue = H2TCMirConstIndexValue;
     env.indexValueCtx = evalCtx;
-    env.sequenceLen = HOPTCMirConstSequenceLen;
+    env.sequenceLen = H2TCMirConstSequenceLen;
     env.sequenceLenCtx = evalCtx;
-    env.iterInit = HOPTCMirConstIterInit;
+    env.iterInit = H2TCMirConstIterInit;
     env.iterInitCtx = evalCtx;
-    env.iterNext = HOPTCMirConstIterNext;
+    env.iterNext = H2TCMirConstIterNext;
     env.iterNextCtx = evalCtx;
-    env.aggGetField = HOPTCMirConstAggGetField;
+    env.aggGetField = H2TCMirConstAggGetField;
     env.aggGetFieldCtx = evalCtx;
-    env.aggAddrField = HOPTCMirConstAggAddrField;
+    env.aggAddrField = H2TCMirConstAggAddrField;
     env.aggAddrFieldCtx = evalCtx;
-    env.makeTuple = HOPTCMirConstMakeTuple;
+    env.makeTuple = H2TCMirConstMakeTuple;
     env.makeTupleCtx = evalCtx;
-    env.bindFrame = HOPTCMirConstBindFrame;
-    env.unbindFrame = HOPTCMirConstUnbindFrame;
+    env.bindFrame = H2TCMirConstBindFrame;
+    env.unbindFrame = H2TCMirConstUnbindFrame;
     env.frameCtx = evalCtx;
-    env.setReason = HOPTCResolveMirSetReasonCb;
+    env.setReason = H2TCResolveMirSetReasonCb;
     env.setReasonCtx = evalCtx;
-    env.backwardJumpLimit = HOPTC_CONST_FOR_MAX_ITERS;
+    env.backwardJumpLimit = H2TC_CONST_FOR_MAX_ITERS;
     env.diag = c->diag;
-    if (!HOPMirProgramNeedsDynamicResolution(&program)) {
-        HOPMirExecEnvDisableDynamicResolution(&env);
+    if (!H2MirProgramNeedsDynamicResolution(&program)) {
+        H2MirExecEnvDisableDynamicResolution(&env);
     }
-    if (HOPMirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
+    if (H2MirEvalFunction(c->arena, &program, mirFnIndex, NULL, 0, &env, outValue, &mirIsConst)
         != 0)
     {
         return -1;
@@ -154,13 +154,13 @@ static int HOPTCTryMirConstBlock(
     *outSupported = 1;
     *outIsConst = mirIsConst;
     if (mirIsConst) {
-        *outDidReturn = outValue->kind != HOPCTFEValue_INVALID;
+        *outDidReturn = outValue->kind != H2CTFEValue_INVALID;
     }
     return 0;
 }
 
-static void HOPTCInitConstEvalCtxFromParent(
-    HOPTypeCheckCtx* c, const HOPTCConstEvalCtx* _Nullable parent, HOPTCConstEvalCtx* outCtx) {
+static void H2TCInitConstEvalCtxFromParent(
+    H2TypeCheckCtx* c, const H2TCConstEvalCtx* _Nullable parent, H2TCConstEvalCtx* outCtx) {
     if (outCtx == NULL) {
         return;
     }
@@ -183,32 +183,32 @@ static void HOPTCInitConstEvalCtxFromParent(
     memcpy(outCtx->fnStack, parent->fnStack, sizeof(outCtx->fnStack));
 }
 
-int HOPTCResolveAnonAggregateTypeNode(
-    HOPTypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
-    int32_t           fieldNode = HOPAstFirstChild(c->ast, nodeId);
-    HOPTCAnonFieldSig fieldSigs[HOPTC_MAX_ANON_FIELDS];
-    uint32_t          fieldCount = 0;
+int H2TCResolveAnonAggregateTypeNode(
+    H2TypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
+    int32_t          fieldNode = H2AstFirstChild(c->ast, nodeId);
+    H2TCAnonFieldSig fieldSigs[H2TC_MAX_ANON_FIELDS];
+    uint32_t         fieldCount = 0;
 
     while (fieldNode >= 0) {
-        const HOPAstNode* field = &c->ast->nodes[fieldNode];
-        int32_t           typeNode;
-        int32_t           typeId;
-        uint32_t          i;
-        if (field->kind != HOPAst_FIELD) {
-            return HOPTCFailNode(c, fieldNode, HOPDiag_EXPECTED_TYPE);
+        const H2AstNode* field = &c->ast->nodes[fieldNode];
+        int32_t          typeNode;
+        int32_t          typeId;
+        uint32_t         i;
+        if (field->kind != H2Ast_FIELD) {
+            return H2TCFailNode(c, fieldNode, H2Diag_EXPECTED_TYPE);
         }
-        if (fieldCount >= HOPTC_MAX_ANON_FIELDS) {
-            return HOPTCFailNode(c, fieldNode, HOPDiag_ARENA_OOM);
+        if (fieldCount >= H2TC_MAX_ANON_FIELDS) {
+            return H2TCFailNode(c, fieldNode, H2Diag_ARENA_OOM);
         }
         for (i = 0; i < fieldCount; i++) {
-            if (HOPNameEqSlice(
+            if (H2NameEqSlice(
                     c->src,
                     fieldSigs[i].nameStart,
                     fieldSigs[i].nameEnd,
                     field->dataStart,
                     field->dataEnd))
             {
-                return HOPTCFailDuplicateDefinition(
+                return H2TCFailDuplicateDefinition(
                     c,
                     field->dataStart,
                     field->dataEnd,
@@ -216,25 +216,25 @@ int HOPTCResolveAnonAggregateTypeNode(
                     fieldSigs[i].nameEnd);
             }
         }
-        typeNode = HOPAstFirstChild(c->ast, fieldNode);
+        typeNode = H2AstFirstChild(c->ast, fieldNode);
         if (typeNode < 0) {
-            return HOPTCFailNode(c, fieldNode, HOPDiag_EXPECTED_TYPE);
+            return H2TCFailNode(c, fieldNode, H2Diag_EXPECTED_TYPE);
         }
-        if (c->ast->nodes[typeNode].kind == HOPAst_TYPE_VARRAY) {
-            return HOPTCFailNode(c, typeNode, HOPDiag_TYPE_MISMATCH);
+        if (c->ast->nodes[typeNode].kind == H2Ast_TYPE_VARRAY) {
+            return H2TCFailNode(c, typeNode, H2Diag_TYPE_MISMATCH);
         }
-        if (HOPTCResolveTypeNode(c, typeNode, &typeId) != 0) {
+        if (H2TCResolveTypeNode(c, typeNode, &typeId) != 0) {
             return -1;
         }
         fieldSigs[fieldCount].nameStart = field->dataStart;
         fieldSigs[fieldCount].nameEnd = field->dataEnd;
         fieldSigs[fieldCount].typeId = typeId;
         fieldCount++;
-        fieldNode = HOPAstNextSibling(c->ast, fieldNode);
+        fieldNode = H2AstNextSibling(c->ast, fieldNode);
     }
 
     {
-        int32_t typeId = HOPTCInternAnonAggregateType(
+        int32_t typeId = H2TCInternAnonAggregateType(
             c,
             isUnion,
             fieldSigs,
@@ -250,62 +250,61 @@ int HOPTCResolveAnonAggregateTypeNode(
     }
 }
 
-int HOPTCResolveAliasTypeId(HOPTypeCheckCtx* c, int32_t typeId) {
-    HOPTCType*        t;
-    int32_t           targetNode;
-    int32_t           targetType = -1;
-    const HOPAstNode* decl;
+int H2TCResolveAliasTypeId(H2TypeCheckCtx* c, int32_t typeId) {
+    H2TCType*        t;
+    int32_t          targetNode;
+    int32_t          targetType = -1;
+    const H2AstNode* decl;
 
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
-        return HOPTCFailSpan(c, HOPDiag_UNKNOWN_TYPE, 0, 0);
+        return H2TCFailSpan(c, H2Diag_UNKNOWN_TYPE, 0, 0);
     }
     t = &c->types[typeId];
-    if (t->kind != HOPTCType_ALIAS) {
+    if (t->kind != H2TCType_ALIAS) {
         return 0;
     }
-    if ((t->flags & HOPTCTypeFlag_ALIAS_RESOLVED) != 0) {
+    if ((t->flags & H2TCTypeFlag_ALIAS_RESOLVED) != 0) {
         return 0;
     }
-    if ((t->flags & HOPTCTypeFlag_ALIAS_RESOLVING) != 0) {
-        return HOPTCFailNode(c, t->declNode, HOPDiag_TYPE_MISMATCH);
+    if ((t->flags & H2TCTypeFlag_ALIAS_RESOLVING) != 0) {
+        return H2TCFailNode(c, t->declNode, H2Diag_TYPE_MISMATCH);
     }
     if (t->declNode < 0 || (uint32_t)t->declNode >= c->ast->len) {
-        return HOPTCFailSpan(c, HOPDiag_UNKNOWN_TYPE, 0, 0);
+        return H2TCFailSpan(c, H2Diag_UNKNOWN_TYPE, 0, 0);
     }
 
     decl = &c->ast->nodes[t->declNode];
-    targetNode = HOPAstFirstChild(c->ast, t->declNode);
+    targetNode = H2AstFirstChild(c->ast, t->declNode);
     if (targetNode < 0) {
-        return HOPTCFailNode(c, t->declNode, HOPDiag_EXPECTED_TYPE);
+        return H2TCFailNode(c, t->declNode, H2Diag_EXPECTED_TYPE);
     }
 
-    t->flags |= HOPTCTypeFlag_ALIAS_RESOLVING;
-    if (HOPTCResolveTypeNode(c, targetNode, &targetType) != 0) {
-        t->flags &= (uint16_t)~HOPTCTypeFlag_ALIAS_RESOLVING;
+    t->flags |= H2TCTypeFlag_ALIAS_RESOLVING;
+    if (H2TCResolveTypeNode(c, targetNode, &targetType) != 0) {
+        t->flags &= (uint16_t)~H2TCTypeFlag_ALIAS_RESOLVING;
         return -1;
     }
     if (targetType < 0 || (uint32_t)targetType >= c->typeLen || targetType == typeId) {
-        t->flags &= (uint16_t)~HOPTCTypeFlag_ALIAS_RESOLVING;
-        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, decl->start, decl->end);
+        t->flags &= (uint16_t)~H2TCTypeFlag_ALIAS_RESOLVING;
+        return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, decl->start, decl->end);
     }
-    if (c->types[targetType].kind == HOPTCType_ALIAS && HOPTCResolveAliasTypeId(c, targetType) != 0)
-    {
-        t->flags &= (uint16_t)~HOPTCTypeFlag_ALIAS_RESOLVING;
+    if (c->types[targetType].kind == H2TCType_ALIAS && H2TCResolveAliasTypeId(c, targetType) != 0) {
+        t->flags &= (uint16_t)~H2TCTypeFlag_ALIAS_RESOLVING;
         return -1;
     }
 
     t->baseType = targetType;
-    t->flags &= (uint16_t)~HOPTCTypeFlag_ALIAS_RESOLVING;
-    t->flags |= HOPTCTypeFlag_ALIAS_RESOLVED;
+    t->flags &= (uint16_t)~H2TCTypeFlag_ALIAS_RESOLVING;
+    t->flags |= H2TCTypeFlag_ALIAS_RESOLVED;
     return 0;
 }
 
-int32_t HOPTCResolveAliasBaseType(HOPTypeCheckCtx* c, int32_t typeId) {
+int32_t H2TCResolveAliasBaseType(H2TypeCheckCtx* c, int32_t typeId) {
     uint32_t depth = 0;
-    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == HOPTCType_ALIAS
+    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == H2TCType_ALIAS
            && depth++ <= c->typeLen)
     {
-        if (HOPTCResolveAliasTypeId(c, typeId) != 0) {
+        if (H2TCResolveAliasTypeId(c, typeId) != 0) {
             return -1;
         }
         typeId = c->types[typeId].baseType;
@@ -313,47 +312,47 @@ int32_t HOPTCResolveAliasBaseType(HOPTypeCheckCtx* c, int32_t typeId) {
     return typeId;
 }
 
-uint16_t HOPTCDeclTypeParamCount(HOPTypeCheckCtx* c, int32_t declNode) {
+uint16_t H2TCDeclTypeParamCount(H2TypeCheckCtx* c, int32_t declNode) {
     int32_t  child;
     uint16_t count = 0;
     if (c == NULL || declNode < 0 || (uint32_t)declNode >= c->ast->len) {
         return 0;
     }
-    child = HOPAstFirstChild(c->ast, declNode);
+    child = H2AstFirstChild(c->ast, declNode);
     while (child >= 0) {
-        if (c->ast->nodes[child].kind == HOPAst_TYPE_PARAM) {
+        if (c->ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
             count++;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     return count;
 }
 
-int32_t HOPTCDeclTypeParamIndex(
-    HOPTypeCheckCtx* c, int32_t declNode, uint32_t nameStart, uint32_t nameEnd) {
+int32_t H2TCDeclTypeParamIndex(
+    H2TypeCheckCtx* c, int32_t declNode, uint32_t nameStart, uint32_t nameEnd) {
     int32_t  child;
     uint16_t index = 0;
     if (c == NULL || declNode < 0 || (uint32_t)declNode >= c->ast->len) {
         return -1;
     }
-    child = HOPAstFirstChild(c->ast, declNode);
+    child = H2AstFirstChild(c->ast, declNode);
     while (child >= 0) {
-        const HOPAstNode* n = &c->ast->nodes[child];
-        if (n->kind == HOPAst_TYPE_PARAM) {
-            if (HOPNameEqSlice(c->src, n->dataStart, n->dataEnd, nameStart, nameEnd)) {
+        const H2AstNode* n = &c->ast->nodes[child];
+        if (n->kind == H2Ast_TYPE_PARAM) {
+            if (H2NameEqSlice(c->src, n->dataStart, n->dataEnd, nameStart, nameEnd)) {
                 return (int32_t)index;
             }
             index++;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     return -1;
 }
 
-int HOPTCAppendDeclTypeParamPlaceholders(
-    HOPTypeCheckCtx* c, int32_t declNode, uint32_t* outStart, uint16_t* outCount) {
+int H2TCAppendDeclTypeParamPlaceholders(
+    H2TypeCheckCtx* c, int32_t declNode, uint32_t* outStart, uint16_t* outCount) {
     int32_t  child;
-    uint16_t count = HOPTCDeclTypeParamCount(c, declNode);
+    uint16_t count = H2TCDeclTypeParamCount(c, declNode);
     if (outStart != NULL) {
         *outStart = c != NULL ? c->genericArgLen : 0;
     }
@@ -364,39 +363,39 @@ int HOPTCAppendDeclTypeParamPlaceholders(
         return 0;
     }
     if (c->genericArgLen + count > c->genericArgCap || c->genericArgTypes == NULL) {
-        return HOPTCFailNode(c, declNode, HOPDiag_ARENA_OOM);
+        return H2TCFailNode(c, declNode, H2Diag_ARENA_OOM);
     }
-    child = HOPAstFirstChild(c->ast, declNode);
+    child = H2AstFirstChild(c->ast, declNode);
     while (child >= 0) {
-        const HOPAstNode* n = &c->ast->nodes[child];
-        if (n->kind == HOPAst_TYPE_PARAM) {
-            HOPTCType t;
-            int32_t   typeId;
+        const H2AstNode* n = &c->ast->nodes[child];
+        if (n->kind == H2Ast_TYPE_PARAM) {
+            H2TCType t;
+            int32_t  typeId;
             memset(&t, 0, sizeof(t));
-            t.kind = HOPTCType_TYPE_PARAM;
+            t.kind = H2TCType_TYPE_PARAM;
             t.baseType = -1;
             t.declNode = declNode;
             t.funcIndex = -1;
             t.nameStart = n->dataStart;
             t.nameEnd = n->dataEnd;
-            typeId = HOPTCAddType(c, &t, n->start, n->end);
+            typeId = H2TCAddType(c, &t, n->start, n->end);
             if (typeId < 0) {
                 return -1;
             }
             c->genericArgTypes[c->genericArgLen++] = typeId;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     return 0;
 }
 
-static int HOPTCResolveActiveDeclTypeParamType(
-    HOPTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+static int H2TCResolveActiveDeclTypeParamType(
+    H2TypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
     int32_t idx;
     if (c == NULL || outType == NULL || c->activeGenericDeclNode < 0) {
         return 0;
     }
-    idx = HOPTCDeclTypeParamIndex(c, c->activeGenericDeclNode, nameStart, nameEnd);
+    idx = H2TCDeclTypeParamIndex(c, c->activeGenericDeclNode, nameStart, nameEnd);
     if (idx < 0 || (uint32_t)idx >= c->activeGenericArgCount) {
         return 0;
     }
@@ -404,48 +403,48 @@ static int HOPTCResolveActiveDeclTypeParamType(
     return 1;
 }
 
-int HOPTCFnNodeHasTypeParamName(
-    HOPTypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd) {
+int H2TCFnNodeHasTypeParamName(
+    H2TypeCheckCtx* c, int32_t fnNode, uint32_t nameStart, uint32_t nameEnd) {
     int32_t child;
     if (c == NULL || fnNode < 0 || (uint32_t)fnNode >= c->ast->len) {
         return 0;
     }
-    if (c->ast->nodes[fnNode].kind != HOPAst_FN) {
+    if (c->ast->nodes[fnNode].kind != H2Ast_FN) {
         return 0;
     }
-    child = HOPAstFirstChild(c->ast, fnNode);
+    child = H2AstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &c->ast->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
-            int32_t           typeNode = HOPAstFirstChild(c->ast, child);
-            const HOPAstNode* t = typeNode >= 0 ? &c->ast->nodes[typeNode] : NULL;
-            if (t != NULL && t->kind == HOPAst_TYPE_NAME
-                && HOPNameEqLiteral(c->src, t->dataStart, t->dataEnd, "type")
-                && HOPNameEqSlice(c->src, n->dataStart, n->dataEnd, nameStart, nameEnd))
+        const H2AstNode* n = &c->ast->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
+            int32_t          typeNode = H2AstFirstChild(c->ast, child);
+            const H2AstNode* t = typeNode >= 0 ? &c->ast->nodes[typeNode] : NULL;
+            if (t != NULL && t->kind == H2Ast_TYPE_NAME
+                && H2NameEqLiteral(c->src, t->dataStart, t->dataEnd, "type")
+                && H2NameEqSlice(c->src, n->dataStart, n->dataEnd, nameStart, nameEnd))
             {
                 return 1;
             }
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     return 0;
 }
 
-int HOPTCResolveActiveTypeParamType(
-    HOPTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
+int H2TCResolveActiveTypeParamType(
+    H2TypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int32_t* outType) {
     if (c == NULL || outType == NULL) {
         return 0;
     }
-    if (HOPTCResolveActiveDeclTypeParamType(c, nameStart, nameEnd, outType)) {
+    if (H2TCResolveActiveDeclTypeParamType(c, nameStart, nameEnd, outType)) {
         return 1;
     }
     if (c->currentFunctionIndex >= 0 && (uint32_t)c->currentFunctionIndex < c->funcLen) {
-        const HOPTCFunction* fn = &c->funcs[c->currentFunctionIndex];
-        uint32_t             p;
+        const H2TCFunction* fn = &c->funcs[c->currentFunctionIndex];
+        uint32_t            p;
         for (p = 0; p < fn->paramCount; p++) {
             uint32_t paramIndex = fn->paramTypeStart + p;
             if (c->funcParamTypes[paramIndex] == c->typeType
-                && HOPNameEqSlice(
+                && H2NameEqSlice(
                     c->src,
                     c->funcParamNameStarts[paramIndex],
                     c->funcParamNameEnds[paramIndex],
@@ -458,7 +457,7 @@ int HOPTCResolveActiveTypeParamType(
         }
     }
     if (c->activeTypeParamFnNode >= 0
-        && HOPTCFnNodeHasTypeParamName(c, c->activeTypeParamFnNode, nameStart, nameEnd))
+        && H2TCFnNodeHasTypeParamName(c, c->activeTypeParamFnNode, nameStart, nameEnd))
     {
         *outType = c->typeType;
         return 1;
@@ -466,44 +465,44 @@ int HOPTCResolveActiveTypeParamType(
     return 0;
 }
 
-int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
-    const HOPAstNode* n;
+int H2TCResolveTypeNode(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
+    const H2AstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
-        return HOPTCFailSpan(c, HOPDiag_EXPECTED_TYPE, 0, 0);
+        return H2TCFailSpan(c, H2Diag_EXPECTED_TYPE, 0, 0);
     }
     n = &c->ast->nodes[nodeId];
 
     switch (n->kind) {
-        case HOPAst_TYPE_NAME: {
-            int32_t  firstArgNode = HOPAstFirstChild(c->ast, nodeId);
+        case H2Ast_TYPE_NAME: {
+            int32_t  firstArgNode = H2AstFirstChild(c->ast, nodeId);
             uint16_t argCount = 0;
-            if (HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "anytype")) {
+            if (H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "anytype")) {
                 if (!c->allowAnytypeParamType) {
-                    return HOPTCFailSpan(
-                        c, HOPDiag_ANYTYPE_INVALID_POSITION, n->dataStart, n->dataEnd);
+                    return H2TCFailSpan(
+                        c, H2Diag_ANYTYPE_INVALID_POSITION, n->dataStart, n->dataEnd);
                 }
                 if (firstArgNode >= 0) {
-                    return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                    return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                 }
                 *outType = c->typeAnytype;
                 return 0;
             }
-            int32_t typeId = HOPTCFindBuiltinType(c, n->dataStart, n->dataEnd);
+            int32_t typeId = H2TCFindBuiltinType(c, n->dataStart, n->dataEnd);
             if (typeId >= 0) {
                 if ((typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat)
                     && !c->allowConstNumericTypeName)
                 {
-                    return HOPTCFailSpan(
-                        c, HOPDiag_CONST_NUMERIC_INVALID_POSITION, n->dataStart, n->dataEnd);
+                    return H2TCFailSpan(
+                        c, H2Diag_CONST_NUMERIC_INVALID_POSITION, n->dataStart, n->dataEnd);
                 }
                 if (firstArgNode >= 0) {
-                    return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                    return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                 }
                 *outType = typeId;
                 return 0;
             }
             {
-                int32_t resolvedType = HOPTCResolveTypeNamePath(
+                int32_t resolvedType = H2TCResolveTypeNamePath(
                     c, n->dataStart, n->dataEnd, c->currentTypeOwnerTypeId);
                 if (resolvedType >= 0) {
                     int32_t  namedIndex = -1;
@@ -516,10 +515,10 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     }
                     while (firstArgNode >= 0) {
                         argCount++;
-                        firstArgNode = HOPAstNextSibling(c->ast, firstArgNode);
+                        firstArgNode = H2AstNextSibling(c->ast, firstArgNode);
                     }
                     if (namedIndex >= 0) {
-                        const HOPTCNamedType* nt = &c->namedTypes[(uint32_t)namedIndex];
+                        const H2TCNamedType* nt = &c->namedTypes[(uint32_t)namedIndex];
                         if (nt->templateRootNamedIndex >= 0) {
                             namedIndex = nt->templateRootNamedIndex;
                             resolvedType = c->namedTypes[(uint32_t)namedIndex].typeId;
@@ -527,16 +526,16 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         }
                         if (nt->templateArgCount > 0 || argCount > 0) {
                             int32_t  args[64];
-                            int32_t  argNode = HOPAstFirstChild(c->ast, nodeId);
+                            int32_t  argNode = H2AstFirstChild(c->ast, nodeId);
                             uint16_t ai = 0;
                             if (argCount == 0 && nt->templateArgCount > 0) {
-                                return HOPTCFailGenericTypeArgsRequired(
+                                return H2TCFailGenericTypeArgsRequired(
                                     c, nodeId, n->dataStart, n->dataEnd);
                             }
                             if (nt->templateArgCount != argCount
                                 || argCount > (uint16_t)(sizeof(args) / sizeof(args[0])))
                             {
-                                return HOPTCFailGenericTypeArgArity(
+                                return H2TCFailGenericTypeArgArity(
                                     c,
                                     nodeId,
                                     n->dataStart,
@@ -545,25 +544,25 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                                     argCount);
                             }
                             while (argNode >= 0) {
-                                if (HOPTCResolveTypeNode(c, argNode, &args[ai]) != 0) {
+                                if (H2TCResolveTypeNode(c, argNode, &args[ai]) != 0) {
                                     return -1;
                                 }
                                 ai++;
-                                argNode = HOPAstNextSibling(c->ast, argNode);
+                                argNode = H2AstNextSibling(c->ast, argNode);
                             }
-                            resolvedType = HOPTCInstantiateNamedType(
+                            resolvedType = H2TCInstantiateNamedType(
                                 c, resolvedType, args, argCount);
                             if (resolvedType < 0) {
                                 return -1;
                             }
                         }
                     } else if (argCount > 0) {
-                        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                        return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                     }
                     *outType = resolvedType;
                     if (*outType >= 0 && (uint32_t)*outType < c->typeLen
-                        && c->types[*outType].kind == HOPTCType_ALIAS
-                        && HOPTCResolveAliasTypeId(c, *outType) != 0)
+                        && c->types[*outType].kind == H2TCType_ALIAS
+                        && H2TCResolveAliasTypeId(c, *outType) != 0)
                     {
                         return -1;
                     }
@@ -572,27 +571,27 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             }
             {
                 int32_t activeTypeParamType = -1;
-                if (HOPTCResolveActiveTypeParamType(
+                if (H2TCResolveActiveTypeParamType(
                         c, n->dataStart, n->dataEnd, &activeTypeParamType))
                 {
-                    if (HOPAstFirstChild(c->ast, nodeId) >= 0) {
-                        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                    if (H2AstFirstChild(c->ast, nodeId) >= 0) {
+                        return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                     }
                     *outType = activeTypeParamType;
                     return 0;
                 }
             }
             {
-                int32_t resolvedType = HOPTCFindBuiltinQualifiedNamedType(
+                int32_t resolvedType = H2TCFindBuiltinQualifiedNamedType(
                     c, n->dataStart, n->dataEnd);
                 if (resolvedType >= 0) {
-                    if (HOPAstFirstChild(c->ast, nodeId) >= 0) {
-                        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                    if (H2AstFirstChild(c->ast, nodeId) >= 0) {
+                        return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                     }
                     *outType = resolvedType;
                     if (*outType >= 0 && (uint32_t)*outType < c->typeLen
-                        && c->types[*outType].kind == HOPTCType_ALIAS
-                        && HOPTCResolveAliasTypeId(c, *outType) != 0)
+                        && c->types[*outType].kind == H2TCType_ALIAS
+                        && H2TCResolveAliasTypeId(c, *outType) != 0)
                     {
                         return -1;
                     }
@@ -601,15 +600,15 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
             }
             {
                 int32_t varLikeNameIndex = -1;
-                int32_t varLikeNode = HOPTCFindTopLevelVarLikeNode(
+                int32_t varLikeNode = H2TCFindTopLevelVarLikeNode(
                     c, n->dataStart, n->dataEnd, &varLikeNameIndex);
-                if (varLikeNode >= 0 && c->ast->nodes[varLikeNode].kind == HOPAst_CONST) {
-                    int32_t           resolvedConstType = -1;
-                    HOPTCConstEvalCtx evalCtx;
-                    HOPCTFEValue      value;
-                    int               isConst = 0;
-                    int32_t           reflectedType = -1;
-                    if (HOPTCTypeTopLevelVarLikeNode(
+                if (varLikeNode >= 0 && c->ast->nodes[varLikeNode].kind == H2Ast_CONST) {
+                    int32_t          resolvedConstType = -1;
+                    H2TCConstEvalCtx evalCtx;
+                    H2CTFEValue      value;
+                    int              isConst = 0;
+                    int32_t          reflectedType = -1;
+                    if (H2TCTypeTopLevelVarLikeNode(
                             c, varLikeNode, varLikeNameIndex, &resolvedConstType)
                         != 0)
                     {
@@ -618,17 +617,17 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (resolvedConstType == c->typeType) {
                         memset(&evalCtx, 0, sizeof(evalCtx));
                         evalCtx.tc = c;
-                        if (HOPTCEvalTopLevelConstNodeAt(
+                        if (H2TCEvalTopLevelConstNodeAt(
                                 c, &evalCtx, varLikeNode, varLikeNameIndex, &value, &isConst)
                             != 0)
                         {
                             return -1;
                         }
-                        if (isConst && value.kind == HOPCTFEValue_TYPE
-                            && HOPTCDecodeTypeTag(c, value.typeTag, &reflectedType) == 0)
+                        if (isConst && value.kind == H2CTFEValue_TYPE
+                            && H2TCDecodeTypeTag(c, value.typeTag, &reflectedType) == 0)
                         {
-                            if (HOPAstFirstChild(c->ast, nodeId) >= 0) {
-                                return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                            if (H2AstFirstChild(c->ast, nodeId) >= 0) {
+                                return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, n->start, n->end);
                             }
                             *outType = reflectedType;
                             return 0;
@@ -636,214 +635,214 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     }
                 }
             }
-            return HOPTCFailSpan(c, HOPDiag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
+            return H2TCFailSpan(c, H2Diag_UNKNOWN_TYPE, n->dataStart, n->dataEnd);
         }
-        case HOPAst_TYPE_PTR: {
-            int32_t           child = HOPAstFirstChild(c->ast, nodeId);
-            int32_t           baseType;
-            int32_t           ptrType;
-            const HOPAstNode* childNode;
+        case H2Ast_TYPE_PTR: {
+            int32_t          child = H2AstFirstChild(c->ast, nodeId);
+            int32_t          baseType;
+            int32_t          ptrType;
+            const H2AstNode* childNode;
             if (child < 0 || (uint32_t)child >= c->ast->len) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+                return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
             }
             childNode = &c->ast->nodes[child];
-            if (childNode->kind == HOPAst_TYPE_SLICE || childNode->kind == HOPAst_TYPE_MUTSLICE) {
-                int32_t elemNode = HOPAstFirstChild(c->ast, child);
+            if (childNode->kind == H2Ast_TYPE_SLICE || childNode->kind == H2Ast_TYPE_MUTSLICE) {
+                int32_t elemNode = H2AstFirstChild(c->ast, child);
                 int32_t elemType;
                 int32_t sliceType;
                 if (elemNode < 0) {
-                    return HOPTCFailNode(c, child, HOPDiag_EXPECTED_TYPE);
+                    return H2TCFailNode(c, child, H2Diag_EXPECTED_TYPE);
                 }
-                if (HOPTCResolveTypeNode(c, elemNode, &elemType) != 0) {
+                if (H2TCResolveTypeNode(c, elemNode, &elemType) != 0) {
                     return -1;
                 }
-                sliceType = HOPTCInternSliceType(c, elemType, 1, n->start, n->end);
+                sliceType = H2TCInternSliceType(c, elemType, 1, n->start, n->end);
                 if (sliceType < 0) {
                     return -1;
                 }
-                ptrType = HOPTCInternPtrType(c, sliceType, n->start, n->end);
+                ptrType = H2TCInternPtrType(c, sliceType, n->start, n->end);
                 if (ptrType < 0) {
                     return -1;
                 }
                 *outType = ptrType;
                 return 0;
             }
-            if (HOPTCResolveTypeNode(c, child, &baseType) != 0) {
+            if (H2TCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
             if (baseType >= 0 && (uint32_t)baseType < c->typeLen
-                && c->types[baseType].kind == HOPTCType_SLICE
-                && !HOPTCTypeIsMutable(&c->types[baseType]))
+                && c->types[baseType].kind == H2TCType_SLICE
+                && !H2TCTypeIsMutable(&c->types[baseType]))
             {
-                int32_t mutableSliceType = HOPTCInternSliceType(
+                int32_t mutableSliceType = H2TCInternSliceType(
                     c, c->types[baseType].baseType, 1, n->start, n->end);
                 if (mutableSliceType < 0) {
                     return -1;
                 }
                 baseType = mutableSliceType;
             }
-            ptrType = HOPTCInternPtrType(c, baseType, n->start, n->end);
+            ptrType = H2TCInternPtrType(c, baseType, n->start, n->end);
             if (ptrType < 0) {
                 return -1;
             }
             *outType = ptrType;
             return 0;
         }
-        case HOPAst_TYPE_REF:
-        case HOPAst_TYPE_MUTREF: {
-            int32_t           child = HOPAstFirstChild(c->ast, nodeId);
-            int32_t           baseType;
-            int32_t           refType;
-            const HOPAstNode* childNode;
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF: {
+            int32_t          child = H2AstFirstChild(c->ast, nodeId);
+            int32_t          baseType;
+            int32_t          refType;
+            const H2AstNode* childNode;
             if (child < 0 || (uint32_t)child >= c->ast->len) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+                return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
             }
             childNode = &c->ast->nodes[child];
-            if (childNode->kind == HOPAst_TYPE_SLICE || childNode->kind == HOPAst_TYPE_MUTSLICE) {
-                int32_t elemNode = HOPAstFirstChild(c->ast, child);
+            if (childNode->kind == H2Ast_TYPE_SLICE || childNode->kind == H2Ast_TYPE_MUTSLICE) {
+                int32_t elemNode = H2AstFirstChild(c->ast, child);
                 int32_t elemType;
                 int32_t sliceType;
                 if (elemNode < 0) {
-                    return HOPTCFailNode(c, child, HOPDiag_EXPECTED_TYPE);
+                    return H2TCFailNode(c, child, H2Diag_EXPECTED_TYPE);
                 }
-                if (HOPTCResolveTypeNode(c, elemNode, &elemType) != 0) {
+                if (H2TCResolveTypeNode(c, elemNode, &elemType) != 0) {
                     return -1;
                 }
-                sliceType = HOPTCInternSliceType(c, elemType, 0, n->start, n->end);
+                sliceType = H2TCInternSliceType(c, elemType, 0, n->start, n->end);
                 if (sliceType < 0) {
                     return -1;
                 }
-                refType = HOPTCInternRefType(
-                    c, sliceType, n->kind == HOPAst_TYPE_MUTREF, n->start, n->end);
+                refType = H2TCInternRefType(
+                    c, sliceType, n->kind == H2Ast_TYPE_MUTREF, n->start, n->end);
                 if (refType < 0) {
                     return -1;
                 }
                 *outType = refType;
                 return 0;
             }
-            if (HOPTCResolveTypeNode(c, child, &baseType) != 0) {
+            if (H2TCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
             if (baseType >= 0 && (uint32_t)baseType < c->typeLen
-                && c->types[baseType].kind == HOPTCType_SLICE
-                && HOPTCTypeIsMutable(&c->types[baseType]))
+                && c->types[baseType].kind == H2TCType_SLICE
+                && H2TCTypeIsMutable(&c->types[baseType]))
             {
-                int32_t readOnlySliceType = HOPTCInternSliceType(
+                int32_t readOnlySliceType = H2TCInternSliceType(
                     c, c->types[baseType].baseType, 0, n->start, n->end);
                 if (readOnlySliceType < 0) {
                     return -1;
                 }
                 baseType = readOnlySliceType;
             }
-            refType = HOPTCInternRefType(
-                c, baseType, n->kind == HOPAst_TYPE_MUTREF, n->start, n->end);
+            refType = H2TCInternRefType(
+                c, baseType, n->kind == H2Ast_TYPE_MUTREF, n->start, n->end);
             if (refType < 0) {
                 return -1;
             }
             *outType = refType;
             return 0;
         }
-        case HOPAst_TYPE_ARRAY: {
-            int32_t  child = HOPAstFirstChild(c->ast, nodeId);
-            int32_t  lenNode = child >= 0 ? HOPAstNextSibling(c->ast, child) : -1;
+        case H2Ast_TYPE_ARRAY: {
+            int32_t  child = H2AstFirstChild(c->ast, nodeId);
+            int32_t  lenNode = child >= 0 ? H2AstNextSibling(c->ast, child) : -1;
             int32_t  baseType;
             int32_t  arrayType;
             int64_t  lenValue = 0;
             int      lenIsConst = 0;
             uint32_t arrayLen;
             if (child < 0) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+                return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
             }
             if (lenNode >= 0) {
                 int32_t lenType;
-                if (HOPAstNextSibling(c->ast, lenNode) >= 0) {
-                    return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+                if (H2AstNextSibling(c->ast, lenNode) >= 0) {
+                    return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
                 }
-                if (HOPTCTypeExpr(c, lenNode, &lenType) != 0) {
+                if (H2TCTypeExpr(c, lenNode, &lenType) != 0) {
                     return -1;
                 }
-                if (!HOPTCIsIntegerType(c, lenType)) {
-                    return HOPTCFailNode(c, lenNode, HOPDiag_TYPE_MISMATCH);
+                if (!H2TCIsIntegerType(c, lenType)) {
+                    return H2TCFailNode(c, lenNode, H2Diag_TYPE_MISMATCH);
                 }
-                if (HOPTCConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0) {
+                if (H2TCConstIntExpr(c, lenNode, &lenValue, &lenIsConst) != 0) {
                     return -1;
                 }
                 if (!lenIsConst) {
-                    int rc = HOPTCFailNode(c, lenNode, HOPDiag_ARRAY_LEN_CONST_REQUIRED);
-                    HOPTCAttachConstEvalReason(c);
+                    int rc = H2TCFailNode(c, lenNode, H2Diag_ARRAY_LEN_CONST_REQUIRED);
+                    H2TCAttachConstEvalReason(c);
                     return rc;
                 }
                 if (lenValue < 0 || lenValue > (int64_t)UINT32_MAX) {
-                    return HOPTCFailNode(c, lenNode, HOPDiag_ARRAY_LEN_CONST_REQUIRED);
+                    return H2TCFailNode(c, lenNode, H2Diag_ARRAY_LEN_CONST_REQUIRED);
                 }
                 arrayLen = (uint32_t)lenValue;
-            } else if (HOPTCParseArrayLen(c, n, &arrayLen) != 0) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+            } else if (H2TCParseArrayLen(c, n, &arrayLen) != 0) {
+                return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
             }
-            if (HOPTCResolveTypeNode(c, child, &baseType) != 0) {
+            if (H2TCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
-            arrayType = HOPTCInternArrayType(c, baseType, arrayLen, n->start, n->end);
+            arrayType = H2TCInternArrayType(c, baseType, arrayLen, n->start, n->end);
             if (arrayType < 0) {
                 return -1;
             }
             *outType = arrayType;
             return 0;
         }
-        case HOPAst_TYPE_SLICE:
-        case HOPAst_TYPE_MUTSLICE: {
-            int32_t child = HOPAstFirstChild(c->ast, nodeId);
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE: {
+            int32_t child = H2AstFirstChild(c->ast, nodeId);
             int32_t baseType;
             int32_t sliceType;
-            if (HOPTCResolveTypeNode(c, child, &baseType) != 0) {
+            if (H2TCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
-            sliceType = HOPTCInternSliceType(
-                c, baseType, n->kind == HOPAst_TYPE_MUTSLICE, n->start, n->end);
+            sliceType = H2TCInternSliceType(
+                c, baseType, n->kind == H2Ast_TYPE_MUTSLICE, n->start, n->end);
             if (sliceType < 0) {
                 return -1;
             }
             *outType = sliceType;
             return 0;
         }
-        case HOPAst_TYPE_OPTIONAL: {
-            int32_t child = HOPAstFirstChild(c->ast, nodeId);
+        case H2Ast_TYPE_OPTIONAL: {
+            int32_t child = H2AstFirstChild(c->ast, nodeId);
             int32_t baseType;
             int32_t optType;
-            if (HOPTCResolveTypeNode(c, child, &baseType) != 0) {
+            if (H2TCResolveTypeNode(c, child, &baseType) != 0) {
                 return -1;
             }
-            optType = HOPTCInternOptionalType(c, baseType, n->start, n->end);
+            optType = H2TCInternOptionalType(c, baseType, n->start, n->end);
             if (optType < 0) {
                 return -1;
             }
             *outType = optType;
             return 0;
         }
-        case HOPAst_TYPE_FN: {
-            int32_t  child = HOPAstFirstChild(c->ast, nodeId);
+        case H2Ast_TYPE_FN: {
+            int32_t  child = H2AstFirstChild(c->ast, nodeId);
             int32_t  returnType = c->typeVoid;
             uint32_t paramCount = 0;
             int      isVariadic = 0;
             int      sawReturnType = 0;
-            int32_t  savedParamTypes[HOPTC_MAX_CALL_ARGS];
-            uint8_t  savedParamFlags[HOPTC_MAX_CALL_ARGS];
+            int32_t  savedParamTypes[H2TC_MAX_CALL_ARGS];
+            uint8_t  savedParamFlags[H2TC_MAX_CALL_ARGS];
             while (child >= 0) {
-                const HOPAstNode* ch = &c->ast->nodes[child];
+                const H2AstNode* ch = &c->ast->nodes[child];
                 if (ch->flags == 1) {
                     uint32_t i;
                     if (sawReturnType) {
-                        return HOPTCFailNode(c, child, HOPDiag_EXPECTED_TYPE);
+                        return H2TCFailNode(c, child, H2Diag_EXPECTED_TYPE);
                     }
-                    if (paramCount > HOPTC_MAX_CALL_ARGS) {
-                        return HOPTCFailNode(c, child, HOPDiag_ARENA_OOM);
+                    if (paramCount > H2TC_MAX_CALL_ARGS) {
+                        return H2TCFailNode(c, child, H2Diag_ARENA_OOM);
                     }
                     for (i = 0; i < paramCount; i++) {
                         savedParamTypes[i] = c->scratchParamTypes[i];
                         savedParamFlags[i] = c->scratchParamFlags[i];
                     }
                     c->allowConstNumericTypeName = 1;
-                    if (HOPTCResolveTypeNode(c, child, &returnType) != 0) {
+                    if (H2TCResolveTypeNode(c, child, &returnType) != 0) {
                         c->allowConstNumericTypeName = 0;
                         return -1;
                     }
@@ -852,19 +851,19 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         c->scratchParamTypes[i] = savedParamTypes[i];
                         c->scratchParamFlags[i] = savedParamFlags[i];
                     }
-                    if (HOPTCTypeContainsVarSizeByValue(c, returnType)) {
-                        return HOPTCFailVarSizeByValue(
+                    if (H2TCTypeContainsVarSizeByValue(c, returnType)) {
+                        return H2TCFailVarSizeByValue(
                             c, child, returnType, "function-type return position");
                     }
                     sawReturnType = 1;
                 } else {
                     int32_t paramType;
                     if (paramCount >= c->scratchParamCap) {
-                        return HOPTCFailNode(c, child, HOPDiag_ARENA_OOM);
+                        return H2TCFailNode(c, child, H2Diag_ARENA_OOM);
                     }
                     c->allowAnytypeParamType = 1;
                     c->allowConstNumericTypeName = 1;
-                    if (HOPTCResolveTypeNode(c, child, &paramType) != 0) {
+                    if (H2TCResolveTypeNode(c, child, &paramType) != 0) {
                         c->allowAnytypeParamType = 0;
                         c->allowConstNumericTypeName = 0;
                         return -1;
@@ -872,25 +871,25 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     c->allowAnytypeParamType = 0;
                     c->allowConstNumericTypeName = 0;
                     if ((paramType == c->typeUntypedInt || paramType == c->typeUntypedFloat)
-                        && (ch->flags & HOPAstFlag_PARAM_CONST) == 0)
+                        && (ch->flags & H2AstFlag_PARAM_CONST) == 0)
                     {
-                        return HOPTCFailSpan(
+                        return H2TCFailSpan(
                             c,
-                            HOPDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST,
+                            H2Diag_CONST_NUMERIC_PARAM_REQUIRES_CONST,
                             ch->dataStart,
                             ch->dataEnd);
                     }
-                    if (HOPTCTypeContainsVarSizeByValue(c, paramType)) {
-                        return HOPTCFailVarSizeByValue(
+                    if (H2TCTypeContainsVarSizeByValue(c, paramType)) {
+                        return H2TCFailVarSizeByValue(
                             c, child, paramType, "function-type parameter position");
                     }
-                    if ((ch->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
+                    if ((ch->flags & H2AstFlag_PARAM_VARIADIC) != 0) {
                         int32_t sliceType;
                         if (isVariadic) {
-                            return HOPTCFailNode(c, child, HOPDiag_VARIADIC_PARAM_NOT_LAST);
+                            return H2TCFailNode(c, child, H2Diag_VARIADIC_PARAM_NOT_LAST);
                         }
                         if (paramType != c->typeAnytype) {
-                            sliceType = HOPTCInternSliceType(c, paramType, 0, ch->start, ch->end);
+                            sliceType = H2TCInternSliceType(c, paramType, 0, ch->start, ch->end);
                             if (sliceType < 0) {
                                 return -1;
                             }
@@ -898,16 +897,16 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         }
                         isVariadic = 1;
                     } else if (isVariadic) {
-                        return HOPTCFailNode(c, child, HOPDiag_VARIADIC_PARAM_NOT_LAST);
+                        return H2TCFailNode(c, child, H2Diag_VARIADIC_PARAM_NOT_LAST);
                     }
                     c->scratchParamTypes[paramCount++] = paramType;
                     c->scratchParamFlags[paramCount - 1u] =
-                        (ch->flags & HOPAstFlag_PARAM_CONST) != 0 ? HOPTCFuncParamFlag_CONST : 0u;
+                        (ch->flags & H2AstFlag_PARAM_CONST) != 0 ? H2TCFuncParamFlag_CONST : 0u;
                 }
-                child = HOPAstNextSibling(c->ast, child);
+                child = H2AstNextSibling(c->ast, child);
             }
             {
-                int32_t fnType = HOPTCInternFunctionType(
+                int32_t fnType = H2TCInternFunctionType(
                     c,
                     returnType,
                     c->scratchParamTypes,
@@ -924,28 +923,28 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                 return 0;
             }
         }
-        case HOPAst_TYPE_TUPLE: {
-            int32_t  child = HOPAstFirstChild(c->ast, nodeId);
+        case H2Ast_TYPE_TUPLE: {
+            int32_t  child = H2AstFirstChild(c->ast, nodeId);
             uint32_t elemCount = 0;
             while (child >= 0) {
                 int32_t elemType;
                 if (elemCount >= c->scratchParamCap) {
-                    return HOPTCFailNode(c, child, HOPDiag_ARENA_OOM);
+                    return H2TCFailNode(c, child, H2Diag_ARENA_OOM);
                 }
-                if (HOPTCResolveTypeNode(c, child, &elemType) != 0) {
+                if (H2TCResolveTypeNode(c, child, &elemType) != 0) {
                     return -1;
                 }
-                if (HOPTCTypeContainsVarSizeByValue(c, elemType)) {
-                    return HOPTCFailVarSizeByValue(c, child, elemType, "tuple element position");
+                if (H2TCTypeContainsVarSizeByValue(c, elemType)) {
+                    return H2TCFailVarSizeByValue(c, child, elemType, "tuple element position");
                 }
                 c->scratchParamTypes[elemCount++] = elemType;
-                child = HOPAstNextSibling(c->ast, child);
+                child = H2AstNextSibling(c->ast, child);
             }
             if (elemCount < 2u) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+                return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
             }
             {
-                int32_t tupleType = HOPTCInternTupleType(
+                int32_t tupleType = H2TCInternTupleType(
                     c, c->scratchParamTypes, elemCount, n->start, n->end);
                 if (tupleType < 0) {
                     return -1;
@@ -954,31 +953,29 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                 return 0;
             }
         }
-        case HOPAst_TYPE_ANON_STRUCT:
-            return HOPTCResolveAnonAggregateTypeNode(c, nodeId, 0, outType);
-        case HOPAst_TYPE_ANON_UNION:
-            return HOPTCResolveAnonAggregateTypeNode(c, nodeId, 1, outType);
-        case HOPAst_TYPE_VARRAY: return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
-        default:                 return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+        case H2Ast_TYPE_ANON_STRUCT: return H2TCResolveAnonAggregateTypeNode(c, nodeId, 0, outType);
+        case H2Ast_TYPE_ANON_UNION:  return H2TCResolveAnonAggregateTypeNode(c, nodeId, 1, outType);
+        case H2Ast_TYPE_VARRAY:      return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
+        default:                     return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
     }
 }
 
-int HOPTCAddNamedType(HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId) {
-    const HOPAstNode* node = &c->ast->nodes[nodeId];
-    HOPTCType         t;
-    int32_t           typeId;
-    int32_t           dupNamedIndex;
-    uint32_t          idx;
-    uint32_t          templateArgStart = 0;
-    uint16_t          templateArgCount = 0;
+int H2TCAddNamedType(H2TypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int32_t* outTypeId) {
+    const H2AstNode* node = &c->ast->nodes[nodeId];
+    H2TCType         t;
+    int32_t          typeId;
+    int32_t          dupNamedIndex;
+    uint32_t         idx;
+    uint32_t         templateArgStart = 0;
+    uint16_t         templateArgCount = 0;
 
     if (node->dataEnd <= node->dataStart) {
-        return HOPTCFailNode(c, nodeId, HOPDiag_EXPECTED_TYPE);
+        return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_TYPE);
     }
 
-    dupNamedIndex = HOPTCFindNamedTypeIndexOwned(c, ownerTypeId, node->dataStart, node->dataEnd);
+    dupNamedIndex = H2TCFindNamedTypeIndexOwned(c, ownerTypeId, node->dataStart, node->dataEnd);
     if (dupNamedIndex >= 0) {
-        return HOPTCFailDuplicateDefinition(
+        return H2TCFailDuplicateDefinition(
             c,
             node->dataStart,
             node->dataEnd,
@@ -986,8 +983,8 @@ int HOPTCAddNamedType(HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, i
             c->namedTypes[(uint32_t)dupNamedIndex].nameEnd);
     }
 
-    t.kind = node->kind == HOPAst_TYPE_ALIAS ? HOPTCType_ALIAS : HOPTCType_NAMED;
-    t.builtin = HOPBuiltin_INVALID;
+    t.kind = node->kind == H2Ast_TYPE_ALIAS ? H2TCType_ALIAS : H2TCType_NAMED;
+    t.builtin = H2Builtin_INVALID;
     t.baseType = -1;
     t.declNode = nodeId;
     t.funcIndex = -1;
@@ -997,13 +994,13 @@ int HOPTCAddNamedType(HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, i
     t.fieldStart = 0;
     t.fieldCount = 0;
     t.flags = 0;
-    typeId = HOPTCAddType(c, &t, node->start, node->end);
+    typeId = H2TCAddType(c, &t, node->start, node->end);
     if (typeId < 0) {
         return -1;
     }
 
     if (c->namedTypeLen >= c->namedTypeCap) {
-        return HOPTCFailNode(c, nodeId, HOPDiag_ARENA_OOM);
+        return H2TCFailNode(c, nodeId, H2Diag_ARENA_OOM);
     }
 
     idx = c->namedTypeLen++;
@@ -1015,8 +1012,7 @@ int HOPTCAddNamedType(HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, i
     c->namedTypes[idx].templateArgStart = 0;
     c->namedTypes[idx].templateArgCount = 0;
     c->namedTypes[idx].templateRootNamedIndex = -1;
-    if (HOPTCAppendDeclTypeParamPlaceholders(c, nodeId, &templateArgStart, &templateArgCount) != 0)
-    {
+    if (H2TCAppendDeclTypeParamPlaceholders(c, nodeId, &templateArgStart, &templateArgCount) != 0) {
         return -1;
     }
     c->namedTypes[idx].templateArgStart = templateArgStart;
@@ -1027,11 +1023,11 @@ int HOPTCAddNamedType(HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, i
     return 0;
 }
 
-int32_t HOPTCInstantiateNamedType(
-    HOPTypeCheckCtx* c, int32_t rootTypeId, const int32_t* argTypes, uint16_t argCount) {
-    int32_t          rootNamedIndex = -1;
-    uint32_t         i;
-    const HOPTCType* rootType;
+int32_t H2TCInstantiateNamedType(
+    H2TypeCheckCtx* c, int32_t rootTypeId, const int32_t* argTypes, uint16_t argCount) {
+    int32_t         rootNamedIndex = -1;
+    uint32_t        i;
+    const H2TCType* rootType;
     for (i = 0; i < c->namedTypeLen; i++) {
         if (c->namedTypes[i].typeId == rootTypeId) {
             rootNamedIndex = (int32_t)i;
@@ -1052,8 +1048,8 @@ int32_t HOPTCInstantiateNamedType(
         return rootTypeId;
     }
     for (i = 0; i < c->namedTypeLen; i++) {
-        const HOPTCNamedType* nt = &c->namedTypes[i];
-        uint16_t              j;
+        const H2TCNamedType* nt = &c->namedTypes[i];
+        uint16_t             j;
         if (nt->templateRootNamedIndex != rootNamedIndex || nt->templateArgCount != argCount) {
             continue;
         }
@@ -1069,17 +1065,17 @@ int32_t HOPTCInstantiateNamedType(
     if (c->typeLen >= c->typeCap || c->namedTypeLen >= c->namedTypeCap
         || c->genericArgLen + argCount > c->genericArgCap)
     {
-        return HOPTCFailSpan(c, HOPDiag_ARENA_OOM, 0, 0);
+        return H2TCFailSpan(c, H2Diag_ARENA_OOM, 0, 0);
     }
     rootType = &c->types[rootTypeId];
     {
-        HOPTCType       t = *rootType;
-        HOPTCNamedType* nt;
-        int32_t         typeId;
+        H2TCType       t = *rootType;
+        H2TCNamedType* nt;
+        int32_t        typeId;
         t.fieldStart = 0;
         t.fieldCount = 0;
-        t.flags &= (uint16_t)~(HOPTCTypeFlag_ALIAS_RESOLVING | HOPTCTypeFlag_ALIAS_RESOLVED);
-        typeId = HOPTCAddType(c, &t, rootType->nameStart, rootType->nameEnd);
+        t.flags &= (uint16_t)~(H2TCTypeFlag_ALIAS_RESOLVING | H2TCTypeFlag_ALIAS_RESOLVED);
+        typeId = H2TCAddType(c, &t, rootType->nameStart, rootType->nameEnd);
         if (typeId < 0) {
             return -1;
         }
@@ -1095,8 +1091,8 @@ int32_t HOPTCInstantiateNamedType(
         for (i = 0; i < argCount; i++) {
             c->genericArgTypes[c->genericArgLen++] = argTypes[i];
         }
-        if (t.kind == HOPTCType_ALIAS) {
-            int32_t baseType = HOPTCSubstituteType(
+        if (t.kind == H2TCType_ALIAS) {
+            int32_t baseType = H2TCSubstituteType(
                 c,
                 rootType->baseType,
                 &c->genericArgTypes[c->namedTypes[(uint32_t)rootNamedIndex].templateArgStart],
@@ -1108,45 +1104,45 @@ int32_t HOPTCInstantiateNamedType(
                 return -1;
             }
             c->types[typeId].baseType = baseType;
-            c->types[typeId].flags |= HOPTCTypeFlag_ALIAS_RESOLVED;
+            c->types[typeId].flags |= H2TCTypeFlag_ALIAS_RESOLVED;
         }
         return typeId;
     }
 }
 
-static int HOPTCIsNamedTypeDeclKind(HOPAstKind kind) {
-    return kind == HOPAst_STRUCT || kind == HOPAst_UNION || kind == HOPAst_ENUM
-        || kind == HOPAst_TYPE_ALIAS;
+static int H2TCIsNamedTypeDeclKind(H2AstKind kind) {
+    return kind == H2Ast_STRUCT || kind == H2Ast_UNION || kind == H2Ast_ENUM
+        || kind == H2Ast_TYPE_ALIAS;
 }
 
-static int HOPTCCollectTypeDeclsFromNodeWithOwner(
-    HOPTypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId) {
-    HOPAstKind kind = c->ast->nodes[nodeId].kind;
-    if (kind == HOPAst_PUB) {
-        int32_t ch = HOPAstFirstChild(c->ast, nodeId);
+static int H2TCCollectTypeDeclsFromNodeWithOwner(
+    H2TypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId) {
+    H2AstKind kind = c->ast->nodes[nodeId].kind;
+    if (kind == H2Ast_PUB) {
+        int32_t ch = H2AstFirstChild(c->ast, nodeId);
         while (ch >= 0) {
-            if (HOPTCCollectTypeDeclsFromNodeWithOwner(c, ch, ownerTypeId) != 0) {
+            if (H2TCCollectTypeDeclsFromNodeWithOwner(c, ch, ownerTypeId) != 0) {
                 return -1;
             }
-            ch = HOPAstNextSibling(c->ast, ch);
+            ch = H2AstNextSibling(c->ast, ch);
         }
         return 0;
     }
-    if (HOPTCIsNamedTypeDeclKind(kind)) {
+    if (H2TCIsNamedTypeDeclKind(kind)) {
         int32_t declaredTypeId = -1;
-        if (HOPTCAddNamedType(c, nodeId, ownerTypeId, &declaredTypeId) != 0) {
+        if (H2TCAddNamedType(c, nodeId, ownerTypeId, &declaredTypeId) != 0) {
             return -1;
         }
-        if (kind == HOPAst_STRUCT || kind == HOPAst_UNION) {
-            int32_t child = HOPAstFirstChild(c->ast, nodeId);
+        if (kind == H2Ast_STRUCT || kind == H2Ast_UNION) {
+            int32_t child = H2AstFirstChild(c->ast, nodeId);
             while (child >= 0) {
-                HOPAstKind childKind = c->ast->nodes[child].kind;
-                if (HOPTCIsNamedTypeDeclKind(childKind)
-                    && HOPTCCollectTypeDeclsFromNodeWithOwner(c, child, declaredTypeId) != 0)
+                H2AstKind childKind = c->ast->nodes[child].kind;
+                if (H2TCIsNamedTypeDeclKind(childKind)
+                    && H2TCCollectTypeDeclsFromNodeWithOwner(c, child, declaredTypeId) != 0)
                 {
                     return -1;
                 }
-                child = HOPAstNextSibling(c->ast, child);
+                child = H2AstNextSibling(c->ast, child);
             }
         }
         return 0;
@@ -1154,42 +1150,42 @@ static int HOPTCCollectTypeDeclsFromNodeWithOwner(
     return 0;
 }
 
-int HOPTCCollectTypeDeclsFromNode(HOPTypeCheckCtx* c, int32_t nodeId) {
-    return HOPTCCollectTypeDeclsFromNodeWithOwner(c, nodeId, -1);
+int H2TCCollectTypeDeclsFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
+    return H2TCCollectTypeDeclsFromNodeWithOwner(c, nodeId, -1);
 }
 
-int HOPTCIsIntegerType(HOPTypeCheckCtx* c, int32_t typeId) {
-    HOPBuiltinKind b;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCIsIntegerType(H2TypeCheckCtx* c, int32_t typeId) {
+    H2BuiltinKind b;
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
     if (typeId == c->typeUntypedInt) {
         return 1;
     }
-    if (c->types[typeId].kind != HOPTCType_BUILTIN) {
+    if (c->types[typeId].kind != H2TCType_BUILTIN) {
         return 0;
     }
     b = c->types[typeId].builtin;
-    return b == HOPBuiltin_U8 || b == HOPBuiltin_U16 || b == HOPBuiltin_U32 || b == HOPBuiltin_U64
-        || b == HOPBuiltin_I8 || b == HOPBuiltin_I16 || b == HOPBuiltin_I32 || b == HOPBuiltin_I64
-        || b == HOPBuiltin_USIZE || b == HOPBuiltin_ISIZE;
+    return b == H2Builtin_U8 || b == H2Builtin_U16 || b == H2Builtin_U32 || b == H2Builtin_U64
+        || b == H2Builtin_I8 || b == H2Builtin_I16 || b == H2Builtin_I32 || b == H2Builtin_I64
+        || b == H2Builtin_USIZE || b == H2Builtin_ISIZE;
 }
 
-int HOPTCIsConstNumericType(HOPTypeCheckCtx* c, int32_t typeId) {
+int H2TCIsConstNumericType(H2TypeCheckCtx* c, int32_t typeId) {
     return typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat;
 }
 
-int HOPTCTypeIsRuneLike(HOPTypeCheckCtx* c, int32_t typeId) {
+int H2TCTypeIsRuneLike(H2TypeCheckCtx* c, int32_t typeId) {
     uint32_t depth = 0;
     while (typeId >= 0 && (uint32_t)typeId < c->typeLen && depth++ <= c->typeLen) {
         if (typeId == c->typeRune) {
             return 1;
         }
-        if (c->types[typeId].kind != HOPTCType_ALIAS) {
+        if (c->types[typeId].kind != H2TCType_ALIAS) {
             break;
         }
-        if (HOPTCResolveAliasTypeId(c, typeId) != 0) {
+        if (H2TCResolveAliasTypeId(c, typeId) != 0) {
             return 0;
         }
         typeId = c->types[typeId].baseType;
@@ -1197,7 +1193,7 @@ int HOPTCTypeIsRuneLike(HOPTypeCheckCtx* c, int32_t typeId) {
     return 0;
 }
 
-uint32_t HOPTCU64BitLen(uint64_t v) {
+uint32_t H2TCU64BitLen(uint64_t v) {
     uint32_t bits = 0;
     while (v != 0u) {
         v >>= 1u;
@@ -1206,49 +1202,47 @@ uint32_t HOPTCU64BitLen(uint64_t v) {
     return bits;
 }
 
-int HOPTCConstIntFitsType(HOPTypeCheckCtx* c, int64_t value, int32_t typeId) {
-    HOPBuiltinKind b;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCConstIntFitsType(H2TypeCheckCtx* c, int64_t value, int32_t typeId) {
+    H2BuiltinKind b;
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId == c->typeUntypedInt) {
         return 1;
     }
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != HOPTCType_BUILTIN)
-    {
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != H2TCType_BUILTIN) {
         return 0;
     }
     b = c->types[typeId].builtin;
     switch (b) {
-        case HOPBuiltin_U8:    return value >= 0 && value <= (int64_t)UINT8_MAX;
-        case HOPBuiltin_U16:   return value >= 0 && value <= (int64_t)UINT16_MAX;
-        case HOPBuiltin_U32:   return value >= 0 && value <= (int64_t)UINT32_MAX;
-        case HOPBuiltin_U64:
-        case HOPBuiltin_USIZE: return value >= 0;
-        case HOPBuiltin_I8:    return value >= (int64_t)INT8_MIN && value <= (int64_t)INT8_MAX;
-        case HOPBuiltin_I16:   return value >= (int64_t)INT16_MIN && value <= (int64_t)INT16_MAX;
-        case HOPBuiltin_I32:   return value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX;
-        case HOPBuiltin_I64:
-        case HOPBuiltin_ISIZE: return 1;
-        default:               return 0;
+        case H2Builtin_U8:    return value >= 0 && value <= (int64_t)UINT8_MAX;
+        case H2Builtin_U16:   return value >= 0 && value <= (int64_t)UINT16_MAX;
+        case H2Builtin_U32:   return value >= 0 && value <= (int64_t)UINT32_MAX;
+        case H2Builtin_U64:
+        case H2Builtin_USIZE: return value >= 0;
+        case H2Builtin_I8:    return value >= (int64_t)INT8_MIN && value <= (int64_t)INT8_MAX;
+        case H2Builtin_I16:   return value >= (int64_t)INT16_MIN && value <= (int64_t)INT16_MAX;
+        case H2Builtin_I32:   return value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX;
+        case H2Builtin_I64:
+        case H2Builtin_ISIZE: return 1;
+        default:              return 0;
     }
 }
 
-int HOPTCConstIntFitsFloatType(HOPTypeCheckCtx* c, int64_t value, int32_t typeId) {
-    HOPBuiltinKind b;
-    uint32_t       precisionBits;
-    uint64_t       magnitude;
-    uint32_t       bits;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCConstIntFitsFloatType(H2TypeCheckCtx* c, int64_t value, int32_t typeId) {
+    H2BuiltinKind b;
+    uint32_t      precisionBits;
+    uint64_t      magnitude;
+    uint32_t      bits;
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId == c->typeUntypedFloat) {
         return 1;
     }
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != HOPTCType_BUILTIN)
-    {
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != H2TCType_BUILTIN) {
         return 0;
     }
     b = c->types[typeId].builtin;
-    if (b == HOPBuiltin_F32) {
+    if (b == H2Builtin_F32) {
         precisionBits = 23u;
-    } else if (b == HOPBuiltin_F64) {
+    } else if (b == H2Builtin_F64) {
         precisionBits = 53u;
     } else {
         return 0;
@@ -1258,25 +1252,24 @@ int HOPTCConstIntFitsFloatType(HOPTypeCheckCtx* c, int64_t value, int32_t typeId
     } else {
         magnitude = (uint64_t)value;
     }
-    bits = HOPTCU64BitLen(magnitude);
+    bits = H2TCU64BitLen(magnitude);
     return bits <= precisionBits;
 }
 
-int HOPTCConstFloatFitsType(HOPTypeCheckCtx* c, double value, int32_t typeId) {
-    HOPBuiltinKind b;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCConstFloatFitsType(H2TypeCheckCtx* c, double value, int32_t typeId) {
+    H2BuiltinKind b;
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId == c->typeUntypedFloat) {
         return 1;
     }
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != HOPTCType_BUILTIN)
-    {
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != H2TCType_BUILTIN) {
         return 0;
     }
     b = c->types[typeId].builtin;
-    if (b == HOPBuiltin_F64) {
+    if (b == H2Builtin_F64) {
         return 1;
     }
-    if (b != HOPBuiltin_F32) {
+    if (b != H2Builtin_F32) {
         return 0;
     }
     if (value != value) {
@@ -1285,81 +1278,80 @@ int HOPTCConstFloatFitsType(HOPTypeCheckCtx* c, double value, int32_t typeId) {
     return (double)(float)value == value;
 }
 
-int HOPTCFailConstIntRange(
-    HOPTypeCheckCtx* c, int32_t nodeId, int64_t value, int32_t expectedType) {
-    char         dstTypeBuf[HOPTC_DIAG_TEXT_CAP];
-    char         detailBuf[256];
-    HOPTCTextBuf dstTypeText;
-    HOPTCTextBuf detailText;
-    HOPTCSetDiag(
-        c->diag, HOPDiag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+int H2TCFailConstIntRange(H2TypeCheckCtx* c, int32_t nodeId, int64_t value, int32_t expectedType) {
+    char        dstTypeBuf[H2TC_DIAG_TEXT_CAP];
+    char        detailBuf[256];
+    H2TCTextBuf dstTypeText;
+    H2TCTextBuf detailText;
+    H2TCSetDiag(
+        c->diag, H2Diag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
     if (c->diag == NULL) {
         return -1;
     }
-    HOPTCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
-    HOPTCFormatTypeRec(c, expectedType, &dstTypeText, 0);
-    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
-    HOPTCTextBufAppendCStr(&detailText, "constant value 0x");
-    HOPTCTextBufAppendHexU64(&detailText, (uint64_t)value);
-    HOPTCTextBufAppendCStr(&detailText, " is out of range for ");
-    HOPTCTextBufAppendCStr(&detailText, dstTypeBuf);
-    c->diag->detail = HOPTCAllocDiagText(c, detailBuf);
+    H2TCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
+    H2TCFormatTypeRec(c, expectedType, &dstTypeText, 0);
+    H2TCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    H2TCTextBufAppendCStr(&detailText, "constant value 0x");
+    H2TCTextBufAppendHexU64(&detailText, (uint64_t)value);
+    H2TCTextBufAppendCStr(&detailText, " is out of range for ");
+    H2TCTextBufAppendCStr(&detailText, dstTypeBuf);
+    c->diag->detail = H2TCAllocDiagText(c, detailBuf);
     return -1;
 }
 
-int HOPTCFailConstFloatRange(HOPTypeCheckCtx* c, int32_t nodeId, int32_t expectedType) {
-    char         dstTypeBuf[HOPTC_DIAG_TEXT_CAP];
-    char         detailBuf[256];
-    HOPTCTextBuf dstTypeText;
-    HOPTCTextBuf detailText;
-    HOPTCSetDiag(
-        c->diag, HOPDiag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
+int H2TCFailConstFloatRange(H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType) {
+    char        dstTypeBuf[H2TC_DIAG_TEXT_CAP];
+    char        detailBuf[256];
+    H2TCTextBuf dstTypeText;
+    H2TCTextBuf detailText;
+    H2TCSetDiag(
+        c->diag, H2Diag_TYPE_MISMATCH, c->ast->nodes[nodeId].start, c->ast->nodes[nodeId].end);
     if (c->diag == NULL) {
         return -1;
     }
-    HOPTCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
-    HOPTCFormatTypeRec(c, expectedType, &dstTypeText, 0);
-    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
-    HOPTCTextBufAppendCStr(&detailText, "constant value is not representable for ");
-    HOPTCTextBufAppendCStr(&detailText, dstTypeBuf);
-    c->diag->detail = HOPTCAllocDiagText(c, detailBuf);
+    H2TCTextBufInit(&dstTypeText, dstTypeBuf, (uint32_t)sizeof(dstTypeBuf));
+    H2TCFormatTypeRec(c, expectedType, &dstTypeText, 0);
+    H2TCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    H2TCTextBufAppendCStr(&detailText, "constant value is not representable for ");
+    H2TCTextBufAppendCStr(&detailText, dstTypeBuf);
+    c->diag->detail = H2TCAllocDiagText(c, detailBuf);
     return -1;
 }
 
-int HOPTCIsFloatType(HOPTypeCheckCtx* c, int32_t typeId) {
-    HOPBuiltinKind b;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCIsFloatType(H2TypeCheckCtx* c, int32_t typeId) {
+    H2BuiltinKind b;
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
     if (typeId == c->typeUntypedFloat) {
         return 1;
     }
-    if (c->types[typeId].kind != HOPTCType_BUILTIN) {
+    if (c->types[typeId].kind != H2TCType_BUILTIN) {
         return 0;
     }
     b = c->types[typeId].builtin;
-    return b == HOPBuiltin_F32 || b == HOPBuiltin_F64;
+    return b == H2Builtin_F32 || b == H2Builtin_F64;
 }
 
-int HOPTCIsNumericType(HOPTypeCheckCtx* c, int32_t typeId) {
-    return HOPTCIsIntegerType(c, typeId) || HOPTCIsFloatType(c, typeId);
+int H2TCIsNumericType(H2TypeCheckCtx* c, int32_t typeId) {
+    return H2TCIsIntegerType(c, typeId) || H2TCIsFloatType(c, typeId);
 }
 
-int HOPTCIsBoolType(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCIsBoolType(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     return typeId == c->typeBool;
 }
 
-int HOPTCIsRawptrType(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCIsRawptrType(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     return c != NULL && typeId >= 0 && typeId == c->typeRawptr;
 }
 
-int HOPTCIsNamedDeclKind(HOPTypeCheckCtx* c, int32_t typeId, HOPAstKind kind) {
+int H2TCIsNamedDeclKind(H2TypeCheckCtx* c, int32_t typeId, H2AstKind kind) {
     int32_t declNode;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
-    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != HOPTCType_NAMED) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
+    if (typeId < 0 || (uint32_t)typeId >= c->typeLen || c->types[typeId].kind != H2TCType_NAMED) {
         return 0;
     }
     declNode = c->types[typeId].declNode;
@@ -1367,218 +1359,216 @@ int HOPTCIsNamedDeclKind(HOPTypeCheckCtx* c, int32_t typeId, HOPAstKind kind) {
         && c->ast->nodes[declNode].kind == kind;
 }
 
-int HOPTCIsStringLikeType(HOPTypeCheckCtx* c, int32_t typeId) {
+int H2TCIsStringLikeType(H2TypeCheckCtx* c, int32_t typeId) {
     int32_t baseType;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
     if (typeId == c->typeStr) {
         return 1;
     }
-    if (c->types[typeId].kind != HOPTCType_PTR && c->types[typeId].kind != HOPTCType_REF) {
+    if (c->types[typeId].kind != H2TCType_PTR && c->types[typeId].kind != H2TCType_REF) {
         return 0;
     }
-    baseType = HOPTCResolveAliasBaseType(c, c->types[typeId].baseType);
+    baseType = H2TCResolveAliasBaseType(c, c->types[typeId].baseType);
     return baseType == c->typeStr;
 }
 
-int HOPTCTypeSupportsFmtReflectRec(HOPTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
+int H2TCTypeSupportsFmtReflectRec(H2TypeCheckCtx* c, int32_t typeId, uint32_t depth) {
     uint32_t i;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
         return 0;
     }
-    if (HOPTCIsStringLikeType(c, typeId)) {
+    if (H2TCIsStringLikeType(c, typeId)) {
         return 1;
     }
     switch (c->types[typeId].kind) {
-        case HOPTCType_BUILTIN:
-        case HOPTCType_UNTYPED_INT:
-        case HOPTCType_UNTYPED_FLOAT:
-            return HOPTCIsBoolType(c, typeId) || HOPTCIsNumericType(c, typeId)
-                || typeId == c->typeType || HOPTCIsRawptrType(c, typeId);
-        case HOPTCType_ARRAY:
-        case HOPTCType_SLICE:
-            return HOPTCTypeSupportsFmtReflectRec(c, c->types[typeId].baseType, depth + 1u);
-        case HOPTCType_PTR:
-        case HOPTCType_REF: return 1;
-        case HOPTCType_OPTIONAL:
-            return HOPTCTypeSupportsFmtReflectRec(c, c->types[typeId].baseType, depth + 1u);
-        case HOPTCType_NULL: return 1;
-        case HOPTCType_NAMED:
-            if (HOPTCIsNamedDeclKind(c, typeId, HOPAst_ENUM)) {
+        case H2TCType_BUILTIN:
+        case H2TCType_UNTYPED_INT:
+        case H2TCType_UNTYPED_FLOAT:
+            return H2TCIsBoolType(c, typeId) || H2TCIsNumericType(c, typeId)
+                || typeId == c->typeType || H2TCIsRawptrType(c, typeId);
+        case H2TCType_ARRAY:
+        case H2TCType_SLICE:
+            return H2TCTypeSupportsFmtReflectRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_PTR:
+        case H2TCType_REF: return 1;
+        case H2TCType_OPTIONAL:
+            return H2TCTypeSupportsFmtReflectRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_NULL: return 1;
+        case H2TCType_NAMED:
+            if (H2TCIsNamedDeclKind(c, typeId, H2Ast_ENUM)) {
                 return 1;
             }
-            if (HOPTCIsNamedDeclKind(c, typeId, HOPAst_UNION)) {
+            if (H2TCIsNamedDeclKind(c, typeId, H2Ast_UNION)) {
                 return 0;
             }
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t fieldIdx = c->types[typeId].fieldStart + i;
-                if (!HOPTCTypeSupportsFmtReflectRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                if (!H2TCTypeSupportsFmtReflectRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
                     return 0;
                 }
             }
             return 1;
-        case HOPTCType_ANON_STRUCT:
-        case HOPTCType_TUPLE:
+        case H2TCType_ANON_STRUCT:
+        case H2TCType_TUPLE:
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t fieldIdx = c->types[typeId].fieldStart + i;
-                if (!HOPTCTypeSupportsFmtReflectRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                if (!H2TCTypeSupportsFmtReflectRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
                     return 0;
                 }
             }
             return 1;
-        case HOPTCType_ANON_UNION: return 0;
-        default:                   return 0;
+        case H2TCType_ANON_UNION: return 0;
+        default:                  return 0;
     }
 }
 
-int HOPTCIsComparableTypeRec(HOPTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
+int H2TCIsComparableTypeRec(H2TypeCheckCtx* c, int32_t typeId, uint32_t depth) {
     uint32_t i;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
         return 0;
     }
-    if (HOPTCIsStringLikeType(c, typeId)) {
+    if (H2TCIsStringLikeType(c, typeId)) {
         return 1;
     }
     switch (c->types[typeId].kind) {
-        case HOPTCType_BUILTIN:
-        case HOPTCType_UNTYPED_INT:
-        case HOPTCType_UNTYPED_FLOAT:
-            return HOPTCIsBoolType(c, typeId) || HOPTCIsNumericType(c, typeId)
-                || typeId == c->typeType || HOPTCIsRawptrType(c, typeId);
-        case HOPTCType_ARRAY:
-        case HOPTCType_SLICE:
-            return HOPTCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
-        case HOPTCType_PTR:
-        case HOPTCType_REF: return 1;
-        case HOPTCType_NAMED:
-            if (HOPTCIsNamedDeclKind(c, typeId, HOPAst_ENUM)) {
+        case H2TCType_BUILTIN:
+        case H2TCType_UNTYPED_INT:
+        case H2TCType_UNTYPED_FLOAT:
+            return H2TCIsBoolType(c, typeId) || H2TCIsNumericType(c, typeId)
+                || typeId == c->typeType || H2TCIsRawptrType(c, typeId);
+        case H2TCType_ARRAY:
+        case H2TCType_SLICE:
+            return H2TCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_PTR:
+        case H2TCType_REF: return 1;
+        case H2TCType_NAMED:
+            if (H2TCIsNamedDeclKind(c, typeId, H2Ast_ENUM)) {
                 return 1;
             }
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t fieldIdx = c->types[typeId].fieldStart + i;
-                if (!HOPTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                if (!H2TCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
                     return 0;
                 }
             }
             return 1;
-        case HOPTCType_ANON_STRUCT:
+        case H2TCType_ANON_STRUCT:
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t fieldIdx = c->types[typeId].fieldStart + i;
-                if (!HOPTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                if (!H2TCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
                     return 0;
                 }
             }
             return 1;
-        case HOPTCType_ANON_UNION:
+        case H2TCType_ANON_UNION:
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t fieldIdx = c->types[typeId].fieldStart + i;
-                if (!HOPTCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
+                if (!H2TCIsComparableTypeRec(c, c->fields[fieldIdx].typeId, depth + 1u)) {
                     return 0;
                 }
             }
             return 1;
-        case HOPTCType_OPTIONAL:
-            return HOPTCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
-        case HOPTCType_NULL: return 1;
-        default:             return 0;
+        case H2TCType_OPTIONAL:
+            return H2TCIsComparableTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_NULL: return 1;
+        default:            return 0;
     }
 }
 
-int HOPTCIsOrderedTypeRec(HOPTypeCheckCtx* c, int32_t typeId, uint32_t depth) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCIsOrderedTypeRec(H2TypeCheckCtx* c, int32_t typeId, uint32_t depth) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || depth > c->typeLen) {
         return 0;
     }
-    if (HOPTCIsStringLikeType(c, typeId)) {
+    if (H2TCIsStringLikeType(c, typeId)) {
         return 1;
     }
     switch (c->types[typeId].kind) {
-        case HOPTCType_BUILTIN:
-            return HOPTCIsNumericType(c, typeId) || HOPTCIsRawptrType(c, typeId);
-        case HOPTCType_UNTYPED_INT:
-        case HOPTCType_UNTYPED_FLOAT: return HOPTCIsNumericType(c, typeId);
-        case HOPTCType_ARRAY:
-        case HOPTCType_SLICE:
-            return HOPTCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
-        case HOPTCType_PTR:
-        case HOPTCType_REF:   return 1;
-        case HOPTCType_NAMED: return HOPTCIsNamedDeclKind(c, typeId, HOPAst_ENUM);
-        case HOPTCType_OPTIONAL:
-            return HOPTCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_BUILTIN:       return H2TCIsNumericType(c, typeId) || H2TCIsRawptrType(c, typeId);
+        case H2TCType_UNTYPED_INT:
+        case H2TCType_UNTYPED_FLOAT: return H2TCIsNumericType(c, typeId);
+        case H2TCType_ARRAY:
+        case H2TCType_SLICE:         return H2TCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
+        case H2TCType_PTR:
+        case H2TCType_REF:           return 1;
+        case H2TCType_NAMED:         return H2TCIsNamedDeclKind(c, typeId, H2Ast_ENUM);
+        case H2TCType_OPTIONAL:
+            return H2TCIsOrderedTypeRec(c, c->types[typeId].baseType, depth + 1u);
         default: return 0;
     }
 }
 
-int HOPTCIsComparableType(HOPTypeCheckCtx* c, int32_t typeId) {
-    return HOPTCIsComparableTypeRec(c, typeId, 0u);
+int H2TCIsComparableType(H2TypeCheckCtx* c, int32_t typeId) {
+    return H2TCIsComparableTypeRec(c, typeId, 0u);
 }
 
-int HOPTCIsOrderedType(HOPTypeCheckCtx* c, int32_t typeId) {
-    return HOPTCIsOrderedTypeRec(c, typeId, 0u);
+int H2TCIsOrderedType(H2TypeCheckCtx* c, int32_t typeId) {
+    return H2TCIsOrderedTypeRec(c, typeId, 0u);
 }
 
-int HOPTCTypeSupportsLen(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCTypeSupportsLen(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
-    if (c->types[typeId].kind == HOPTCType_PACK) {
+    if (c->types[typeId].kind == H2TCType_PACK) {
         return 1;
     }
     if (typeId == c->typeStr) {
         return 1;
     }
-    if (c->types[typeId].kind == HOPTCType_ARRAY) {
+    if (c->types[typeId].kind == H2TCType_ARRAY) {
         return 1;
     }
-    if (c->types[typeId].kind == HOPTCType_SLICE) {
+    if (c->types[typeId].kind == H2TCType_SLICE) {
         return 1;
     }
-    if (c->types[typeId].kind == HOPTCType_PTR || c->types[typeId].kind == HOPTCType_REF) {
-        int32_t baseType = HOPTCResolveAliasBaseType(c, c->types[typeId].baseType);
+    if (c->types[typeId].kind == H2TCType_PTR || c->types[typeId].kind == H2TCType_REF) {
+        int32_t baseType = H2TCResolveAliasBaseType(c, c->types[typeId].baseType);
         if (baseType < 0 || (uint32_t)baseType >= c->typeLen) {
             return 0;
         }
         if (baseType == c->typeStr) {
             return 1;
         }
-        return c->types[baseType].kind == HOPTCType_ARRAY
-            || c->types[baseType].kind == HOPTCType_SLICE;
+        return c->types[baseType].kind == H2TCType_ARRAY
+            || c->types[baseType].kind == H2TCType_SLICE;
     }
     return 0;
 }
 
-int HOPTCIsUntyped(HOPTypeCheckCtx* c, int32_t typeId) {
+int H2TCIsUntyped(H2TypeCheckCtx* c, int32_t typeId) {
     return typeId == c->typeUntypedInt || typeId == c->typeUntypedFloat;
 }
 
-int HOPTCIsTypeNodeKind(HOPAstKind kind) {
-    return kind == HOPAst_TYPE_NAME || kind == HOPAst_TYPE_PTR || kind == HOPAst_TYPE_REF
-        || kind == HOPAst_TYPE_MUTREF || kind == HOPAst_TYPE_ARRAY || kind == HOPAst_TYPE_VARRAY
-        || kind == HOPAst_TYPE_SLICE || kind == HOPAst_TYPE_MUTSLICE || kind == HOPAst_TYPE_OPTIONAL
-        || kind == HOPAst_TYPE_FN || kind == HOPAst_TYPE_ANON_STRUCT
-        || kind == HOPAst_TYPE_ANON_UNION || kind == HOPAst_TYPE_TUPLE;
+int H2TCIsTypeNodeKind(H2AstKind kind) {
+    return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
+        || kind == H2Ast_TYPE_MUTREF || kind == H2Ast_TYPE_ARRAY || kind == H2Ast_TYPE_VARRAY
+        || kind == H2Ast_TYPE_SLICE || kind == H2Ast_TYPE_MUTSLICE || kind == H2Ast_TYPE_OPTIONAL
+        || kind == H2Ast_TYPE_FN || kind == H2Ast_TYPE_ANON_STRUCT || kind == H2Ast_TYPE_ANON_UNION
+        || kind == H2Ast_TYPE_TUPLE;
 }
 
-int HOPTCConcretizeInferredType(HOPTypeCheckCtx* c, int32_t typeId, int32_t* outType) {
-    const HOPTCType* t;
-    uint32_t         i;
+int H2TCConcretizeInferredType(H2TypeCheckCtx* c, int32_t typeId, int32_t* outType) {
+    const H2TCType* t;
+    uint32_t        i;
     if (typeId == c->typeUntypedInt) {
-        int32_t t = HOPTCFindBuiltinByKind(c, HOPBuiltin_ISIZE);
+        int32_t t = H2TCFindBuiltinByKind(c, H2Builtin_ISIZE);
         if (t < 0) {
-            return HOPTCFailSpan(c, HOPDiag_UNKNOWN_TYPE, 0, 0);
+            return H2TCFailSpan(c, H2Diag_UNKNOWN_TYPE, 0, 0);
         }
         *outType = t;
         return 0;
     }
     if (typeId == c->typeUntypedFloat) {
-        int32_t t = HOPTCFindBuiltinByKind(c, HOPBuiltin_F64);
+        int32_t t = H2TCFindBuiltinByKind(c, H2Builtin_F64);
         if (t < 0) {
-            return HOPTCFailSpan(c, HOPDiag_UNKNOWN_TYPE, 0, 0);
+            return H2TCFailSpan(c, H2Diag_UNKNOWN_TYPE, 0, 0);
         }
         *outType = t;
         return 0;
@@ -1588,16 +1578,16 @@ int HOPTCConcretizeInferredType(HOPTypeCheckCtx* c, int32_t typeId, int32_t* out
         return 0;
     }
     t = &c->types[typeId];
-    if (t->kind == HOPTCType_TUPLE) {
+    if (t->kind == H2TCType_TUPLE) {
         int32_t elems[256];
         int     changed = 0;
         if (t->fieldCount > (uint16_t)(sizeof(elems) / sizeof(elems[0]))) {
-            return HOPTCFailSpan(c, HOPDiag_ARENA_OOM, 0, 0);
+            return H2TCFailSpan(c, H2Diag_ARENA_OOM, 0, 0);
         }
         for (i = 0; i < t->fieldCount; i++) {
             int32_t elem = c->funcParamTypes[t->fieldStart + i];
             int32_t concreteElem = elem;
-            if (HOPTCConcretizeInferredType(c, elem, &concreteElem) != 0) {
+            if (H2TCConcretizeInferredType(c, elem, &concreteElem) != 0) {
                 return -1;
             }
             if (concreteElem != elem) {
@@ -1609,14 +1599,14 @@ int HOPTCConcretizeInferredType(HOPTypeCheckCtx* c, int32_t typeId, int32_t* out
             *outType = typeId;
             return 0;
         }
-        *outType = HOPTCInternTupleType(c, elems, t->fieldCount, 0, 0);
+        *outType = H2TCInternTupleType(c, elems, t->fieldCount, 0, 0);
         return *outType < 0 ? -1 : 0;
     }
     *outType = typeId;
     return 0;
 }
 
-static int32_t HOPTCLookupSubstitutedType(
+static int32_t H2TCLookupSubstitutedType(
     const int32_t* paramTypes, const int32_t* argTypes, uint16_t argCount, int32_t typeId) {
     uint16_t i;
     for (i = 0; i < argCount; i++) {
@@ -1627,62 +1617,62 @@ static int32_t HOPTCLookupSubstitutedType(
     return typeId;
 }
 
-int32_t HOPTCSubstituteType(
-    HOPTypeCheckCtx* c,
-    int32_t          typeId,
-    const int32_t*   paramTypes,
-    const int32_t*   argTypes,
-    uint16_t         argCount,
-    uint32_t         errStart,
-    uint32_t         errEnd) {
-    const HOPTCType* t;
+int32_t H2TCSubstituteType(
+    H2TypeCheckCtx* c,
+    int32_t         typeId,
+    const int32_t*  paramTypes,
+    const int32_t*  argTypes,
+    uint16_t        argCount,
+    uint32_t        errStart,
+    uint32_t        errEnd) {
+    const H2TCType* t;
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen || argCount == 0) {
         return typeId;
     }
     t = &c->types[typeId];
-    if (t->kind == HOPTCType_TYPE_PARAM) {
-        return HOPTCLookupSubstitutedType(paramTypes, argTypes, argCount, typeId);
+    if (t->kind == H2TCType_TYPE_PARAM) {
+        return H2TCLookupSubstitutedType(paramTypes, argTypes, argCount, typeId);
     }
     switch (t->kind) {
-        case HOPTCType_PTR: {
-            int32_t baseType = HOPTCSubstituteType(
+        case H2TCType_PTR: {
+            int32_t baseType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             return baseType == t->baseType
                      ? typeId
-                     : HOPTCInternPtrType(c, baseType, errStart, errEnd);
+                     : H2TCInternPtrType(c, baseType, errStart, errEnd);
         }
-        case HOPTCType_REF: {
-            int32_t baseType = HOPTCSubstituteType(
+        case H2TCType_REF: {
+            int32_t baseType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             return baseType == t->baseType
                      ? typeId
-                     : HOPTCInternRefType(
-                           c, baseType, (t->flags & HOPTCTypeFlag_MUTABLE) != 0, errStart, errEnd);
+                     : H2TCInternRefType(
+                           c, baseType, (t->flags & H2TCTypeFlag_MUTABLE) != 0, errStart, errEnd);
         }
-        case HOPTCType_ARRAY: {
-            int32_t baseType = HOPTCSubstituteType(
+        case H2TCType_ARRAY: {
+            int32_t baseType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             return baseType == t->baseType
                      ? typeId
-                     : HOPTCInternArrayType(c, baseType, t->arrayLen, errStart, errEnd);
+                     : H2TCInternArrayType(c, baseType, t->arrayLen, errStart, errEnd);
         }
-        case HOPTCType_SLICE: {
-            int32_t baseType = HOPTCSubstituteType(
+        case H2TCType_SLICE: {
+            int32_t baseType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             return baseType == t->baseType
                      ? typeId
-                     : HOPTCInternSliceType(
-                           c, baseType, (t->flags & HOPTCTypeFlag_MUTABLE) != 0, errStart, errEnd);
+                     : H2TCInternSliceType(
+                           c, baseType, (t->flags & H2TCTypeFlag_MUTABLE) != 0, errStart, errEnd);
         }
-        case HOPTCType_OPTIONAL: {
-            int32_t baseType = HOPTCSubstituteType(
+        case H2TCType_OPTIONAL: {
+            int32_t baseType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             return baseType == t->baseType
                      ? typeId
-                     : HOPTCInternOptionalType(c, baseType, errStart, errEnd);
+                     : H2TCInternOptionalType(c, baseType, errStart, errEnd);
         }
-        case HOPTCType_TUPLE:
-        case HOPTCType_PACK:  {
+        case H2TCType_TUPLE:
+        case H2TCType_PACK:  {
             int32_t  elems[256];
             uint32_t i;
             int      changed = 0;
@@ -1691,7 +1681,7 @@ int32_t HOPTCSubstituteType(
             }
             for (i = 0; i < t->fieldCount; i++) {
                 int32_t elem = c->funcParamTypes[t->fieldStart + i];
-                elems[i] = HOPTCSubstituteType(
+                elems[i] = H2TCSubstituteType(
                     c, elem, paramTypes, argTypes, argCount, errStart, errEnd);
                 if (elems[i] != elem) {
                     changed = 1;
@@ -1700,11 +1690,11 @@ int32_t HOPTCSubstituteType(
             if (!changed) {
                 return typeId;
             }
-            return t->kind == HOPTCType_TUPLE
-                     ? HOPTCInternTupleType(c, elems, t->fieldCount, errStart, errEnd)
-                     : HOPTCInternPackType(c, elems, t->fieldCount, errStart, errEnd);
+            return t->kind == H2TCType_TUPLE
+                     ? H2TCInternTupleType(c, elems, t->fieldCount, errStart, errEnd)
+                     : H2TCInternPackType(c, elems, t->fieldCount, errStart, errEnd);
         }
-        case HOPTCType_FUNCTION: {
+        case H2TCType_FUNCTION: {
             int32_t  params[256];
             uint8_t  flags[256];
             int32_t  returnType;
@@ -1713,12 +1703,12 @@ int32_t HOPTCSubstituteType(
             if (t->fieldCount > (uint16_t)(sizeof(params) / sizeof(params[0]))) {
                 return -1;
             }
-            returnType = HOPTCSubstituteType(
+            returnType = H2TCSubstituteType(
                 c, t->baseType, paramTypes, argTypes, argCount, errStart, errEnd);
             changed = returnType != t->baseType;
             for (i = 0; i < t->fieldCount; i++) {
                 int32_t paramType = c->funcParamTypes[t->fieldStart + i];
-                params[i] = HOPTCSubstituteType(
+                params[i] = H2TCSubstituteType(
                     c, paramType, paramTypes, argTypes, argCount, errStart, errEnd);
                 flags[i] = c->funcParamFlags[t->fieldStart + i];
                 if (params[i] != paramType) {
@@ -1728,19 +1718,19 @@ int32_t HOPTCSubstituteType(
             if (!changed) {
                 return typeId;
             }
-            return HOPTCInternFunctionType(
+            return H2TCInternFunctionType(
                 c,
                 returnType,
                 params,
                 flags,
                 t->fieldCount,
-                (t->flags & HOPTCTypeFlag_FUNCTION_VARIADIC) != 0,
+                (t->flags & H2TCTypeFlag_FUNCTION_VARIADIC) != 0,
                 t->funcIndex,
                 errStart,
                 errEnd);
         }
-        case HOPTCType_NAMED:
-        case HOPTCType_ALIAS: {
+        case H2TCType_NAMED:
+        case H2TCType_ALIAS: {
             int32_t  namedIndex = -1;
             uint32_t ni;
             for (ni = 0; ni < c->namedTypeLen; ni++) {
@@ -1750,7 +1740,7 @@ int32_t HOPTCSubstituteType(
                 }
             }
             if (namedIndex >= 0) {
-                const HOPTCNamedType* nt = &c->namedTypes[(uint32_t)namedIndex];
+                const H2TCNamedType* nt = &c->namedTypes[(uint32_t)namedIndex];
                 if (nt->templateRootNamedIndex >= 0 || nt->templateArgCount > 0) {
                     int32_t  args[64];
                     uint16_t i;
@@ -1760,7 +1750,7 @@ int32_t HOPTCSubstituteType(
                     }
                     for (i = 0; i < nt->templateArgCount; i++) {
                         int32_t argType = c->genericArgTypes[nt->templateArgStart + i];
-                        args[i] = HOPTCSubstituteType(
+                        args[i] = H2TCSubstituteType(
                             c, argType, paramTypes, argTypes, argCount, errStart, errEnd);
                         if (args[i] != argType) {
                             changed = 1;
@@ -1770,7 +1760,7 @@ int32_t HOPTCSubstituteType(
                         return typeId;
                     }
                     if (nt->templateRootNamedIndex >= 0) {
-                        return HOPTCInstantiateNamedType(
+                        return H2TCInstantiateNamedType(
                             c,
                             c->namedTypes[(uint32_t)nt->templateRootNamedIndex].typeId,
                             args,
@@ -1784,38 +1774,38 @@ int32_t HOPTCSubstituteType(
     }
 }
 
-int HOPTCTypeIsVarSize(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCTypeIsVarSize(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
-    return (c->types[typeId].flags & HOPTCTypeFlag_VARSIZE) != 0;
+    return (c->types[typeId].flags & H2TCTypeFlag_VARSIZE) != 0;
 }
 
-int HOPTCTypeContainsVarSizeByValue(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCTypeContainsVarSizeByValue(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
     if (typeId == c->typeStr) {
         return 1;
     }
-    if (c->types[typeId].kind == HOPTCType_PTR || c->types[typeId].kind == HOPTCType_REF) {
+    if (c->types[typeId].kind == H2TCType_PTR || c->types[typeId].kind == H2TCType_REF) {
         return 0;
     }
-    if (c->types[typeId].kind == HOPTCType_SLICE) {
+    if (c->types[typeId].kind == H2TCType_SLICE) {
         return 1;
     }
-    if (c->types[typeId].kind == HOPTCType_OPTIONAL) {
-        return HOPTCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
+    if (c->types[typeId].kind == H2TCType_OPTIONAL) {
+        return H2TCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
     }
-    if (c->types[typeId].kind == HOPTCType_ARRAY) {
-        return HOPTCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
+    if (c->types[typeId].kind == H2TCType_ARRAY) {
+        return H2TCTypeContainsVarSizeByValue(c, c->types[typeId].baseType);
     }
-    if (c->types[typeId].kind == HOPTCType_TUPLE) {
+    if (c->types[typeId].kind == H2TCType_TUPLE) {
         uint32_t i;
         for (i = 0; i < c->types[typeId].fieldCount; i++) {
-            if (HOPTCTypeContainsVarSizeByValue(
+            if (H2TCTypeContainsVarSizeByValue(
                     c, c->funcParamTypes[c->types[typeId].fieldStart + i]))
             {
                 return 1;
@@ -1823,73 +1813,73 @@ int HOPTCTypeContainsVarSizeByValue(HOPTypeCheckCtx* c, int32_t typeId) {
         }
         return 0;
     }
-    return HOPTCTypeIsVarSize(c, typeId);
+    return H2TCTypeIsVarSize(c, typeId);
 }
 
-int HOPTCIsComparisonHookName(
-    HOPTypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int* outIsEqualHook) {
-    if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "__equal")) {
+int H2TCIsComparisonHookName(
+    H2TypeCheckCtx* c, uint32_t nameStart, uint32_t nameEnd, int* outIsEqualHook) {
+    if (H2NameEqLiteral(c->src, nameStart, nameEnd, "__equal")) {
         *outIsEqualHook = 1;
         return 1;
     }
-    if (HOPNameEqLiteral(c->src, nameStart, nameEnd, "__order")) {
+    if (H2NameEqLiteral(c->src, nameStart, nameEnd, "__order")) {
         *outIsEqualHook = 0;
         return 1;
     }
     return 0;
 }
 
-int HOPTCTypeIsU8Slice(HOPTypeCheckCtx* c, int32_t typeId, int requireMutable) {
+int H2TCTypeIsU8Slice(H2TypeCheckCtx* c, int32_t typeId, int requireMutable) {
     int32_t u8Type;
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
-    if (c->types[typeId].kind != HOPTCType_SLICE) {
+    if (c->types[typeId].kind != H2TCType_SLICE) {
         return 0;
     }
-    u8Type = HOPTCFindBuiltinByKind(c, HOPBuiltin_U8);
+    u8Type = H2TCFindBuiltinByKind(c, H2Builtin_U8);
     if (u8Type < 0 || c->types[typeId].baseType != u8Type) {
         return 0;
     }
-    if (requireMutable && !HOPTCTypeIsMutable(&c->types[typeId])) {
+    if (requireMutable && !H2TCTypeIsMutable(&c->types[typeId])) {
         return 0;
     }
     return 1;
 }
 
-int HOPTCTypeIsFreeablePointer(HOPTypeCheckCtx* c, int32_t typeId) {
-    typeId = HOPTCResolveAliasBaseType(c, typeId);
+int H2TCTypeIsFreeablePointer(H2TypeCheckCtx* c, int32_t typeId) {
+    typeId = H2TCResolveAliasBaseType(c, typeId);
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return 0;
     }
-    if (c->types[typeId].kind == HOPTCType_OPTIONAL) {
-        return HOPTCTypeIsFreeablePointer(c, c->types[typeId].baseType);
+    if (c->types[typeId].kind == H2TCType_OPTIONAL) {
+        return H2TCTypeIsFreeablePointer(c, c->types[typeId].baseType);
     }
-    return c->types[typeId].kind == HOPTCType_PTR;
+    return c->types[typeId].kind == H2TCType_PTR;
 }
 
-int32_t HOPTCFindEmbeddedFieldIndex(HOPTypeCheckCtx* c, int32_t namedTypeId) {
+int32_t H2TCFindEmbeddedFieldIndex(H2TypeCheckCtx* c, int32_t namedTypeId) {
     uint32_t i;
     if (namedTypeId < 0 || (uint32_t)namedTypeId >= c->typeLen
-        || c->types[namedTypeId].kind != HOPTCType_NAMED)
+        || c->types[namedTypeId].kind != H2TCType_NAMED)
     {
         return -1;
     }
-    if (HOPTCEnsureNamedTypeFieldsResolved(c, namedTypeId) != 0) {
+    if (H2TCEnsureNamedTypeFieldsResolved(c, namedTypeId) != 0) {
         return -1;
     }
     for (i = 0; i < c->types[namedTypeId].fieldCount; i++) {
         uint32_t idx = c->types[namedTypeId].fieldStart + i;
-        if ((c->fields[idx].flags & HOPTCFieldFlag_EMBEDDED) != 0) {
+        if ((c->fields[idx].flags & H2TCFieldFlag_EMBEDDED) != 0) {
             return (int32_t)idx;
         }
     }
     return -1;
 }
 
-int HOPTCEmbedDistanceToType(
-    HOPTypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance) {
+int H2TCEmbedDistanceToType(
+    H2TypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance) {
     uint32_t depth = 0;
     int32_t  cur = srcType;
     if (srcType == dstType) {
@@ -1898,16 +1888,16 @@ int HOPTCEmbedDistanceToType(
     }
     while (depth++ <= c->typeLen) {
         int32_t embedIdx;
-        if (cur < 0 || (uint32_t)cur >= c->typeLen || c->types[cur].kind != HOPTCType_NAMED) {
+        if (cur < 0 || (uint32_t)cur >= c->typeLen || c->types[cur].kind != H2TCType_NAMED) {
             return -1;
         }
-        embedIdx = HOPTCFindEmbeddedFieldIndex(c, cur);
+        embedIdx = H2TCFindEmbeddedFieldIndex(c, cur);
         if (embedIdx < 0) {
             return -1;
         }
         cur = c->fields[embedIdx].typeId;
-        if (cur >= 0 && (uint32_t)cur < c->typeLen && c->types[cur].kind == HOPTCType_ALIAS) {
-            cur = HOPTCResolveAliasBaseType(c, cur);
+        if (cur >= 0 && (uint32_t)cur < c->typeLen && c->types[cur].kind == H2TCType_ALIAS) {
+            cur = H2TCResolveAliasBaseType(c, cur);
             if (cur < 0) {
                 return -1;
             }
@@ -1920,37 +1910,37 @@ int HOPTCEmbedDistanceToType(
     return -1;
 }
 
-int HOPTCIsTypeDerivedFromEmbedded(HOPTypeCheckCtx* c, int32_t srcType, int32_t dstType) {
+int H2TCIsTypeDerivedFromEmbedded(H2TypeCheckCtx* c, int32_t srcType, int32_t dstType) {
     uint32_t distance = 0;
-    return HOPTCEmbedDistanceToType(c, srcType, dstType, &distance) == 0;
+    return H2TCEmbedDistanceToType(c, srcType, dstType, &distance) == 0;
 }
 
-int HOPTCCanAssign(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
-    const HOPTCType* dst;
-    const HOPTCType* src;
+int H2TCCanAssign(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType) {
+    const H2TCType* dst;
+    const H2TCType* src;
 
     if (dstType == srcType) {
         return 1;
     }
-    if (HOPTCTypeIsFmtValue(c, dstType)) {
-        return HOPTCTypeSupportsFmtReflectRec(c, srcType, 0u);
+    if (H2TCTypeIsFmtValue(c, dstType)) {
+        return H2TCTypeSupportsFmtReflectRec(c, srcType, 0u);
     }
     if (dstType == c->typeAnytype) {
         return srcType >= 0 && (uint32_t)srcType < c->typeLen;
     }
-    if (dstType >= 0 && (uint32_t)dstType < c->typeLen && c->types[dstType].kind == HOPTCType_ALIAS)
+    if (dstType >= 0 && (uint32_t)dstType < c->typeLen && c->types[dstType].kind == H2TCType_ALIAS)
     {
         /* Alias types are nominal: only exact alias matches assign implicitly.
          * Widening is one-way (Alias -> Target), handled via srcType alias path. */
         return 0;
     }
-    if (srcType == c->typeUntypedInt && HOPTCIsIntegerType(c, dstType)) {
+    if (srcType == c->typeUntypedInt && H2TCIsIntegerType(c, dstType)) {
         return 1;
     }
-    if (srcType == c->typeUntypedFloat && HOPTCIsFloatType(c, dstType)) {
+    if (srcType == c->typeUntypedFloat && H2TCIsFloatType(c, dstType)) {
         return 1;
     }
-    if (srcType == c->typeUntypedInt && HOPTCIsFloatType(c, dstType)) {
+    if (srcType == c->typeUntypedInt && H2TCIsFloatType(c, dstType)) {
         return 1;
     }
 
@@ -1960,109 +1950,109 @@ int HOPTCCanAssign(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         return 0;
     }
 
-    if (c->types[srcType].kind == HOPTCType_ALIAS) {
-        int32_t srcBaseType = HOPTCResolveAliasBaseType(c, srcType);
+    if (c->types[srcType].kind == H2TCType_ALIAS) {
+        int32_t srcBaseType = H2TCResolveAliasBaseType(c, srcType);
         if (srcBaseType < 0 || srcBaseType == srcType) {
             return 0;
         }
-        return HOPTCCanAssign(c, dstType, srcBaseType);
+        return H2TCCanAssign(c, dstType, srcBaseType);
     }
 
     dst = &c->types[dstType];
     src = &c->types[srcType];
 
-    if (dst->kind == HOPTCType_PACK) {
+    if (dst->kind == H2TCType_PACK) {
         uint32_t i;
-        if (src->kind != HOPTCType_PACK || dst->fieldCount != src->fieldCount) {
+        if (src->kind != H2TCType_PACK || dst->fieldCount != src->fieldCount) {
             return 0;
         }
         for (i = 0; i < dst->fieldCount; i++) {
             int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
             int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
-            if (!HOPTCCanAssign(c, dstElem, srcElem)) {
+            if (!H2TCCanAssign(c, dstElem, srcElem)) {
                 return 0;
             }
         }
         return 1;
     }
 
-    if (dst->kind == HOPTCType_TUPLE) {
+    if (dst->kind == H2TCType_TUPLE) {
         uint32_t i;
-        if (src->kind != HOPTCType_TUPLE || dst->fieldCount != src->fieldCount) {
+        if (src->kind != H2TCType_TUPLE || dst->fieldCount != src->fieldCount) {
             return 0;
         }
         for (i = 0; i < dst->fieldCount; i++) {
             int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
             int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
-            if (!HOPTCCanAssign(c, dstElem, srcElem)) {
+            if (!H2TCCanAssign(c, dstElem, srcElem)) {
                 return 0;
             }
         }
         return 1;
     }
 
-    if (src->kind == HOPTCType_NAMED && HOPTCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
+    if (src->kind == H2TCType_NAMED && H2TCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
         return 1;
     }
 
-    if (dst->kind == HOPTCType_REF) {
-        if (src->kind == HOPTCType_REF && src->baseType == c->typeStr
-            && HOPTCTypeIsU8Slice(c, dst->baseType, 0))
+    if (dst->kind == H2TCType_REF) {
+        if (src->kind == H2TCType_REF && src->baseType == c->typeStr
+            && H2TCTypeIsU8Slice(c, dst->baseType, 0))
         {
             return 1;
         }
-        if (src->kind == HOPTCType_PTR && src->baseType == c->typeStr
-            && HOPTCTypeIsU8Slice(c, dst->baseType, 0))
+        if (src->kind == H2TCType_PTR && src->baseType == c->typeStr
+            && H2TCTypeIsU8Slice(c, dst->baseType, 0))
         {
             return 1;
         }
-        if (src->kind == HOPTCType_REF && HOPTCCanAssign(c, dst->baseType, src->baseType)) {
-            return !HOPTCTypeIsMutable(dst) || HOPTCTypeIsMutable(src);
+        if (src->kind == H2TCType_REF && H2TCCanAssign(c, dst->baseType, src->baseType)) {
+            return !H2TCTypeIsMutable(dst) || H2TCTypeIsMutable(src);
         }
-        if (src->kind == HOPTCType_PTR && HOPTCCanAssign(c, dst->baseType, src->baseType)) {
+        if (src->kind == H2TCType_PTR && H2TCCanAssign(c, dst->baseType, src->baseType)) {
             return 1;
         }
-        if (src->kind == HOPTCType_ARRAY && HOPTCCanAssign(c, dst->baseType, srcType)) {
+        if (src->kind == H2TCType_ARRAY && H2TCCanAssign(c, dst->baseType, srcType)) {
             return 1;
         }
         return 0;
     }
 
-    if (dst->kind == HOPTCType_PTR) {
+    if (dst->kind == H2TCType_PTR) {
         /* Owned pointers (*T) can only come from new; references (&T) cannot be
          * implicitly promoted to owned pointers. */
-        if (src->kind == HOPTCType_ARRAY && dst->baseType >= 0
+        if (src->kind == H2TCType_ARRAY && dst->baseType >= 0
             && (uint32_t)dst->baseType < c->typeLen)
         {
-            const HOPTCType* dstBase = &c->types[dst->baseType];
-            if (dstBase->kind == HOPTCType_SLICE && dstBase->baseType == src->baseType) {
+            const H2TCType* dstBase = &c->types[dst->baseType];
+            if (dstBase->kind == H2TCType_SLICE && dstBase->baseType == src->baseType) {
                 return 1;
             }
         }
-        if (src->kind == HOPTCType_PTR && dst->baseType >= 0 && src->baseType >= 0
+        if (src->kind == H2TCType_PTR && dst->baseType >= 0 && src->baseType >= 0
             && (uint32_t)dst->baseType < c->typeLen && (uint32_t)src->baseType < c->typeLen)
         {
-            const HOPTCType* dstBase = &c->types[dst->baseType];
-            const HOPTCType* srcBase = &c->types[src->baseType];
-            int32_t          dstBaseResolved = HOPTCResolveAliasBaseType(c, dst->baseType);
-            int32_t          srcBaseResolved = HOPTCResolveAliasBaseType(c, src->baseType);
+            const H2TCType* dstBase = &c->types[dst->baseType];
+            const H2TCType* srcBase = &c->types[src->baseType];
+            int32_t         dstBaseResolved = H2TCResolveAliasBaseType(c, dst->baseType);
+            int32_t         srcBaseResolved = H2TCResolveAliasBaseType(c, src->baseType);
             if (dstBaseResolved >= 0 && srcBaseResolved >= 0 && dstBaseResolved == srcBaseResolved)
             {
                 return 1;
             }
             if (dstBaseResolved >= 0 && srcBaseResolved >= 0
-                && HOPTCIsTypeDerivedFromEmbedded(c, srcBaseResolved, dstBaseResolved))
+                && H2TCIsTypeDerivedFromEmbedded(c, srcBaseResolved, dstBaseResolved))
             {
                 return 1;
             }
-            if (src->baseType == c->typeStr && HOPTCTypeIsU8Slice(c, dst->baseType, 1)) {
+            if (src->baseType == c->typeStr && H2TCTypeIsU8Slice(c, dst->baseType, 1)) {
                 return 1;
             }
-            if (dstBase->kind == HOPTCType_SLICE) {
-                if (srcBase->kind == HOPTCType_SLICE && dstBase->baseType == srcBase->baseType) {
-                    return !HOPTCTypeIsMutable(dstBase) || HOPTCTypeIsMutable(srcBase);
+            if (dstBase->kind == H2TCType_SLICE) {
+                if (srcBase->kind == H2TCType_SLICE && dstBase->baseType == srcBase->baseType) {
+                    return !H2TCTypeIsMutable(dstBase) || H2TCTypeIsMutable(srcBase);
                 }
-                if (srcBase->kind == HOPTCType_ARRAY && dstBase->baseType == srcBase->baseType) {
+                if (srcBase->kind == H2TCType_ARRAY && dstBase->baseType == srcBase->baseType) {
                     return 1;
                 }
             }
@@ -2070,21 +2060,21 @@ int HOPTCCanAssign(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         return 0;
     }
 
-    if (dst->kind == HOPTCType_SLICE) {
-        if (srcType == c->typeStr && HOPTCTypeIsU8Slice(c, dstType, HOPTCTypeIsMutable(dst))) {
+    if (dst->kind == H2TCType_SLICE) {
+        if (srcType == c->typeStr && H2TCTypeIsU8Slice(c, dstType, H2TCTypeIsMutable(dst))) {
             return 1;
         }
-        if (src->kind == HOPTCType_SLICE && dst->baseType == src->baseType) {
-            return !HOPTCTypeIsMutable(dst) || HOPTCTypeIsMutable(src);
+        if (src->kind == H2TCType_SLICE && dst->baseType == src->baseType) {
+            return !H2TCTypeIsMutable(dst) || H2TCTypeIsMutable(src);
         }
-        if (src->kind == HOPTCType_ARRAY && dst->baseType == src->baseType) {
+        if (src->kind == H2TCType_ARRAY && dst->baseType == src->baseType) {
             return 1;
         }
-        if (src->kind == HOPTCType_PTR) {
+        if (src->kind == H2TCType_PTR) {
             int32_t pointee = src->baseType;
             if (pointee >= 0 && (uint32_t)pointee < c->typeLen) {
-                const HOPTCType* p = &c->types[pointee];
-                if (p->kind == HOPTCType_ARRAY && p->baseType == dst->baseType) {
+                const H2TCType* p = &c->types[pointee];
+                if (p->kind == H2TCType_ARRAY && p->baseType == dst->baseType) {
                     return 1;
                 }
             }
@@ -2092,48 +2082,47 @@ int HOPTCCanAssign(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         return 0;
     }
 
-    if (dst->kind == HOPTCType_OPTIONAL) {
+    if (dst->kind == H2TCType_OPTIONAL) {
         /* null can be assigned to ?T */
-        if (src->kind == HOPTCType_NULL) {
+        if (src->kind == H2TCType_NULL) {
             return 1;
         }
         /* T can be assigned to ?T (implicit lift through base assignability) */
-        if (src->kind != HOPTCType_OPTIONAL && HOPTCCanAssign(c, dst->baseType, srcType)) {
+        if (src->kind != H2TCType_OPTIONAL && H2TCCanAssign(c, dst->baseType, srcType)) {
             return 1;
         }
         /* ?T can be assigned to ?T (also handles mutable sub-type coercions) */
-        if (src->kind == HOPTCType_OPTIONAL) {
-            return HOPTCCanAssign(c, dst->baseType, src->baseType);
+        if (src->kind == H2TCType_OPTIONAL) {
+            return H2TCCanAssign(c, dst->baseType, src->baseType);
         }
         return 0;
     }
 
-    if (HOPTCIsRawptrType(c, dstType)) {
-        return src->kind == HOPTCType_NULL || HOPTCIsRawptrType(c, srcType);
+    if (H2TCIsRawptrType(c, dstType)) {
+        return src->kind == H2TCType_NULL || H2TCIsRawptrType(c, srcType);
     }
 
     /* null can only be assigned to ?T, not to plain types */
-    if (src->kind == HOPTCType_NULL) {
+    if (src->kind == H2TCType_NULL) {
         return 0;
     }
 
     return 0;
 }
 
-int HOPTCCoerceForBinary(
-    HOPTypeCheckCtx* c, int32_t leftType, int32_t rightType, int32_t* outType) {
+int H2TCCoerceForBinary(H2TypeCheckCtx* c, int32_t leftType, int32_t rightType, int32_t* outType) {
     if (leftType == rightType) {
         *outType = leftType;
         return 0;
     }
-    if (HOPTCIsUntyped(c, leftType) && !HOPTCIsUntyped(c, rightType)
-        && HOPTCCanAssign(c, rightType, leftType))
+    if (H2TCIsUntyped(c, leftType) && !H2TCIsUntyped(c, rightType)
+        && H2TCCanAssign(c, rightType, leftType))
     {
         *outType = rightType;
         return 0;
     }
-    if (HOPTCIsUntyped(c, rightType) && !HOPTCIsUntyped(c, leftType)
-        && HOPTCCanAssign(c, leftType, rightType))
+    if (H2TCIsUntyped(c, rightType) && !H2TCIsUntyped(c, leftType)
+        && H2TCCanAssign(c, leftType, rightType))
     {
         *outType = leftType;
         return 0;
@@ -2149,11 +2138,11 @@ int HOPTCCoerceForBinary(
     return -1;
 }
 
-int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost) {
-    const HOPTCType* dst;
-    const HOPTCType* src;
+int H2TCConversionCost(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost) {
+    const H2TCType* dst;
+    const H2TCType* src;
 
-    if (!HOPTCCanAssign(c, dstType, srcType)) {
+    if (!H2TCCanAssign(c, dstType, srcType)) {
         return -1;
     }
     if (dstType == srcType) {
@@ -2164,7 +2153,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
         *outCost = 8;
         return 0;
     }
-    if (HOPTCTypeIsFmtValue(c, dstType)) {
+    if (H2TCTypeIsFmtValue(c, dstType)) {
         *outCost = 5;
         return 0;
     }
@@ -2172,9 +2161,9 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
         *outCost = 3;
         return 0;
     }
-    if (srcType >= 0 && (uint32_t)srcType < c->typeLen && c->types[srcType].kind == HOPTCType_ALIAS)
+    if (srcType >= 0 && (uint32_t)srcType < c->typeLen && c->types[srcType].kind == H2TCType_ALIAS)
     {
-        int32_t srcBaseType = HOPTCResolveAliasBaseType(c, srcType);
+        int32_t srcBaseType = H2TCResolveAliasBaseType(c, srcType);
         if (srcBaseType < 0 || srcBaseType == srcType) {
             return -1;
         }
@@ -2182,7 +2171,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
             *outCost = 1;
             return 0;
         }
-        if (HOPTCConversionCost(c, dstType, srcBaseType, outCost) == 0) {
+        if (H2TCConversionCost(c, dstType, srcBaseType, outCost) == 0) {
             if (*outCost < 255u) {
                 *outCost = (uint8_t)(*outCost + 1u);
             }
@@ -2199,7 +2188,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
     dst = &c->types[dstType];
     src = &c->types[srcType];
 
-    if (dst->kind == HOPTCType_TUPLE && src->kind == HOPTCType_TUPLE
+    if (dst->kind == H2TCType_TUPLE && src->kind == H2TCType_TUPLE
         && dst->fieldCount == src->fieldCount)
     {
         uint32_t total = 0;
@@ -2208,7 +2197,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
             uint8_t elemCost = 0;
             int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
             int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
-            if (HOPTCConversionCost(c, dstElem, srcElem, &elemCost) != 0) {
+            if (H2TCConversionCost(c, dstElem, srcElem, &elemCost) != 0) {
                 return -1;
             }
             total += elemCost;
@@ -2217,7 +2206,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
         return 0;
     }
 
-    if (dst->kind == HOPTCType_PACK && src->kind == HOPTCType_PACK
+    if (dst->kind == H2TCType_PACK && src->kind == H2TCType_PACK
         && dst->fieldCount == src->fieldCount)
     {
         uint32_t total = 0;
@@ -2226,7 +2215,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
             uint8_t elemCost = 0;
             int32_t dstElem = c->funcParamTypes[dst->fieldStart + i];
             int32_t srcElem = c->funcParamTypes[src->fieldStart + i];
-            if (HOPTCConversionCost(c, dstElem, srcElem, &elemCost) != 0) {
+            if (H2TCConversionCost(c, dstElem, srcElem, &elemCost) != 0) {
                 return -1;
             }
             total += elemCost;
@@ -2235,56 +2224,56 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
         return 0;
     }
 
-    if (dst->kind == HOPTCType_OPTIONAL && src->kind != HOPTCType_OPTIONAL) {
+    if (dst->kind == H2TCType_OPTIONAL && src->kind != H2TCType_OPTIONAL) {
         *outCost = 4;
         return 0;
     }
 
-    if (dst->kind == HOPTCType_OPTIONAL && src->kind == HOPTCType_OPTIONAL) {
-        return HOPTCConversionCost(c, dst->baseType, src->baseType, outCost);
+    if (dst->kind == H2TCType_OPTIONAL && src->kind == H2TCType_OPTIONAL) {
+        return H2TCConversionCost(c, dst->baseType, src->baseType, outCost);
     }
 
-    if (HOPTCIsRawptrType(c, dstType) && HOPTCIsRawptrType(c, srcType)) {
+    if (H2TCIsRawptrType(c, dstType) && H2TCIsRawptrType(c, srcType)) {
         *outCost = 0;
         return 0;
     }
 
-    if (dst->kind == HOPTCType_REF && src->kind == HOPTCType_REF) {
+    if (dst->kind == H2TCType_REF && src->kind == H2TCType_REF) {
         int      sameBase = dst->baseType == src->baseType;
         uint32_t upcastDistance = 0;
         int      upcastBase =
-            HOPTCEmbedDistanceToType(c, src->baseType, dst->baseType, &upcastDistance) == 0;
+            H2TCEmbedDistanceToType(c, src->baseType, dst->baseType, &upcastDistance) == 0;
         if (upcastBase && !sameBase) {
             *outCost = (uint8_t)(2u + (upcastDistance > 0 ? (upcastDistance - 1u) : 0u));
             return 0;
         }
-        if (!HOPTCTypeIsMutable(dst) && HOPTCTypeIsMutable(src) && sameBase) {
+        if (!H2TCTypeIsMutable(dst) && H2TCTypeIsMutable(src) && sameBase) {
             *outCost = 1;
             return 0;
         }
     }
 
-    if (dst->kind == HOPTCType_PTR && src->kind == HOPTCType_PTR) {
+    if (dst->kind == H2TCType_PTR && src->kind == H2TCType_PTR) {
         int      sameBase = dst->baseType == src->baseType;
         uint32_t upcastDistance = 0;
         int      upcastBase =
-            HOPTCEmbedDistanceToType(c, src->baseType, dst->baseType, &upcastDistance) == 0;
+            H2TCEmbedDistanceToType(c, src->baseType, dst->baseType, &upcastDistance) == 0;
         if (upcastBase && !sameBase) {
             *outCost = (uint8_t)(2u + (upcastDistance > 0 ? (upcastDistance - 1u) : 0u));
             return 0;
         }
     }
 
-    if (dst->kind == HOPTCType_SLICE && src->kind == HOPTCType_SLICE
-        && dst->baseType == src->baseType && !HOPTCTypeIsMutable(dst) && HOPTCTypeIsMutable(src))
+    if (dst->kind == H2TCType_SLICE && src->kind == H2TCType_SLICE && dst->baseType == src->baseType
+        && !H2TCTypeIsMutable(dst) && H2TCTypeIsMutable(src))
     {
         *outCost = 1;
         return 0;
     }
 
-    if (src->kind == HOPTCType_NAMED && HOPTCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
+    if (src->kind == H2TCType_NAMED && H2TCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
         uint32_t distance = 0;
-        if (HOPTCEmbedDistanceToType(c, srcType, dstType, &distance) == 0) {
+        if (H2TCEmbedDistanceToType(c, srcType, dstType, &distance) == 0) {
             *outCost = (uint8_t)(2u + (distance > 0 ? (distance - 1u) : 0u));
         } else {
             *outCost = 2;
@@ -2296,7 +2285,7 @@ int HOPTCConversionCost(HOPTypeCheckCtx* c, int32_t dstType, int32_t srcType, ui
     return 0;
 }
 
-int HOPTCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len) {
+int H2TCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len) {
     uint32_t i;
     for (i = 0; i < len; i++) {
         if (a[i] < b[i]) {
@@ -2309,39 +2298,39 @@ int HOPTCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len) {
     return 0;
 }
 
-int32_t HOPTCUnwrapCallArgExprNode(HOPTypeCheckCtx* c, int32_t argNode) {
-    const HOPAstNode* n;
+int32_t H2TCUnwrapCallArgExprNode(H2TypeCheckCtx* c, int32_t argNode) {
+    const H2AstNode* n;
     if (argNode < 0 || (uint32_t)argNode >= c->ast->len) {
         return -1;
     }
     n = &c->ast->nodes[argNode];
-    if (n->kind == HOPAst_CALL_ARG) {
-        return HOPAstFirstChild(c->ast, argNode);
+    if (n->kind == H2Ast_CALL_ARG) {
+        return H2AstFirstChild(c->ast, argNode);
     }
     return argNode;
 }
 
-int HOPTCCollectCallArgInfo(
-    HOPTypeCheckCtx*  c,
-    int32_t           callNode,
-    int32_t           calleeNode,
-    int               includeReceiver,
-    int32_t           receiverNode,
-    HOPTCCallArgInfo* outArgs,
+int H2TCCollectCallArgInfo(
+    H2TypeCheckCtx*  c,
+    int32_t          callNode,
+    int32_t          calleeNode,
+    int              includeReceiver,
+    int32_t          receiverNode,
+    H2TCCallArgInfo* outArgs,
     int32_t* _Nullable outArgTypes,
     uint32_t* outArgCount) {
     uint32_t argCount = 0;
-    int32_t  argNode = HOPAstNextSibling(c->ast, calleeNode);
+    int32_t  argNode = H2AstNextSibling(c->ast, calleeNode);
     if (includeReceiver) {
-        const HOPAstNode* recvNode;
+        const H2AstNode* recvNode;
         if (receiverNode < 0 || (uint32_t)receiverNode >= c->ast->len) {
-            return HOPTCFailNode(c, callNode, HOPDiag_EXPECTED_EXPR);
+            return H2TCFailNode(c, callNode, H2Diag_EXPECTED_EXPR);
         }
-        if (argCount >= HOPTC_MAX_CALL_ARGS) {
-            return HOPTCFailNode(c, callNode, HOPDiag_ARENA_OOM);
+        if (argCount >= H2TC_MAX_CALL_ARGS) {
+            return H2TCFailNode(c, callNode, H2Diag_ARENA_OOM);
         }
         recvNode = &c->ast->nodes[receiverNode];
-        outArgs[argCount] = (HOPTCCallArgInfo){
+        outArgs[argCount] = (H2TCCallArgInfo){
             .argNode = receiverNode,
             .exprNode = receiverNode,
             .start = recvNode->start,
@@ -2353,21 +2342,21 @@ int HOPTCCollectCallArgInfo(
             .spread = 0,
             ._reserved = { 0, 0, 0 },
         };
-        if (outArgTypes != NULL && HOPTCTypeExpr(c, receiverNode, &outArgTypes[argCount]) != 0) {
+        if (outArgTypes != NULL && H2TCTypeExpr(c, receiverNode, &outArgTypes[argCount]) != 0) {
             return -1;
         }
         argCount++;
     }
     while (argNode >= 0) {
-        const HOPAstNode* arg = &c->ast->nodes[argNode];
-        int32_t           exprNode = HOPTCUnwrapCallArgExprNode(c, argNode);
-        if (argCount >= HOPTC_MAX_CALL_ARGS) {
-            return HOPTCFailNode(c, callNode, HOPDiag_ARENA_OOM);
+        const H2AstNode* arg = &c->ast->nodes[argNode];
+        int32_t          exprNode = H2TCUnwrapCallArgExprNode(c, argNode);
+        if (argCount >= H2TC_MAX_CALL_ARGS) {
+            return H2TCFailNode(c, callNode, H2Diag_ARENA_OOM);
         }
         if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
-            return HOPTCFailNode(c, argNode, HOPDiag_EXPECTED_EXPR);
+            return H2TCFailNode(c, argNode, H2Diag_EXPECTED_EXPR);
         }
-        outArgs[argCount] = (HOPTCCallArgInfo){
+        outArgs[argCount] = (H2TCCallArgInfo){
             .argNode = argNode,
             .exprNode = exprNode,
             .start = arg->start,
@@ -2376,87 +2365,87 @@ int HOPTCCollectCallArgInfo(
             .explicitNameEnd = arg->dataEnd,
             .implicitNameStart = 0,
             .implicitNameEnd = 0,
-            .spread = (uint8_t)(((arg->flags & HOPAstFlag_CALL_ARG_SPREAD) != 0) ? 1 : 0),
+            .spread = (uint8_t)(((arg->flags & H2AstFlag_CALL_ARG_SPREAD) != 0) ? 1 : 0),
             ._reserved = { 0, 0, 0 },
         };
-        if ((arg->kind == HOPAst_CALL_ARG || arg->kind == HOPAst_IDENT)
+        if ((arg->kind == H2Ast_CALL_ARG || arg->kind == H2Ast_IDENT)
             && !(outArgs[argCount].explicitNameEnd > outArgs[argCount].explicitNameStart)
-            && c->ast->nodes[exprNode].kind == HOPAst_IDENT)
+            && c->ast->nodes[exprNode].kind == H2Ast_IDENT)
         {
             uint32_t nameStart = c->ast->nodes[exprNode].dataStart;
             uint32_t nameEnd = c->ast->nodes[exprNode].dataEnd;
-            if (HOPTCResolveTypeValueName(c, nameStart, nameEnd) < 0) {
+            if (H2TCResolveTypeValueName(c, nameStart, nameEnd) < 0) {
                 outArgs[argCount].implicitNameStart = nameStart;
                 outArgs[argCount].implicitNameEnd = nameEnd;
             }
         }
-        if (outArgTypes != NULL && HOPTCTypeExpr(c, exprNode, &outArgTypes[argCount]) != 0) {
+        if (outArgTypes != NULL && H2TCTypeExpr(c, exprNode, &outArgTypes[argCount]) != 0) {
             return -1;
         }
         argCount++;
-        argNode = HOPAstNextSibling(c->ast, argNode);
+        argNode = H2AstNextSibling(c->ast, argNode);
     }
     *outArgCount = argCount;
     return 0;
 }
 
-int HOPTCIsMainFunction(HOPTypeCheckCtx* c, const HOPTCFunction* fn) {
-    return HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "main");
+int H2TCIsMainFunction(H2TypeCheckCtx* c, const H2TCFunction* fn) {
+    return H2NameEqLiteral(c->src, fn->nameStart, fn->nameEnd, "main");
 }
 
-int32_t HOPTCResolveImplicitMainContextType(HOPTypeCheckCtx* c) {
+int32_t H2TCResolveImplicitMainContextType(H2TypeCheckCtx* c) {
     uint32_t i;
-    int32_t  typeId = HOPTCFindNamedTypeByLiteral(c, "builtin__Context");
+    int32_t  typeId = H2TCFindNamedTypeByLiteral(c, "builtin__Context");
     if (typeId >= 0) {
         return typeId;
     }
     for (i = 0; i < c->typeLen; i++) {
-        const HOPTCType* t = &c->types[i];
-        if (t->kind != HOPTCType_NAMED) {
+        const H2TCType* t = &c->types[i];
+        if (t->kind != H2TCType_NAMED) {
             continue;
         }
-        if (HOPNameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
-            && HOPNameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Context"))
+        if (H2NameHasPrefix(c->src, t->nameStart, t->nameEnd, "builtin")
+            && H2NameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Context"))
         {
             return (int32_t)i;
         }
     }
-    typeId = HOPTCFindNamedTypeByLiteral(c, "Context");
+    typeId = H2TCFindNamedTypeByLiteral(c, "Context");
     if (typeId >= 0) {
         return typeId;
     }
     return -1;
 }
 
-int HOPTCCurrentContextFieldType(
-    HOPTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType) {
+int H2TCCurrentContextFieldType(
+    H2TypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType) {
     if (c->currentContextType >= 0) {
-        if (HOPTCFieldLookup(c, c->currentContextType, fieldStart, fieldEnd, outType, NULL) == 0) {
+        if (H2TCFieldLookup(c, c->currentContextType, fieldStart, fieldEnd, outType, NULL) == 0) {
             return 0;
         }
         return -1;
     }
     if (c->hasImplicitMainRootContext) {
         if (c->implicitMainContextType >= 0) {
-            if (HOPTCFieldLookup(c, c->implicitMainContextType, fieldStart, fieldEnd, outType, NULL)
+            if (H2TCFieldLookup(c, c->implicitMainContextType, fieldStart, fieldEnd, outType, NULL)
                 == 0)
             {
                 return 0;
             }
             return -1;
         }
-        if (HOPNameEqLiteral(c->src, fieldStart, fieldEnd, "allocator")) {
-            int32_t t = HOPTCFindMemAllocatorType(c);
+        if (H2NameEqLiteral(c->src, fieldStart, fieldEnd, "allocator")) {
+            int32_t t = H2TCFindMemAllocatorType(c);
             if (t < 0) {
                 return -1;
             }
             *outType = t;
             return 0;
         }
-        if (HOPNameEqLiteral(c->src, fieldStart, fieldEnd, "logger")) {
-            int32_t t = HOPTCFindNamedTypeByLiteral(c, "builtin__Logger");
+        if (H2NameEqLiteral(c->src, fieldStart, fieldEnd, "logger")) {
+            int32_t t = H2TCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
-                t = HOPTCFindNamedTypeByLiteral(c, "Logger");
+                t = H2TCFindNamedTypeByLiteral(c, "Logger");
             }
             if (t < 0) {
                 t = c->typeStr;
@@ -2471,34 +2460,33 @@ int HOPTCCurrentContextFieldType(
     return -1;
 }
 
-int HOPTCCurrentContextFieldTypeByLiteral(
-    HOPTypeCheckCtx* c, const char* fieldName, int32_t* outType) {
+int H2TCCurrentContextFieldTypeByLiteral(
+    H2TypeCheckCtx* c, const char* fieldName, int32_t* outType) {
     if (c->currentContextType >= 0) {
         int32_t  typeId = c->currentContextType;
         uint32_t i;
-        if (typeId >= 0 && (uint32_t)typeId < c->typeLen
-            && c->types[typeId].kind == HOPTCType_ALIAS)
+        if (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == H2TCType_ALIAS)
         {
-            if (HOPTCResolveAliasTypeId(c, typeId) != 0) {
+            if (H2TCResolveAliasTypeId(c, typeId) != 0) {
                 return -1;
             }
             typeId = c->types[typeId].baseType;
         }
         if (typeId < 0 || (uint32_t)typeId >= c->typeLen
-            || (c->types[typeId].kind != HOPTCType_NAMED
-                && c->types[typeId].kind != HOPTCType_ANON_STRUCT
-                && c->types[typeId].kind != HOPTCType_ANON_UNION))
+            || (c->types[typeId].kind != H2TCType_NAMED
+                && c->types[typeId].kind != H2TCType_ANON_STRUCT
+                && c->types[typeId].kind != H2TCType_ANON_UNION))
         {
             return -1;
         }
-        if (c->types[typeId].kind == HOPTCType_NAMED
-            && HOPTCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
+        if (c->types[typeId].kind == H2TCType_NAMED
+            && H2TCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
         {
             return -1;
         }
         for (i = 0; i < c->types[typeId].fieldCount; i++) {
             uint32_t idx = c->types[typeId].fieldStart + i;
-            if (HOPNameEqLiteral(
+            if (H2NameEqLiteral(
                     c->src, c->fields[idx].nameStart, c->fields[idx].nameEnd, fieldName))
             {
                 *outType = c->fields[idx].typeId;
@@ -2512,28 +2500,28 @@ int HOPTCCurrentContextFieldTypeByLiteral(
             int32_t  typeId = c->implicitMainContextType;
             uint32_t i;
             while (typeId >= 0 && (uint32_t)typeId < c->typeLen
-                   && c->types[typeId].kind == HOPTCType_ALIAS)
+                   && c->types[typeId].kind == H2TCType_ALIAS)
             {
-                if (HOPTCResolveAliasTypeId(c, typeId) != 0) {
+                if (H2TCResolveAliasTypeId(c, typeId) != 0) {
                     return -1;
                 }
                 typeId = c->types[typeId].baseType;
             }
             if (typeId < 0 || (uint32_t)typeId >= c->typeLen
-                || (c->types[typeId].kind != HOPTCType_NAMED
-                    && c->types[typeId].kind != HOPTCType_ANON_STRUCT
-                    && c->types[typeId].kind != HOPTCType_ANON_UNION))
+                || (c->types[typeId].kind != H2TCType_NAMED
+                    && c->types[typeId].kind != H2TCType_ANON_STRUCT
+                    && c->types[typeId].kind != H2TCType_ANON_UNION))
             {
                 return -1;
             }
-            if (c->types[typeId].kind == HOPTCType_NAMED
-                && HOPTCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
+            if (c->types[typeId].kind == H2TCType_NAMED
+                && H2TCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
             {
                 return -1;
             }
             for (i = 0; i < c->types[typeId].fieldCount; i++) {
                 uint32_t idx = c->types[typeId].fieldStart + i;
-                if (HOPNameEqLiteral(
+                if (H2NameEqLiteral(
                         c->src, c->fields[idx].nameStart, c->fields[idx].nameEnd, fieldName))
                 {
                     *outType = c->fields[idx].typeId;
@@ -2542,18 +2530,18 @@ int HOPTCCurrentContextFieldTypeByLiteral(
             }
             return -1;
         }
-        if (HOPTCStrEqNullable(fieldName, "allocator")) {
-            int32_t t = HOPTCFindMemAllocatorType(c);
+        if (H2TCStrEqNullable(fieldName, "allocator")) {
+            int32_t t = H2TCFindMemAllocatorType(c);
             if (t < 0) {
                 return -1;
             }
             *outType = t;
             return 0;
         }
-        if (HOPTCStrEqNullable(fieldName, "logger")) {
-            int32_t t = HOPTCFindNamedTypeByLiteral(c, "builtin__Logger");
+        if (H2TCStrEqNullable(fieldName, "logger")) {
+            int32_t t = H2TCFindNamedTypeByLiteral(c, "builtin__Logger");
             if (t < 0) {
-                t = HOPTCFindNamedTypeByLiteral(c, "Logger");
+                t = H2TCFindNamedTypeByLiteral(c, "Logger");
             }
             if (t < 0) {
                 t = c->typeStr;
@@ -2568,105 +2556,105 @@ int HOPTCCurrentContextFieldTypeByLiteral(
     return -1;
 }
 
-int32_t HOPTCContextFindOverlayNode(HOPTypeCheckCtx* c) {
+int32_t H2TCContextFindOverlayNode(H2TypeCheckCtx* c) {
     if (c->activeCallWithNode < 0 || (uint32_t)c->activeCallWithNode >= c->ast->len) {
         return -1;
     }
     {
-        int32_t callNode = HOPAstFirstChild(c->ast, c->activeCallWithNode);
-        int32_t child = callNode >= 0 ? HOPAstNextSibling(c->ast, callNode) : -1;
-        if (child >= 0 && c->ast->nodes[child].kind == HOPAst_CONTEXT_OVERLAY) {
+        int32_t callNode = H2AstFirstChild(c->ast, c->activeCallWithNode);
+        int32_t child = callNode >= 0 ? H2AstNextSibling(c->ast, callNode) : -1;
+        if (child >= 0 && c->ast->nodes[child].kind == H2Ast_CONTEXT_OVERLAY) {
             return child;
         }
     }
     return -1;
 }
 
-int32_t HOPTCContextFindDirectNode(HOPTypeCheckCtx* c) {
+int32_t H2TCContextFindDirectNode(H2TypeCheckCtx* c) {
     if (c->activeCallWithNode < 0 || (uint32_t)c->activeCallWithNode >= c->ast->len) {
         return -1;
     }
     {
-        int32_t callNode = HOPAstFirstChild(c->ast, c->activeCallWithNode);
-        int32_t child = callNode >= 0 ? HOPAstNextSibling(c->ast, callNode) : -1;
-        if (child >= 0 && c->ast->nodes[child].kind != HOPAst_CONTEXT_OVERLAY) {
+        int32_t callNode = H2AstFirstChild(c->ast, c->activeCallWithNode);
+        int32_t child = callNode >= 0 ? H2AstNextSibling(c->ast, callNode) : -1;
+        if (child >= 0 && c->ast->nodes[child].kind != H2Ast_CONTEXT_OVERLAY) {
             return child;
         }
     }
     return -1;
 }
 
-int32_t HOPTCContextFindOverlayBindMatch(
-    HOPTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName) {
-    int32_t overlayNode = HOPTCContextFindOverlayNode(c);
-    int32_t child = overlayNode >= 0 ? HOPAstFirstChild(c->ast, overlayNode) : -1;
+int32_t H2TCContextFindOverlayBindMatch(
+    H2TypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, const char* _Nullable fieldName) {
+    int32_t overlayNode = H2TCContextFindOverlayNode(c);
+    int32_t child = overlayNode >= 0 ? H2AstFirstChild(c->ast, overlayNode) : -1;
     while (child >= 0) {
-        const HOPAstNode* bind = &c->ast->nodes[child];
-        if (bind->kind == HOPAst_CONTEXT_BIND) {
+        const H2AstNode* bind = &c->ast->nodes[child];
+        if (bind->kind == H2Ast_CONTEXT_BIND) {
             int matches =
                 fieldName != NULL
-                    ? HOPNameEqLiteral(c->src, bind->dataStart, bind->dataEnd, fieldName)
-                    : HOPNameEqSlice(c->src, bind->dataStart, bind->dataEnd, fieldStart, fieldEnd);
+                    ? H2NameEqLiteral(c->src, bind->dataStart, bind->dataEnd, fieldName)
+                    : H2NameEqSlice(c->src, bind->dataStart, bind->dataEnd, fieldStart, fieldEnd);
             if (matches) {
                 return child;
             }
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     return -1;
 }
 
-int32_t HOPTCContextFindOverlayBindByLiteral(HOPTypeCheckCtx* c, const char* fieldName) {
-    return HOPTCContextFindOverlayBindMatch(c, 0, 0, fieldName);
+int32_t H2TCContextFindOverlayBindByLiteral(H2TypeCheckCtx* c, const char* fieldName) {
+    return H2TCContextFindOverlayBindMatch(c, 0, 0, fieldName);
 }
 
-int HOPTCGetEffectiveContextFieldType(
-    HOPTypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType) {
+int H2TCGetEffectiveContextFieldType(
+    H2TypeCheckCtx* c, uint32_t fieldStart, uint32_t fieldEnd, int32_t* outType) {
     int32_t bindNode;
     if (c->currentContextType < 0 && !c->hasImplicitMainRootContext) {
-        return HOPTCFailSpan(c, HOPDiag_CONTEXT_REQUIRED, fieldStart, fieldEnd);
+        return H2TCFailSpan(c, H2Diag_CONTEXT_REQUIRED, fieldStart, fieldEnd);
     }
-    bindNode = HOPTCContextFindOverlayBindMatch(c, fieldStart, fieldEnd, NULL);
+    bindNode = H2TCContextFindOverlayBindMatch(c, fieldStart, fieldEnd, NULL);
     if (bindNode >= 0) {
-        int32_t exprNode = HOPAstFirstChild(c->ast, bindNode);
+        int32_t exprNode = H2AstFirstChild(c->ast, bindNode);
         if (exprNode >= 0) {
-            return HOPTCTypeExpr(c, exprNode, outType);
+            return H2TCTypeExpr(c, exprNode, outType);
         }
     }
-    if (HOPTCCurrentContextFieldType(c, fieldStart, fieldEnd, outType) != 0) {
-        return HOPTCFailSpan(c, HOPDiag_CONTEXT_MISSING_FIELD, fieldStart, fieldEnd);
+    if (H2TCCurrentContextFieldType(c, fieldStart, fieldEnd, outType) != 0) {
+        return H2TCFailSpan(c, H2Diag_CONTEXT_MISSING_FIELD, fieldStart, fieldEnd);
     }
     return 0;
 }
 
-int HOPTCGetEffectiveContextFieldTypeByLiteral(
-    HOPTypeCheckCtx* c, const char* fieldName, int32_t* outType) {
+int H2TCGetEffectiveContextFieldTypeByLiteral(
+    H2TypeCheckCtx* c, const char* fieldName, int32_t* outType) {
     int32_t bindNode;
     if (c->currentContextType < 0 && !c->hasImplicitMainRootContext) {
-        return HOPTCFailSpan(c, HOPDiag_CONTEXT_REQUIRED, 0, 0);
+        return H2TCFailSpan(c, H2Diag_CONTEXT_REQUIRED, 0, 0);
     }
-    bindNode = HOPTCContextFindOverlayBindByLiteral(c, fieldName);
+    bindNode = H2TCContextFindOverlayBindByLiteral(c, fieldName);
     if (bindNode >= 0) {
-        int32_t exprNode = HOPAstFirstChild(c->ast, bindNode);
+        int32_t exprNode = H2AstFirstChild(c->ast, bindNode);
         if (exprNode >= 0) {
-            return HOPTCTypeExpr(c, exprNode, outType);
+            return H2TCTypeExpr(c, exprNode, outType);
         }
     }
-    if (HOPTCCurrentContextFieldTypeByLiteral(c, fieldName, outType) != 0) {
-        return HOPTCFailSpan(c, HOPDiag_CONTEXT_MISSING_FIELD, 0, 0);
+    if (H2TCCurrentContextFieldTypeByLiteral(c, fieldName, outType) != 0) {
+        return H2TCFailSpan(c, H2Diag_CONTEXT_MISSING_FIELD, 0, 0);
     }
     return 0;
 }
 
-int HOPTCValidateCurrentCallOverlay(HOPTypeCheckCtx* c) {
-    int32_t overlayNode = HOPTCContextFindOverlayNode(c);
-    int32_t directNode = HOPTCContextFindDirectNode(c);
-    int32_t bind = overlayNode >= 0 ? HOPAstFirstChild(c->ast, overlayNode) : -1;
+int H2TCValidateCurrentCallOverlay(H2TypeCheckCtx* c) {
+    int32_t overlayNode = H2TCContextFindOverlayNode(c);
+    int32_t directNode = H2TCContextFindDirectNode(c);
+    int32_t bind = overlayNode >= 0 ? H2AstFirstChild(c->ast, overlayNode) : -1;
     if (directNode >= 0) {
         int32_t t;
         int32_t savedActive = c->activeCallWithNode;
         c->activeCallWithNode = -1;
-        if (HOPTCTypeExpr(c, directNode, &t) != 0) {
+        if (H2TCTypeExpr(c, directNode, &t) != 0) {
             c->activeCallWithNode = savedActive;
             return -1;
         }
@@ -2674,61 +2662,61 @@ int HOPTCValidateCurrentCallOverlay(HOPTypeCheckCtx* c) {
         return 0;
     }
     if (overlayNode >= 0 && c->currentContextType < 0 && !c->hasImplicitMainRootContext) {
-        return HOPTCFailSpan(
+        return H2TCFailSpan(
             c,
-            HOPDiag_CONTEXT_REQUIRED,
+            H2Diag_CONTEXT_REQUIRED,
             c->ast->nodes[overlayNode].start,
             c->ast->nodes[overlayNode].end);
     }
     while (bind >= 0) {
-        const HOPAstNode* b = &c->ast->nodes[bind];
-        int32_t           expectedType;
-        int32_t           exprNode;
-        int32_t           t;
-        int32_t           scan;
-        if (b->kind != HOPAst_CONTEXT_BIND) {
-            return HOPTCFailNode(c, bind, HOPDiag_UNEXPECTED_TOKEN);
+        const H2AstNode* b = &c->ast->nodes[bind];
+        int32_t          expectedType;
+        int32_t          exprNode;
+        int32_t          t;
+        int32_t          scan;
+        if (b->kind != H2Ast_CONTEXT_BIND) {
+            return H2TCFailNode(c, bind, H2Diag_UNEXPECTED_TOKEN);
         }
-        if (HOPTCCurrentContextFieldType(c, b->dataStart, b->dataEnd, &expectedType) != 0) {
-            return HOPTCFailSpan(c, HOPDiag_CONTEXT_UNKNOWN_FIELD, b->dataStart, b->dataEnd);
+        if (H2TCCurrentContextFieldType(c, b->dataStart, b->dataEnd, &expectedType) != 0) {
+            return H2TCFailSpan(c, H2Diag_CONTEXT_UNKNOWN_FIELD, b->dataStart, b->dataEnd);
         }
-        scan = HOPAstFirstChild(c->ast, overlayNode);
+        scan = H2AstFirstChild(c->ast, overlayNode);
         while (scan >= 0) {
-            const HOPAstNode* bs = &c->ast->nodes[scan];
-            if (scan != bind && bs->kind == HOPAst_CONTEXT_BIND
-                && HOPNameEqSlice(c->src, bs->dataStart, bs->dataEnd, b->dataStart, b->dataEnd))
+            const H2AstNode* bs = &c->ast->nodes[scan];
+            if (scan != bind && bs->kind == H2Ast_CONTEXT_BIND
+                && H2NameEqSlice(c->src, bs->dataStart, bs->dataEnd, b->dataStart, b->dataEnd))
             {
-                return HOPTCFailSpan(c, HOPDiag_CONTEXT_DUPLICATE_FIELD, b->dataStart, b->dataEnd);
+                return H2TCFailSpan(c, H2Diag_CONTEXT_DUPLICATE_FIELD, b->dataStart, b->dataEnd);
             }
-            scan = HOPAstNextSibling(c->ast, scan);
+            scan = H2AstNextSibling(c->ast, scan);
         }
-        exprNode = HOPAstFirstChild(c->ast, bind);
+        exprNode = H2AstFirstChild(c->ast, bind);
         if (exprNode >= 0) {
             int32_t savedActive = c->activeCallWithNode;
             c->activeCallWithNode = -1;
-            if (HOPTCTypeExpr(c, exprNode, &t) != 0) {
+            if (H2TCTypeExpr(c, exprNode, &t) != 0) {
                 c->activeCallWithNode = savedActive;
                 return -1;
             }
             c->activeCallWithNode = savedActive;
-            if (!HOPTCCanAssign(c, expectedType, t)) {
-                return HOPTCFailNode(c, exprNode, HOPDiag_CONTEXT_TYPE_MISMATCH);
+            if (!H2TCCanAssign(c, expectedType, t)) {
+                return H2TCFailNode(c, exprNode, H2Diag_CONTEXT_TYPE_MISMATCH);
             }
         }
-        bind = HOPAstNextSibling(c->ast, bind);
+        bind = H2AstNextSibling(c->ast, bind);
     }
     return 0;
 }
 
-int HOPTCValidateCallContextRequirements(HOPTypeCheckCtx* c, int32_t requiredContextType) {
+int H2TCValidateCallContextRequirements(H2TypeCheckCtx* c, int32_t requiredContextType) {
     int32_t  typeId = requiredContextType;
-    int32_t  directNode = HOPTCContextFindDirectNode(c);
+    int32_t  directNode = H2TCContextFindDirectNode(c);
     uint32_t i;
     if (requiredContextType < 0) {
         return 0;
     }
     if (directNode >= 0) {
-        int32_t expectedContextRef = HOPTCInternRefType(
+        int32_t expectedContextRef = H2TCInternRefType(
             c,
             requiredContextType,
             1,
@@ -2740,76 +2728,76 @@ int HOPTCValidateCallContextRequirements(HOPTypeCheckCtx* c, int32_t requiredCon
             return -1;
         }
         c->activeCallWithNode = -1;
-        if (HOPTCTypeExpr(c, directNode, &gotType) != 0) {
+        if (H2TCTypeExpr(c, directNode, &gotType) != 0) {
             c->activeCallWithNode = savedActive;
             return -1;
         }
         c->activeCallWithNode = savedActive;
-        if (!HOPTCCanAssign(c, expectedContextRef, gotType)) {
-            return HOPTCFailNode(c, directNode, HOPDiag_CONTEXT_CLAUSE_MISMATCH);
+        if (!H2TCCanAssign(c, expectedContextRef, gotType)) {
+            return H2TCFailNode(c, directNode, H2Diag_CONTEXT_CLAUSE_MISMATCH);
         }
         return 0;
     }
-    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == HOPTCType_ALIAS)
+    while (typeId >= 0 && (uint32_t)typeId < c->typeLen && c->types[typeId].kind == H2TCType_ALIAS)
     {
-        if (HOPTCResolveAliasTypeId(c, typeId) != 0) {
+        if (H2TCResolveAliasTypeId(c, typeId) != 0) {
             return -1;
         }
         typeId = c->types[typeId].baseType;
     }
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen
-        || (c->types[typeId].kind != HOPTCType_NAMED
-            && c->types[typeId].kind != HOPTCType_ANON_STRUCT))
+        || (c->types[typeId].kind != H2TCType_NAMED
+            && c->types[typeId].kind != H2TCType_ANON_STRUCT))
     {
-        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, 0, 0);
+        return H2TCFailSpan(c, H2Diag_TYPE_MISMATCH, 0, 0);
     }
-    if (c->types[typeId].kind == HOPTCType_NAMED
-        && HOPTCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
+    if (c->types[typeId].kind == H2TCType_NAMED
+        && H2TCEnsureNamedTypeFieldsResolved(c, typeId) != 0)
     {
         return -1;
     }
     for (i = 0; i < c->types[typeId].fieldCount; i++) {
-        uint32_t         fieldIdx = c->types[typeId].fieldStart + i;
-        const HOPTCField field = c->fields[fieldIdx];
-        int32_t          gotType = -1;
+        uint32_t        fieldIdx = c->types[typeId].fieldStart + i;
+        const H2TCField field = c->fields[fieldIdx];
+        int32_t         gotType = -1;
         if (field.nameEnd <= field.nameStart) {
             continue;
         }
-        if (HOPTCGetEffectiveContextFieldType(c, field.nameStart, field.nameEnd, &gotType) != 0) {
+        if (H2TCGetEffectiveContextFieldType(c, field.nameStart, field.nameEnd, &gotType) != 0) {
             return -1;
         }
-        if (!HOPTCCanAssign(c, field.typeId, gotType)) {
-            return HOPTCFailSpan(c, HOPDiag_CONTEXT_TYPE_MISMATCH, field.nameStart, field.nameEnd);
+        if (!H2TCCanAssign(c, field.typeId, gotType)) {
+            return H2TCFailSpan(c, H2Diag_CONTEXT_TYPE_MISMATCH, field.nameStart, field.nameEnd);
         }
     }
     return 0;
 }
 
-int HOPTCGetFunctionTypeSignature(
-    HOPTypeCheckCtx* c,
-    int32_t          typeId,
-    int32_t*         outReturnType,
-    uint32_t*        outParamStart,
-    uint32_t*        outParamCount,
+int H2TCGetFunctionTypeSignature(
+    H2TypeCheckCtx* c,
+    int32_t         typeId,
+    int32_t*        outReturnType,
+    uint32_t*       outParamStart,
+    uint32_t*       outParamCount,
     int* _Nullable outIsVariadic) {
-    const HOPTCType* t;
+    const H2TCType* t;
     if (typeId < 0 || (uint32_t)typeId >= c->typeLen) {
         return -1;
     }
     t = &c->types[typeId];
-    if (t->kind != HOPTCType_FUNCTION) {
+    if (t->kind != H2TCType_FUNCTION) {
         return -1;
     }
     *outReturnType = t->baseType;
     *outParamStart = t->fieldStart;
     *outParamCount = t->fieldCount;
     if (outIsVariadic != NULL) {
-        *outIsVariadic = (t->flags & HOPTCTypeFlag_FUNCTION_VARIADIC) != 0;
+        *outIsVariadic = (t->flags & H2TCTypeFlag_FUNCTION_VARIADIC) != 0;
     }
     return 0;
 }
 
-void HOPTCCallMapErrorClear(HOPTCCallMapError* err) {
+void H2TCCallMapErrorClear(H2TCCallMapError* err) {
     err->code = 0;
     err->start = 0;
     err->end = 0;
@@ -2817,11 +2805,11 @@ void HOPTCCallMapErrorClear(HOPTCCallMapError* err) {
     err->argEnd = 0;
 }
 
-static int HOPTCParamNameStartsWithUnderscore(
-    HOPTypeCheckCtx* c,
-    const uint32_t*  paramNameStarts,
-    const uint32_t*  paramNameEnds,
-    uint32_t         paramIndex) {
+static int H2TCParamNameStartsWithUnderscore(
+    H2TypeCheckCtx* c,
+    const uint32_t* paramNameStarts,
+    const uint32_t* paramNameEnds,
+    uint32_t        paramIndex) {
     uint32_t start;
     uint32_t end;
     if (c == NULL || c->src.ptr == NULL || paramNameStarts == NULL || paramNameEnds == NULL) {
@@ -2832,54 +2820,54 @@ static int HOPTCParamNameStartsWithUnderscore(
     return end > start && c->src.ptr[start] == '_';
 }
 
-static uint32_t HOPTCPositionalCallPrefixEnd(
-    HOPTypeCheckCtx* c,
-    const uint32_t*  paramNameStarts,
-    const uint32_t*  paramNameEnds,
-    uint32_t         paramCount,
-    uint32_t         firstPositionalArgIndex) {
+static uint32_t H2TCPositionalCallPrefixEnd(
+    H2TypeCheckCtx* c,
+    const uint32_t* paramNameStarts,
+    const uint32_t* paramNameEnds,
+    uint32_t        paramCount,
+    uint32_t        firstPositionalArgIndex) {
     uint32_t prefixEnd;
     if (firstPositionalArgIndex >= paramCount) {
         return paramCount;
     }
     prefixEnd = firstPositionalArgIndex + 1u;
     while (prefixEnd < paramCount
-           && HOPTCParamNameStartsWithUnderscore(c, paramNameStarts, paramNameEnds, prefixEnd))
+           && H2TCParamNameStartsWithUnderscore(c, paramNameStarts, paramNameEnds, prefixEnd))
     {
         prefixEnd++;
     }
     return prefixEnd;
 }
 
-int HOPTCMapCallArgsToParams(
-    HOPTypeCheckCtx*        c,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    const uint32_t*         paramNameStarts,
-    const uint32_t*         paramNameEnds,
-    uint32_t                paramCount,
-    uint32_t                firstPositionalArgIndex,
-    int32_t*                outMappedArgExprNodes,
-    HOPTCCallMapError* _Nullable outError) {
-    uint8_t  paramAssigned[HOPTC_MAX_CALL_ARGS];
+int H2TCMapCallArgsToParams(
+    H2TypeCheckCtx*        c,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    uint32_t               paramCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t*               outMappedArgExprNodes,
+    H2TCCallMapError* _Nullable outError) {
+    uint8_t  paramAssigned[H2TC_MAX_CALL_ARGS];
     uint32_t positionalPrefixEnd;
     uint32_t i;
-    if (paramCount > HOPTC_MAX_CALL_ARGS || argCount > paramCount) {
+    if (paramCount > H2TC_MAX_CALL_ARGS || argCount > paramCount) {
         return -1;
     }
     memset(paramAssigned, 0, sizeof(paramAssigned));
     for (i = 0; i < paramCount; i++) {
         outMappedArgExprNodes[i] = -1;
     }
-    positionalPrefixEnd = HOPTCPositionalCallPrefixEnd(
+    positionalPrefixEnd = H2TCPositionalCallPrefixEnd(
         c, paramNameStarts, paramNameEnds, paramCount, firstPositionalArgIndex);
 
     if (firstPositionalArgIndex < argCount) {
-        const HOPTCCallArgInfo* a = &callArgs[firstPositionalArgIndex];
+        const H2TCCallArgInfo* a = &callArgs[firstPositionalArgIndex];
         outMappedArgExprNodes[firstPositionalArgIndex] = a->exprNode;
         paramAssigned[firstPositionalArgIndex] = 1;
         if (a->explicitNameEnd > a->explicitNameStart
-            && !HOPNameEqSlice(
+            && !H2NameEqSlice(
                 c->src,
                 a->explicitNameStart,
                 a->explicitNameEnd,
@@ -2887,7 +2875,7 @@ int HOPTCMapCallArgsToParams(
                 paramNameEnds[firstPositionalArgIndex]))
         {
             if (outError != NULL) {
-                outError->code = HOPDiag_CALL_FIRST_ARG_NAME_MISMATCH;
+                outError->code = H2Diag_CALL_FIRST_ARG_NAME_MISMATCH;
                 outError->start = a->start;
                 outError->end = a->end;
                 outError->argStart = paramNameStarts[firstPositionalArgIndex];
@@ -2898,11 +2886,11 @@ int HOPTCMapCallArgsToParams(
     }
 
     for (i = 0; i < argCount; i++) {
-        const HOPTCCallArgInfo* a = &callArgs[i];
-        uint32_t                nameStart = 0;
-        uint32_t                nameEnd = 0;
-        uint32_t                p;
-        int                     foundName = 0;
+        const H2TCCallArgInfo* a = &callArgs[i];
+        uint32_t               nameStart = 0;
+        uint32_t               nameEnd = 0;
+        uint32_t               p;
+        int                    foundName = 0;
         if (i < firstPositionalArgIndex) {
             outMappedArgExprNodes[i] = a->exprNode;
             paramAssigned[i] = 1;
@@ -2929,15 +2917,15 @@ int HOPTCMapCallArgsToParams(
                 outError->start = a->start;
                 outError->end = a->end;
                 if (positionalPrefixEnd == firstPositionalArgIndex + 1u) {
-                    outError->code = HOPDiag_CALL_ARG_NAME_REQUIRED;
+                    outError->code = H2Diag_CALL_ARG_NAME_REQUIRED;
                     outError->argStart = 0;
                     outError->argEnd = 0;
                 } else if (positionalPrefixEnd < paramCount) {
-                    outError->code = HOPDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
+                    outError->code = H2Diag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
                     outError->argStart = paramNameStarts[positionalPrefixEnd];
                     outError->argEnd = paramNameEnds[positionalPrefixEnd];
                 } else {
-                    outError->code = HOPDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
+                    outError->code = H2Diag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM;
                     outError->argStart = 0;
                     outError->argEnd = 0;
                 }
@@ -2946,10 +2934,10 @@ int HOPTCMapCallArgsToParams(
         }
 
         for (p = firstPositionalArgIndex + 1u; p < paramCount; p++) {
-            if (HOPNameEqSlice(c->src, nameStart, nameEnd, paramNameStarts[p], paramNameEnds[p])) {
+            if (H2NameEqSlice(c->src, nameStart, nameEnd, paramNameStarts[p], paramNameEnds[p])) {
                 if (paramAssigned[p]) {
                     if (outError != NULL) {
-                        outError->code = HOPDiag_CALL_ARG_DUPLICATE;
+                        outError->code = H2Diag_CALL_ARG_DUPLICATE;
                         outError->start = a->start;
                         outError->end = a->end;
                         outError->argStart = nameStart;
@@ -2964,7 +2952,7 @@ int HOPTCMapCallArgsToParams(
         }
         if (p == paramCount) {
             if (outError != NULL) {
-                outError->code = HOPDiag_CALL_ARG_UNKNOWN_NAME;
+                outError->code = H2Diag_CALL_ARG_UNKNOWN_NAME;
                 outError->start = a->start;
                 outError->end = a->end;
                 outError->argStart = nameStart;
@@ -2977,7 +2965,7 @@ int HOPTCMapCallArgsToParams(
     for (i = 0; i < paramCount; i++) {
         if (!paramAssigned[i]) {
             if (outError != NULL) {
-                outError->code = HOPDiag_CALL_ARG_MISSING;
+                outError->code = H2Diag_CALL_ARG_MISSING;
                 if (argCount > 0) {
                     outError->start = callArgs[0].start;
                     outError->end = callArgs[argCount - 1u].end;
@@ -2994,19 +2982,19 @@ int HOPTCMapCallArgsToParams(
     return 0;
 }
 
-int HOPTCPrepareCallBinding(
-    HOPTypeCheckCtx*        c,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    const uint32_t*         paramNameStarts,
-    const uint32_t*         paramNameEnds,
-    const int32_t*          paramTypes,
-    uint32_t                paramCount,
-    int                     isVariadic,
-    int                     allowNamedMapping,
-    uint32_t                firstPositionalArgIndex,
-    HOPTCCallBinding*       outBinding,
-    HOPTCCallMapError*      outError) {
+int H2TCPrepareCallBinding(
+    H2TypeCheckCtx*        c,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    const int32_t*         paramTypes,
+    uint32_t               paramCount,
+    int                    isVariadic,
+    int                    allowNamedMapping,
+    uint32_t               firstPositionalArgIndex,
+    H2TCCallBinding*       outBinding,
+    H2TCCallMapError*      outError) {
     uint32_t spreadArgIndex = UINT32_MAX;
     uint32_t fixedCount = isVariadic ? (paramCount > 0 ? (paramCount - 1u) : 0u) : paramCount;
     uint32_t fixedInputCount;
@@ -3021,12 +3009,12 @@ int HOPTCPrepareCallBinding(
     outBinding->spreadArgIndex = UINT32_MAX;
     outBinding->variadicParamType = -1;
     outBinding->variadicElemType = -1;
-    for (i = 0; i < HOPTC_MAX_CALL_ARGS; i++) {
+    for (i = 0; i < H2TC_MAX_CALL_ARGS; i++) {
         outBinding->fixedMappedArgExprNodes[i] = -1;
         outBinding->argParamIndices[i] = -1;
         outBinding->argExpectedTypes[i] = -1;
     }
-    if (paramCount > HOPTC_MAX_CALL_ARGS || argCount > HOPTC_MAX_CALL_ARGS) {
+    if (paramCount > H2TC_MAX_CALL_ARGS || argCount > H2TC_MAX_CALL_ARGS) {
         return 1;
     }
 
@@ -3036,7 +3024,7 @@ int HOPTCPrepareCallBinding(
         }
         if (i + 1u < argCount) {
             if (outError != NULL) {
-                outError->code = HOPDiag_VARIADIC_SPREAD_NOT_LAST;
+                outError->code = H2Diag_VARIADIC_SPREAD_NOT_LAST;
                 outError->start = callArgs[i].start;
                 outError->end = callArgs[i].end;
                 outError->argStart = 0;
@@ -3050,7 +3038,7 @@ int HOPTCPrepareCallBinding(
     if (!isVariadic) {
         if (spreadArgIndex != UINT32_MAX) {
             if (outError != NULL) {
-                outError->code = HOPDiag_VARIADIC_CALL_SHAPE_MISMATCH;
+                outError->code = H2Diag_VARIADIC_CALL_SHAPE_MISMATCH;
                 outError->start = callArgs[spreadArgIndex].start;
                 outError->end = callArgs[spreadArgIndex].end;
                 outError->argStart = 0;
@@ -3073,9 +3061,9 @@ int HOPTCPrepareCallBinding(
         {
             return 1;
         }
-        if (c->types[outBinding->variadicParamType].kind == HOPTCType_SLICE) {
+        if (c->types[outBinding->variadicParamType].kind == H2TCType_SLICE) {
             outBinding->variadicElemType = c->types[outBinding->variadicParamType].baseType;
-        } else if (c->types[outBinding->variadicParamType].kind == HOPTCType_PACK) {
+        } else if (c->types[outBinding->variadicParamType].kind == H2TCType_PACK) {
             variadicIsPack = 1;
             packElemCount = c->types[outBinding->variadicParamType].fieldCount;
         } else if (outBinding->variadicParamType == c->typeAnytype) {
@@ -3086,7 +3074,7 @@ int HOPTCPrepareCallBinding(
         if (spreadArgIndex != UINT32_MAX) {
             if (argCount != fixedCount + 1u) {
                 if (outError != NULL) {
-                    outError->code = HOPDiag_VARIADIC_CALL_SHAPE_MISMATCH;
+                    outError->code = H2Diag_VARIADIC_CALL_SHAPE_MISMATCH;
                     outError->start = callArgs[spreadArgIndex].start;
                     outError->end = callArgs[spreadArgIndex].end;
                     outError->argStart = 0;
@@ -3098,7 +3086,7 @@ int HOPTCPrepareCallBinding(
                 > callArgs[spreadArgIndex].explicitNameStart)
             {
                 if (outError != NULL) {
-                    outError->code = HOPDiag_VARIADIC_CALL_SHAPE_MISMATCH;
+                    outError->code = H2Diag_VARIADIC_CALL_SHAPE_MISMATCH;
                     outError->start = callArgs[spreadArgIndex].start;
                     outError->end = callArgs[spreadArgIndex].end;
                     outError->argStart = 0;
@@ -3125,9 +3113,9 @@ int HOPTCPrepareCallBinding(
                 outBinding->fixedMappedArgExprNodes[i] = callArgs[i].exprNode;
             }
         } else {
-            HOPTCCallMapError mapError;
-            HOPTCCallMapErrorClear(&mapError);
-            if (HOPTCMapCallArgsToParams(
+            H2TCCallMapError mapError;
+            H2TCCallMapErrorClear(&mapError);
+            if (H2TCMapCallArgsToParams(
                     c,
                     callArgs,
                     fixedInputCount,
@@ -3188,10 +3176,10 @@ int HOPTCPrepareCallBinding(
     }
 
     for (i = fixedInputCount; i < argCount; i++) {
-        const HOPTCType* variadicType = &c->types[outBinding->variadicParamType];
+        const H2TCType* variadicType = &c->types[outBinding->variadicParamType];
         if (callArgs[i].explicitNameEnd > callArgs[i].explicitNameStart) {
             if (outError != NULL) {
-                outError->code = HOPDiag_VARIADIC_CALL_SHAPE_MISMATCH;
+                outError->code = H2Diag_VARIADIC_CALL_SHAPE_MISMATCH;
                 outError->start = callArgs[i].start;
                 outError->end = callArgs[i].end;
                 outError->argStart = 0;
@@ -3200,7 +3188,7 @@ int HOPTCPrepareCallBinding(
             return 2;
         }
         outBinding->argParamIndices[i] = (int32_t)fixedCount;
-        if (variadicType->kind == HOPTCType_PACK) {
+        if (variadicType->kind == H2TCType_PACK) {
             uint32_t packIndex = i - fixedInputCount;
             if (packIndex >= variadicType->fieldCount) {
                 return 1;
@@ -3215,45 +3203,44 @@ int HOPTCPrepareCallBinding(
     return 0;
 }
 
-int HOPTCCheckConstParamArgs(
-    HOPTypeCheckCtx*        c,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    const HOPTCCallBinding* binding,
-    const uint32_t*         paramNameStarts,
-    const uint32_t*         paramNameEnds,
-    const uint8_t*          paramFlags,
-    uint32_t                paramCount,
-    HOPTCCallMapError*      outError) {
+int H2TCCheckConstParamArgs(
+    H2TypeCheckCtx*        c,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const H2TCCallBinding* binding,
+    const uint32_t*        paramNameStarts,
+    const uint32_t*        paramNameEnds,
+    const uint8_t*         paramFlags,
+    uint32_t               paramCount,
+    H2TCCallMapError*      outError) {
     uint32_t i;
     if (outError != NULL) {
-        HOPTCCallMapErrorClear(outError);
+        H2TCCallMapErrorClear(outError);
     }
     if (binding == NULL || paramFlags == NULL) {
         return 0;
     }
     for (i = 0; i < argCount; i++) {
-        int32_t           p = binding->argParamIndices[i];
-        int               isConst = 0;
-        int               evalIsConst = 0;
-        HOPCTFEValue      ignoredValue = { 0 };
-        HOPTCConstEvalCtx evalCtx;
-        HOPDiagCode       code = HOPDiag_CONST_PARAM_ARG_NOT_CONST;
-        HOPTCInitConstEvalCtxFromParent(c, c != NULL ? c->activeConstEvalCtx : NULL, &evalCtx);
+        int32_t          p = binding->argParamIndices[i];
+        int              isConst = 0;
+        int              evalIsConst = 0;
+        H2CTFEValue      ignoredValue = { 0 };
+        H2TCConstEvalCtx evalCtx;
+        H2DiagCode       code = H2Diag_CONST_PARAM_ARG_NOT_CONST;
+        H2TCInitConstEvalCtxFromParent(c, c != NULL ? c->activeConstEvalCtx : NULL, &evalCtx);
         if (p < 0 || (uint32_t)p >= paramCount) {
             continue;
         }
-        isConst = (paramFlags[p] & HOPTCFuncParamFlag_CONST) != 0;
+        isConst = (paramFlags[p] & H2TCFuncParamFlag_CONST) != 0;
         if (!isConst) {
             continue;
         }
         if (binding->isVariadic && i == binding->spreadArgIndex
             && (uint32_t)p == binding->fixedCount)
         {
-            code = HOPDiag_CONST_PARAM_SPREAD_NOT_CONST;
+            code = H2Diag_CONST_PARAM_SPREAD_NOT_CONST;
         }
-        if (HOPTCEvalConstExprNode(&evalCtx, callArgs[i].exprNode, &ignoredValue, &evalIsConst)
-            != 0)
+        if (H2TCEvalConstExprNode(&evalCtx, callArgs[i].exprNode, &ignoredValue, &evalIsConst) != 0)
         {
             return -1;
         }
@@ -3277,66 +3264,66 @@ int HOPTCCheckConstParamArgs(
     return 0;
 }
 
-int HOPTCCheckConstBlocksForCall(
-    HOPTypeCheckCtx*        c,
-    int32_t                 fnIndex,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    const HOPTCCallBinding* binding,
-    HOPTCCallMapError*      outError) {
-    const HOPTCFunction* fn;
-    int32_t              fnNode;
-    int32_t              bodyNode = -1;
-    int32_t              child;
-    uint32_t             paramIndex = 0;
-    uint32_t             variadicPackParamNameStart = 0;
-    uint32_t             variadicPackParamNameEnd = 0;
-    int                  hasConstBlock = 0;
-    uint32_t             savedLocalLen;
-    uint32_t             savedLocalUseLen;
-    uint32_t             savedVariantNarrowLen;
-    HOPTCConstEvalCtx*   savedActiveConstEvalCtx;
-    HOPCTFEExecBinding*  paramBindings = NULL;
-    uint32_t             paramBindingLen = 0;
-    HOPCTFEExecEnv       paramFrame;
-    HOPCTFEExecCtx       execCtx;
-    HOPTCConstEvalCtx    evalCtx;
-    HOPCTFEValue         retValue;
-    int                  didReturn = 0;
-    int                  isConst = 0;
-    int                  rc;
+int H2TCCheckConstBlocksForCall(
+    H2TypeCheckCtx*        c,
+    int32_t                fnIndex,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    const H2TCCallBinding* binding,
+    H2TCCallMapError*      outError) {
+    const H2TCFunction* fn;
+    int32_t             fnNode;
+    int32_t             bodyNode = -1;
+    int32_t             child;
+    uint32_t            paramIndex = 0;
+    uint32_t            variadicPackParamNameStart = 0;
+    uint32_t            variadicPackParamNameEnd = 0;
+    int                 hasConstBlock = 0;
+    uint32_t            savedLocalLen;
+    uint32_t            savedLocalUseLen;
+    uint32_t            savedVariantNarrowLen;
+    H2TCConstEvalCtx*   savedActiveConstEvalCtx;
+    H2CTFEExecBinding*  paramBindings = NULL;
+    uint32_t            paramBindingLen = 0;
+    H2CTFEExecEnv       paramFrame;
+    H2CTFEExecCtx       execCtx;
+    H2TCConstEvalCtx    evalCtx;
+    H2CTFEValue         retValue;
+    int                 didReturn = 0;
+    int                 isConst = 0;
+    int                 rc;
 
     if (outError != NULL) {
-        HOPTCCallMapErrorClear(outError);
+        H2TCCallMapErrorClear(outError);
     }
     if (c == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return 0;
     }
     fn = &c->funcs[fnIndex];
     fnNode = fn->defNode;
-    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != HOPAst_FN) {
+    if (fnNode < 0 || (uint32_t)fnNode >= c->ast->len || c->ast->nodes[fnNode].kind != H2Ast_FN) {
         return 0;
     }
 
-    child = HOPAstFirstChild(c->ast, fnNode);
+    child = H2AstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        if (c->ast->nodes[child].kind == HOPAst_BLOCK) {
+        if (c->ast->nodes[child].kind == H2Ast_BLOCK) {
             bodyNode = child;
             break;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     if (bodyNode < 0) {
         return 0;
     }
 
-    child = HOPAstFirstChild(c->ast, bodyNode);
+    child = H2AstFirstChild(c->ast, bodyNode);
     while (child >= 0) {
-        if (c->ast->nodes[child].kind == HOPAst_CONST_BLOCK) {
+        if (c->ast->nodes[child].kind == H2Ast_CONST_BLOCK) {
             hasConstBlock = 1;
             break;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     if (!hasConstBlock) {
         return 0;
@@ -3348,23 +3335,23 @@ int HOPTCCheckConstBlocksForCall(
     savedActiveConstEvalCtx = c->activeConstEvalCtx;
 
     if (fn->paramCount > 0) {
-        paramBindings = (HOPCTFEExecBinding*)HOPArenaAlloc(
+        paramBindings = (H2CTFEExecBinding*)H2ArenaAlloc(
             c->arena,
-            sizeof(HOPCTFEExecBinding) * fn->paramCount,
-            (uint32_t)_Alignof(HOPCTFEExecBinding));
+            sizeof(H2CTFEExecBinding) * fn->paramCount,
+            (uint32_t)_Alignof(H2CTFEExecBinding));
         if (paramBindings == NULL) {
             c->localLen = savedLocalLen;
             c->localUseLen = savedLocalUseLen;
             c->variantNarrowLen = savedVariantNarrowLen;
             c->activeConstEvalCtx = savedActiveConstEvalCtx;
-            return HOPTCFailNode(c, fnNode, HOPDiag_ARENA_OOM);
+            return H2TCFailNode(c, fnNode, H2Diag_ARENA_OOM);
         }
     }
 
-    child = HOPAstFirstChild(c->ast, fnNode);
+    child = H2AstFirstChild(c->ast, fnNode);
     while (child >= 0) {
-        const HOPAstNode* n = &c->ast->nodes[child];
-        if (n->kind == HOPAst_PARAM) {
+        const H2AstNode* n = &c->ast->nodes[child];
+        if (n->kind == H2Ast_PARAM) {
             int32_t paramType;
             int     isConstParam;
             int     addedLocal = 0;
@@ -3377,11 +3364,10 @@ int HOPTCCheckConstBlocksForCall(
             }
             paramType = c->funcParamTypes[fn->paramTypeStart + paramIndex];
             isConstParam =
-                (c->funcParamFlags[fn->paramTypeStart + paramIndex] & HOPTCFuncParamFlag_CONST)
-                != 0;
+                (c->funcParamFlags[fn->paramTypeStart + paramIndex] & H2TCFuncParamFlag_CONST) != 0;
 
-            if (!HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
-                && HOPTCLocalAdd(c, n->dataStart, n->dataEnd, paramType, isConstParam, -1) != 0)
+            if (!H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")
+                && H2TCLocalAdd(c, n->dataStart, n->dataEnd, paramType, isConstParam, -1) != 0)
             {
                 c->localLen = savedLocalLen;
                 c->localUseLen = savedLocalUseLen;
@@ -3389,28 +3375,28 @@ int HOPTCCheckConstBlocksForCall(
                 c->activeConstEvalCtx = savedActiveConstEvalCtx;
                 return -1;
             }
-            if (!HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
+            if (!H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "_")) {
                 addedLocal = 1;
             }
-            if (addedLocal && (n->flags & HOPAstFlag_PARAM_VARIADIC) != 0
+            if (addedLocal && (n->flags & H2AstFlag_PARAM_VARIADIC) != 0
                 && (paramType == c->typeAnytype
                     || ((uint32_t)paramType < c->typeLen
-                        && c->types[paramType].kind == HOPTCType_PACK)))
+                        && c->types[paramType].kind == H2TCType_PACK)))
             {
-                c->locals[c->localLen - 1u].flags |= HOPTCLocalFlag_ANYPACK;
+                c->locals[c->localLen - 1u].flags |= H2TCLocalFlag_ANYPACK;
                 variadicPackParamNameStart = n->dataStart;
                 variadicPackParamNameEnd = n->dataEnd;
             }
 
             if (isConstParam && binding != NULL && paramBindings != NULL
-                && !HOPNameEqLiteral(c->src, n->dataStart, n->dataEnd, "_"))
+                && !H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "_"))
             {
-                int32_t           argIndex = -1;
-                HOPCTFEValue      value;
-                int               evalIsConst = 0;
-                HOPTCConstEvalCtx evalArgCtx;
-                uint32_t          i;
-                HOPTCInitConstEvalCtxFromParent(c, savedActiveConstEvalCtx, &evalArgCtx);
+                int32_t          argIndex = -1;
+                H2CTFEValue      value;
+                int              evalIsConst = 0;
+                H2TCConstEvalCtx evalArgCtx;
+                uint32_t         i;
+                H2TCInitConstEvalCtxFromParent(c, savedActiveConstEvalCtx, &evalArgCtx);
                 if (binding->isVariadic && paramIndex == binding->fixedCount) {
                     if (binding->spreadArgIndex != UINT32_MAX) {
                         argIndex = (int32_t)binding->spreadArgIndex;
@@ -3424,7 +3410,7 @@ int HOPTCCheckConstBlocksForCall(
                     }
                 }
                 if (argIndex >= 0) {
-                    if (HOPTCEvalConstExprNode(
+                    if (H2TCEvalConstExprNode(
                             &evalArgCtx, callArgs[argIndex].exprNode, &value, &evalIsConst)
                         != 0)
                     {
@@ -3436,7 +3422,7 @@ int HOPTCCheckConstBlocksForCall(
                     }
                     if (!evalIsConst) {
                         if (outError != NULL) {
-                            outError->code = HOPDiag_CONST_BLOCK_EVAL_FAILED;
+                            outError->code = H2Diag_CONST_BLOCK_EVAL_FAILED;
                             outError->start = callArgs[argIndex].start;
                             outError->end = callArgs[argIndex].end;
                             outError->argStart = 0;
@@ -3461,7 +3447,7 @@ int HOPTCCheckConstBlocksForCall(
             }
             paramIndex++;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
     if (paramIndex != fn->paramCount) {
         c->localLen = savedLocalLen;
@@ -3480,16 +3466,16 @@ int HOPTCCheckConstBlocksForCall(
     execCtx.src = c->src;
     execCtx.diag = c->diag;
     execCtx.env = &paramFrame;
-    execCtx.evalExpr = HOPTCEvalConstExecExprCb;
+    execCtx.evalExpr = H2TCEvalConstExecExprCb;
     execCtx.evalExprCtx = &evalCtx;
-    execCtx.resolveType = HOPTCEvalConstExecResolveTypeCb;
+    execCtx.resolveType = H2TCEvalConstExecResolveTypeCb;
     execCtx.resolveTypeCtx = &evalCtx;
-    execCtx.inferValueType = HOPTCEvalConstExecInferValueTypeCb;
+    execCtx.inferValueType = H2TCEvalConstExecInferValueTypeCb;
     execCtx.inferValueTypeCtx = &evalCtx;
-    execCtx.forInIndex = HOPTCEvalConstForInIndexCb;
+    execCtx.forInIndex = H2TCEvalConstForInIndexCb;
     execCtx.forInIndexCtx = &evalCtx;
     execCtx.pendingReturnExprNode = -1;
-    execCtx.forIterLimit = HOPTC_CONST_FOR_MAX_ITERS;
+    execCtx.forIterLimit = H2TC_CONST_FOR_MAX_ITERS;
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
     evalCtx.execCtx = &execCtx;
@@ -3500,14 +3486,14 @@ int HOPTCCheckConstBlocksForCall(
     evalCtx.callPackParamNameEnd = variadicPackParamNameEnd;
     c->activeConstEvalCtx = &evalCtx;
 
-    child = HOPAstFirstChild(c->ast, bodyNode);
+    child = H2AstFirstChild(c->ast, bodyNode);
     while (child >= 0) {
-        if (c->ast->nodes[child].kind == HOPAst_CONST_BLOCK) {
-            int32_t blockNode = HOPAstFirstChild(c->ast, child);
+        if (c->ast->nodes[child].kind == H2Ast_CONST_BLOCK) {
+            int32_t blockNode = H2AstFirstChild(c->ast, child);
             int     mirSupported = 0;
-            if (blockNode < 0 || c->ast->nodes[blockNode].kind != HOPAst_BLOCK) {
+            if (blockNode < 0 || c->ast->nodes[blockNode].kind != H2Ast_BLOCK) {
                 if (outError != NULL) {
-                    outError->code = HOPDiag_CONST_BLOCK_EVAL_FAILED;
+                    outError->code = H2Diag_CONST_BLOCK_EVAL_FAILED;
                     outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
                     outError->end =
                         argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
@@ -3523,7 +3509,7 @@ int HOPTCCheckConstBlocksForCall(
             evalCtx.nonConstReason = NULL;
             evalCtx.nonConstStart = 0;
             evalCtx.nonConstEnd = 0;
-            rc = HOPTCTryMirConstBlock(
+            rc = H2TCTryMirConstBlock(
                 &evalCtx, blockNode, &retValue, &didReturn, &isConst, &mirSupported);
             if (rc != 0) {
                 c->localLen = savedLocalLen;
@@ -3533,19 +3519,19 @@ int HOPTCCheckConstBlocksForCall(
                 return -1;
             }
             if (mirSupported && isConst && !didReturn) {
-                child = HOPAstNextSibling(c->ast, child);
+                child = H2AstNextSibling(c->ast, child);
                 continue;
             }
             if (didReturn) {
-                HOPTCConstSetReasonNode(&evalCtx, blockNode, "const block must not return a value");
+                H2TCConstSetReasonNode(&evalCtx, blockNode, "const block must not return a value");
             } else if (evalCtx.nonConstReason == NULL) {
-                HOPTCConstSetReasonNode(&evalCtx, blockNode, "const block is not const-evaluable");
+                H2TCConstSetReasonNode(&evalCtx, blockNode, "const block is not const-evaluable");
             }
             c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
             c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
             c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
             if (outError != NULL) {
-                outError->code = HOPDiag_CONST_BLOCK_EVAL_FAILED;
+                outError->code = H2Diag_CONST_BLOCK_EVAL_FAILED;
                 outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;
                 outError->end =
                     argCount > 0 ? callArgs[argCount - 1u].end : c->ast->nodes[child].end;
@@ -3558,7 +3544,7 @@ int HOPTCCheckConstBlocksForCall(
             c->activeConstEvalCtx = savedActiveConstEvalCtx;
             return 1;
         }
-        child = HOPAstNextSibling(c->ast, child);
+        child = H2AstNextSibling(c->ast, child);
     }
 
     c->localLen = savedLocalLen;
@@ -3568,19 +3554,18 @@ int HOPTCCheckConstBlocksForCall(
     return 0;
 }
 
-int HOPTCResolveComparisonHookArgCost(
-    HOPTypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost) {
-    int32_t resolvedParam = HOPTCResolveAliasBaseType(c, paramType);
+int H2TCResolveComparisonHookArgCost(
+    H2TypeCheckCtx* c, int32_t paramType, int32_t argType, uint8_t* outCost) {
+    int32_t resolvedParam = H2TCResolveAliasBaseType(c, paramType);
     uint8_t baseCost = 0;
-    if (HOPTCConversionCost(c, paramType, argType, outCost) == 0) {
+    if (H2TCConversionCost(c, paramType, argType, outCost) == 0) {
         return 0;
     }
     if (resolvedParam < 0 || (uint32_t)resolvedParam >= c->typeLen) {
         return -1;
     }
-    if (c->types[resolvedParam].kind == HOPTCType_REF
-        && !HOPTCTypeIsMutable(&c->types[resolvedParam])
-        && HOPTCConversionCost(c, c->types[resolvedParam].baseType, argType, &baseCost) == 0)
+    if (c->types[resolvedParam].kind == H2TCType_REF && !H2TCTypeIsMutable(&c->types[resolvedParam])
+        && H2TCConversionCost(c, c->types[resolvedParam].baseType, argType, &baseCost) == 0)
     {
         *outCost = (uint8_t)(baseCost < 254u ? baseCost + 1u : 255u);
         return 0;
@@ -3588,12 +3573,12 @@ int HOPTCResolveComparisonHookArgCost(
     return -1;
 }
 
-int HOPTCResolveComparisonHook(
-    HOPTypeCheckCtx* c,
-    const char*      hookName,
-    int32_t          lhsType,
-    int32_t          rhsType,
-    int32_t*         outFuncIndex) {
+int H2TCResolveComparisonHook(
+    H2TypeCheckCtx* c,
+    const char*     hookName,
+    int32_t         lhsType,
+    int32_t         rhsType,
+    int32_t*        outFuncIndex) {
     uint8_t  bestCosts[2];
     int      haveBest = 0;
     int      ambiguous = 0;
@@ -3601,21 +3586,21 @@ int HOPTCResolveComparisonHook(
     uint32_t bestTotal = 0;
     uint32_t i;
     for (i = 0; i < c->funcLen; i++) {
-        const HOPTCFunction* fn = &c->funcs[i];
-        uint8_t              curCosts[2];
-        uint32_t             curTotal = 0;
-        int                  cmp;
-        if (!HOPNameEqLiteral(c->src, fn->nameStart, fn->nameEnd, hookName)) {
+        const H2TCFunction* fn = &c->funcs[i];
+        uint8_t             curCosts[2];
+        uint32_t            curTotal = 0;
+        int                 cmp;
+        if (!H2NameEqLiteral(c->src, fn->nameStart, fn->nameEnd, hookName)) {
             continue;
         }
         nameFound = 1;
         if (fn->paramCount != 2) {
             continue;
         }
-        if (HOPTCResolveComparisonHookArgCost(
+        if (H2TCResolveComparisonHookArgCost(
                 c, c->funcParamTypes[fn->paramTypeStart], lhsType, &curCosts[0])
                 != 0
-            || HOPTCResolveComparisonHookArgCost(
+            || H2TCResolveComparisonHookArgCost(
                    c, c->funcParamTypes[fn->paramTypeStart + 1u], rhsType, &curCosts[1])
                    != 0)
         {
@@ -3631,7 +3616,7 @@ int HOPTCResolveComparisonHook(
             bestCosts[1] = curCosts[1];
             continue;
         }
-        cmp = HOPTCCostVectorCompare(curCosts, bestCosts, 2u);
+        cmp = H2TCCostVectorCompare(curCosts, bestCosts, 2u);
         if (cmp < 0 || (cmp == 0 && curTotal < bestTotal)) {
             *outFuncIndex = (int32_t)i;
             ambiguous = 0;
@@ -3653,26 +3638,26 @@ int HOPTCResolveComparisonHook(
     return ambiguous ? 3 : 0;
 }
 
-void HOPTCGatherCallCandidates(
-    HOPTypeCheckCtx* c,
-    uint32_t         nameStart,
-    uint32_t         nameEnd,
-    int32_t*         outCandidates,
-    uint32_t*        outCandidateCount,
-    int*             outNameFound) {
+void H2TCGatherCallCandidates(
+    H2TypeCheckCtx* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int32_t*        outCandidates,
+    uint32_t*       outCandidateCount,
+    int*            outNameFound) {
     uint32_t count = 0;
     uint32_t i;
     *outNameFound = 0;
-    for (i = 0; i < c->funcLen && count < HOPTC_MAX_CALL_CANDIDATES; i++) {
-        if (HOPTCFunctionNameEq(c, i, nameStart, nameEnd)) {
+    for (i = 0; i < c->funcLen && count < H2TC_MAX_CALL_CANDIDATES; i++) {
+        if (H2TCFunctionNameEq(c, i, nameStart, nameEnd)) {
             outCandidates[count++] = (int32_t)i;
             *outNameFound = 1;
         }
     }
-    for (i = 0; i < c->funcLen && count < HOPTC_MAX_CALL_CANDIDATES; i++) {
-        const HOPTCFunction* fn = &c->funcs[i];
-        uint32_t             nameLen;
-        uint32_t             candLen;
+    for (i = 0; i < c->funcLen && count < H2TC_MAX_CALL_CANDIDATES; i++) {
+        const H2TCFunction* fn = &c->funcs[i];
+        uint32_t            nameLen;
+        uint32_t            candLen;
         if (nameEnd <= nameStart || nameEnd > c->src.len || fn->nameEnd <= fn->nameStart) {
             continue;
         }
@@ -3692,20 +3677,20 @@ void HOPTCGatherCallCandidates(
     *outCandidateCount = count;
 }
 
-void HOPTCGatherCallCandidatesByPkgMethod(
-    HOPTypeCheckCtx* c,
-    uint32_t         pkgStart,
-    uint32_t         pkgEnd,
-    uint32_t         methodStart,
-    uint32_t         methodEnd,
-    int32_t*         outCandidates,
-    uint32_t*        outCandidateCount,
-    int*             outNameFound) {
+void H2TCGatherCallCandidatesByPkgMethod(
+    H2TypeCheckCtx* c,
+    uint32_t        pkgStart,
+    uint32_t        pkgEnd,
+    uint32_t        methodStart,
+    uint32_t        methodEnd,
+    int32_t*        outCandidates,
+    uint32_t*       outCandidateCount,
+    int*            outNameFound) {
     uint32_t count = 0;
     uint32_t i;
     *outNameFound = 0;
-    for (i = 0; i < c->funcLen && count < HOPTC_MAX_CALL_CANDIDATES; i++) {
-        if (HOPTCNameEqPkgPrefixedMethod(
+    for (i = 0; i < c->funcLen && count < H2TC_MAX_CALL_CANDIDATES; i++) {
+        if (H2TCNameEqPkgPrefixedMethod(
                 c,
                 c->funcs[i].nameStart,
                 c->funcs[i].nameEnd,
@@ -3721,14 +3706,14 @@ void HOPTCGatherCallCandidatesByPkgMethod(
     *outCandidateCount = count;
 }
 
-int HOPTCFunctionHasAnytypeParam(HOPTypeCheckCtx* c, int32_t fnIndex) {
-    const HOPTCFunction* fn;
-    uint32_t             p;
+int H2TCFunctionHasAnytypeParam(H2TypeCheckCtx* c, int32_t fnIndex) {
+    const H2TCFunction* fn;
+    uint32_t            p;
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return 0;
     }
     fn = &c->funcs[fnIndex];
-    if ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0) {
+    if ((fn->flags & H2TCFunctionFlag_TEMPLATE) != 0) {
         return 1;
     }
     for (p = 0; p < fn->paramCount; p++) {
@@ -3739,8 +3724,8 @@ int HOPTCFunctionHasAnytypeParam(HOPTypeCheckCtx* c, int32_t fnIndex) {
     return 0;
 }
 
-static int HOPTCInferTemplateArgBind(
-    HOPTypeCheckCtx* c, int32_t* boundType, int32_t argType, uint32_t errStart, uint32_t errEnd) {
+static int H2TCInferTemplateArgBind(
+    H2TypeCheckCtx* c, int32_t* boundType, int32_t argType, uint32_t errStart, uint32_t errEnd) {
     if (*boundType < 0) {
         *boundType = argType;
         return 0;
@@ -3748,14 +3733,14 @@ static int HOPTCInferTemplateArgBind(
     if (*boundType == argType) {
         return 0;
     }
-    if (HOPTCIsUntyped(c, *boundType) && !HOPTCIsUntyped(c, argType)
-        && HOPTCCanAssign(c, argType, *boundType))
+    if (H2TCIsUntyped(c, *boundType) && !H2TCIsUntyped(c, argType)
+        && H2TCCanAssign(c, argType, *boundType))
     {
         *boundType = argType;
         return 0;
     }
-    if (!HOPTCIsUntyped(c, *boundType) && HOPTCIsUntyped(c, argType)
-        && HOPTCCanAssign(c, *boundType, argType))
+    if (!H2TCIsUntyped(c, *boundType) && H2TCIsUntyped(c, argType)
+        && H2TCCanAssign(c, *boundType, argType))
     {
         return 0;
     }
@@ -3764,18 +3749,18 @@ static int HOPTCInferTemplateArgBind(
     return 1;
 }
 
-static int HOPTCInferTemplateArgsFromTypes(
-    HOPTypeCheckCtx* c,
-    int32_t          paramType,
-    int32_t          argType,
-    const int32_t*   templateParamTypes,
-    int32_t*         templateArgTypes,
-    uint16_t         templateArgCount,
-    uint32_t         errStart,
-    uint32_t         errEnd) {
+static int H2TCInferTemplateArgsFromTypes(
+    H2TypeCheckCtx* c,
+    int32_t         paramType,
+    int32_t         argType,
+    const int32_t*  templateParamTypes,
+    int32_t*        templateArgTypes,
+    uint16_t        templateArgCount,
+    uint32_t        errStart,
+    uint32_t        errEnd) {
     uint16_t i;
-    int32_t  resolvedParam = HOPTCResolveAliasBaseType(c, paramType);
-    int32_t  resolvedArg = HOPTCResolveAliasBaseType(c, argType);
+    int32_t  resolvedParam = H2TCResolveAliasBaseType(c, paramType);
+    int32_t  resolvedArg = H2TCResolveAliasBaseType(c, argType);
     if (resolvedParam < 0) {
         resolvedParam = paramType;
     }
@@ -3784,7 +3769,7 @@ static int HOPTCInferTemplateArgsFromTypes(
     }
     for (i = 0; i < templateArgCount; i++) {
         if (templateParamTypes[i] == paramType || templateParamTypes[i] == resolvedParam) {
-            return HOPTCInferTemplateArgBind(c, &templateArgTypes[i], argType, errStart, errEnd);
+            return H2TCInferTemplateArgBind(c, &templateArgTypes[i], argType, errStart, errEnd);
         }
     }
     if (resolvedParam < 0 || (uint32_t)resolvedParam >= c->typeLen || resolvedArg < 0
@@ -3799,12 +3784,12 @@ static int HOPTCInferTemplateArgsFromTypes(
         return 0;
     }
     switch (c->types[resolvedParam].kind) {
-        case HOPTCType_PTR:
-        case HOPTCType_REF:
-        case HOPTCType_ARRAY:
-        case HOPTCType_SLICE:
-        case HOPTCType_OPTIONAL:
-            return HOPTCInferTemplateArgsFromTypes(
+        case H2TCType_PTR:
+        case H2TCType_REF:
+        case H2TCType_ARRAY:
+        case H2TCType_SLICE:
+        case H2TCType_OPTIONAL:
+            return H2TCInferTemplateArgsFromTypes(
                 c,
                 c->types[resolvedParam].baseType,
                 c->types[resolvedArg].baseType,
@@ -3813,15 +3798,15 @@ static int HOPTCInferTemplateArgsFromTypes(
                 templateArgCount,
                 errStart,
                 errEnd);
-        case HOPTCType_TUPLE:
-        case HOPTCType_PACK:
-        case HOPTCType_FUNCTION: {
+        case H2TCType_TUPLE:
+        case H2TCType_PACK:
+        case H2TCType_FUNCTION: {
             uint32_t j;
             if (c->types[resolvedParam].fieldCount != c->types[resolvedArg].fieldCount) {
                 return 0;
             }
-            if (c->types[resolvedParam].kind == HOPTCType_FUNCTION
-                && HOPTCInferTemplateArgsFromTypes(
+            if (c->types[resolvedParam].kind == H2TCType_FUNCTION
+                && H2TCInferTemplateArgsFromTypes(
                        c,
                        c->types[resolvedParam].baseType,
                        c->types[resolvedArg].baseType,
@@ -3835,7 +3820,7 @@ static int HOPTCInferTemplateArgsFromTypes(
                 return 1;
             }
             for (j = 0; j < c->types[resolvedParam].fieldCount; j++) {
-                if (HOPTCInferTemplateArgsFromTypes(
+                if (H2TCInferTemplateArgsFromTypes(
                         c,
                         c->funcParamTypes[c->types[resolvedParam].fieldStart + j],
                         c->funcParamTypes[c->types[resolvedArg].fieldStart + j],
@@ -3851,11 +3836,11 @@ static int HOPTCInferTemplateArgsFromTypes(
             }
             return 0;
         }
-        case HOPTCType_NAMED:
-        case HOPTCType_ALIAS: {
-            const HOPTCNamedType* paramNt = NULL;
-            const HOPTCNamedType* argNt = NULL;
-            uint32_t              ni;
+        case H2TCType_NAMED:
+        case H2TCType_ALIAS: {
+            const H2TCNamedType* paramNt = NULL;
+            const H2TCNamedType* argNt = NULL;
+            uint32_t             ni;
             for (ni = 0; ni < c->namedTypeLen; ni++) {
                 if (c->namedTypes[ni].typeId == resolvedParam) {
                     paramNt = &c->namedTypes[ni];
@@ -3878,7 +3863,7 @@ static int HOPTCInferTemplateArgsFromTypes(
                     return 0;
                 }
                 for (j = 0; j < paramNt->templateArgCount; j++) {
-                    if (HOPTCInferTemplateArgsFromTypes(
+                    if (H2TCInferTemplateArgsFromTypes(
                             c,
                             c->genericArgTypes[paramNt->templateArgStart + j],
                             c->genericArgTypes[argNt->templateArgStart + j],
@@ -3899,41 +3884,41 @@ static int HOPTCInferTemplateArgsFromTypes(
     }
 }
 
-int HOPTCInstantiateAnytypeFunctionForCall(
-    HOPTypeCheckCtx*        c,
-    int32_t                 fnIndex,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    uint32_t                firstPositionalArgIndex,
-    int32_t                 autoRefFirstArgType,
-    int32_t*                outFuncIndex,
-    HOPTCCallMapError*      outError) {
-    const HOPTCFunction* fn;
-    int32_t              resolvedParamTypes[HOPTC_MAX_CALL_ARGS];
-    uint32_t             p;
-    HOPTCCallBinding     binding;
-    HOPTCCallMapError    mapError;
-    uint8_t              hasAnytypeParam = 0;
-    uint8_t              hasAnyPack = 0;
-    int32_t              templateArgTypes[64];
-    int32_t              expectedReturnType = c->activeExpectedCallType;
-    int32_t              packElems[HOPTC_MAX_CALL_ARGS];
-    uint32_t             packElemCount = 0;
+int H2TCInstantiateAnytypeFunctionForCall(
+    H2TypeCheckCtx*        c,
+    int32_t                fnIndex,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int32_t                autoRefFirstArgType,
+    int32_t*               outFuncIndex,
+    H2TCCallMapError*      outError) {
+    const H2TCFunction* fn;
+    int32_t             resolvedParamTypes[H2TC_MAX_CALL_ARGS];
+    uint32_t            p;
+    H2TCCallBinding     binding;
+    H2TCCallMapError    mapError;
+    uint8_t             hasAnytypeParam = 0;
+    uint8_t             hasAnyPack = 0;
+    int32_t             templateArgTypes[64];
+    int32_t             expectedReturnType = c->activeExpectedCallType;
+    int32_t             packElems[H2TC_MAX_CALL_ARGS];
+    uint32_t            packElemCount = 0;
 
     if (outError != NULL) {
-        HOPTCCallMapErrorClear(outError);
+        H2TCCallMapErrorClear(outError);
     }
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen || outFuncIndex == NULL) {
         return -1;
     }
     fn = &c->funcs[fnIndex];
-    if ((fn->flags & HOPTCFunctionFlag_TEMPLATE) == 0
-        || (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) != 0)
+    if ((fn->flags & H2TCFunctionFlag_TEMPLATE) == 0
+        || (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0)
     {
         *outFuncIndex = fnIndex;
         return 0;
     }
-    if (fn->paramCount > HOPTC_MAX_CALL_ARGS) {
+    if (fn->paramCount > H2TC_MAX_CALL_ARGS) {
         return -1;
     }
     if (fn->templateArgCount > (uint16_t)(sizeof(templateArgTypes) / sizeof(templateArgTypes[0]))) {
@@ -3947,7 +3932,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         resolvedParamTypes[p] = c->funcParamTypes[fn->paramTypeStart + p];
         if (resolvedParamTypes[p] == c->typeAnytype) {
             hasAnytypeParam = 1;
-            if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0 && p + 1u == fn->paramCount) {
+            if ((fn->flags & H2TCFunctionFlag_VARIADIC) != 0 && p + 1u == fn->paramCount) {
                 hasAnyPack = 1;
             }
         }
@@ -3957,9 +3942,9 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         return 0;
     }
 
-    HOPTCCallMapErrorClear(&mapError);
+    H2TCCallMapErrorClear(&mapError);
     {
-        int prepStatus = HOPTCPrepareCallBinding(
+        int prepStatus = H2TCPrepareCallBinding(
             c,
             callArgs,
             argCount,
@@ -3967,7 +3952,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
             &c->funcParamNameEnds[fn->paramTypeStart],
             &c->funcParamTypes[fn->paramTypeStart],
             fn->paramCount,
-            (fn->flags & HOPTCFunctionFlag_VARIADIC) != 0,
+            (fn->flags & H2TCFunctionFlag_VARIADIC) != 0,
             1,
             firstPositionalArgIndex,
             &binding,
@@ -3994,17 +3979,17 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         c->activeExpectedCallType = -1;
         if (p == 0 && autoRefFirstArgType >= 0) {
             argType = autoRefFirstArgType;
-        } else if (!HOPTCExprNeedsExpectedType(c, argExprNode)) {
-            if (HOPTCTypeExpr(c, argExprNode, &argType) != 0) {
+        } else if (!H2TCExprNeedsExpectedType(c, argExprNode)) {
+            if (H2TCTypeExpr(c, argExprNode, &argType) != 0) {
                 c->activeExpectedCallType = savedExpectedCallType;
                 return -1;
             }
         } else {
-            HOPDiag savedDiag = { 0 };
+            H2Diag savedDiag = { 0 };
             if (c->diag != NULL) {
                 savedDiag = *c->diag;
             }
-            if (HOPTCTypeExprExpected(c, argExprNode, expectedType, &argType) != 0) {
+            if (H2TCTypeExprExpected(c, argExprNode, expectedType, &argType) != 0) {
                 c->activeExpectedCallType = savedExpectedCallType;
                 if (c->diag != NULL) {
                     *c->diag = savedDiag;
@@ -4015,7 +4000,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         c->activeExpectedCallType = savedExpectedCallType;
         inferredArgType = argType;
         if (fn->templateArgCount > 0
-            && HOPTCInferTemplateArgsFromTypes(
+            && H2TCInferTemplateArgsFromTypes(
                    c,
                    c->funcParamTypes[fn->paramTypeStart + (uint32_t)paramIndex],
                    inferredArgType,
@@ -4028,21 +4013,21 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         {
             return 1;
         }
-        if (HOPTCConcretizeInferredType(c, argType, &argType) != 0) {
+        if (H2TCConcretizeInferredType(c, argType, &argType) != 0) {
             return -1;
         }
 
         if (expectedType == c->typeAnytype) {
-            if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+            if ((fn->flags & H2TCFunctionFlag_VARIADIC) != 0
                 && (uint32_t)paramIndex + 1u == fn->paramCount)
             {
                 if (binding.spreadArgIndex == p) {
-                    int32_t spreadType = HOPTCResolveAliasBaseType(c, argType);
+                    int32_t spreadType = H2TCResolveAliasBaseType(c, argType);
                     if (spreadType < 0 || (uint32_t)spreadType >= c->typeLen
-                        || c->types[spreadType].kind != HOPTCType_PACK)
+                        || c->types[spreadType].kind != H2TCType_PACK)
                     {
                         if (outError != NULL) {
-                            outError->code = HOPDiag_ANYTYPE_SPREAD_REQUIRES_PACK;
+                            outError->code = H2Diag_ANYTYPE_SPREAD_REQUIRES_PACK;
                             outError->start = callArgs[p].start;
                             outError->end = callArgs[p].end;
                             outError->argStart = 0;
@@ -4052,7 +4037,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
                     }
                     resolvedParamTypes[paramIndex] = spreadType;
                 } else {
-                    if (packElemCount >= HOPTC_MAX_CALL_ARGS) {
+                    if (packElemCount >= H2TC_MAX_CALL_ARGS) {
                         return -1;
                     }
                     packElems[packElemCount++] = argType;
@@ -4063,7 +4048,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         }
     }
     if (fn->templateArgCount > 0 && expectedReturnType >= 0) {
-        if (HOPTCInferTemplateArgsFromTypes(
+        if (H2TCInferTemplateArgsFromTypes(
                 c,
                 fn->returnType,
                 expectedReturnType,
@@ -4084,7 +4069,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
             return 1;
         }
         if (binding.spreadArgIndex == UINT32_MAX) {
-            int32_t packType = HOPTCInternPackType(
+            int32_t packType = H2TCInternPackType(
                 c,
                 packElems,
                 packElemCount,
@@ -4097,7 +4082,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         } else {
             int32_t spreadType = resolvedParamTypes[lastParamIndex];
             if (spreadType < 0 || (uint32_t)spreadType >= c->typeLen
-                || c->types[spreadType].kind != HOPTCType_PACK)
+                || c->types[spreadType].kind != H2TCType_PACK)
             {
                 return 1;
             }
@@ -4108,13 +4093,13 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         if (templateArgTypes[p] < 0) {
             return 1;
         }
-        if (HOPTCConcretizeInferredType(c, templateArgTypes[p], &templateArgTypes[p]) != 0) {
+        if (H2TCConcretizeInferredType(c, templateArgTypes[p], &templateArgTypes[p]) != 0) {
             return -1;
         }
     }
     if (fn->templateArgCount > 0) {
         for (p = 0; p < fn->paramCount; p++) {
-            resolvedParamTypes[p] = HOPTCSubstituteType(
+            resolvedParamTypes[p] = H2TCSubstituteType(
                 c,
                 c->funcParamTypes[fn->paramTypeStart + p],
                 &c->genericArgTypes[fn->templateArgStart],
@@ -4129,12 +4114,12 @@ int HOPTCInstantiateAnytypeFunctionForCall(
     }
 
     for (p = 0; p < c->funcLen; p++) {
-        const HOPTCFunction* cur = &c->funcs[p];
-        uint32_t             j;
-        if (cur->declNode != fn->declNode || (cur->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0
+        const H2TCFunction* cur = &c->funcs[p];
+        uint32_t            j;
+        if (cur->declNode != fn->declNode || (cur->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0
             || cur->paramCount != fn->paramCount || cur->contextType != fn->contextType
-            || ((cur->flags & HOPTCFunctionFlag_VARIADIC)
-                != (fn->flags & HOPTCFunctionFlag_VARIADIC)))
+            || ((cur->flags & H2TCFunctionFlag_VARIADIC)
+                != (fn->flags & H2TCFunctionFlag_VARIADIC)))
         {
             continue;
         }
@@ -4151,8 +4136,8 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         }
         for (j = 0; j < fn->paramCount; j++) {
             if (c->funcParamTypes[cur->paramTypeStart + j] != resolvedParamTypes[j]
-                || (c->funcParamFlags[cur->paramTypeStart + j] & HOPTCFuncParamFlag_CONST)
-                       != (c->funcParamFlags[fn->paramTypeStart + j] & HOPTCFuncParamFlag_CONST))
+                || (c->funcParamFlags[cur->paramTypeStart + j] & H2TCFuncParamFlag_CONST)
+                       != (c->funcParamFlags[fn->paramTypeStart + j] & H2TCFuncParamFlag_CONST))
             {
                 break;
             }
@@ -4164,13 +4149,13 @@ int HOPTCInstantiateAnytypeFunctionForCall(
     }
 
     if (c->funcLen >= c->funcCap || c->funcParamLen + fn->paramCount > c->funcParamCap) {
-        return HOPTCFailNode(c, fn->declNode, HOPDiag_ARENA_OOM);
+        return H2TCFailNode(c, fn->declNode, H2Diag_ARENA_OOM);
     }
 
     {
-        uint32_t       idx = c->funcLen++;
-        HOPTCFunction* f = &c->funcs[idx];
-        int32_t        typeId;
+        uint32_t      idx = c->funcLen++;
+        H2TCFunction* f = &c->funcs[idx];
+        int32_t       typeId;
         for (p = 0; p < fn->paramCount; p++) {
             c->funcParamTypes[c->funcParamLen + p] = resolvedParamTypes[p];
             c->funcParamNameStarts[c->funcParamLen + p] =
@@ -4178,13 +4163,13 @@ int HOPTCInstantiateAnytypeFunctionForCall(
             c->funcParamNameEnds[c->funcParamLen + p] =
                 c->funcParamNameEnds[fn->paramTypeStart + p];
             c->funcParamFlags[c->funcParamLen + p] =
-                c->funcParamFlags[fn->paramTypeStart + p] & HOPTCFuncParamFlag_CONST;
+                c->funcParamFlags[fn->paramTypeStart + p] & H2TCFuncParamFlag_CONST;
         }
         f->nameStart = fn->nameStart;
         f->nameEnd = fn->nameEnd;
         f->returnType =
             fn->templateArgCount > 0
-                ? HOPTCSubstituteType(
+                ? H2TCSubstituteType(
                       c,
                       fn->returnType,
                       &c->genericArgTypes[fn->templateArgStart],
@@ -4197,7 +4182,7 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         f->paramCount = fn->paramCount;
         f->contextType =
             fn->templateArgCount > 0
-                ? HOPTCSubstituteType(
+                ? H2TCSubstituteType(
                       c,
                       fn->contextType,
                       &c->genericArgTypes[fn->templateArgStart],
@@ -4212,27 +4197,27 @@ int HOPTCInstantiateAnytypeFunctionForCall(
         f->templateArgStart = c->genericArgLen;
         f->templateArgCount = fn->templateArgCount;
         f->templateRootFuncIndex = (int16_t)fnIndex;
-        f->flags = (fn->flags & HOPTCFunctionFlag_VARIADIC) | HOPTCFunctionFlag_TEMPLATE
-                 | HOPTCFunctionFlag_TEMPLATE_INSTANCE;
+        f->flags = (fn->flags & H2TCFunctionFlag_VARIADIC) | H2TCFunctionFlag_TEMPLATE
+                 | H2TCFunctionFlag_TEMPLATE_INSTANCE;
         for (p = 0; p < fn->templateArgCount; p++) {
             c->genericArgTypes[c->genericArgLen++] = templateArgTypes[p];
         }
-        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0 && fn->paramCount > 0) {
+        if ((fn->flags & H2TCFunctionFlag_VARIADIC) != 0 && fn->paramCount > 0) {
             int32_t variadicType = resolvedParamTypes[fn->paramCount - 1u];
             if (variadicType >= 0 && (uint32_t)variadicType < c->typeLen
-                && c->types[variadicType].kind == HOPTCType_PACK)
+                && c->types[variadicType].kind == H2TCType_PACK)
             {
-                f->flags |= HOPTCFunctionFlag_TEMPLATE_HAS_ANYPACK;
+                f->flags |= H2TCFunctionFlag_TEMPLATE_HAS_ANYPACK;
             }
         }
         c->funcParamLen += fn->paramCount;
-        typeId = HOPTCInternFunctionType(
+        typeId = H2TCInternFunctionType(
             c,
             f->returnType,
             &c->funcParamTypes[f->paramTypeStart],
             &c->funcParamFlags[f->paramTypeStart],
             f->paramCount,
-            (f->flags & HOPTCFunctionFlag_VARIADIC) != 0,
+            (f->flags & H2TCFunctionFlag_VARIADIC) != 0,
             (int32_t)idx,
             f->nameStart,
             f->nameEnd);
@@ -4245,44 +4230,44 @@ int HOPTCInstantiateAnytypeFunctionForCall(
     }
 }
 
-int HOPTCResolveCallFromCandidates(
-    HOPTypeCheckCtx*        c,
-    const int32_t*          candidates,
-    uint32_t                candidateCount,
-    int                     nameFound,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    uint32_t                firstPositionalArgIndex,
-    int                     autoRefFirstArg,
-    int32_t*                outFuncIndex,
-    int32_t*                outMutRefTempArgNode) {
-    uint8_t           bestCosts[HOPTC_MAX_CALL_ARGS];
-    int               haveBest = 0;
-    int               ambiguous = 0;
-    int               hasExpectedDependentArg = 0;
-    int32_t           mutRefTempArgNode = -1;
-    int32_t           autoRefType = -1;
-    int               hasAutoRefType = 0;
-    HOPTCCallMapError firstMapError;
-    int               hasMapError = 0;
-    uint32_t          bestTotal = 0;
-    uint32_t          i;
-    uint32_t          p;
-    HOPTCCallMapErrorClear(&firstMapError);
+int H2TCResolveCallFromCandidates(
+    H2TypeCheckCtx*        c,
+    const int32_t*         candidates,
+    uint32_t               candidateCount,
+    int                    nameFound,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
+    uint8_t          bestCosts[H2TC_MAX_CALL_ARGS];
+    int              haveBest = 0;
+    int              ambiguous = 0;
+    int              hasExpectedDependentArg = 0;
+    int32_t          mutRefTempArgNode = -1;
+    int32_t          autoRefType = -1;
+    int              hasAutoRefType = 0;
+    H2TCCallMapError firstMapError;
+    int              hasMapError = 0;
+    uint32_t         bestTotal = 0;
+    uint32_t         i;
+    uint32_t         p;
+    H2TCCallMapErrorClear(&firstMapError);
     if (!nameFound) {
         return 1;
     }
 
-    if (argCount > HOPTC_MAX_CALL_ARGS) {
+    if (argCount > H2TC_MAX_CALL_ARGS) {
         return -1;
     }
-    if (autoRefFirstArg && argCount > 0 && HOPTCExprIsAssignable(c, callArgs[0].exprNode)) {
-        int32_t           argType;
-        const HOPAstNode* argNode = &c->ast->nodes[callArgs[0].exprNode];
-        if (HOPTCTypeExpr(c, callArgs[0].exprNode, &argType) != 0) {
+    if (autoRefFirstArg && argCount > 0 && H2TCExprIsAssignable(c, callArgs[0].exprNode)) {
+        int32_t          argType;
+        const H2AstNode* argNode = &c->ast->nodes[callArgs[0].exprNode];
+        if (H2TCTypeExpr(c, callArgs[0].exprNode, &argType) != 0) {
             return -1;
         }
-        autoRefType = HOPTCInternPtrType(c, argType, argNode->start, argNode->end);
+        autoRefType = H2TCInternPtrType(c, argType, argNode->start, argNode->end);
         if (autoRefType < 0) {
             return -1;
         }
@@ -4290,24 +4275,24 @@ int HOPTCResolveCallFromCandidates(
     }
     for (p = 0; p < argCount; p++) {
         hasExpectedDependentArg =
-            hasExpectedDependentArg || HOPTCExprNeedsExpectedType(c, callArgs[p].exprNode) != 0;
+            hasExpectedDependentArg || H2TCExprNeedsExpectedType(c, callArgs[p].exprNode) != 0;
     }
 
     for (i = 0; i < candidateCount; i++) {
-        int32_t              fnIdx = candidates[i];
-        int32_t              candidateFnIdx = fnIdx;
-        const HOPTCFunction* fn = &c->funcs[candidateFnIdx];
-        uint8_t              curCosts[HOPTC_MAX_CALL_ARGS];
-        HOPTCCallBinding     binding;
-        uint32_t             curTotal = 0;
-        int                  viable = 1;
-        int                  cmp;
-        HOPTCCallMapError    mapError;
-        HOPTCCallMapErrorClear(&mapError);
-        if ((fn->flags & HOPTCFunctionFlag_TEMPLATE) != 0
-            && (fn->flags & HOPTCFunctionFlag_TEMPLATE_INSTANCE) == 0)
+        int32_t             fnIdx = candidates[i];
+        int32_t             candidateFnIdx = fnIdx;
+        const H2TCFunction* fn = &c->funcs[candidateFnIdx];
+        uint8_t             curCosts[H2TC_MAX_CALL_ARGS];
+        H2TCCallBinding     binding;
+        uint32_t            curTotal = 0;
+        int                 viable = 1;
+        int                 cmp;
+        H2TCCallMapError    mapError;
+        H2TCCallMapErrorClear(&mapError);
+        if ((fn->flags & H2TCFunctionFlag_TEMPLATE) != 0
+            && (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0)
         {
-            int instantiateStatus = HOPTCInstantiateAnytypeFunctionForCall(
+            int instantiateStatus = H2TCInstantiateAnytypeFunctionForCall(
                 c,
                 fnIdx,
                 callArgs,
@@ -4329,7 +4314,7 @@ int HOPTCResolveCallFromCandidates(
             fn = &c->funcs[candidateFnIdx];
         }
         {
-            int prepStatus = HOPTCPrepareCallBinding(
+            int prepStatus = H2TCPrepareCallBinding(
                 c,
                 callArgs,
                 argCount,
@@ -4337,7 +4322,7 @@ int HOPTCResolveCallFromCandidates(
                 &c->funcParamNameEnds[fn->paramTypeStart],
                 &c->funcParamTypes[fn->paramTypeStart],
                 fn->paramCount,
-                (fn->flags & HOPTCFunctionFlag_VARIADIC) != 0,
+                (fn->flags & H2TCFunctionFlag_VARIADIC) != 0,
                 1,
                 firstPositionalArgIndex,
                 &binding,
@@ -4362,34 +4347,33 @@ int HOPTCResolveCallFromCandidates(
             if (hasAutoRefType && p == 0) {
                 argType = autoRefType;
             } else {
-                if (HOPTCIsMutableRefType(c, paramType) && HOPTCExprIsCompoundTemporary(c, argNode))
-                {
+                if (H2TCIsMutableRefType(c, paramType) && H2TCExprIsCompoundTemporary(c, argNode)) {
                     if (mutRefTempArgNode < 0) {
                         mutRefTempArgNode = argNode;
                     }
                     viable = 0;
                     break;
                 }
-                if (!HOPTCExprNeedsExpectedType(c, argNode)) {
-                    if (HOPTCTypeExpr(c, argNode, &argType) != 0) {
+                if (!H2TCExprNeedsExpectedType(c, argNode)) {
+                    if (H2TCTypeExpr(c, argNode, &argType) != 0) {
                         return -1;
                     }
                 } else {
-                    HOPDiag savedDiag = { 0 };
+                    H2Diag savedDiag = { 0 };
                     if (c->diag != NULL) {
                         savedDiag = *c->diag;
                     }
-                    if (HOPTCTypeExprExpected(c, argNode, paramType, &argType) != 0) {
+                    if (H2TCTypeExprExpected(c, argNode, paramType, &argType) != 0) {
                         if (c->diag != NULL) {
                             *c->diag = savedDiag;
                         }
-                        if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0
+                        if ((fn->flags & H2TCFunctionFlag_VARIADIC) != 0
                             && p >= binding.fixedInputCount)
                         {
                             mapError.code =
                                 (binding.spreadArgIndex == p)
-                                    ? HOPDiag_VARIADIC_SPREAD_NON_SLICE
-                                    : HOPDiag_VARIADIC_ARG_TYPE_MISMATCH;
+                                    ? H2Diag_VARIADIC_SPREAD_NON_SLICE
+                                    : H2Diag_VARIADIC_ARG_TYPE_MISMATCH;
                             mapError.start = callArgs[p].start;
                             mapError.end = callArgs[p].end;
                             mapError.argStart = 0;
@@ -4400,12 +4384,12 @@ int HOPTCResolveCallFromCandidates(
                     }
                 }
             }
-            if (HOPTCConversionCost(c, paramType, argType, &cost) != 0) {
-                if ((fn->flags & HOPTCFunctionFlag_VARIADIC) != 0 && p >= binding.fixedInputCount) {
+            if (H2TCConversionCost(c, paramType, argType, &cost) != 0) {
+                if ((fn->flags & H2TCFunctionFlag_VARIADIC) != 0 && p >= binding.fixedInputCount) {
                     mapError.code =
                         (binding.spreadArgIndex == p)
-                            ? HOPDiag_VARIADIC_SPREAD_NON_SLICE
-                            : HOPDiag_VARIADIC_ARG_TYPE_MISMATCH;
+                            ? H2Diag_VARIADIC_SPREAD_NON_SLICE
+                            : H2Diag_VARIADIC_ARG_TYPE_MISMATCH;
                     mapError.start = callArgs[p].start;
                     mapError.end = callArgs[p].end;
                     mapError.argStart = 0;
@@ -4418,7 +4402,7 @@ int HOPTCResolveCallFromCandidates(
             curTotal += cost;
         }
         if (viable) {
-            int constStatus = HOPTCCheckConstParamArgs(
+            int constStatus = H2TCCheckConstParamArgs(
                 c,
                 callArgs,
                 argCount,
@@ -4436,7 +4420,7 @@ int HOPTCResolveCallFromCandidates(
             }
         }
         if (viable) {
-            int constBlockStatus = HOPTCCheckConstBlocksForCall(
+            int constBlockStatus = H2TCCheckConstBlocksForCall(
                 c, candidateFnIdx, callArgs, argCount, &binding, &mapError);
             if (constBlockStatus < 0) {
                 return -1;
@@ -4463,7 +4447,7 @@ int HOPTCResolveCallFromCandidates(
             }
             continue;
         }
-        cmp = HOPTCCostVectorCompare(curCosts, bestCosts, argCount);
+        cmp = H2TCCostVectorCompare(curCosts, bestCosts, argCount);
         if (cmp < 0 || (cmp == 0 && curTotal < bestTotal)) {
             uint32_t j;
             *outFuncIndex = candidateFnIdx;
@@ -4481,15 +4465,15 @@ int HOPTCResolveCallFromCandidates(
 
     if (!haveBest) {
         if (hasMapError && c->diag != NULL) {
-            HOPTCSetDiagWithArg(
+            H2TCSetDiagWithArg(
                 c->diag,
                 firstMapError.code,
                 firstMapError.start,
                 firstMapError.end,
                 firstMapError.argStart,
                 firstMapError.argEnd);
-            if (firstMapError.code == HOPDiag_CONST_BLOCK_EVAL_FAILED) {
-                HOPTCAttachConstEvalReason(c);
+            if (firstMapError.code == H2Diag_CONST_BLOCK_EVAL_FAILED) {
+                H2TCAttachConstEvalReason(c);
             }
             return 6;
         }
@@ -4513,17 +4497,17 @@ int HOPTCResolveCallFromCandidates(
     return 0;
 }
 
-int HOPTCResolveCallByName(
-    HOPTypeCheckCtx*        c,
-    uint32_t                nameStart,
-    uint32_t                nameEnd,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    uint32_t                firstPositionalArgIndex,
-    int                     autoRefFirstArg,
-    int32_t*                outFuncIndex,
-    int32_t*                outMutRefTempArgNode) {
-    int32_t  candidates[HOPTC_MAX_CALL_CANDIDATES];
+int H2TCResolveCallByName(
+    H2TypeCheckCtx*        c,
+    uint32_t               nameStart,
+    uint32_t               nameEnd,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
+    int32_t  candidates[H2TC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
     uint32_t adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
@@ -4543,8 +4527,8 @@ int HOPTCResolveCallByName(
         adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
     }
 
-    HOPTCGatherCallCandidates(c, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
-    return HOPTCResolveCallFromCandidates(
+    H2TCGatherCallCandidates(c, nameStart, nameEnd, candidates, &candidateCount, &nameFound);
+    return H2TCResolveCallFromCandidates(
         c,
         candidates,
         candidateCount,
@@ -4557,19 +4541,19 @@ int HOPTCResolveCallByName(
         outMutRefTempArgNode);
 }
 
-int HOPTCResolveCallByPkgMethod(
-    HOPTypeCheckCtx*        c,
-    uint32_t                pkgStart,
-    uint32_t                pkgEnd,
-    uint32_t                methodStart,
-    uint32_t                methodEnd,
-    const HOPTCCallArgInfo* callArgs,
-    uint32_t                argCount,
-    uint32_t                firstPositionalArgIndex,
-    int                     autoRefFirstArg,
-    int32_t*                outFuncIndex,
-    int32_t*                outMutRefTempArgNode) {
-    int32_t  candidates[HOPTC_MAX_CALL_CANDIDATES];
+int H2TCResolveCallByPkgMethod(
+    H2TypeCheckCtx*        c,
+    uint32_t               pkgStart,
+    uint32_t               pkgEnd,
+    uint32_t               methodStart,
+    uint32_t               methodEnd,
+    const H2TCCallArgInfo* callArgs,
+    uint32_t               argCount,
+    uint32_t               firstPositionalArgIndex,
+    int                    autoRefFirstArg,
+    int32_t*               outFuncIndex,
+    int32_t*               outMutRefTempArgNode) {
+    int32_t  candidates[H2TC_MAX_CALL_CANDIDATES];
     uint32_t candidateCount = 0;
     int      nameFound = 0;
     uint32_t adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
@@ -4589,9 +4573,9 @@ int HOPTCResolveCallByPkgMethod(
         adjustedFirstPositionalArgIndex = firstPositionalArgIndex;
     }
 
-    HOPTCGatherCallCandidatesByPkgMethod(
+    H2TCGatherCallCandidatesByPkgMethod(
         c, pkgStart, pkgEnd, methodStart, methodEnd, candidates, &candidateCount, &nameFound);
-    return HOPTCResolveCallFromCandidates(
+    return H2TCResolveCallFromCandidates(
         c,
         candidates,
         candidateCount,
@@ -4604,11 +4588,11 @@ int HOPTCResolveCallByPkgMethod(
         outMutRefTempArgNode);
 }
 
-int HOPTCResolveDependentPtrReturnForCall(
-    HOPTypeCheckCtx* c, int32_t fnIndex, int32_t argNode, int32_t* outType) {
-    const HOPTCFunction* fn;
-    int32_t              returnType;
-    int32_t              reflectedType = -1;
+int H2TCResolveDependentPtrReturnForCall(
+    H2TypeCheckCtx* c, int32_t fnIndex, int32_t argNode, int32_t* outType) {
+    const H2TCFunction* fn;
+    int32_t             returnType;
+    int32_t             reflectedType = -1;
     if (c == NULL || outType == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return -1;
     }
@@ -4620,15 +4604,15 @@ int HOPTCResolveDependentPtrReturnForCall(
     }
     returnType = fn->returnType;
     if (returnType < 0 || (uint32_t)returnType >= c->typeLen
-        || c->types[returnType].kind != HOPTCType_PTR
+        || c->types[returnType].kind != H2TCType_PTR
         || c->types[returnType].baseType != c->typeType)
     {
         return 0;
     }
-    if (HOPTCResolveReflectedTypeValueExpr(c, argNode, &reflectedType) != 0) {
+    if (H2TCResolveReflectedTypeValueExpr(c, argNode, &reflectedType) != 0) {
         return 0;
     }
-    reflectedType = HOPTCInternPtrType(
+    reflectedType = H2TCInternPtrType(
         c, reflectedType, c->ast->nodes[argNode].start, c->ast->nodes[argNode].end);
     if (reflectedType < 0) {
         return -1;
@@ -4637,4 +4621,4 @@ int HOPTCResolveDependentPtrReturnForCall(
     return 1;
 }
 
-HOP_API_END
+H2_API_END
