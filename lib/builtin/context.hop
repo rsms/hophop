@@ -1,0 +1,9 @@
+pub struct Context {
+	allocator      MemAllocator
+	temp_allocator MemAllocator
+	logger         Logger
+	user1          rawptr
+	user2          rawptr
+	_reserved      rawptr
+	deadline       u64
+}

@@ -1,0 +1,4 @@
+pub struct MemAllocator {
+	handler fn(*MemAllocator, rawptr, int, int, *int, u32, SourceLocation) rawptr
+	data    rawptr
+}

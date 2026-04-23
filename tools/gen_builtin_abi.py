@@ -287,6 +287,32 @@ def parse_enum_members(body: str, enum_name: str) -> list[tuple[str, str]]:
     return members
 
 
+def iter_decl_lines(body: str) -> list[str]:
+    lines: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        current.append(line)
+        for ch in line:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+                if depth < 0:
+                    die(f"unbalanced declaration syntax: {body!r}")
+        if depth == 0:
+            lines.append(" ".join(current))
+            current = []
+    if depth != 0:
+        die(f"unbalanced declaration syntax: {body!r}")
+    if current:
+        lines.append(" ".join(current))
+    return lines
+
+
 def parse_decls_from_source(src: str, file_label: str) -> list[CoreDecl]:
     decls: list[CoreDecl] = []
     decl_pattern = re.compile(
@@ -300,10 +326,7 @@ def parse_decls_from_source(src: str, file_label: str) -> list[CoreDecl]:
             name = m.group(1)
             body = m.group(2)
             fields: list[tuple[str, str]] = []
-            for raw_line in body.splitlines():
-                line = raw_line.strip()
-                if not line:
-                    continue
+            for line in iter_decl_lines(body):
                 fields.append(split_name_and_type(line))
             decls.append(StructDecl(name=name, fields=fields, file=file_label))
             continue
@@ -344,8 +367,67 @@ def load_builtin_decls(builtin_dir: Path) -> tuple[list[BuiltinDecl], set[str]]:
     return decls, type_names
 
 
+def direct_struct_deps(type_expr: str, struct_names: set[str]) -> set[str]:
+    fn_sig = parse_fn_type_expr(type_expr)
+    if fn_sig is not None:
+        ret_expr, params = fn_sig
+        deps = direct_struct_deps(ret_expr, struct_names)
+        for _, param_type in params:
+            deps.update(direct_struct_deps(param_type, struct_names))
+        return deps
+
+    arr = parse_array_type_expr(type_expr)
+    if arr is not None:
+        elem_expr, _ = arr
+        return direct_struct_deps(elem_expr, struct_names)
+
+    base, ops = split_ptr_ref_type(type_expr)
+    # Hop `&str` lowers to the value type `__hop_str`, so it needs the full struct.
+    if base == "str" and ops == "&":
+        ops = ""
+    if ops:
+        return set()
+    return {base} if base in struct_names else set()
+
+
+def order_struct_decls(decls: list[BuiltinDecl]) -> list[StructDecl]:
+    struct_decls = [d for d in decls if isinstance(d, StructDecl)]
+    struct_names = {d.name for d in struct_decls}
+    decl_by_name = {d.name: d for d in struct_decls}
+    deps_by_name: dict[str, list[str]] = {}
+
+    for d in struct_decls:
+        deps: list[str] = []
+        for _, type_expr in d.fields:
+            for dep in direct_struct_deps(type_expr, struct_names):
+                if dep != d.name and dep not in deps:
+                    deps.append(dep)
+        deps_by_name[d.name] = deps
+
+    ordered: list[StructDecl] = []
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            die(f"cyclic builtin struct dependency involving {name!r}")
+        visiting.add(name)
+        for dep in deps_by_name[name]:
+            visit(dep)
+        visiting.remove(name)
+        visited.add(name)
+        ordered.append(decl_by_name[name])
+
+    for d in struct_decls:
+        visit(d.name)
+    return ordered
+
+
 def emit_builtin_abi(decls: list[BuiltinDecl], known_types: set[str]) -> str:
-    struct_order: list[str] = [d.name for d in decls if isinstance(d, StructDecl)]
+    ordered_structs = order_struct_decls(decls)
+    struct_order = [d.name for d in ordered_structs]
     if "MemAllocator" not in struct_order:
         die("missing struct 'MemAllocator' in builtin package")
     if "Context" not in struct_order:
@@ -384,17 +466,17 @@ def emit_builtin_abi(decls: list[BuiltinDecl], known_types: set[str]) -> str:
             out.append("")
             continue
 
-        if isinstance(d, StructDecl):
-            out.append(f"struct __hop_{d.name} {{")
-            for field_name, type_expr in d.fields:
-                out.append(
-                    f"    {emit_named_type(field_name, type_expr, known_types, allow_array=True)};"
-                )
-            out.append("};")
-            out.append("")
-            continue
+        if not isinstance(d, StructDecl):
+            die("internal declaration dispatch error")
 
-        die("internal declaration dispatch error")
+    for d in ordered_structs:
+        out.append(f"struct __hop_{d.name} {{")
+        for field_name, type_expr in d.fields:
+            out.append(
+                f"    {emit_named_type(field_name, type_expr, known_types, allow_array=True)};"
+            )
+        out.append("};")
+        out.append("")
 
     return "\n".join(out)
 

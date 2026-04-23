@@ -1,0 +1,15 @@
+// Verifies evaluator failures include nested call traces.
+import "testing" { FailingAllocator }
+
+fn leaf() {
+	new i32
+}
+
+fn middle() {
+	leaf()
+}
+
+fn main() {
+	context.allocator = FailingAllocator{}
+	middle()
+}

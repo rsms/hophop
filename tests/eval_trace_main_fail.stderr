@@ -1,0 +1,3 @@
+tests/eval_trace_main_fail.hop:6:2: error: HOP4003: evaluator backend: allocator returned null
+call trace:
+  tests/eval_trace_main_fail.hop:4:4: in fn main

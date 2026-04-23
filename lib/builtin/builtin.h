@@ -56,17 +56,9 @@ typedef struct {
 
 typedef struct __hop_str            __hop_str;
 typedef struct __hop_SourceLocation __hop_SourceLocation;
-typedef struct __hop_Logger         __hop_Logger;
 typedef struct __hop_MemAllocator   __hop_MemAllocator;
+typedef struct __hop_Logger         __hop_Logger;
 typedef struct __hop_Context        __hop_Context;
-typedef struct __hop_PrintContext   __hop_PrintContext;
-
-struct __hop_str {
-    __hop_u8* ptr;
-    __hop_int len;
-};
-
-typedef __hop_u32 __hop_rune;
 
 typedef enum {
     __hop_LogLevel_Trace = -20,
@@ -92,19 +84,19 @@ typedef enum {
 
 typedef __hop_u32 __hop_LogFlags;
 
+typedef __hop_u32 __hop_rune;
+
+struct __hop_str {
+    __hop_u8* ptr;
+    __hop_int len;
+};
+
 struct __hop_SourceLocation {
     __hop_str file;
     __hop_int start_line;
     __hop_int start_column;
     __hop_int end_line;
     __hop_int end_column;
-};
-
-struct __hop_Logger {
-    void (*handler)(__hop_Logger* arg0, __hop_str arg1, __hop_LogLevel arg2, __hop_LogFlags arg3);
-    __hop_LogLevel min_level;
-    __hop_LogFlags flags;
-    __hop_str      prefix;
 };
 
 struct __hop_MemAllocator {
@@ -116,6 +108,14 @@ struct __hop_MemAllocator {
         __hop_int*           arg4,
         __hop_u32            arg5,
         __hop_SourceLocation arg6);
+    void* data;
+};
+
+struct __hop_Logger {
+    void (*handler)(__hop_Logger* arg0, __hop_str arg1, __hop_LogLevel arg2, __hop_LogFlags arg3);
+    __hop_LogLevel min_level;
+    __hop_LogFlags flags;
+    __hop_str      prefix;
 };
 
 struct __hop_Context {
@@ -126,10 +126,6 @@ struct __hop_Context {
     void*              user2;
     void*              _reserved;
     __hop_u64          deadline;
-};
-
-struct __hop_PrintContext {
-    __hop_Logger logger;
 };
 // END generated code
 

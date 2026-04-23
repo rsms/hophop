@@ -1,0 +1,4 @@
+tests/eval_trace_mir_indirect_fail.hop:5:2: error: HOP4003: evaluator backend: allocator returned null
+call trace:
+  tests/eval_trace_mir_indirect_fail.hop:4:4: in fn fail_now
+  tests/eval_trace_mir_indirect_fail.hop:8:4: in fn main

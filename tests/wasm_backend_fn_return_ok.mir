@@ -1,6 +1,6 @@
 mir
   dynamic_resolution=no
-  insts=15 consts=3 sources=1 funcs=3 locals=2 fields=0 types=5 hosts=0 symbols=2
+  insts=15 consts=3 sources=1 funcs=3 locals=2 fields=0 types=4 hosts=0 symbols=2
 sources
   #0 len=180
 types
@@ -8,7 +8,6 @@ types
   #1 astNode=3 source=#0 flags=1
   #2 astNode=11 source=#0 flags=4194304
   #3 astNode=18 source=#0 flags=1
-  #4 astNode=4294967295 source=#0 flags=4194304
 hosts
 symbols
   #0 IDENT target=16 name="add1" [124,128]

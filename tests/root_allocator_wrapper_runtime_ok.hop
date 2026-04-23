@@ -1,0 +1,35 @@
+// Verifies wrapper allocators can delegate to the ambient root allocator across runtimes.
+struct WrappingAllocator {
+	parent MemAllocator
+	calls  int
+}
+
+fn wrap_handler(ma *MemAllocator, addr rawptr, align, curSize int, newSize *int, flags u32, srcLoc SourceLocation) rawptr {
+	self := ma.data as *WrappingAllocator
+	self.calls += 1
+	return self.parent.handler(&self.parent, addr, align, curSize, newSize, flags, srcLoc)
+}
+
+fn allocator(self *WrappingAllocator) MemAllocator {
+	return { handler: wrap_handler, data: self as rawptr }
+}
+
+fn main() {
+	parent := context.allocator
+	wrapper := WrappingAllocator{ parent }
+	ma := wrapper.allocator()
+
+	explicit := new i32 in ma
+	*explicit = 7
+
+	saved := context.allocator
+	context.allocator = ma
+	ambient := new i32
+	*ambient = 9
+	context.allocator = saved
+
+	assert wrapper.calls == 2
+	assert *explicit == 7
+	assert *ambient == 9
+	print("ok")
+}

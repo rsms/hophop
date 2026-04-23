@@ -1,0 +1,12 @@
+// Verifies evaluator failures reached through indirect MIR calls include a call trace.
+import "testing" { FailingAllocator }
+
+fn fail_now() {
+	new i32
+}
+
+fn main() {
+	context.allocator = FailingAllocator{}
+	f := fail_now
+	f()
+}

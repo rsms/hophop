@@ -26,6 +26,7 @@ __END__
 for f in "$@"; do
     case "$f" in
         */libhop.h|libhop.h|*/libhop-impl.h|libhop-impl.h) ;;
+        *.inc.h) ;;
         *.h) echo "#include \"$f\"" >> $index_file ;;
     esac
 done
@@ -40,6 +41,7 @@ cat <<__END__ >> $index_file
 __END__
 for f in "$@"; do
     case "$f" in
+        *.inc.h) ;;
         *.h) ;;
         *) echo "#include \"$f\"" >> $index_file ;;
     esac

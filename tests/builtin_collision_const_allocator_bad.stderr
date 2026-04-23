@@ -1,2 +1,2 @@
 tests/builtin_collision_const_allocator_bad.hop:2:7: error: HOP2001: duplicate definition 'MemAllocator'
-lib/builtin/types.hop:47:12: hint: HOP2001: other declaration of 'MemAllocator'
+lib/builtin/mem_allocator.hop:1:12: hint: HOP2001: other declaration of 'MemAllocator'

@@ -604,6 +604,10 @@ int H2MirDumpProgram(
     MirWCStr(w, "fields\n");
     for (i = 0; i < program->fieldLen; i++) {
         const H2MirField* field = &program->fields[i];
+        H2StrView         fieldSrc =
+            (program != NULL && field->sourceRef < program->sourceLen)
+                ? program->sources[field->sourceRef].src
+                : src;
         MirWIndent(w, 1);
         MirWCStr(w, "#");
         MirWU32(w, i);
@@ -612,7 +616,7 @@ int H2MirDumpProgram(
         MirWCStr(w, " type=#");
         MirWU32(w, field->typeRef);
         MirWCStr(w, " name=");
-        H2MirWriteSliceOrRange(w, src, field->nameStart, field->nameEnd, 1);
+        H2MirWriteSliceOrRange(w, fieldSrc, field->nameStart, field->nameEnd, 1);
         MirWWrite(w, "\n", 1);
     }
 

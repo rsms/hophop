@@ -1,0 +1,6 @@
+pub struct str {
+	ptr *u8
+	len int
+}
+
+pub type rune u32

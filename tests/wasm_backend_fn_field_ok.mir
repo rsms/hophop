@@ -9,14 +9,14 @@ types
   #2 astNode=16 source=#0 flags=1
   #3 astNode=18 source=#0 flags=524288
   #4 astNode=2 source=#0 flags=4194304
-  #5 astNode=4294967295 source=#0 flags=4194304
+  #5 astNode=4294967295 source=#0 flags=1048576
 hosts
 symbols
   #0 IDENT target=22 name="add1" [174,178]
   #1 CALL target=28 name="handle" [189,195] flags=1
 fields
   #0 ownerType=#4294967295 type=#4294967295 name="handle" [165,171]
-  #1 ownerType=#3 type=#5 name="handle" [71,77]
+  #1 ownerType=#3 type=#4 name="handle" [71,77]
 consts
   #0 INT value=1
   #1 INT value=41

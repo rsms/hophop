@@ -1,29 +1,45 @@
 mir
   dynamic_resolution=no
-  insts=52 consts=14 sources=1 funcs=2 locals=10 fields=1 types=15 hosts=0 symbols=1
+  insts=52 consts=14 sources=3 funcs=2 locals=10 fields=8 types=22 hosts=0 symbols=1
 sources
   #0 len=529
+  #1 len=123
+  #2 len=121
 types
   #0 astNode=18 source=#0 flags=1048576
-  #1 astNode=3 source=#0 flags=1
+  #1 astNode=3 source=#0 flags=1048577
   #2 astNode=6 source=#0 flags=1048576
   #3 astNode=9 source=#0 flags=1
   #4 astNode=10 source=#0 flags=1
   #5 astNode=12 source=#0 flags=2049
   #6 astNode=15 source=#0 flags=1
-  #7 astNode=17 source=#0
+  #7 astNode=1 source=#2 flags=524288
   #8 astNode=26 source=#0 flags=1048576
   #9 astNode=35 source=#0 flags=2049
   #10 astNode=50 source=#0 flags=1
   #11 astNode=53 source=#0 flags=262145
-  #12 astNode=38 source=#0 flags=1
-  #13 astNode=57 source=#0 flags=1
-  #14 astNode=4294967295 source=#0 flags=4194304
+  #12 astNode=1 source=#1 flags=524288
+  #13 astNode=2 source=#1 flags=4194304
+  #14 astNode=14 source=#1 flags=1048576
+  #15 astNode=2 source=#2 flags=256
+  #16 astNode=5 source=#2 flags=1
+  #17 astNode=7 source=#2 flags=1
+  #18 astNode=9 source=#2 flags=1
+  #19 astNode=11 source=#2 flags=1
+  #20 astNode=38 source=#0 flags=1
+  #21 astNode=57 source=#0 flags=1
 hosts
 symbols
   #0 IDENT target=32 name="custom_alloc_impl" [333,350]
 fields
   #0 ownerType=#4294967295 type=#4294967295 name="handler" [323,330]
+  #1 ownerType=#12 type=#13 name="handler" [27,34]
+  #2 ownerType=#12 type=#14 name="data" [106,110]
+  #3 ownerType=#7 type=#15 name="file" [29,33]
+  #4 ownerType=#7 type=#16 name="start_line" [48,58]
+  #5 ownerType=#7 type=#17 name="start_column" [66,78]
+  #6 ownerType=#7 type=#18 name="end_line" [84,92]
+  #7 ownerType=#7 type=#19 name="end_column" [102,112]
 consts
   #0 STRING bytes="................................................................"
   #1 INT value=7

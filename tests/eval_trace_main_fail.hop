@@ -1,0 +1,7 @@
+// Verifies evaluator failures in main include a call trace.
+import "testing" { FailingAllocator }
+
+fn main() {
+	context.allocator = FailingAllocator{}
+	new i32
+}

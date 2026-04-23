@@ -550,6 +550,25 @@ static int EnsureMirBuilderNamedTypeRefFromTC(
     return 0;
 }
 
+static int MirBuilderNamedTypeRefMatchesTCType(
+    const H2MirProgramBuilder* builder,
+    const H2TypeCheckCtx*      tc,
+    uint32_t                   typeRef,
+    int32_t                    typeId) {
+    const H2MirTypeRef* mirTypeRef;
+    if (builder == NULL || tc == NULL || typeRef >= builder->typeLen || typeId < 0) {
+        return 0;
+    }
+    if ((uint32_t)typeId >= tc->typeLen || tc->types[typeId].kind != H2TCType_NAMED) {
+        return 0;
+    }
+    mirTypeRef = &builder->types[typeRef];
+    if (mirTypeRef->astNode >= tc->ast->len) {
+        return 0;
+    }
+    return MirTypeNodeMatchesTCType(tc, typeId, (int32_t)mirTypeRef->astNode);
+}
+
 static int PatchMirFunctionTypeRefsFromTC(
     H2Arena*               arena,
     const H2PackageLoader* loader,
@@ -601,13 +620,20 @@ static int PatchMirFunctionTypeRefsFromTC(
             }
         }
     }
-    if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcReturnType, &typeRef) < 0) {
-        return -1;
-    }
-    if (typeRef == UINT32_MAX
-        && EnsureMirBuilderNamedTypeRefFromTC(builder, tc, sourceRef, tcReturnType, &typeRef) < 0)
+    if (MirBuilderNamedTypeRefMatchesTCType(
+            builder, tc, builder->funcs[mirFnIndex].typeRef, tcReturnType))
     {
-        return -1;
+        typeRef = builder->funcs[mirFnIndex].typeRef;
+    } else {
+        if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcReturnType, &typeRef) < 0) {
+            return -1;
+        }
+        if (typeRef == UINT32_MAX
+            && EnsureMirBuilderNamedTypeRefFromTC(builder, tc, sourceRef, tcReturnType, &typeRef)
+                   < 0)
+        {
+            return -1;
+        }
     }
     if (typeRef != UINT32_MAX) {
         builder->funcs[mirFnIndex].typeRef = typeRef;
@@ -635,14 +661,21 @@ static int PatchMirFunctionTypeRefsFromTC(
                     }
                 }
             }
-            if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcParamType, &typeRef) < 0) {
-                return -1;
-            }
-            if (typeRef == UINT32_MAX
-                && EnsureMirBuilderNamedTypeRefFromTC(builder, tc, sourceRef, tcParamType, &typeRef)
-                       < 0)
+            if (MirBuilderNamedTypeRefMatchesTCType(
+                    builder, tc, builder->locals[localIndex].typeRef, tcParamType))
             {
-                return -1;
+                typeRef = builder->locals[localIndex].typeRef;
+            } else {
+                if (EnsureMirBuilderBuiltinTypeRefFromTC(builder, tc, tcParamType, &typeRef) < 0) {
+                    return -1;
+                }
+                if (typeRef == UINT32_MAX
+                    && EnsureMirBuilderNamedTypeRefFromTC(
+                           builder, tc, sourceRef, tcParamType, &typeRef)
+                           < 0)
+                {
+                    return -1;
+                }
             }
         }
         if (typeRef == UINT32_MAX) {
@@ -1874,6 +1907,8 @@ static int ResolvePackageEnumVariantConstValue(
 
 static uint32_t FindMirSourceRefByText(
     const H2MirProgram* program, const char* src, uint32_t srcLen);
+static uint32_t FindMirSourceRefByFile(
+    const H2MirProgram* program, const H2ParsedFile* file, uint32_t defaultSourceRef);
 static int FindMirTypeRefByAstNode(
     const H2MirProgram* program, uint32_t sourceRef, int32_t astNode, uint32_t* outTypeRef);
 static int AppendMirInst(
@@ -1894,6 +1929,12 @@ static int EnsureMirAstTypeRef(
     uint32_t* _Nonnull outTypeRef);
 static int EnsureMirScalarTypeRef(
     H2Arena* arena, H2MirProgram* program, H2MirTypeScalar scalar, uint32_t* _Nonnull outTypeRef);
+static const H2SymbolDecl* _Nullable H2MirFindBuiltinTypeDeclBySlice(
+    const H2Package*  pkg,
+    const char*       src,
+    uint32_t          start,
+    uint32_t          end,
+    const H2Package** outBuiltinPkg);
 
 static uint32_t MirIntKindByteWidth(H2MirIntKind intKind) {
     switch (intKind) {
@@ -3121,6 +3162,7 @@ static int ResolveMirAggregateTypeRefForTypeNode(
     const H2AstNode*    node;
     const H2SymbolDecl* decl;
     const H2ParsedFile* declFile;
+    const H2Package*    builtinPkg = NULL;
     uint32_t            sourceRef;
     uint32_t            declSourceRef;
     if (outTypeRef != NULL) {
@@ -3147,14 +3189,17 @@ static int ResolveMirAggregateTypeRefForTypeNode(
     if (FindLoaderFileByMirSource(loader, program, sourceRef, &pkg) == NULL || pkg == NULL) {
         return 0;
     }
-    decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
-    if (decl == NULL || decl->nodeId < 0 || (uint32_t)decl->fileIndex >= pkg->fileLen) {
+    decl = H2MirFindBuiltinTypeDeclBySlice(
+        pkg, file->source, node->dataStart, node->dataEnd, &builtinPkg);
+    if (decl == NULL || builtinPkg == NULL || decl->nodeId < 0
+        || (uint32_t)decl->fileIndex >= builtinPkg->fileLen)
+    {
         return 0;
     }
-    declFile = &pkg->files[decl->fileIndex];
+    declFile = &builtinPkg->files[decl->fileIndex];
     declSourceRef = FindMirSourceRefByText(program, declFile->source, declFile->sourceLen);
     if (declSourceRef == UINT32_MAX) {
-        return 0;
+        declSourceRef = FindMirSourceRefByFile(program, declFile, sourceRef);
     }
     if (!FindMirTypeRefByAstNode(program, declSourceRef, decl->nodeId, outTypeRef)
         || *outTypeRef >= program->typeLen
@@ -3377,7 +3422,21 @@ static int LowerMirHeapInitCompoundLiteral(
         if (!ResolveMirAggregateTypeRefForTypeNode(
                 loader, program, exprFile, typeNode, &ownerTypeRef))
         {
-            return 0;
+            if (exprSourceRef == UINT32_MAX) {
+                return 0;
+            }
+            if (!FindMirTypeRefByAstNode(program, exprSourceRef, (uint32_t)typeNode, &ownerTypeRef)
+                && EnsureMirAstTypeRef(
+                       arena,
+                       loader,
+                       mutableProgram,
+                       (uint32_t)typeNode,
+                       exprSourceRef,
+                       &ownerTypeRef)
+                       != 0)
+            {
+                return 0;
+            }
         }
     }
     if (ownerTypeRef >= program->typeLen || !H2MirTypeRefIsAggregate(&program->types[ownerTypeRef]))
@@ -5491,6 +5550,16 @@ static int FindMirStaticCallTarget(
     const H2MirSymbolRef*     sym,
     uint32_t* _Nonnull outTargetMirFn);
 
+static int FindMirSamePackageCallTarget(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2Package*       ownerPkg,
+    const char*            src,
+    uint32_t               start,
+    uint32_t               end,
+    uint32_t               paramCount,
+    uint32_t* _Nonnull outTargetMirFn);
+
 static int ClassifyMirFuncFieldCall(
     const H2PackageLoader* loader,
     const H2MirProgram*    program,
@@ -5755,18 +5824,29 @@ static int ResolvePackageMirProgram(
                             if (target == NULL
                                 && !ClassifyMirFuncFieldCall(
                                     loader, program, fn, localIndex, NULL, NULL)
-                                && FindMirStaticCallTarget(
-                                    tcFnMap,
-                                    ownerPkg,
-                                    ownerFile,
-                                    ownerTc,
-                                    ownerTcFnIndex,
-                                    sym,
-                                    &targetMirFn))
+                                && (FindMirStaticCallTarget(
+                                        tcFnMap,
+                                        ownerPkg,
+                                        ownerFile,
+                                        ownerTc,
+                                        ownerTcFnIndex,
+                                        sym,
+                                        &targetMirFn)
+                                    || FindMirSamePackageCallTarget(
+                                        loader,
+                                        program,
+                                        ownerPkg,
+                                        ownerFile->source,
+                                        inst.start,
+                                        inst.end,
+                                        argc,
+                                        &targetMirFn)))
                             {
                                 inst.op = H2MirOp_CALL_FN;
-                                inst.tok = (uint16_t)(H2MirCallArgCountFromTok(inst.tok)
-                                                      | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
+                                inst.tok =
+                                    (uint16_t)(H2MirCallArgCountFromTok(inst.tok)
+                                               | (inst.tok & H2MirCallArgFlag_SPREAD_LAST)
+                                               | H2MirCallArgFlag_RECEIVER_ARG0);
                                 inst.aux = targetMirFn;
                             }
                         } else {
@@ -5888,6 +5968,50 @@ static int FindMirStaticCallTarget(
     }
     return FindMirTcFunctionDecl(
         tcFnMap, ownerPkg, ownerFile, (uint32_t)targetTcFn, outTargetMirFn);
+}
+
+static int FindMirSamePackageCallTarget(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2Package*       ownerPkg,
+    const char*            src,
+    uint32_t               start,
+    uint32_t               end,
+    uint32_t               paramCount,
+    uint32_t* _Nonnull outTargetMirFn) {
+    uint32_t functionIndex;
+    if (outTargetMirFn != NULL) {
+        *outTargetMirFn = UINT32_MAX;
+    }
+    if (loader == NULL || program == NULL || ownerPkg == NULL || src == NULL
+        || outTargetMirFn == NULL || end < start)
+    {
+        return 0;
+    }
+    for (functionIndex = 0; functionIndex < program->funcLen; functionIndex++) {
+        const H2MirFunction* fn = &program->funcs[functionIndex];
+        const H2Package*     fnPkg = NULL;
+        const H2ParsedFile*  fnFile;
+        if (fn->paramCount != paramCount) {
+            continue;
+        }
+        fnFile = FindLoaderFileByMirSource(loader, program, fn->sourceRef, &fnPkg);
+        if (fnFile == NULL || fnPkg != ownerPkg || fn->sourceRef >= program->sourceLen) {
+            continue;
+        }
+        if (SliceEqSlice(
+                src,
+                start,
+                end,
+                program->sources[fn->sourceRef].src.ptr,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            *outTargetMirFn = functionIndex;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static uint32_t FindMirFuncRefFieldByName(
@@ -6288,6 +6412,95 @@ static int RewriteMirFuncFieldCalls(
     return 0;
 }
 
+static int MirTypeRefIsPointerLike(const H2MirProgram* program, uint32_t typeRef) {
+    if (program == NULL || typeRef == UINT32_MAX || typeRef >= program->typeLen) {
+        return 0;
+    }
+    return H2MirTypeRefIsStrPtr(&program->types[typeRef])
+        || H2MirTypeRefIsU8Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsI8Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsU16Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsI16Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsU32Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsI32Ptr(&program->types[typeRef])
+        || H2MirTypeRefIsOpaquePtr(&program->types[typeRef]);
+}
+
+static void RewriteMirDirectReceiverCalls(H2MirProgram* program) {
+    uint32_t funcIndex;
+    if (program == NULL) {
+        return;
+    }
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const H2MirFunction* callee;
+        const H2MirFunction* fn = &program->funcs[funcIndex];
+        uint32_t             pc;
+        for (pc = 0u; pc < fn->instLen; pc++) {
+            H2MirInst* inst = (H2MirInst*)&program->insts[fn->instStart + pc];
+            uint32_t   argc = H2MirCallArgCountFromTok(inst->tok);
+            uint32_t   receiverStartPc = UINT32_MAX;
+            uint32_t   receiverEndPc = UINT32_MAX;
+            uint32_t   expectedTypeRef = UINT32_MAX;
+            H2MirInst* receiverInst;
+            if (inst->op != H2MirOp_CALL_FN || !H2MirCallTokDropsReceiverArg0(inst->tok)
+                || inst->aux >= program->funcLen || argc == 0u
+                || !FindCallArgStartInFunction(
+                    program, fn, fn->instStart + pc, argc, &receiverStartPc))
+            {
+                continue;
+            }
+            if (argc == 1u) {
+                receiverEndPc = fn->instStart + pc;
+            } else if (!FindCallArgStartInFunction(
+                           program, fn, fn->instStart + pc, argc - 1u, &receiverEndPc))
+            {
+                receiverEndPc = UINT32_MAX;
+            }
+            if (receiverEndPc == UINT32_MAX || receiverEndPc <= receiverStartPc) {
+                inst->tok &= (uint16_t)~H2MirCallArgFlag_RECEIVER_ARG0;
+                continue;
+            }
+            callee = &program->funcs[inst->aux];
+            if (callee->paramCount == 0u || callee->localStart >= program->localLen) {
+                inst->tok &= (uint16_t)~H2MirCallArgFlag_RECEIVER_ARG0;
+                continue;
+            }
+            expectedTypeRef = program->locals[callee->localStart].typeRef;
+            receiverInst = (H2MirInst*)&program->insts[receiverEndPc - 1u];
+            if (MirTypeRefIsPointerLike(program, expectedTypeRef)) {
+                switch (receiverInst->op) {
+                    case H2MirOp_LOCAL_LOAD:
+                        if (receiverInst->aux < fn->localCount
+                            && fn->localStart + receiverInst->aux < program->localLen)
+                        {
+                            uint32_t receiverTypeRef =
+                                program->locals[fn->localStart + receiverInst->aux].typeRef;
+                            if (receiverTypeRef < program->typeLen
+                                && H2MirTypeRefIsAggregate(&program->types[receiverTypeRef]))
+                            {
+                                receiverInst->op = H2MirOp_LOCAL_ADDR;
+                            }
+                        }
+                        break;
+                    case H2MirOp_AGG_GET:
+                        if (receiverInst->aux < program->fieldLen) {
+                            uint32_t receiverTypeRef = program->fields[receiverInst->aux].typeRef;
+                            if (receiverTypeRef < program->typeLen
+                                && H2MirTypeRefIsAggregate(&program->types[receiverTypeRef]))
+                            {
+                                receiverInst->op = H2MirOp_AGG_ADDR;
+                            }
+                        }
+                        break;
+                    case H2MirOp_CTX_GET: receiverInst->op = H2MirOp_CTX_ADDR; break;
+                    default:              break;
+                }
+            }
+            inst->tok &= (uint16_t)~H2MirCallArgFlag_RECEIVER_ARG0;
+        }
+    }
+}
+
 static void SpecializeMirDirectFunctionFieldStores(H2Arena* arena, H2MirProgram* program) {
     uint32_t funcIndex;
     if (arena == NULL || program == NULL) {
@@ -6634,6 +6847,41 @@ static uint32_t FindMirSourceRefByFile(
     return defaultSourceRef;
 }
 
+static int H2MirEnsureSourceRef(
+    H2Arena*            arena,
+    H2MirProgram*       program,
+    const H2ParsedFile* file,
+    uint32_t            defaultSourceRef,
+    uint32_t*           outSourceRef) {
+    H2MirSourceRef* newSources;
+    uint32_t        sourceRef;
+    if (outSourceRef != NULL) {
+        *outSourceRef = defaultSourceRef;
+    }
+    if (arena == NULL || program == NULL || file == NULL || outSourceRef == NULL) {
+        return -1;
+    }
+    sourceRef = FindMirSourceRefByFile(program, file, UINT32_MAX);
+    if (sourceRef != UINT32_MAX) {
+        *outSourceRef = sourceRef;
+        return 0;
+    }
+    newSources = (H2MirSourceRef*)H2ArenaAlloc(
+        arena,
+        sizeof(H2MirSourceRef) * (program->sourceLen + 1u),
+        (uint32_t)_Alignof(H2MirSourceRef));
+    if (newSources == NULL) {
+        return -1;
+    }
+    if (program->sourceLen != 0u) {
+        memcpy(newSources, program->sources, sizeof(H2MirSourceRef) * program->sourceLen);
+    }
+    newSources[program->sourceLen] = (H2MirSourceRef){ .src = { file->source, file->sourceLen } };
+    program->sources = newSources;
+    *outSourceRef = program->sourceLen++;
+    return 0;
+}
+
 static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
     const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
@@ -6679,6 +6927,40 @@ static const H2ImportSymbolRef* _Nullable FindImportTypeSymbolBySlice(
     return NULL;
 }
 
+static const H2Package* _Nullable H2MirFindBuiltinTargetPackage(const H2Package* pkg) {
+    uint32_t i;
+    if (pkg == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < pkg->importLen; i++) {
+        const H2ImportRef* imp = &pkg->imports[i];
+        if (imp->path != NULL && StrEq(imp->path, "builtin")) {
+            return imp->target;
+        }
+    }
+    return NULL;
+}
+
+static const H2SymbolDecl* _Nullable H2MirFindBuiltinTypeDeclBySlice(
+    const H2Package*  pkg,
+    const char*       src,
+    uint32_t          start,
+    uint32_t          end,
+    const H2Package** outBuiltinPkg) {
+    const H2Package* builtinPkg;
+    if (outBuiltinPkg != NULL) {
+        *outBuiltinPkg = NULL;
+    }
+    builtinPkg = H2MirFindBuiltinTargetPackage(pkg);
+    if (builtinPkg == NULL) {
+        return NULL;
+    }
+    if (outBuiltinPkg != NULL) {
+        *outBuiltinPkg = builtinPkg;
+    }
+    return FindPackageTypeDeclBySlice(builtinPkg, src, start, end);
+}
+
 static const H2AstNode* _Nullable ResolveMirTypeAliasTargetNode(
     const H2PackageLoader* loader,
     const H2MirProgram*    program,
@@ -6690,6 +6972,7 @@ static const H2AstNode* _Nullable ResolveMirTypeAliasTargetNode(
     const H2AstNode*    node;
     const H2SymbolDecl* decl;
     const H2ParsedFile* declFile;
+    const H2Package*    builtinPkg = NULL;
     uint32_t            sourceRef;
     int32_t             targetNode;
     if (outFile != NULL) {
@@ -6710,6 +6993,13 @@ static const H2AstNode* _Nullable ResolveMirTypeAliasTargetNode(
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
+    if (decl == NULL) {
+        decl = H2MirFindBuiltinTypeDeclBySlice(
+            pkg, file->source, node->dataStart, node->dataEnd, &builtinPkg);
+        if (builtinPkg != NULL) {
+            pkg = builtinPkg;
+        }
+    }
     if (decl == NULL || decl->kind != H2Ast_TYPE_ALIAS || decl->nodeId < 0
         || (uint32_t)decl->fileIndex >= pkg->fileLen)
     {
@@ -6744,6 +7034,7 @@ static const H2AstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
     const H2AstNode*    node;
     const H2SymbolDecl* decl;
     const H2ParsedFile* declFile;
+    const H2Package*    builtinPkg = NULL;
     uint32_t            sourceRef;
     int32_t             underTypeNode;
     if (outFile != NULL) {
@@ -6764,6 +7055,13 @@ static const H2AstNode* _Nullable ResolveMirEnumUnderlyingTypeNode(
         return NULL;
     }
     decl = FindPackageTypeDeclBySlice(pkg, file->source, node->dataStart, node->dataEnd);
+    if (decl == NULL) {
+        decl = H2MirFindBuiltinTypeDeclBySlice(
+            pkg, file->source, node->dataStart, node->dataEnd, &builtinPkg);
+        if (builtinPkg != NULL) {
+            pkg = builtinPkg;
+        }
+    }
     if (decl == NULL || decl->kind != H2Ast_ENUM || decl->nodeId < 0
         || (uint32_t)decl->fileIndex >= pkg->fileLen)
     {
@@ -6814,6 +7112,7 @@ static const H2AstNode* _Nullable ResolveMirAggregateDeclNode(
     const H2SymbolDecl*      decl;
     const H2ImportSymbolRef* importSym;
     const H2ParsedFile*      declFile;
+    const H2Package*         builtinPkg = NULL;
     uint32_t                 sourceRef;
     if (outFile != NULL) {
         *outFile = NULL;
@@ -6847,6 +7146,29 @@ static const H2AstNode* _Nullable ResolveMirAggregateDeclNode(
             return NULL;
         }
         declFile = &pkg->files[decl->fileIndex];
+        if ((decl->kind != H2Ast_STRUCT && decl->kind != H2Ast_UNION)
+            || (uint32_t)decl->nodeId >= declFile->ast.len)
+        {
+            return NULL;
+        }
+        sourceRef = FindMirSourceRefByFile(program, declFile, typeRef->sourceRef);
+        if (outFile != NULL) {
+            *outFile = declFile;
+        }
+        if (outSourceRef != NULL) {
+            *outSourceRef = sourceRef;
+        }
+        return &declFile->ast.nodes[decl->nodeId];
+    }
+    decl = H2MirFindBuiltinTypeDeclBySlice(
+        pkg, file->source, node->dataStart, node->dataEnd, &builtinPkg);
+    if (decl != NULL) {
+        if (builtinPkg == NULL || decl->nodeId < 0
+            || (uint32_t)decl->fileIndex >= builtinPkg->fileLen)
+        {
+            return NULL;
+        }
+        declFile = &builtinPkg->files[decl->fileIndex];
         if ((decl->kind != H2Ast_STRUCT && decl->kind != H2Ast_UNION)
             || (uint32_t)decl->nodeId >= declFile->ast.len)
         {
@@ -7065,6 +7387,22 @@ static uint32_t ClassifyMirTypeFlags(
                     .aux = 0u,
                 };
                 flags |= ClassifyMirTypeFlags(loader, program, enumFile, &enumTypeRef);
+            }
+        }
+        if ((flags
+             & (H2MirTypeFlag_SCALAR_MASK | H2MirTypeFlag_STR_REF | H2MirTypeFlag_STR_PTR
+                | H2MirTypeFlag_STR_OBJ | H2MirTypeFlag_U8_PTR | H2MirTypeFlag_I32_PTR
+                | H2MirTypeFlag_I8_PTR | H2MirTypeFlag_U16_PTR | H2MirTypeFlag_I16_PTR
+                | H2MirTypeFlag_U32_PTR | H2MirTypeFlag_FIXED_ARRAY | H2MirTypeFlag_FIXED_ARRAY_VIEW
+                | H2MirTypeFlag_SLICE_VIEW | H2MirTypeFlag_VARRAY_VIEW
+                | H2MirTypeFlag_AGG_SLICE_VIEW | H2MirTypeFlag_AGGREGATE | H2MirTypeFlag_OPAQUE_PTR
+                | H2MirTypeFlag_OPTIONAL | H2MirTypeFlag_FUNC_REF))
+            == 0u)
+        {
+            if (loader != NULL && program != NULL
+                && ResolveMirAggregateDeclNode(loader, program, typeRef, NULL, NULL) != NULL)
+            {
+                flags |= H2MirTypeFlag_AGGREGATE;
             }
         }
     } else if (
@@ -7318,6 +7656,7 @@ static int EnsureMirAggregateFieldsForType(
     const H2PackageLoader* loader, H2Arena* arena, H2MirProgram* program, uint32_t ownerTypeRef) {
     const H2ParsedFile* file = NULL;
     const H2ParsedFile* ownerFile = NULL;
+    const H2Package*    ownerPkg = NULL;
     const H2AstNode*    declNode;
     const H2AstNode*    ownerNode = NULL;
     uint32_t            ownerSourceRef = UINT32_MAX;
@@ -7333,7 +7672,7 @@ static int EnsureMirAggregateFieldsForType(
     declNode = ResolveMirAggregateDeclNode(
         loader, program, &program->types[ownerTypeRef], &file, &ownerSourceRef);
     ownerFile = FindLoaderFileByMirSource(
-        loader, program, program->types[ownerTypeRef].sourceRef, NULL);
+        loader, program, program->types[ownerTypeRef].sourceRef, &ownerPkg);
     if (ownerFile != NULL && program->types[ownerTypeRef].astNode < ownerFile->ast.len) {
         ownerNode = &ownerFile->ast.nodes[program->types[ownerTypeRef].astNode];
     }
@@ -7343,6 +7682,31 @@ static int EnsureMirAggregateFieldsForType(
     {
         return 0;
     }
+    if (H2MirEnsureSourceRef(
+            arena, program, file, program->types[ownerTypeRef].sourceRef, &ownerSourceRef)
+        != 0)
+    {
+        return -1;
+    }
+    if (ownerPkg != NULL && ownerFile != NULL && ownerNode != NULL
+        && ownerNode->kind == H2Ast_TYPE_NAME && ownerNode->firstChild < 0)
+    {
+        const H2Package*    builtinPkg = NULL;
+        const H2SymbolDecl* builtinDecl = H2MirFindBuiltinTypeDeclBySlice(
+            ownerPkg, ownerFile->source, ownerNode->dataStart, ownerNode->dataEnd, &builtinPkg);
+        if (builtinDecl != NULL && builtinPkg != NULL && builtinDecl->nodeId >= 0
+            && (uint32_t)builtinDecl->fileIndex < builtinPkg->fileLen
+            && &builtinPkg->files[builtinDecl->fileIndex] == file
+            && (uint32_t)builtinDecl->nodeId < file->ast.len
+            && &file->ast.nodes[builtinDecl->nodeId] == declNode)
+        {
+            H2MirTypeRef* mutableTypeRef = (H2MirTypeRef*)&program->types[ownerTypeRef];
+            mutableTypeRef->astNode = (uint32_t)(declNode - file->ast.nodes);
+            mutableTypeRef->sourceRef = ownerSourceRef;
+            ownerFile = file;
+            ownerNode = declNode;
+        }
+    }
     if (ownerNode == NULL
         || (ownerNode->kind != H2Ast_TYPE_NAME && ownerNode->kind != H2Ast_TYPE_ANON_STRUCT
             && ownerNode->kind != H2Ast_TYPE_ANON_UNION && ownerNode->kind != H2Ast_STRUCT
@@ -7350,6 +7714,7 @@ static int EnsureMirAggregateFieldsForType(
     {
         return 0;
     }
+    ownerSourceRef = FindMirSourceRefByFile(program, file, ownerSourceRef);
     ((H2MirTypeRef*)&program->types[ownerTypeRef])->flags |= H2MirTypeFlag_AGGREGATE;
     childNode = declNode->firstChild;
     while (childNode >= 0 && (uint32_t)childNode < file->ast.len) {
@@ -7964,21 +8329,86 @@ static void RewriteMirAggregateMake(H2MirProgram* program) {
     }
 }
 
-static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program) {
+static bool MirAggregateHasNamedField(
+    const H2MirProgram* program, uint32_t ownerTypeRef, const char* name) {
+    uint32_t i;
+    size_t   nameLen = 0u;
+    if (program == NULL || name == NULL || ownerTypeRef >= program->typeLen) {
+        return false;
+    }
+    while (name[nameLen] != '\0') {
+        nameLen++;
+    }
+    for (i = 0; i < program->fieldLen; i++) {
+        const H2MirField* field = &program->fields[i];
+        if (field->ownerTypeRef != ownerTypeRef || field->sourceRef >= program->sourceLen
+            || field->nameEnd < field->nameStart
+            || (size_t)(field->nameEnd - field->nameStart) != nameLen)
+        {
+            continue;
+        }
+        if (memcmp(program->sources[field->sourceRef].src.ptr + field->nameStart, name, nameLen)
+            == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static uint32_t MirAggregateFieldCount(const H2MirProgram* program, uint32_t ownerTypeRef) {
+    uint32_t i;
+    uint32_t count = 0u;
+    if (program == NULL || ownerTypeRef >= program->typeLen) {
+        return 0u;
+    }
+    for (i = 0; i < program->fieldLen; i++) {
+        if (program->fields[i].ownerTypeRef == ownerTypeRef) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static uint32_t FindMirMemAllocatorTypeRef(const H2MirProgram* program) {
+    uint32_t i;
+    if (program == NULL) {
+        return UINT32_MAX;
+    }
+    for (i = 0; i < program->typeLen; i++) {
+        if (!H2MirTypeRefIsAggregate(&program->types[i])) {
+            continue;
+        }
+        if (MirAggregateFieldCount(program, i) == 2u
+            && MirAggregateHasNamedField(program, i, "handler")
+            && MirAggregateHasNamedField(program, i, "data"))
+        {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+static void InferMirStraightLineLocalTypes(
+    H2Arena* arena, const H2PackageLoader* loader, H2MirProgram* program) {
     uint32_t funcIndex;
+    uint32_t memAllocatorTypeRef;
     if (arena == NULL || program == NULL) {
         return;
     }
+    memAllocatorTypeRef = FindMirMemAllocatorTypeRef(program);
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
         const H2MirFunction* fn = &program->funcs[funcIndex];
-        MirInferredType      localTypes[256] = { 0 };
-        MirInferredType      stackTypes[512] = { 0 };
-        uint32_t             localTypeRefs[256];
-        uint32_t             stackTypeRefs[512];
-        uint32_t             stackLen = 0;
-        uint32_t             localIndex;
-        uint32_t             pc;
-        int                  supported = 1;
+        const H2ParsedFile*  fnFile = FindLoaderFileByMirSource(
+            loader, program, fn->sourceRef, NULL);
+        MirInferredType localTypes[256] = { 0 };
+        MirInferredType stackTypes[512] = { 0 };
+        uint32_t        localTypeRefs[256];
+        uint32_t        stackTypeRefs[512];
+        uint32_t        stackLen = 0;
+        uint32_t        localIndex;
+        uint32_t        pc;
+        int             supported = 1;
         if (fn->localCount > 256u) {
             continue;
         }
@@ -8024,6 +8454,62 @@ static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program
                     stackTypes[stackLen] = MirInferredType_AGG;
                     stackTypeRefs[stackLen++] = inst->aux;
                     break;
+                case H2MirOp_ALLOC_NEW: {
+                    uint32_t typeRef = UINT32_MAX;
+                    if (stackLen >= 512u) {
+                        supported = 0;
+                        break;
+                    }
+                    if (pc + 1u < fn->instLen) {
+                        const H2MirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
+                        if (nextInst->op == H2MirOp_LOCAL_STORE && nextInst->aux < fn->localCount) {
+                            uint32_t localTypeRef =
+                                program->locals[fn->localStart + nextInst->aux].typeRef;
+                            if (localTypeRef < program->typeLen) {
+                                stackTypes[stackLen] = MirProgramTypeKind(program, localTypeRef);
+                                stackTypeRefs[stackLen++] = localTypeRef;
+                                break;
+                            }
+                        }
+                    }
+                    if (fnFile != NULL) {
+                        uint32_t pointeeTypeRef = UINT32_MAX;
+                        if (ResolveMirAllocNewPointeeTypeRef(
+                                loader, arena, program, fnFile, inst, &pointeeTypeRef)
+                            && pointeeTypeRef < program->typeLen)
+                        {
+                            const H2MirTypeRef* pointee = &program->types[pointeeTypeRef];
+                            uint32_t            ptrFlags = H2MirTypeFlag_OPAQUE_PTR;
+                            if (H2MirTypeRefScalarKind(pointee) == H2MirTypeScalar_I32) {
+                                switch (H2MirTypeRefIntKind(pointee)) {
+                                    case H2MirIntKind_U8:   ptrFlags = H2MirTypeFlag_U8_PTR; break;
+                                    case H2MirIntKind_I8:   ptrFlags = H2MirTypeFlag_I8_PTR; break;
+                                    case H2MirIntKind_U16:  ptrFlags = H2MirTypeFlag_U16_PTR; break;
+                                    case H2MirIntKind_I16:  ptrFlags = H2MirTypeFlag_I16_PTR; break;
+                                    case H2MirIntKind_U32:  ptrFlags = H2MirTypeFlag_U32_PTR; break;
+                                    case H2MirIntKind_BOOL:
+                                    case H2MirIntKind_I32:  ptrFlags = H2MirTypeFlag_I32_PTR; break;
+                                    default:                break;
+                                }
+                            }
+                            if (EnsureMirFlaggedTypeRef(arena, program, ptrFlags, &typeRef) != 0) {
+                                supported = 0;
+                                break;
+                            }
+                        }
+                    }
+                    if (typeRef == UINT32_MAX
+                        && EnsureMirFlaggedTypeRef(
+                               arena, program, H2MirTypeFlag_OPAQUE_PTR, &typeRef)
+                               != 0)
+                    {
+                        supported = 0;
+                        break;
+                    }
+                    stackTypes[stackLen] = MirProgramTypeKind(program, typeRef);
+                    stackTypeRefs[stackLen++] = typeRef;
+                    break;
+                }
                 case H2MirOp_LOCAL_ZERO:
                     if (inst->aux >= fn->localCount) {
                         supported = 0;
@@ -8035,12 +8521,16 @@ static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program
                         supported = 0;
                         break;
                     }
-                    stackTypes[stackLen] =
-                        (inst->aux == H2MirContextField_ALLOCATOR
+                    if ((inst->aux == H2MirContextField_ALLOCATOR
                          || inst->aux == H2MirContextField_TEMP_ALLOCATOR)
-                            ? MirInferredType_OPAQUE_PTR
-                            : MirInferredType_NONE;
-                    stackTypeRefs[stackLen++] = UINT32_MAX;
+                        && memAllocatorTypeRef < program->typeLen)
+                    {
+                        stackTypes[stackLen] = MirInferredType_AGG;
+                        stackTypeRefs[stackLen++] = memAllocatorTypeRef;
+                    } else {
+                        stackTypes[stackLen] = MirInferredType_NONE;
+                        stackTypeRefs[stackLen++] = UINT32_MAX;
+                    }
                     break;
                 case H2MirOp_LOCAL_LOAD:
                     if (inst->aux >= fn->localCount || stackLen >= 512u) {
@@ -8058,6 +8548,67 @@ static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program
                     stackTypes[stackLen] = localTypes[inst->aux];
                     stackTypeRefs[stackLen++] = localTypeRefs[inst->aux];
                     break;
+                case H2MirOp_AGG_GET:
+                case H2MirOp_AGG_ADDR: {
+                    uint32_t ownerTypeRef;
+                    uint32_t fieldIndex = inst->aux;
+                    uint32_t typeRef = UINT32_MAX;
+                    if (stackLen == 0u || fieldIndex >= program->fieldLen) {
+                        supported = 0;
+                        break;
+                    }
+                    ownerTypeRef = MirAggregateOwnerTypeRef(program, stackTypeRefs[stackLen - 1u]);
+                    if ((program->fields[fieldIndex].typeRef == UINT32_MAX
+                         || program->fields[fieldIndex].typeRef >= program->typeLen)
+                        && ownerTypeRef < program->typeLen
+                        && program->fields[fieldIndex].sourceRef < program->sourceLen)
+                    {
+                        uint32_t resolvedFieldIndex = UINT32_MAX;
+                        if (FindMirFieldByOwnerAndSlice(
+                                program,
+                                ownerTypeRef,
+                                program->fields[fieldIndex].sourceRef,
+                                program->fields[fieldIndex].nameStart,
+                                program->fields[fieldIndex].nameEnd,
+                                &resolvedFieldIndex))
+                        {
+                            fieldIndex = resolvedFieldIndex;
+                        }
+                    }
+                    typeRef = fieldIndex < program->fieldLen
+                                ? program->fields[fieldIndex].typeRef
+                                : UINT32_MAX;
+                    if (inst->op == H2MirOp_AGG_GET) {
+                        stackTypes[stackLen - 1u] = MirProgramTypeKind(program, typeRef);
+                        stackTypeRefs[stackLen - 1u] = typeRef;
+                        break;
+                    }
+                    {
+                        uint32_t ptrFlags = H2MirTypeFlag_OPAQUE_PTR;
+                        if (typeRef < program->typeLen
+                            && H2MirTypeRefScalarKind(&program->types[typeRef])
+                                   == H2MirTypeScalar_I32)
+                        {
+                            switch (H2MirTypeRefIntKind(&program->types[typeRef])) {
+                                case H2MirIntKind_U8:   ptrFlags = H2MirTypeFlag_U8_PTR; break;
+                                case H2MirIntKind_I8:   ptrFlags = H2MirTypeFlag_I8_PTR; break;
+                                case H2MirIntKind_U16:  ptrFlags = H2MirTypeFlag_U16_PTR; break;
+                                case H2MirIntKind_I16:  ptrFlags = H2MirTypeFlag_I16_PTR; break;
+                                case H2MirIntKind_U32:  ptrFlags = H2MirTypeFlag_U32_PTR; break;
+                                case H2MirIntKind_BOOL:
+                                case H2MirIntKind_I32:  ptrFlags = H2MirTypeFlag_I32_PTR; break;
+                                default:                break;
+                            }
+                        }
+                        if (EnsureMirFlaggedTypeRef(arena, program, ptrFlags, &typeRef) != 0) {
+                            supported = 0;
+                            break;
+                        }
+                    }
+                    stackTypes[stackLen - 1u] = MirProgramTypeKind(program, typeRef);
+                    stackTypeRefs[stackLen - 1u] = typeRef;
+                    break;
+                }
                 case H2MirOp_LOCAL_STORE: {
                     H2MirLocal*     local;
                     MirInferredType srcType;
@@ -8217,6 +8768,42 @@ static void InferMirStraightLineLocalTypes(H2Arena* arena, H2MirProgram* program
                             }
                             stackTypes[stackLen] = resultType;
                             stackTypeRefs[stackLen++] = program->funcs[inst->aux].typeRef;
+                        }
+                    }
+                    break;
+                }
+                case H2MirOp_CALL_INDIRECT: {
+                    uint32_t argc = H2MirCallArgCountFromTok(inst->tok);
+                    uint32_t calleeTypeRef = UINT32_MAX;
+                    uint32_t calleeFnIndex = UINT32_MAX;
+                    uint32_t resultTypeRef = UINT32_MAX;
+                    if (stackLen < argc + 1u) {
+                        supported = 0;
+                        break;
+                    }
+                    calleeTypeRef = stackTypeRefs[stackLen - argc - 1u];
+                    if (calleeTypeRef < program->typeLen
+                        && H2MirTypeRefIsFuncRef(&program->types[calleeTypeRef]))
+                    {
+                        calleeFnIndex = H2MirTypeRefFuncRefFunctionIndex(
+                            &program->types[calleeTypeRef]);
+                        if (calleeFnIndex == UINT32_MAX && loader != NULL) {
+                            calleeFnIndex = FindMirRepresentativeFunctionForFuncType(
+                                loader, program, &program->types[calleeTypeRef]);
+                        }
+                    }
+                    stackLen -= argc + 1u;
+                    if (calleeFnIndex < program->funcLen) {
+                        MirInferredType resultType = MirProgramTypeKind(
+                            program, program->funcs[calleeFnIndex].typeRef);
+                        resultTypeRef = program->funcs[calleeFnIndex].typeRef;
+                        if (resultType != MirInferredType_NONE) {
+                            if (stackLen >= 512u) {
+                                supported = 0;
+                                break;
+                            }
+                            stackTypes[stackLen] = resultType;
+                            stackTypeRefs[stackLen++] = resultTypeRef;
                         }
                     }
                     break;
@@ -8561,7 +9148,9 @@ int BuildPackageMirProgram(
         return -1;
     }
     RewriteMirAggregateMake(outProgram);
-    InferMirStraightLineLocalTypes(arena, outProgram);
+    EnrichMirFunctionRefRepresentatives(loader, outProgram);
+    InferMirStraightLineLocalTypes(arena, loader, outProgram);
+    RewriteMirDirectReceiverCalls(outProgram);
     SpecializeMirDirectFunctionFieldStores(arena, outProgram);
     EnrichMirFunctionRefRepresentatives(loader, outProgram);
     if (outForeignLinkage != NULL

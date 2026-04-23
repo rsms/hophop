@@ -1,6 +1,6 @@
 mir
   dynamic_resolution=no
-  insts=38 consts=11 sources=1 funcs=1 locals=2 fields=5 types=6 hosts=0 symbols=0
+  insts=38 consts=11 sources=1 funcs=1 locals=2 fields=5 types=7 hosts=0 symbols=0
 sources
   #0 len=241
 types
@@ -10,6 +10,7 @@ types
   #3 astNode=2 source=#0 flags=1
   #4 astNode=6 source=#0 flags=65536 aux=519
   #5 astNode=20 source=#0 flags=1
+  #6 astNode=4294967295 source=#0 flags=2048
 hosts
 symbols
 fields

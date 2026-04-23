@@ -60,6 +60,8 @@ fi
 
 cli_sources=(
     src/evaluator.c
+    src/evaluator_entry.c
+    src/evaluator_mir.c
     src/hop_support.c
     src/hop_pkg.c
     src/hop_mir.c
@@ -71,6 +73,8 @@ if [ $c_backend = 1 ]; then
     lib_sources=(
         $(find src -maxdepth 2 -name '*.c' \
             -and -not -name 'evaluator.c' \
+            -and -not -name 'evaluator_entry.c' \
+            -and -not -name 'evaluator_mir.c' \
             -and -not -name 'hop_support.c' \
             -and -not -name 'hop_pkg.c' \
             -and -not -name 'hop_mir.c' \
@@ -83,6 +87,8 @@ else
         $(find src -maxdepth 2 -name '*.c' \
             -and -not -path 'src/codegen_c/*' \
             -and -not -name 'evaluator.c' \
+            -and -not -name 'evaluator_entry.c' \
+            -and -not -name 'evaluator_mir.c' \
             -and -not -name 'hop_support.c' \
             -and -not -name 'hop_pkg.c' \
             -and -not -name 'hop_mir.c' \
@@ -99,7 +105,7 @@ libhop_sources=()
 for srcfile in "${lib_sources[@]}"; do
     libhop_sources+=( "$srcfile" )
 done
-lib_headers=( $(find src -maxdepth 2 -name '*.h' | sort -V) )
+lib_headers=( $(find src -maxdepth 2 -name '*.h' -and -not -name '*.inc.h' | sort -V) )
 builtin_hop_sources=( $(find lib/builtin -maxdepth 1 -name '*.hop' | sort -V) )
 cli_output=hop
 lib_output=libhop.h

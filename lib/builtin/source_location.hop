@@ -1,0 +1,7 @@
+pub struct SourceLocation {
+	file         &str
+	start_line   int
+	start_column int
+	end_line     int
+	end_column   int
+}

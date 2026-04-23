@@ -12,7 +12,7 @@ types
   #5 astNode=31 source=#0 flags=4194304
   #6 astNode=36 source=#0 flags=524288
   #7 astNode=25 source=#0 flags=4194304
-  #8 astNode=4294967295 source=#0 flags=4194304
+  #8 astNode=4294967295 source=#0 flags=1048576
 hosts
 symbols
   #0 IDENT target=34 name="add1" [192,196]
@@ -51,7 +51,7 @@ functions
       4: RETURN_VOID span=[105,121]
   #2 name="main" [162,166] source=#0 type=#4294967295 params=0 temps=0 locals=#3+2 insts=#10+22
     locals
-      #0 name="f" [176,177] type=#8 flags=2
+      #0 name="f" [176,177] type=#5 flags=2
       #1 name="w" [202,203] type=#6 flags=6
     insts
       0: PUSH_CONST const=#5 span=[192,196]

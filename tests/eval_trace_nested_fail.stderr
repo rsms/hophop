@@ -1,0 +1,5 @@
+tests/eval_trace_nested_fail.hop:5:2: error: HOP4003: evaluator backend: allocator returned null
+call trace:
+  tests/eval_trace_nested_fail.hop:4:4: in fn leaf
+  tests/eval_trace_nested_fail.hop:8:4: in fn middle
+  tests/eval_trace_nested_fail.hop:12:4: in fn main

@@ -2211,8 +2211,6 @@ void NormalizeCoreRuntimeTypeName(H2TypeRef* outType) {
         outType->baseName = "__hop_Logger";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Context")) {
         outType->baseName = "__hop_Context";
-    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__PrintContext")) {
-        outType->baseName = "__hop_PrintContext";
     }
 }
 
@@ -3678,9 +3676,6 @@ const char* _Nullable CanonicalFieldOwnerType(
     }
     if (StrEq(canonical, "__hop_Context")) {
         return "builtin__Context";
-    }
-    if (StrEq(canonical, "__hop_PrintContext")) {
-        return "builtin__PrintContext";
     }
     return canonical;
 }
