@@ -1,0 +1,1 @@
+tests/type_dependent_return_ptr_bad.hop:5:14: error: HOP2004: type mismatch: cannot use expression of type *i64 as *u8

@@ -1,0 +1,1 @@
+tests/fn_type_slice_param_byvalue_bad.hop:6:24: error: HOP2111: variable-size type is not allowed by value: type [i32] is not allowed by value in function-type parameter position; use &[i32] or *[i32]

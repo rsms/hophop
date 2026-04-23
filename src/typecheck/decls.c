@@ -338,7 +338,7 @@ int HOPTCResolveNamedTypeFields(HOPTypeCheckCtx* c, uint32_t namedIndex) {
                     uint32_t       savedDefaultFieldCurrentIndex = c->defaultFieldCurrentIndex;
 
                     if (kind != HOPAst_STRUCT) {
-                        return HOPTCFailNode(c, defaultNode, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailNode(c, defaultNode, HOPDiag_FIELD_DEFAULTS_STRUCT_ONLY);
                     }
                     c->defaultFieldNodes = fieldNodes;
                     c->defaultFieldTypes = fieldTypesForDefaults;
@@ -663,7 +663,7 @@ int HOPTCReadFunctionSig(
                     c, HOPDiag_CONST_NUMERIC_PARAM_REQUIRES_CONST, n->dataStart, n->dataEnd);
             }
             if (HOPTCTypeContainsVarSizeByValue(c, typeId)) {
-                return HOPTCFailNode(c, typeNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailVarSizeByValue(c, typeNode, typeId, "parameter position");
             }
             if ((n->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
                 int32_t sliceType;
@@ -708,7 +708,7 @@ int HOPTCReadFunctionSig(
                 c->scratchParamFlags[i] = savedParamFlags[i];
             }
             if (HOPTCTypeContainsVarSizeByValue(c, returnType)) {
-                return HOPTCFailNode(c, child, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailVarSizeByValue(c, child, returnType, "return position");
             }
         } else if (n->kind == HOPAst_CONTEXT_CLAUSE) {
             int32_t typeNode = HOPAstFirstChild(c->ast, child);
@@ -870,7 +870,7 @@ int HOPTCCollectFunctionFromNode(HOPTypeCheckCtx* c, int32_t nodeId) {
         && HOPTCTypeContainsAnyParamRec(
             c, returnType, &c->genericArgTypes[genericArgStart], genericArgCount, 0u))
     {
-        return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+        return HOPTCFailNode(c, nodeId, HOPDiag_GENERIC_FN_ZERO_ARG_RETURN_FORBIDDEN);
     }
 
     {
@@ -1073,8 +1073,19 @@ int HOPTCTypeTopLevelVarLikeNode(
         if (c->ast->nodes[nodeId].kind == HOPAst_VAR && initNode < 0
             && !HOPTCEnumTypeHasTagZero(c, resolvedType))
         {
+            char         typeBuf[HOPTC_DIAG_TEXT_CAP];
+            char         detailBuf[256];
+            HOPTCTextBuf typeText;
+            HOPTCTextBuf detailText;
             c->topVarLikeTypeState[nodeId] = HOPTCTopVarLikeType_UNSEEN;
-            return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+            HOPTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+            HOPTCFormatTypeRec(c, resolvedType, &typeText, 0);
+            HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+            HOPTCTextBufAppendCStr(&detailText, "enum type ");
+            HOPTCTextBufAppendCStr(&detailText, typeBuf);
+            HOPTCTextBufAppendCStr(&detailText, " has no zero-valued tag; initializer required");
+            return HOPTCFailDiagText(
+                c, nodeId, HOPDiag_ENUM_ZERO_INIT_REQUIRES_ZERO_TAG, detailBuf);
         }
         if (c->ast->nodes[nodeId].kind == HOPAst_VAR && initNode < 0
             && HOPTCTypeIsTrackedPtrRef(c, resolvedType))
@@ -1127,7 +1138,7 @@ int HOPTCTypeTopLevelVarLikeNode(
         }
         if (HOPTCTypeContainsVarSizeByValue(c, resolvedType)) {
             c->topVarLikeTypeState[nodeId] = HOPTCTopVarLikeType_UNSEEN;
-            return HOPTCFailNode(c, initNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailVarSizeByValue(c, initNode, resolvedType, "variable position");
         }
     }
     if (!parts.grouped) {

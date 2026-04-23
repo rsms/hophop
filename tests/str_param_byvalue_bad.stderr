@@ -1,0 +1,1 @@
+tests/str_param_byvalue_bad.hop:2:10: error: HOP2111: variable-size type is not allowed by value: type str is not allowed by value in parameter position; use &str or *str

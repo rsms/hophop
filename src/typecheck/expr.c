@@ -2,6 +2,31 @@
 
 HOP_API_BEGIN
 
+static int HOPTCFailUnaryOpTypeMismatch(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t exprNode, const char* opName, int32_t typeId) {
+    char         typeBuf[HOPTC_DIAG_TEXT_CAP];
+    char         detailBuf[256];
+    HOPTCTextBuf typeText;
+    HOPTCTextBuf detailText;
+    int          rc = HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+    if (rc != -1 || c == NULL || c->diag == NULL) {
+        return rc;
+    }
+    HOPTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+    HOPTCFormatTypeRec(c, typeId, &typeText, 0);
+    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    HOPTCTextBufAppendCStr(&detailText, "cannot ");
+    HOPTCTextBufAppendCStr(&detailText, opName);
+    HOPTCTextBufAppendCStr(&detailText, " expression of type ");
+    HOPTCTextBufAppendCStr(&detailText, typeBuf);
+    c->diag->detail = HOPTCAllocDiagText(c, detailBuf);
+    if (exprNode >= 0 && (uint32_t)exprNode < c->ast->len) {
+        c->diag->argStart = c->ast->nodes[exprNode].start;
+        c->diag->argEnd = c->ast->nodes[exprNode].end;
+    }
+    return rc;
+}
+
 int HOPTCValidateMemAllocatorArg(HOPTypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType) {
     const HOPAstNode* n;
     int32_t           allocType;
@@ -27,7 +52,7 @@ int HOPTCValidateMemAllocatorArg(HOPTypeCheckCtx* c, int32_t nodeId, int32_t all
         return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
     }
     if (!HOPTCCanAssign(c, allocRefType, allocType)) {
-        return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+        return HOPTCFailTypeMismatchDetail(c, nodeId, nodeId, allocType, allocRefType);
     }
     return 0;
 }
@@ -112,7 +137,7 @@ int HOPTCTypeNewExpr(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     }
 
     if (countArgNode >= 0 && HOPTCTypeContainsVarSizeByValue(c, elemType)) {
-        return HOPTCFailNode(c, typeNode, HOPDiag_TYPE_MISMATCH);
+        return HOPTCFailVarSizeByValue(c, typeNode, elemType, "array element position");
     }
     if (countArgNode < 0 && HOPTCTypeContainsVarSizeByValue(c, elemType) && initArgNode < 0) {
         return HOPTCFailNode(c, nodeId, HOPDiag_NEW_VARSIZE_INIT_REQUIRED);
@@ -1654,7 +1679,7 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                         return HOPTCFailNode(c, argNode, HOPDiag_TYPE_MISMATCH);
                     }
                     if (c->types[reflectedTypeId].kind != HOPTCType_ALIAS) {
-                        return HOPTCFailNode(c, argNode, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailNode(c, argNode, HOPDiag_REFLECTION_BASE_REQUIRES_ALIAS);
                     }
                     if (HOPTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
                         return -1;
@@ -1784,7 +1809,7 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
             }
             if (dstInfo.isString) {
                 if (!srcInfo.isString) {
-                    return HOPTCFailNode(c, srcNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailTypeMismatchDetail(c, srcNode, srcNode, srcType, dstType);
                 }
             } else if (srcInfo.isString) {
                 u8Type = HOPTCFindBuiltinByKind(c, HOPBuiltin_U8);
@@ -1793,10 +1818,10 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                 }
                 dstElemResolved = HOPTCResolveAliasBaseType(c, dstInfo.elemType);
                 if (dstElemResolved < 0 || dstElemResolved != u8Type) {
-                    return HOPTCFailNode(c, srcNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailTypeMismatchDetail(c, srcNode, srcNode, srcType, dstType);
                 }
             } else if (!HOPTCCanAssign(c, dstInfo.elemType, srcInfo.elemType)) {
-                return HOPTCFailNode(c, srcNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailTypeMismatchDetail(c, srcNode, srcNode, srcType, dstType);
             }
             intType = HOPTCFindBuiltinByKind(c, HOPBuiltin_ISIZE);
             if (intType < 0) {
@@ -1823,7 +1848,8 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                 return HOPTCFailNode(c, calleeNode, HOPDiag_UNKNOWN_TYPE);
             }
             if (!HOPTCCanAssign(c, wantStrType, strArgType)) {
-                return HOPTCFailNode(c, strArgNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailTypeMismatchDetail(
+                    c, strArgNode, strArgNode, strArgType, wantStrType);
             }
             nextArgNode = HOPAstNextSibling(c->ast, strArgNode);
             if (nextArgNode >= 0) {
@@ -2086,7 +2112,8 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                 return HOPTCFailNode(c, calleeNode, HOPDiag_UNKNOWN_TYPE);
             }
             if (!HOPTCCanAssign(c, wantStrType, msgArgType)) {
-                return HOPTCFailNode(c, msgArgNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailTypeMismatchDetail(
+                    c, msgArgNode, msgArgNode, msgArgType, wantStrType);
             }
             nextArgNode = HOPAstNextSibling(c->ast, msgArgNode);
             if (nextArgNode >= 0) {
@@ -2112,7 +2139,8 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                 return HOPTCFailNode(c, calleeNode, HOPDiag_UNKNOWN_TYPE);
             }
             if (!HOPTCCanAssign(c, wantStrType, msgArgType)) {
-                return HOPTCFailNode(c, msgArgNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailTypeMismatchDetail(
+                    c, msgArgNode, msgArgNode, msgArgType, wantStrType);
             }
             nextArgNode = HOPAstNextSibling(c->ast, msgArgNode);
             if (nextArgNode >= 0) {
@@ -2264,7 +2292,7 @@ int HOPTCTypeExpr_CALL(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n, 
                     return HOPTCFailNode(c, recvNode, HOPDiag_TYPE_MISMATCH);
                 }
                 if (c->types[reflectedTypeId].kind != HOPTCType_ALIAS) {
-                    return HOPTCFailNode(c, recvNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailNode(c, recvNode, HOPDiag_REFLECTION_BASE_REQUIRES_ALIAS);
                 }
                 if (HOPTCResolveAliasTypeId(c, reflectedTypeId) != 0) {
                     return -1;
@@ -2630,7 +2658,7 @@ typed_call_from_callee_type: {
                         ? HOPDiag_VARIADIC_SPREAD_NON_SLICE
                         : HOPDiag_VARIADIC_ARG_TYPE_MISMATCH);
             }
-            return HOPTCFailNode(c, argExprNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailTypeMismatchDetail(c, argExprNode, argExprNode, argType, paramType);
         }
     }
     HOPTCCallMapErrorClear(&mapError);
@@ -2745,7 +2773,7 @@ int HOPTCTypeExpr_SIZEOF(
     if (n->flags == 1) {
         if (HOPTCResolveTypeNode(c, innerNode, &innerType) == 0) {
             if (HOPTCTypeContainsVarSizeByValue(c, innerType)) {
-                return HOPTCFailNode(c, innerNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailVarSizeByValue(c, innerNode, innerType, "sizeof(type) operand");
             }
             *outType = HOPTCFindBuiltinByKind(c, HOPBuiltin_ISIZE);
             if (*outType < 0) {
@@ -2958,6 +2986,12 @@ int HOPTCTypeExpr_INDEX(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n,
     }
     if (HOPTCResolveIndexBaseInfo(c, baseType, &info) != 0 || !info.indexable || info.elemType < 0)
     {
+        if ((n->flags & HOPAstFlag_INDEX_SLICE) == 0 && resolvedBaseType >= 0
+            && (uint32_t)resolvedBaseType < c->typeLen
+            && c->types[resolvedBaseType].kind == HOPTCType_FUNCTION)
+        {
+            return HOPTCFailNode(c, nodeId, HOPDiag_GENERIC_FN_TYPE_ARGS_FORBIDDEN);
+        }
         return HOPTCFailNode(c, baseNode, HOPDiag_TYPE_MISMATCH);
     }
 
@@ -3016,7 +3050,7 @@ int HOPTCTypeExpr_INDEX(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n,
         }
 
         if ((startIsConst && startValue < 0) || (endIsConst && endValue < 0)) {
-            return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailNode(c, nodeId, HOPDiag_SLICE_RANGE_OUT_OF_BOUNDS);
         }
 
         if (info.hasKnownLen) {
@@ -3025,15 +3059,18 @@ int HOPTCTypeExpr_INDEX(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n,
             int64_t startBound = hasStart ? startValue : 0;
             int64_t endBound = hasEnd ? endValue : (int64_t)info.knownLen;
             if (startKnown && endKnown) {
-                if (startBound > endBound || endBound > (int64_t)info.knownLen) {
-                    return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+                if (startBound > (int64_t)info.knownLen || endBound > (int64_t)info.knownLen) {
+                    return HOPTCFailNode(c, nodeId, HOPDiag_SLICE_RANGE_OUT_OF_BOUNDS);
+                }
+                if (startBound > endBound) {
+                    return HOPTCFailNode(c, nodeId, HOPDiag_SLICE_RANGE_INVALID);
                 }
             } else {
                 HOPTCMarkRuntimeBoundsCheck(c, nodeId);
             }
         } else {
             if (startIsConst && endIsConst && startValue > endValue) {
-                return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailNode(c, nodeId, HOPDiag_SLICE_RANGE_INVALID);
             }
             HOPTCMarkRuntimeBoundsCheck(c, nodeId);
         }
@@ -3079,13 +3116,13 @@ int HOPTCTypeExpr_INDEX(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n,
             return HOPTCFailNode(c, idxNode, HOPDiag_TYPE_MISMATCH);
         }
         if (idxIsConst && idxValue < 0) {
-            return HOPTCFailNode(c, idxNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailNode(c, idxNode, HOPDiag_INDEX_OUT_OF_BOUNDS);
         }
 
         if (info.hasKnownLen) {
             if (idxIsConst) {
                 if (idxValue >= (int64_t)info.knownLen) {
-                    return HOPTCFailNode(c, idxNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailNode(c, idxNode, HOPDiag_INDEX_OUT_OF_BOUNDS);
                 }
             } else {
                 HOPTCMarkRuntimeBoundsCheck(c, nodeId);
@@ -3125,7 +3162,7 @@ int HOPTCTypeExpr_UNARY(HOPTypeCheckCtx* c, int32_t nodeId, const HOPAstNode* n,
         case HOPTok_MUL:
             if (c->types[rhsType].kind != HOPTCType_PTR && c->types[rhsType].kind != HOPTCType_REF)
             {
-                return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailUnaryOpTypeMismatch(c, nodeId, rhsNode, "dereference", rhsType);
             }
             *outType = c->types[rhsType].baseType;
             return 0;
@@ -3195,13 +3232,13 @@ int HOPTCTypeExpr_BINARY(
             return -1;
         }
         if (!HOPTCExprIsAssignable(c, lhsNode)) {
-            return HOPTCFailNode(c, lhsNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailAssignTargetNotAssignable(c, lhsNode);
         }
         if (HOPTCExprIsConstAssignTarget(c, lhsNode)) {
             return HOPTCFailAssignToConst(c, lhsNode);
         }
         if (!HOPTCCanAssign(c, lhsType, rhsType)) {
-            return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailTypeMismatchDetail(c, lhsNode, rhsNode, rhsType, lhsType);
         }
         if (op != HOPTok_ASSIGN && !HOPTCIsNumericType(c, lhsType)) {
             return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
@@ -3309,7 +3346,7 @@ int HOPTCTypeExpr_UNWRAP(
         return -1;
     }
     if (c->types[innerType].kind != HOPTCType_OPTIONAL) {
-        return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+        return HOPTCFailUnaryOpTypeMismatch(c, nodeId, inner, "unwrap", innerType);
     }
     *outType = c->types[innerType].baseType;
     return 0;
@@ -3533,7 +3570,7 @@ int HOPTCTypeVarLike(HOPTypeCheckCtx* c, int32_t nodeId) {
                 }
             }
             if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-                return HOPTCFailNode(c, parts.initNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailVarSizeByValue(c, parts.initNode, declType, "variable position");
             }
             if (HOPTCLocalAdd(
                     c,
@@ -3557,22 +3594,25 @@ int HOPTCTypeVarLike(HOPTypeCheckCtx* c, int32_t nodeId) {
         }
         c->allowConstNumericTypeName = 0;
         if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-            if (parts.initNode >= 0) {
-                int32_t initType;
-                if (HOPTCTypeExprExpected(c, parts.initNode, declType, &initType) != 0) {
-                    return -1;
-                }
-                return HOPTCFailTypeMismatchDetail(
-                    c, parts.initNode, parts.initNode, initType, declType);
-            }
-            return HOPTCFailNode(c, parts.typeNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailVarSizeByValue(c, parts.typeNode, declType, "variable position");
         }
 
         if (n->kind == HOPAst_CONST && parts.initNode < 0) {
             return HOPTCFailNode(c, nodeId, HOPDiag_CONST_MISSING_INITIALIZER);
         }
         if (n->kind == HOPAst_VAR && parts.initNode < 0 && !HOPTCEnumTypeHasTagZero(c, declType)) {
-            return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+            char         typeBuf[HOPTC_DIAG_TEXT_CAP];
+            char         detailBuf[256];
+            HOPTCTextBuf typeText;
+            HOPTCTextBuf detailText;
+            HOPTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+            HOPTCFormatTypeRec(c, declType, &typeText, 0);
+            HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+            HOPTCTextBufAppendCStr(&detailText, "enum type ");
+            HOPTCTextBufAppendCStr(&detailText, typeBuf);
+            HOPTCTextBufAppendCStr(&detailText, " has no zero-valued tag; initializer required");
+            return HOPTCFailDiagText(
+                c, nodeId, HOPDiag_ENUM_ZERO_INIT_REQUIRES_ZERO_TAG, detailBuf);
         }
         if (parts.initNode >= 0) {
             int32_t initType;
@@ -3610,13 +3650,24 @@ int HOPTCTypeVarLike(HOPTypeCheckCtx* c, int32_t nodeId) {
         }
         c->allowConstNumericTypeName = 0;
         if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-            return HOPTCFailNode(c, parts.typeNode, HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailVarSizeByValue(c, parts.typeNode, declType, "variable position");
         }
         if (n->kind == HOPAst_CONST && parts.initNode < 0) {
             return HOPTCFailNode(c, nodeId, HOPDiag_CONST_MISSING_INITIALIZER);
         }
         if (n->kind == HOPAst_VAR && parts.initNode < 0 && !HOPTCEnumTypeHasTagZero(c, declType)) {
-            return HOPTCFailNode(c, nodeId, HOPDiag_TYPE_MISMATCH);
+            char         typeBuf[HOPTC_DIAG_TEXT_CAP];
+            char         detailBuf[256];
+            HOPTCTextBuf typeText;
+            HOPTCTextBuf detailText;
+            HOPTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+            HOPTCFormatTypeRec(c, declType, &typeText, 0);
+            HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+            HOPTCTextBufAppendCStr(&detailText, "enum type ");
+            HOPTCTextBufAppendCStr(&detailText, typeBuf);
+            HOPTCTextBufAppendCStr(&detailText, " has no zero-valued tag; initializer required");
+            return HOPTCFailDiagText(
+                c, nodeId, HOPDiag_ENUM_ZERO_INIT_REQUIRES_ZERO_TAG, detailBuf);
         }
         if (parts.initNode >= 0) {
             uint32_t initCount;
@@ -3721,7 +3772,7 @@ int HOPTCTypeVarLike(HOPTypeCheckCtx* c, int32_t nodeId) {
                     }
                 }
                 if (HOPTCTypeContainsVarSizeByValue(c, inferredType)) {
-                    return HOPTCFailNode(c, initNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailVarSizeByValue(c, initNode, inferredType, "variable position");
                 }
                 name = &c->ast->nodes[nameNode];
                 if (!HOPNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")) {
@@ -3769,7 +3820,7 @@ int HOPTCTypeVarLike(HOPTypeCheckCtx* c, int32_t nodeId) {
                     }
                 }
                 if (HOPTCTypeContainsVarSizeByValue(c, inferredType)) {
-                    return HOPTCFailNode(c, initNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailVarSizeByValue(c, initNode, inferredType, "variable position");
                 }
                 name = &c->ast->nodes[nameNode];
                 if (!HOPNameEqLiteral(c->src, name->dataStart, name->dataEnd, "_")) {
@@ -3821,7 +3872,8 @@ int HOPTCTypeTopLevelVarLikes(HOPTypeCheckCtx* c, HOPAstKind wantKind) {
                     }
                     c->allowConstNumericTypeName = 0;
                     if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-                        return HOPTCFailNode(c, firstChild, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailVarSizeByValue(
+                            c, firstChild, declType, "variable position");
                     }
                     if (wantKind == HOPAst_VAR && initNode < 0
                         && HOPTCTypeIsTrackedPtrRef(c, declType))
@@ -3858,7 +3910,8 @@ int HOPTCTypeTopLevelVarLikes(HOPTypeCheckCtx* c, HOPAstKind wantKind) {
                         }
                     }
                     if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-                        return HOPTCFailNode(c, firstChild, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailVarSizeByValue(
+                            c, firstChild, declType, "variable position");
                     }
                 }
                 child = HOPAstNextSibling(c->ast, child);
@@ -3879,7 +3932,8 @@ int HOPTCTypeTopLevelVarLikes(HOPTypeCheckCtx* c, HOPAstKind wantKind) {
                 }
                 c->allowConstNumericTypeName = 0;
                 if (HOPTCTypeContainsVarSizeByValue(c, declType)) {
-                    return HOPTCFailNode(c, parts.typeNode, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailVarSizeByValue(
+                        c, parts.typeNode, declType, "variable position");
                 }
                 if (wantKind == HOPAst_VAR && parts.initNode < 0
                     && HOPTCTypeIsTrackedPtrRef(c, declType))

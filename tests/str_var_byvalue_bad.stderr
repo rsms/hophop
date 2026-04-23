@@ -1,2 +1,1 @@
-tests/str_var_byvalue_bad.hop:3:14: error: HOP2004: type mismatch: cannot use string constant of type &str as str
-tests/str_var_byvalue_bad.hop:3:14: hint: HOP2004: change type to &str or *str
+tests/str_var_byvalue_bad.hop:3:8: error: HOP2111: variable-size type is not allowed by value: type str is not allowed by value in variable position; use &str or *str

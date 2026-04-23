@@ -1,1 +1,1 @@
-tests/hep3_flow_narrow_bad_no_guard.hop:7:9: error: HOP2004: type mismatch
+tests/hep3_flow_narrow_bad_no_guard.hop:7:9: error: HOP2004: type mismatch: cannot dereference expression of type ?*i32

@@ -1,1 +1,1 @@
-tests/ast_bad_ref_slice_type.hop:2:11: error: HOP2004: type mismatch
+tests/ast_bad_ref_slice_type.hop:2:11: error: HOP2111: variable-size type is not allowed by value: type [i32] is not allowed by value in parameter position; use &[i32] or *[i32]

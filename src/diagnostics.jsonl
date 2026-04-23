@@ -122,6 +122,17 @@
 {"id": "HOP2098", "name": "LOCAL_PTR_REF_MAYBE_UNINIT", "category": "semantic", "message": "pointer/reference variable '{s}' may be uninitialized"}
 {"id": "HOP2099", "name": "TOPLEVEL_PTR_REF_INIT_REQUIRED", "category": "semantic", "message": "top-level pointer/reference variable '{s}' requires initializer"}
 {"id": "HOP2100", "name": "CALL_ARG_NAME_REQUIRED_AFTER_PARAM", "category": "semantic", "message": "call argument must be named after parameter '{s}' is reached"}
+{"id": "HOP2101", "name": "INDEX_OUT_OF_BOUNDS", "category": "semantic", "message": "index is out of bounds"}
+{"id": "HOP2102", "name": "SLICE_RANGE_OUT_OF_BOUNDS", "category": "semantic", "message": "slice range is out of bounds"}
+{"id": "HOP2103", "name": "SLICE_RANGE_INVALID", "category": "semantic", "message": "slice range start exceeds end"}
+{"id": "HOP2104", "name": "GENERIC_TYPE_ARITY_MISMATCH", "category": "semantic", "message": "generic type argument arity mismatch"}
+{"id": "HOP2105", "name": "GENERIC_TYPE_ARGS_REQUIRED", "category": "semantic", "message": "generic type requires explicit type arguments"}
+{"id": "HOP2106", "name": "GENERIC_FN_TYPE_ARGS_FORBIDDEN", "category": "semantic", "message": "explicit function type arguments are not supported"}
+{"id": "HOP2107", "name": "GENERIC_FN_ZERO_ARG_RETURN_FORBIDDEN", "category": "semantic", "message": "generic function with zero ordinary parameters cannot use type parameters in return position"}
+{"id": "HOP2108", "name": "REFLECTION_BASE_REQUIRES_ALIAS", "category": "semantic", "message": "base() requires an alias type"}
+{"id": "HOP2109", "name": "FIELD_DEFAULTS_STRUCT_ONLY", "category": "semantic", "message": "field defaults are only allowed in structs"}
+{"id": "HOP2110", "name": "ENUM_ZERO_INIT_REQUIRES_ZERO_TAG", "category": "semantic", "message": "enum zero initialization requires a zero-valued tag"}
+{"id": "HOP2111", "name": "VAR_SIZE_BYVALUE_FORBIDDEN", "category": "semantic", "message": "variable-size type is not allowed by value"}
 {"id": "HOP3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "HOP3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "HOP3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

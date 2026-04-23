@@ -521,6 +521,7 @@ fn f() {
 
 ### 6.3 Indexing and slicing
 - [EXPR-INDEX-001][Provisional] In const-evaluated execution paths, element indexing `x[i]` over const-evaluable string/slice-like values produces a const byte value when `i` is const-evaluable and in bounds.
+- [EXPR-INDEX-002][Provisional] For known-length sequence values, const-evaluable negative or out-of-range element indices and invalid constant slice ranges are compile-time semantic errors.
 - [EXPR-HOPICE-001][Provisional] Slice-range expressions over sequence-like values preserve the source sequence family and mutability/view shape rather than converting through a different container kind.
   - examples: `*[T][a:b] -> *[T]`, `&[T][a:b] -> &[T]`, `(*str)[a:b] -> *str`, `(&str)[a:b] -> &str`
 

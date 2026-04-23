@@ -1,1 +1,1 @@
-tests/hep3_bad_unwrap.hop:5:10: error: HOP2004: type mismatch
+tests/hep3_bad_unwrap.hop:5:10: error: HOP2004: type mismatch: cannot unwrap expression of type *i32

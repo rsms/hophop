@@ -635,7 +635,13 @@ void HOPTCFormatTypeRec(HOPTypeCheckCtx* c, int32_t typeId, HOPTCTextBuf* b, uin
                 return;
             }
             if (t->nameEnd > t->nameStart && t->nameEnd <= c->src.len) {
-                HOPTCTextBufAppendSlice(b, c->src, t->nameStart, t->nameEnd);
+                uint32_t nameStart = t->nameStart;
+                if (t->nameEnd - t->nameStart > 9u
+                    && memcmp(c->src.ptr + t->nameStart, "builtin__", 9u) == 0)
+                {
+                    nameStart += 9u;
+                }
+                HOPTCTextBufAppendSlice(b, c->src, nameStart, t->nameEnd);
             } else {
                 HOPTCTextBufAppendCStr(b, "<unnamed>");
             }
@@ -844,9 +850,54 @@ int HOPTCFailTypeMismatchDetail(
     return -1;
 }
 
+int HOPTCFailDiagText(HOPTypeCheckCtx* c, int32_t nodeId, HOPDiagCode code, const char* detail) {
+    int rc = HOPTCFailNode(c, nodeId, code);
+    if (rc != -1 || c == NULL || c->diag == NULL || detail == NULL) {
+        return rc;
+    }
+    c->diag->detail = HOPTCAllocDiagText(c, detail);
+    return rc;
+}
+
+int HOPTCFailTypeMismatchText(HOPTypeCheckCtx* c, int32_t nodeId, const char* detail) {
+    return HOPTCFailDiagText(c, nodeId, HOPDiag_TYPE_MISMATCH, detail);
+}
+
+int HOPTCFailVarSizeByValue(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t typeId, const char* position) {
+    char         typeBuf[HOPTC_DIAG_TEXT_CAP];
+    char         detailBuf[256];
+    HOPTCTextBuf typeText;
+    HOPTCTextBuf detailText;
+    const char*  where = position != NULL && position[0] != 0 ? position : "here";
+
+    HOPTCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+    HOPTCFormatTypeRec(c, typeId, &typeText, 0);
+
+    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    HOPTCTextBufAppendCStr(&detailText, "type ");
+    HOPTCTextBufAppendCStr(&detailText, typeBuf);
+    HOPTCTextBufAppendCStr(&detailText, " is not allowed by value in ");
+    HOPTCTextBufAppendCStr(&detailText, where);
+    HOPTCTextBufAppendCStr(&detailText, "; use &");
+    HOPTCTextBufAppendCStr(&detailText, typeBuf);
+    HOPTCTextBufAppendCStr(&detailText, " or *");
+    HOPTCTextBufAppendCStr(&detailText, typeBuf);
+    return HOPTCFailDiagText(c, nodeId, HOPDiag_VAR_SIZE_BYVALUE_FORBIDDEN, detailBuf);
+}
+
 int HOPTCFailAssignToConst(HOPTypeCheckCtx* c, int32_t lhsNode) {
     int rc = HOPTCFailNode(c, lhsNode, HOPDiag_TYPE_MISMATCH);
     c->diag->detail = HOPTCAllocDiagText(c, "assignment target is const");
+    return rc;
+}
+
+int HOPTCFailAssignTargetNotAssignable(HOPTypeCheckCtx* c, int32_t lhsNode) {
+    int rc = HOPTCFailNode(c, lhsNode, HOPDiag_TYPE_MISMATCH);
+    if (rc != -1 || c == NULL || c->diag == NULL) {
+        return rc;
+    }
+    c->diag->detail = HOPTCAllocDiagText(c, "assignment target is not assignable");
     return rc;
 }
 

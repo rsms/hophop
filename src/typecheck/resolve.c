@@ -4,6 +4,44 @@
 
 HOP_API_BEGIN
 
+static int HOPTCFailGenericTypeArgArity(
+    HOPTypeCheckCtx* c,
+    int32_t          nodeId,
+    uint32_t         nameStart,
+    uint32_t         nameEnd,
+    uint16_t         expected,
+    uint16_t         got) {
+    char         detailBuf[256];
+    char         expectedBuf[16];
+    char         gotBuf[16];
+    HOPTCTextBuf detailText;
+    HOPTCTextBuf expectedText;
+    HOPTCTextBuf gotText;
+    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    HOPTCTextBufInit(&expectedText, expectedBuf, (uint32_t)sizeof(expectedBuf));
+    HOPTCTextBufInit(&gotText, gotBuf, (uint32_t)sizeof(gotBuf));
+    HOPTCTextBufAppendU32(&expectedText, expected);
+    HOPTCTextBufAppendU32(&gotText, got);
+    HOPTCTextBufAppendCStr(&detailText, "generic type '");
+    HOPTCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
+    HOPTCTextBufAppendCStr(&detailText, "' expects ");
+    HOPTCTextBufAppendCStr(&detailText, expectedBuf);
+    HOPTCTextBufAppendCStr(&detailText, " type arguments, got ");
+    HOPTCTextBufAppendCStr(&detailText, gotBuf);
+    return HOPTCFailDiagText(c, nodeId, HOPDiag_GENERIC_TYPE_ARITY_MISMATCH, detailBuf);
+}
+
+static int HOPTCFailGenericTypeArgsRequired(
+    HOPTypeCheckCtx* c, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
+    char         detailBuf[256];
+    HOPTCTextBuf detailText;
+    HOPTCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    HOPTCTextBufAppendCStr(&detailText, "generic type '");
+    HOPTCTextBufAppendSlice(&detailText, c->src, nameStart, nameEnd);
+    HOPTCTextBufAppendCStr(&detailText, "' requires explicit type arguments");
+    return HOPTCFailDiagText(c, nodeId, HOPDiag_GENERIC_TYPE_ARGS_REQUIRED, detailBuf);
+}
+
 static void HOPTCResolveMirSetReasonCb(
     void* _Nullable ctx, uint32_t start, uint32_t end, const char* reason) {
     HOPTCConstSetReason((HOPTCConstEvalCtx*)ctx, start, end, reason);
@@ -491,10 +529,20 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                             int32_t  args[64];
                             int32_t  argNode = HOPAstFirstChild(c->ast, nodeId);
                             uint16_t ai = 0;
+                            if (argCount == 0 && nt->templateArgCount > 0) {
+                                return HOPTCFailGenericTypeArgsRequired(
+                                    c, nodeId, n->dataStart, n->dataEnd);
+                            }
                             if (nt->templateArgCount != argCount
                                 || argCount > (uint16_t)(sizeof(args) / sizeof(args[0])))
                             {
-                                return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
+                                return HOPTCFailGenericTypeArgArity(
+                                    c,
+                                    nodeId,
+                                    n->dataStart,
+                                    n->dataEnd,
+                                    nt->templateArgCount,
+                                    argCount);
                             }
                             while (argNode >= 0) {
                                 if (HOPTCResolveTypeNode(c, argNode, &args[ai]) != 0) {
@@ -502,9 +550,6 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                                 }
                                 ai++;
                                 argNode = HOPAstNextSibling(c->ast, argNode);
-                            }
-                            if (argCount == 0) {
-                                return HOPTCFailSpan(c, HOPDiag_TYPE_MISMATCH, n->start, n->end);
                             }
                             resolvedType = HOPTCInstantiateNamedType(
                                 c, resolvedType, args, argCount);
@@ -808,7 +853,8 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                         c->scratchParamFlags[i] = savedParamFlags[i];
                     }
                     if (HOPTCTypeContainsVarSizeByValue(c, returnType)) {
-                        return HOPTCFailNode(c, child, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailVarSizeByValue(
+                            c, child, returnType, "function-type return position");
                     }
                     sawReturnType = 1;
                 } else {
@@ -835,7 +881,8 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                             ch->dataEnd);
                     }
                     if (HOPTCTypeContainsVarSizeByValue(c, paramType)) {
-                        return HOPTCFailNode(c, child, HOPDiag_TYPE_MISMATCH);
+                        return HOPTCFailVarSizeByValue(
+                            c, child, paramType, "function-type parameter position");
                     }
                     if ((ch->flags & HOPAstFlag_PARAM_VARIADIC) != 0) {
                         int32_t sliceType;
@@ -889,7 +936,7 @@ int HOPTCResolveTypeNode(HOPTypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     return -1;
                 }
                 if (HOPTCTypeContainsVarSizeByValue(c, elemType)) {
-                    return HOPTCFailNode(c, child, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailVarSizeByValue(c, child, elemType, "tuple element position");
                 }
                 c->scratchParamTypes[elemCount++] = elemType;
                 child = HOPAstNextSibling(c->ast, child);

@@ -1,0 +1,1 @@
+tests/vss_bad_sizeof_type.hop:10:22: error: HOP2111: variable-size type is not allowed by value: type Packet is not allowed by value in sizeof(type) operand; use &Packet or *Packet

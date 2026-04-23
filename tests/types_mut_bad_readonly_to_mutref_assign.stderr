@@ -1,1 +1,1 @@
-tests/types_mut_bad_readonly_to_mutref_assign.hop:7:2: error: HOP2004: type mismatch
+tests/types_mut_bad_readonly_to_mutref_assign.hop:7:2: error: HOP2004: type mismatch: cannot use 'ro' of type &i32 as *i32

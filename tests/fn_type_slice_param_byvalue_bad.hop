@@ -1,4 +1,4 @@
-// Verifies variadic function type distinct is rejected.
+// Verifies function-type slice parameters by value are rejected.
 fn sum(nums ...i32) i32 {
 	return 0
 }

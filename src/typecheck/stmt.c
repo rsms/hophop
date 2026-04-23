@@ -1279,7 +1279,8 @@ int HOPTCTypeSwitchStmt(
                         if (!HOPTCCanAssign(c, subjectType, labelType)) {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
-                            return HOPTCFailNode(c, labelExprNode, HOPDiag_TYPE_MISMATCH);
+                            return HOPTCFailTypeMismatchDetail(
+                                c, labelExprNode, labelExprNode, labelType, subjectType);
                         }
                         if (HOPTCIsBoolType(c, subjectType)
                             && c->ast->nodes[labelExprNode].kind == HOPAst_BOOL)
@@ -1565,7 +1566,7 @@ int HOPTCTypeMultiAssignStmt(HOPTypeCheckCtx* c, int32_t nodeId) {
                 return -1;
             }
             if (!HOPTCExprIsAssignable(c, lhsNode)) {
-                return HOPTCFailNode(c, lhsNode, HOPDiag_TYPE_MISMATCH);
+                return HOPTCFailAssignTargetNotAssignable(c, lhsNode);
             }
             if (HOPTCExprIsConstAssignTarget(c, lhsNode)) {
                 return HOPTCFailAssignToConst(c, lhsNode);
@@ -1699,7 +1700,7 @@ int HOPTCTypeShortAssignStmt(HOPTypeCheckCtx* c, int32_t nodeId) {
             return -1;
         }
         if (HOPTCTypeContainsVarSizeByValue(c, declTypes[i])) {
-            return HOPTCFailNode(c, rhsNodes[i], HOPDiag_TYPE_MISMATCH);
+            return HOPTCFailVarSizeByValue(c, rhsNodes[i], declTypes[i], "variable position");
         }
     }
 
@@ -1801,12 +1802,19 @@ int HOPTCTypeStmt(
                 return 0;
             }
             {
-                int32_t t;
+                int32_t          t;
+                const HOPTCType* rt =
+                    returnType >= 0 && (uint32_t)returnType < c->typeLen
+                        ? &c->types[returnType]
+                        : NULL;
+                if (rt != NULL && rt->kind == HOPTCType_TUPLE) {
+                    return HOPTCFailNode(c, nodeId, HOPDiag_ARITY_MISMATCH);
+                }
                 if (HOPTCTypeExprExpected(c, expr, returnType, &t) != 0) {
                     return -1;
                 }
                 if (!HOPTCCanAssign(c, returnType, t)) {
-                    return HOPTCFailNode(c, expr, HOPDiag_TYPE_MISMATCH);
+                    return HOPTCFailTypeMismatchDetail(c, expr, expr, t, returnType);
                 }
                 return 0;
             }

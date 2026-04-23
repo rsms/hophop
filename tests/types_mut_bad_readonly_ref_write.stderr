@@ -1,1 +1,1 @@
-tests/types_mut_bad_readonly_ref_write.hop:5:2: error: HOP2004: type mismatch
+tests/types_mut_bad_readonly_ref_write.hop:5:2: error: HOP2004: type mismatch: assignment target is not assignable

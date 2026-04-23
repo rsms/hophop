@@ -688,7 +688,12 @@ void        HOPTCFormatExprSubject(HOPTypeCheckCtx* c, int32_t nodeId, HOPTCText
 char* _Nullable HOPTCAllocDiagText(HOPTypeCheckCtx* c, const char* text);
 int HOPTCFailTypeMismatchDetail(
     HOPTypeCheckCtx* c, int32_t failNode, int32_t exprNode, int32_t srcType, int32_t dstType);
+int HOPTCFailDiagText(HOPTypeCheckCtx* c, int32_t nodeId, HOPDiagCode code, const char* detail);
+int HOPTCFailTypeMismatchText(HOPTypeCheckCtx* c, int32_t nodeId, const char* detail);
+int HOPTCFailVarSizeByValue(
+    HOPTypeCheckCtx* c, int32_t nodeId, int32_t typeId, const char* position);
 int HOPTCFailAssignToConst(HOPTypeCheckCtx* c, int32_t lhsNode);
+int HOPTCFailAssignTargetNotAssignable(HOPTypeCheckCtx* c, int32_t lhsNode);
 int HOPTCFailSwitchMissingCases(
     HOPTypeCheckCtx* c,
     int32_t          failNode,

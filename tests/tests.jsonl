@@ -355,11 +355,11 @@
 {"id":"check:tests/struct_composition_bad_cycle.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/struct_composition_bad_cycle.hop","expect_stderr":"tests/struct_composition_bad_cycle.stderr"}
 {"id":"check:tests/feature_unknown.hop","suite":"spec.lex_parse_check","kind":"hop_ok_stderr","mode":"check","input":"tests/feature_unknown.hop","expect_stderr":"tests/feature_unknown.stderr"}
 {"id":"check:tests/vss_bad_assign.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/vss_bad_assign.hop"}
-{"id":"check:tests/vss_bad_var_value.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/vss_bad_var_value.hop"}
-{"id":"check:tests/vss_bad_sizeof_type.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/vss_bad_sizeof_type.hop"}
-{"id":"check:tests/str_param_byvalue_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/str_param_byvalue_bad.hop"}
+{"id":"check:tests/vss_bad_var_value.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/vss_bad_var_value.hop","expect_stderr":"tests/vss_bad_var_value.stderr"}
+{"id":"check:tests/vss_bad_sizeof_type.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/vss_bad_sizeof_type.hop","expect_stderr":"tests/vss_bad_sizeof_type.stderr"}
+{"id":"check:tests/str_param_byvalue_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/str_param_byvalue_bad.hop","expect_stderr":"tests/str_param_byvalue_bad.stderr"}
 {"id":"check:tests/str_var_byvalue_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/str_var_byvalue_bad.hop","expect_stderr":"tests/str_var_byvalue_bad.stderr"}
-{"id":"check:tests/str_slice_mut_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/str_slice_mut_bad.hop"}
+{"id":"check:tests/str_slice_mut_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/str_slice_mut_bad.hop","expect_stderr":"tests/str_slice_mut_bad.stderr"}
 {"id":"integration.codegen.pkg_ok.genpkg_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg","input":"tests/pkg_ok/app","contains":["__hop_i32 app__main(__hop_Context *context"],"not_contains":["static __hop_i32 app__main(__hop_Context *context"],"harness":"tests/harness/app_codegen_test.c.in"}
 {"id":"integration.codegen.ptr.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/codegen_ptr","harness":"tests/harness/ptr_codegen_test.c.in"}
 {"id":"integration.codegen.str_abi_layout.genpkg_c_compile","suite":"integration.codegen","kind":"genpkg_compile","mode":"genpkg:c","input":"tests/codegen_ptr","harness":"tests/harness/str_abi_layout_test.c.in"}
@@ -596,7 +596,7 @@
 {"id":"check:tests/type_constructor_const_fn_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/type_constructor_const_fn_ok.hop"}
 {"id":"check:tests/type_param_body_type_use_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/type_param_body_type_use_ok.hop"}
 {"id":"check:tests/type_dependent_return_ptr_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/type_dependent_return_ptr_ok.hop"}
-{"id":"check:tests/type_dependent_return_ptr_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/type_dependent_return_ptr_bad.hop"}
+{"id":"check:tests/type_dependent_return_ptr_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/type_dependent_return_ptr_bad.hop","expect_stderr":"tests/type_dependent_return_ptr_bad.stderr"}
 {"id":"check:tests/str_format_basic_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"checkpkg","input":"tests/str_format_basic_ok.hop"}
 {"id":"check:tests/str_format_trunc_nul_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"checkpkg","input":"tests/str_format_trunc_nul_ok.hop"}
 {"id":"check:tests/str_format_nonconst_args_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"checkpkg","input":"tests/str_format_nonconst_args_ok.hop"}
@@ -714,7 +714,7 @@
 {"id":"checkpkg:tests/new_runtime_slice_ptr_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_runtime_slice_ptr_ok.hop"}
 {"id":"checkpkg:tests/new_builtin_allocator_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_builtin_allocator_ok.hop"}
 {"id":"checkpkg:tests/new_del_explicit_allocator_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_del_explicit_allocator_ok.hop"}
-{"id":"checkpkg:tests/new_explicit_allocator_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"checkpkg","input":"tests/new_explicit_allocator_bad.hop"}
+{"id":"checkpkg:tests/new_explicit_allocator_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"checkpkg","input":"tests/new_explicit_allocator_bad.hop","expect_stderr":"tests/new_explicit_allocator_bad.stderr"}
 {"id":"checkpkg:tests/new_contextual_count_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_contextual_count_ok.hop"}
 {"id":"checkpkg:tests/new_contextual_count_optional_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_contextual_count_optional_ok.hop"}
 {"id":"checkpkg:tests/new_count_const_expr_typed_ok.hop","suite":"std.unit","kind":"hop_ok","mode":"checkpkg","input":"tests/new_count_const_expr_typed_ok.hop"}
@@ -903,7 +903,7 @@
 {"id":"check:tests/variadic_arg_type_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/variadic_arg_type_bad.hop","expect_stderr":"tests/variadic_arg_type_bad.stderr"}
 {"id":"check:tests/variadic_spread_non_slice_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/variadic_spread_non_slice_bad.hop","expect_stderr":"tests/variadic_spread_non_slice_bad.stderr"}
 {"id":"check:tests/variadic_spread_not_last_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/variadic_spread_not_last_bad.hop","expect_stderr":"tests/variadic_spread_not_last_bad.stderr"}
-{"id":"check:tests/variadic_fn_type_distinct_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/variadic_fn_type_distinct_bad.hop","expect_stderr":"tests/variadic_fn_type_distinct_bad.stderr"}
+{"id":"check:tests/fn_type_slice_param_byvalue_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/fn_type_slice_param_byvalue_bad.hop","expect_stderr":"tests/fn_type_slice_param_byvalue_bad.stderr"}
 {"id":"check:tests/anytype_nonvariadic_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/anytype_nonvariadic_ok.hop"}
 {"id":"check:tests/anytype_pack_len_index_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/anytype_pack_len_index_ok.hop"}
 {"id":"check:tests/anytype_pack_forward_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/anytype_pack_forward_ok.hop"}
@@ -972,7 +972,7 @@
 {"id":"integration.runtime.nested_type_import_alias.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_alias/app"}
 {"id":"integration.runtime.nested_type_import_named.compile_only","suite":"integration.runtime","kind":"compile_only","input":"tests/nested_type_import_named/app"}
 {"id":"check:tests/copy_builtin_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/copy_builtin_ok.hop"}
-{"id":"check:tests/copy_str_from_u8_slice_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"check","input":"tests/copy_str_from_u8_slice_bad.hop"}
+{"id":"check:tests/copy_str_from_u8_slice_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/copy_str_from_u8_slice_bad.hop","expect_stderr":"tests/copy_str_from_u8_slice_bad.stderr"}
 {"id":"check:tests/copy_str_from_u8_slice_cast_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/copy_str_from_u8_slice_cast_ok.hop"}
 {"id":"integration.codegen.copy_builtin_ok.lowering","suite":"integration.codegen","kind":"genpkg_text_check","mode":"genpkg:c","input":"tests/copy_builtin_ok.hop","contains":["__hop_copy("]}
 {"id":"integration.wasm.wasm_backend_basic_ok.lowering","suite":"integration.wasm","kind":"genpkg_wasm_check","mode":"genpkg:wasm","input":"tests/wasm_backend_basic_ok.hop","expect_section_ids":[1,3,5,7,10],"expect_exports":["memory","hop_main"],"expect_func_count":2}

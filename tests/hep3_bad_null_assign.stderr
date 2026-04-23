@@ -1,1 +1,1 @@
-tests/hep3_bad_null_assign.hop:5:9: error: HOP2004: type mismatch
+tests/hep3_bad_null_assign.hop:5:9: error: HOP2004: type mismatch: cannot use expression of type null as *i32

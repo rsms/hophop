@@ -1,1 +1,1 @@
-tests/generics_zero_arg_return_bad.hop:1:1: error: HOP2004: type mismatch
+tests/generics_zero_arg_return_bad.hop:1:1: error: HOP2107: generic function with zero ordinary parameters cannot use type parameters in return position

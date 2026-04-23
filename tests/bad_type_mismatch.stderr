@@ -1,1 +1,1 @@
-tests/bad_type_mismatch.hop:3:9: error: HOP2004: type mismatch
+tests/bad_type_mismatch.hop:3:9: error: HOP2004: type mismatch: cannot use expression of type bool as i32

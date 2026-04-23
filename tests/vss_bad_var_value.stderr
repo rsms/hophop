@@ -1,0 +1,1 @@
+tests/vss_bad_var_value.hop:10:8: error: HOP2111: variable-size type is not allowed by value: type Packet is not allowed by value in variable position; use &Packet or *Packet

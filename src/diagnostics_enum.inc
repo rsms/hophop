@@ -150,8 +150,23 @@ HOPDiag_NONE = 0, HOPDiag_UNEXPECTED_CHAR, /* HOP1001: unexpected character */
                                                requires initializer */
     HOPDiag_CALL_ARG_NAME_REQUIRED_AFTER_PARAM, /* HOP2100: call argument must be named after
                                                    parameter '{s}' is reached */
-    HOPDiag_CODEGEN_INTERNAL,                   /* HOP3001: internal codegen error */
-    HOPDiag_WASM_BACKEND_UNSUPPORTED_MIR,      /* HOP3002: Wasm backend does not support this MIR */
+    HOPDiag_INDEX_OUT_OF_BOUNDS,                /* HOP2101: index is out of bounds */
+    HOPDiag_SLICE_RANGE_OUT_OF_BOUNDS,          /* HOP2102: slice range is out of bounds */
+    HOPDiag_SLICE_RANGE_INVALID,                /* HOP2103: slice range start exceeds end */
+    HOPDiag_GENERIC_TYPE_ARITY_MISMATCH,        /* HOP2104: generic type argument arity mismatch */
+    HOPDiag_GENERIC_TYPE_ARGS_REQUIRED, /* HOP2105: generic type requires explicit type arguments */
+    HOPDiag_GENERIC_FN_TYPE_ARGS_FORBIDDEN, /* HOP2106: explicit function type arguments are not
+                                               supported */
+    HOPDiag_GENERIC_FN_ZERO_ARG_RETURN_FORBIDDEN, /* HOP2107: generic function with zero ordinary
+                                                     parameters cannot use type parameters in return
+                                                     position */
+    HOPDiag_REFLECTION_BASE_REQUIRES_ALIAS,       /* HOP2108: base() requires an alias type */
+    HOPDiag_FIELD_DEFAULTS_STRUCT_ONLY, /* HOP2109: field defaults are only allowed in structs */
+    HOPDiag_ENUM_ZERO_INIT_REQUIRES_ZERO_TAG, /* HOP2110: enum zero initialization requires a
+                                                 zero-valued tag */
+    HOPDiag_VAR_SIZE_BYVALUE_FORBIDDEN,   /* HOP2111: variable-size type is not allowed by value */
+    HOPDiag_CODEGEN_INTERNAL,             /* HOP3001: internal codegen error */
+    HOPDiag_WASM_BACKEND_UNSUPPORTED_MIR, /* HOP3002: Wasm backend does not support this MIR */
     HOPDiag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* HOP3003: Wasm backend does not support this
                                                   hostcall */
     HOPDiag_WASM_BACKEND_PLATFORM_REQUIRED, /* HOP3004: Wasm backend requires a platform target for

@@ -1,1 +1,1 @@
-tests/generics_fn_type_args_bad.hop:6:2: error: HOP2004: type mismatch
+tests/generics_fn_type_args_bad.hop:6:2: error: HOP2106: explicit function type arguments are not supported

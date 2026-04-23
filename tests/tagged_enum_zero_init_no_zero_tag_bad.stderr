@@ -1,1 +1,1 @@
-tests/tagged_enum_zero_init_no_zero_tag_bad.hop:8:2: error: HOP2004: type mismatch
+tests/tagged_enum_zero_init_no_zero_tag_bad.hop:8:2: error: HOP2110: enum zero initialization requires a zero-valued tag: enum type E has no zero-valued tag; initializer required

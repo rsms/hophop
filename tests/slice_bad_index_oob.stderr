@@ -1,1 +1,1 @@
-tests/slice_bad_index_oob.hop:4:11: error: HOP2004: type mismatch
+tests/slice_bad_index_oob.hop:4:11: error: HOP2101: index is out of bounds
