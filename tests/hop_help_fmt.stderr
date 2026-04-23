@@ -1,0 +1,5 @@
+usage:
+    hop fmt [--check] [<file-or-dir> ...]
+
+options:
+    --check               report files that need formatting without rewriting them

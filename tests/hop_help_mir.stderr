@@ -1,0 +1,9 @@
+usage:
+    hop mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+
+options:
+    --platform <target>   target platform
+    --arch <name>         target architecture
+    --cache-dir <dir>     compiler cache directory
+
+<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit

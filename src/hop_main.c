@@ -130,6 +130,164 @@ static void PrintUsage(const char* argv0) {
         progname);
 }
 
+static void PrintPlatformTargetList(void) {
+    fprintf(stderr, "\n<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit\n");
+}
+
+static void PrintSharedPlatformOptions(void) {
+    fprintf(
+        stderr,
+        "\noptions:\n"
+        "    --platform <target>   target platform\n"
+        "    --arch <name>         target architecture\n"
+        "    --cache-dir <dir>     compiler cache directory\n");
+}
+
+static void PrintRunHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(
+        stderr,
+        "usage:\n"
+        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n",
+        progname);
+    PrintSharedPlatformOptions();
+    PrintPlatformTargetList();
+    fprintf(stderr, "`%s run` defaults to cli-eval when --platform is omitted\n", progname);
+}
+
+static void PrintFmtHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(
+        stderr,
+        "usage:\n"
+        "    %s fmt [--check] [<file-or-dir> ...]\n"
+        "\n"
+        "options:\n"
+        "    --check               report files that need formatting without rewriting them\n",
+        progname);
+}
+
+static void PrintCompileHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(
+        stderr,
+        "usage:\n"
+        "    %s compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "<pkgdir|srcfile> [-o <output>]\n",
+        progname);
+    PrintSharedPlatformOptions();
+    fprintf(stderr, "    -o <output>           output executable path\n");
+    PrintPlatformTargetList();
+}
+
+static void PrintGenpkgHelp(const char* argv0, const char* mode) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(stderr, "usage:\n");
+    if (StrEq(mode, "genpkg")) {
+        fprintf(
+            stderr,
+            "    %s genpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "<pkgdir|srcfile> [out]\n"
+            "    %s genpkg:<backend> [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "<pkgdir|srcfile> [out]\n",
+            progname,
+            progname);
+    } else {
+        fprintf(
+            stderr,
+            "    %s %s [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "<pkgdir|srcfile> [out]\n",
+            progname,
+            mode);
+    }
+    PrintSharedPlatformOptions();
+    PrintPlatformTargetList();
+}
+
+static void PrintCheckHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(stderr, "usage:\n    %s check <srcfile>\n", progname);
+}
+
+static void PrintCheckpkgHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(
+        stderr,
+        "usage:\n"
+        "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "<pkgdir|srcfile>\n",
+        progname);
+    PrintSharedPlatformOptions();
+    PrintPlatformTargetList();
+}
+
+static void PrintLexHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(stderr, "usage:\n    %s lex <srcfile>\n", progname);
+}
+
+static void PrintAstHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(stderr, "usage:\n    %s ast <srcfile>\n", progname);
+}
+
+static void PrintMirHelp(const char* argv0) {
+    const char* progname = ProgramBasename(argv0);
+    fprintf(
+        stderr,
+        "usage:\n"
+        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n",
+        progname);
+    PrintSharedPlatformOptions();
+    PrintPlatformTargetList();
+}
+
+static int PrintCommandHelp(const char* argv0, const char* mode) {
+    char backendName[32];
+    int  genpkgMode = ParseGenpkgMode(mode, NULL, backendName, sizeof(backendName));
+    if (StrEq(mode, "run")) {
+        PrintRunHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "fmt")) {
+        PrintFmtHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "compile")) {
+        PrintCompileHelp(argv0);
+        return 1;
+    }
+    if (genpkgMode == 1) {
+        PrintGenpkgHelp(argv0, mode);
+        return 1;
+    }
+    if (StrEq(mode, "check")) {
+        PrintCheckHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "checkpkg")) {
+        PrintCheckpkgHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "lex")) {
+        PrintLexHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "ast")) {
+        PrintAstHelp(argv0);
+        return 1;
+    }
+    if (StrEq(mode, "mir")) {
+        PrintMirHelp(argv0);
+        return 1;
+    }
+    return 0;
+}
+
+static int IsHelpFlag(const char* arg) {
+    return StrEq(arg, "--help") || StrEq(arg, "-h");
+}
+
 static void PrintVersion(void) {
     fprintf(
         stdout,
@@ -245,7 +403,7 @@ int main(int argc, char* argv[]) {
             PrintVersion();
             return 0;
         }
-        if (StrEq(argv[1], "--help")) {
+        if (IsHelpFlag(argv[1])) {
             PrintUsage(argv[0]);
             return 0;
         }
@@ -259,13 +417,18 @@ int main(int argc, char* argv[]) {
     if (!IsKnownCommand(mode)) {
         return ErrorUnknownCommand(argv[0], mode);
     }
+    if (argc == 3 && IsHelpFlag(argv[2])) {
+        if (PrintCommandHelp(argv[0], mode)) {
+            return 0;
+        }
+    }
 
     if (StrEq(mode, "compile")) {
         platformTarget = HOP_DEFAULT_PLATFORM_TARGET;
         argi = ParseSharedCommandOptions(
             argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
@@ -284,7 +447,7 @@ int main(int argc, char* argv[]) {
                      : 1;
         }
         if (argc - argi != 3 || !StrEq(argv[argi + 1], "-o")) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
         return CompileProgram(
@@ -303,7 +466,7 @@ int main(int argc, char* argv[]) {
         argi = ParseSharedCommandOptions(
             argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
         if (argi < 0 || argc - argi != 1) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
@@ -339,7 +502,7 @@ int main(int argc, char* argv[]) {
             &testingBuild,
             &hasPlatformTarget);
         if (argi < 0 || argc - argi != 1) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
         if (platformTarget == NULL) {
@@ -355,7 +518,7 @@ int main(int argc, char* argv[]) {
         }
     } else if (StrEq(mode, "check") || StrEq(mode, "lex") || StrEq(mode, "ast")) {
         if (argc != 3) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
     } else {
@@ -369,7 +532,7 @@ int main(int argc, char* argv[]) {
             &testingBuild,
             &hasPlatformTarget);
         if (argi < 0) {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
         if (archTarget != NULL && ValidateArchTargetOrUsage(archTarget) != 0) {
@@ -388,7 +551,7 @@ int main(int argc, char* argv[]) {
             filename = argv[argi];
             outFilename = argv[argi + 1];
         } else {
-            PrintUsage(argv[0]);
+            PrintCommandHelp(argv[0], mode);
             return 2;
         }
     }
