@@ -4,7 +4,7 @@
 
 HopHop is a small programming language and reference compiler.
 
-The language is in the C/Go family: plain functions, structs, unions, enums, packages, imports, explicit pointer/reference types, slices, optionals, and compile-time constants. The implementation is still changing, but the repository has enough compiler, library, and test coverage to run real examples through checking, evaluation, C11 code generation, native compilation, and a direct Wasm backend.
+The language is in the C/Go family: plain functions, structs, unions, enums, packages, imports, explicit pointer/reference types, slices, optionals, and compile-time constants. The implementation is still changing, but there's a compiler, library, and test coverage to run real examples through an evaluator, C code generation, native compilation, and wasm.
 
 The compiler is written in strict C11.
 
@@ -14,7 +14,7 @@ See [`docs/language.md`](docs/language.md) for the language specification
 
 ## Building hop
 
-You need `clang`, `ninja`, and `python3` in `PATH`.
+You need `clang`, `ninja` (and `python3` for tests) in `PATH`.
 
 ```sh
 ./build.sh
@@ -86,18 +86,18 @@ See [`examples/`](examples) for more
 
 See `hop --help` for usage.
 
-Backends:
-
-- `genpkg:c` emits C11 text.
-- `genpkg:wasm` emits a Wasm binary module.
-- `genpkg` chooses a backend from the selected platform.
-
 Platform targets:
 
 - `cli-libc`: native CLI program using the C backend and a small libc platform.
 - `cli-eval`: evaluator runtime used by default for `hop run`.
 - `wasm-min`: small Wasm host ABI used by tests and smoke runs.
 - `playbit`: Wasm target for Playbit.
+
+`genpkg` options:
+
+- `genpkg:c` emits C11 text.
+- `genpkg:wasm` emits a Wasm binary module.
+- `genpkg` chooses a backend from the selected platform.
 
 Examples:
 
