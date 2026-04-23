@@ -94,3 +94,7 @@ Implemented core includes:
 - [HEP-032-wasm-backend.md](HEP-032-wasm-backend.md)
 - [HEP-033-rawptr.md](HEP-033-rawptr.md)
 - [HEP-034-link-time-imports.md](HEP-034-link-time-imports.md)
+- [HEP-035-lightweight-generics.md](HEP-035-lightweight-generics.md)
+- [HEP-036-filename-build-tags.md](HEP-036-filename-build-tags.md)
+- [HEP-037-short-variable-declarations.md](HEP-037-short-variable-declarations.md)
+- [HEP-038-selective-gc.md](HEP-038-selective-gc.md)
