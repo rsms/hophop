@@ -1,0 +1,7 @@
+// Verifies string format empty placeholder is rejected.
+import "str" { format }
+
+fn main() {
+    var out [u8 32]
+    out.format("x={}", 1 as i64)
+}

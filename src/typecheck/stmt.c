@@ -2254,6 +2254,7 @@ int H2TCBuildCheckedContext(
     c.arena = arena;
     c.ast = ast;
     c.src = src;
+    c.filePath = options != NULL ? options->filePath : NULL;
     c.diag = diag;
     c.diagSink.ctx = options != NULL ? options->ctx : NULL;
     c.diagSink.onDiag = options != NULL ? options->onDiag : NULL;
@@ -2368,6 +2369,10 @@ int H2TCBuildCheckedContext(
     c.lastConstEvalReason = NULL;
     c.lastConstEvalReasonStart = 0;
     c.lastConstEvalReasonEnd = 0;
+    c.lastConstEvalTraceDepth = 0;
+    c.lastConstEvalRootFnIndex = -1;
+    c.lastConstEvalRootCallStart = 0;
+    memset(c.lastConstEvalTrace, 0, sizeof(c.lastConstEvalTrace));
     memset(c.funcParamFlags, 0, sizeof(uint8_t) * c.funcParamCap);
     memset(c.scratchParamFlags, 0, sizeof(uint8_t) * c.scratchParamCap);
     memset(c.funcUsed, 0, sizeof(uint8_t) * c.funcUsedCap);

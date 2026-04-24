@@ -1,7 +1,11 @@
 // Verifies array type const function call assert is rejected.
-fn count(n i32) i32 {
+fn leaf(n i32) i32 {
 	assert n > 10, "n too small"
 	return n + 1
+}
+
+fn count(n i32) i32 {
+	return leaf(n)
 }
 
 fn main() {

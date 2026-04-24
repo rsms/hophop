@@ -1,4 +1,6 @@
 tests/topconst_const_fn_call_assert_bad.hop:10:13: error: HOP2054: array length must be a const integer expression: assert condition evaluated to false during const evaluation
+Call trace:
+  tests/topconst_const_fn_call_assert_bad.hop:2:4: count
   10 | 	var a [i32 N]
     | 	           ^
 tests/topconst_const_fn_call_assert_bad.hop:3:2: note: assert condition evaluated to false during const evaluation

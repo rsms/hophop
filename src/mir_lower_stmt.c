@@ -1086,7 +1086,10 @@ static int H2MirStmtLowerExprInstStackDelta(const H2MirInst* inst, int32_t* outD
             *outDelta = 0 - (((inst->tok & H2AstFlag_INDEX_HAS_START) != 0u) ? 1 : 0)
                       - (((inst->tok & H2AstFlag_INDEX_HAS_END) != 0u) ? 1 : 0);
             return 1;
-        case H2MirOp_CALL: *outDelta = 1 - (int32_t)H2MirCallArgCountFromTok(inst->tok); return 1;
+        case H2MirOp_CALL:          *outDelta = 1 - (int32_t)H2MirCallArgCountFromTok(inst->tok); return 1;
+        case H2MirOp_JUMP:          *outDelta = 0; return 1;
+        case H2MirOp_JUMP_IF_FALSE:
+        case H2MirOp_ASSERT:        *outDelta = -1; return 1;
         case H2MirOp_TUPLE_MAKE:
             elemCount = (uint32_t)inst->tok;
             *outDelta = 1 - (int32_t)elemCount;
@@ -1555,6 +1558,94 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
             || (H2TokenKind)expr->op == H2Tok_RSHIFT_ASSIGN)
         {
             c->supported = 0;
+            return 0;
+        }
+        if ((H2TokenKind)expr->op == H2Tok_LOGICAL_AND || (H2TokenKind)expr->op == H2Tok_LOGICAL_OR)
+        {
+            H2MirConst trueConst = { .kind = H2MirConst_BOOL, .bits = 1u };
+            H2MirConst falseConst = { .kind = H2MirConst_BOOL, .bits = 0u };
+            uint32_t   jumpA = UINT32_MAX;
+            uint32_t   jumpB = UINT32_MAX;
+            uint32_t   jumpC = UINT32_MAX;
+            uint32_t   falsePc;
+            uint32_t   endPc;
+            if ((H2TokenKind)expr->op == H2Tok_LOGICAL_AND) {
+                if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, expr->start, expr->end, &jumpA)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                    return c->supported ? -1 : 0;
+                }
+                if (H2MirStmtLowerAppendInst(
+                        c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, expr->start, expr->end, &jumpB)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (H2MirStmtLowerAppendConstValue(c, &trueConst, expr->start, expr->end) != 0
+                    || H2MirStmtLowerAppendInst(
+                           c, H2MirOp_JUMP, 0, UINT32_MAX, expr->start, expr->end, &jumpC)
+                           != 0)
+                {
+                    return -1;
+                }
+                falsePc = H2MirStmtLowerFnPc(c);
+                c->builder.insts[jumpA].aux = falsePc;
+                c->builder.insts[jumpB].aux = falsePc;
+                if (H2MirStmtLowerAppendConstValue(c, &falseConst, expr->start, expr->end) != 0) {
+                    return -1;
+                }
+                endPc = H2MirStmtLowerFnPc(c);
+                c->builder.insts[jumpC].aux = endPc;
+                return 0;
+            }
+            if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, expr->start, expr->end, &jumpA)
+                != 0)
+            {
+                return -1;
+            }
+            if (H2MirStmtLowerAppendConstValue(c, &trueConst, expr->start, expr->end) != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_JUMP, 0, UINT32_MAX, expr->start, expr->end, &jumpB)
+                       != 0)
+            {
+                return -1;
+            }
+            c->builder.insts[jumpA].aux = H2MirStmtLowerFnPc(c);
+            if (H2MirStmtLowerExpr(c, rhsNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, expr->start, expr->end, &jumpA)
+                != 0)
+            {
+                return -1;
+            }
+            if (H2MirStmtLowerAppendConstValue(c, &trueConst, expr->start, expr->end) != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_JUMP, 0, UINT32_MAX, expr->start, expr->end, &jumpC)
+                       != 0)
+            {
+                return -1;
+            }
+            falsePc = H2MirStmtLowerFnPc(c);
+            c->builder.insts[jumpA].aux = falsePc;
+            if (H2MirStmtLowerAppendConstValue(c, &falseConst, expr->start, expr->end) != 0) {
+                return -1;
+            }
+            endPc = H2MirStmtLowerFnPc(c);
+            c->builder.insts[jumpB].aux = endPc;
+            c->builder.insts[jumpC].aux = endPc;
             return 0;
         }
         if (H2MirStmtLowerExpr(c, lhsNode) != 0 || !c->supported) {

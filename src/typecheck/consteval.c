@@ -102,15 +102,156 @@ static void H2TCMirConstSetReasonCb(
 
 void H2TCConstSetReason(
     H2TCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason) {
+    uint32_t traceDepth;
     if (evalCtx == NULL || reason == NULL || reason[0] == '\0' || evalCtx->nonConstReason != NULL) {
         return;
     }
     evalCtx->nonConstReason = reason;
     evalCtx->nonConstStart = start;
     evalCtx->nonConstEnd = end;
+    traceDepth = evalCtx->fnDepth;
+    if (traceDepth > H2TC_CONST_CALL_MAX_DEPTH) {
+        traceDepth = H2TC_CONST_CALL_MAX_DEPTH;
+    }
+    evalCtx->nonConstTraceDepth = traceDepth;
+    if (traceDepth > 0) {
+        memcpy(evalCtx->nonConstTrace, evalCtx->fnStack, sizeof(int32_t) * traceDepth);
+    }
     if (evalCtx->execCtx != NULL) {
         H2CTFEExecSetReason(evalCtx->execCtx, start, end, reason);
     }
+}
+
+void H2TCClearLastConstEvalReason(H2TypeCheckCtx* c) {
+    if (c == NULL) {
+        return;
+    }
+    c->lastConstEvalReason = NULL;
+    c->lastConstEvalReasonStart = 0;
+    c->lastConstEvalReasonEnd = 0;
+    c->lastConstEvalTraceDepth = 0;
+    c->lastConstEvalRootFnIndex = -1;
+    c->lastConstEvalRootCallStart = 0;
+    memset(c->lastConstEvalTrace, 0, sizeof(c->lastConstEvalTrace));
+}
+
+void H2TCStoreLastConstEvalReason(H2TypeCheckCtx* c, const H2TCConstEvalCtx* evalCtx) {
+    uint32_t traceDepth;
+    if (c == NULL) {
+        return;
+    }
+    H2TCClearLastConstEvalReason(c);
+    if (evalCtx == NULL) {
+        return;
+    }
+    c->lastConstEvalReason = evalCtx->nonConstReason;
+    c->lastConstEvalReasonStart = evalCtx->nonConstStart;
+    c->lastConstEvalReasonEnd = evalCtx->nonConstEnd;
+    traceDepth = evalCtx->nonConstTraceDepth;
+    if (traceDepth > H2TC_CONST_CALL_MAX_DEPTH) {
+        traceDepth = H2TC_CONST_CALL_MAX_DEPTH;
+    }
+    c->lastConstEvalTraceDepth = traceDepth;
+    if (traceDepth > 0) {
+        memcpy(c->lastConstEvalTrace, evalCtx->nonConstTrace, sizeof(int32_t) * traceDepth);
+    }
+    c->lastConstEvalRootFnIndex = evalCtx->rootCallOwnerFnIndex;
+    c->lastConstEvalRootCallStart = evalCtx->rootCallStart;
+}
+
+void H2TCSetLastConstEvalReason(
+    H2TypeCheckCtx* c, const char* reason, uint32_t start, uint32_t end) {
+    if (c == NULL) {
+        return;
+    }
+    H2TCClearLastConstEvalReason(c);
+    c->lastConstEvalReason = reason;
+    c->lastConstEvalReasonStart = start;
+    c->lastConstEvalReasonEnd = end;
+}
+
+static void H2TCConstEvalRememberRootCall(
+    H2TCConstEvalCtx* evalCtx, int32_t ownerFnIndex, uint32_t callStart) {
+    if (evalCtx == NULL || evalCtx->fnDepth != 0 || evalCtx->rootCallOwnerFnIndex >= 0
+        || ownerFnIndex < 0)
+    {
+        return;
+    }
+    evalCtx->rootCallOwnerFnIndex = ownerFnIndex;
+    evalCtx->rootCallStart = callStart;
+}
+
+static int32_t H2TCConstEvalFindOwnerFunctionForOffset(H2TypeCheckCtx* c, uint32_t offset) {
+    uint32_t i;
+    int32_t  bestFnIndex = -1;
+    uint32_t bestSpan = UINT32_MAX;
+    if (c == NULL) {
+        return -1;
+    }
+    if (c->currentFunctionIndex >= 0) {
+        int32_t currentDefNode = c->funcs[c->currentFunctionIndex].defNode;
+        int32_t currentBodyNode =
+            currentDefNode >= 0 ? H2AstFirstChild(c->ast, currentDefNode) : -1;
+        while (currentBodyNode >= 0 && (uint32_t)currentBodyNode < c->ast->len
+               && c->ast->nodes[currentBodyNode].kind != H2Ast_BLOCK)
+        {
+            currentBodyNode = H2AstNextSibling(c->ast, currentBodyNode);
+        }
+        if (currentBodyNode >= 0 && (uint32_t)currentBodyNode < c->ast->len
+            && c->ast->nodes[currentBodyNode].start <= offset
+            && offset < c->ast->nodes[currentBodyNode].end)
+        {
+            return c->currentFunctionIndex;
+        }
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        int32_t  defNode = c->funcs[i].defNode;
+        int32_t  bodyNode;
+        uint32_t span;
+        if (defNode < 0 || (uint32_t)defNode >= c->ast->len) {
+            continue;
+        }
+        bodyNode = H2AstFirstChild(c->ast, defNode);
+        while (bodyNode >= 0 && (uint32_t)bodyNode < c->ast->len
+               && c->ast->nodes[bodyNode].kind != H2Ast_BLOCK)
+        {
+            bodyNode = H2AstNextSibling(c->ast, bodyNode);
+        }
+        if (bodyNode < 0 || (uint32_t)bodyNode >= c->ast->len) {
+            continue;
+        }
+        if (c->ast->nodes[bodyNode].start > offset || offset >= c->ast->nodes[bodyNode].end) {
+            continue;
+        }
+        span = c->ast->nodes[bodyNode].end - c->ast->nodes[bodyNode].start;
+        if (bestFnIndex < 0 || span < bestSpan) {
+            bestFnIndex = (int32_t)i;
+            bestSpan = span;
+        }
+    }
+    return bestFnIndex;
+}
+
+static void H2TCConstEvalRememberRootCallNode(
+    H2TCConstEvalCtx* evalCtx, int32_t callNode, int32_t callCalleeNode) {
+    H2TypeCheckCtx* c;
+    uint32_t        callStart;
+    int32_t         ownerFnIndex;
+    if (evalCtx == NULL || evalCtx->tc == NULL) {
+        return;
+    }
+    c = evalCtx->tc;
+    if (callCalleeNode >= 0 && (uint32_t)callCalleeNode < c->ast->len
+        && c->ast->nodes[callCalleeNode].dataEnd > c->ast->nodes[callCalleeNode].dataStart)
+    {
+        callStart = c->ast->nodes[callCalleeNode].dataStart;
+    } else if (callNode >= 0 && (uint32_t)callNode < c->ast->len) {
+        callStart = c->ast->nodes[callNode].start;
+    } else {
+        return;
+    }
+    ownerFnIndex = H2TCConstEvalFindOwnerFunctionForOffset(c, callStart);
+    H2TCConstEvalRememberRootCall(evalCtx, ownerFnIndex, callStart);
 }
 
 static int H2TCConstLookupMirLocalValue(
@@ -217,6 +358,7 @@ int H2TCMirConstLowerConstExpr(
     localEvalCtx.nonConstReason = NULL;
     localEvalCtx.nonConstStart = 0;
     localEvalCtx.nonConstEnd = 0;
+    localEvalCtx.nonConstTraceDepth = 0;
     if (c->ast->nodes[exprNode].kind == H2Ast_SIZEOF) {
         if (H2TCConstEvalSizeOf(&localEvalCtx, exprNode, &value, &isConst) != 0) {
             return -1;
@@ -284,14 +426,93 @@ void H2TCConstSetReasonNode(H2TCConstEvalCtx* evalCtx, int32_t nodeId, const cha
     H2TCConstSetReason(evalCtx, 0, 0, reason);
 }
 
+static void H2TCConstEvalDiagOffsetToLineCol(
+    const char* _Nullable source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
+    uint32_t line = 1;
+    uint32_t col = 1;
+    uint32_t i = 0;
+    if (outLine != NULL) {
+        *outLine = 1;
+    }
+    if (outCol != NULL) {
+        *outCol = 1;
+    }
+    if (source == NULL) {
+        return;
+    }
+    while (i < offset && source[i] != '\0') {
+        if (source[i] == '\n') {
+            line++;
+            col = 1;
+        } else if (source[i] == '\t') {
+            col += 4u - ((col - 1u) % 4u);
+        } else {
+            col++;
+        }
+        i++;
+    }
+    if (outLine != NULL) {
+        *outLine = line;
+    }
+    if (outCol != NULL) {
+        *outCol = col;
+    }
+}
+
+static void H2TCConstEvalAppendTraceFrame(
+    H2TypeCheckCtx* c, H2TCTextBuf* detailText, int32_t fnIndex, uint32_t offset) {
+    uint32_t    line = 1;
+    uint32_t    col = 1;
+    const char* path = NULL;
+    if (c == NULL || detailText == NULL || fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+        return;
+    }
+    H2TCConstEvalDiagOffsetToLineCol(c->src.ptr, offset, &line, &col);
+    path = (c->filePath != NULL && c->filePath[0] != '\0') ? c->filePath : "<input>";
+    H2TCTextBufAppendCStr(detailText, "\n  ");
+    H2TCTextBufAppendCStr(detailText, path);
+    H2TCTextBufAppendChar(detailText, ':');
+    H2TCTextBufAppendU32(detailText, line);
+    H2TCTextBufAppendChar(detailText, ':');
+    H2TCTextBufAppendU32(detailText, col);
+    H2TCTextBufAppendCStr(detailText, ": ");
+    if (c->funcs[fnIndex].nameEnd > c->funcs[fnIndex].nameStart
+        && c->funcs[fnIndex].nameEnd <= c->src.len)
+    {
+        H2TCTextBufAppendSlice(
+            detailText, c->src, c->funcs[fnIndex].nameStart, c->funcs[fnIndex].nameEnd);
+    } else {
+        H2TCTextBufAppendCStr(detailText, "<unknown>");
+    }
+}
+
 void H2TCAttachConstEvalReason(H2TypeCheckCtx* c) {
+    H2TCTextBuf detailText;
+    char        detailBuf[2048];
+    uint32_t    i;
     if (c == NULL || c->diag == NULL || c->lastConstEvalReason == NULL
         || c->lastConstEvalReason[0] == '\0')
     {
         return;
     }
+    H2TCTextBufInit(&detailText, detailBuf, (uint32_t)sizeof(detailBuf));
+    H2TCTextBufAppendCStr(&detailText, c->lastConstEvalReason);
+    if (c->lastConstEvalTraceDepth > 0) {
+        H2TCTextBufAppendCStr(&detailText, "\nCall trace:");
+        for (i = c->lastConstEvalTraceDepth; i > 0; i--) {
+            int32_t fnIndex = c->lastConstEvalTrace[i - 1u];
+            if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+                continue;
+            }
+            H2TCConstEvalAppendTraceFrame(c, &detailText, fnIndex, c->funcs[fnIndex].nameStart);
+        }
+        if (c->lastConstEvalRootFnIndex >= 0) {
+            H2TCConstEvalAppendTraceFrame(
+                c, &detailText, c->lastConstEvalRootFnIndex, c->lastConstEvalRootCallStart);
+        }
+    }
     c->diag->phase = H2DiagPhase_CONSTEVAL;
-    c->diag->detail = H2TCAllocDiagText(c, c->lastConstEvalReason);
+    c->diag->detail = H2TCAllocDiagText(c, detailBuf);
     if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd) {
         (void)H2DiagAddNote(
             c->arena,
@@ -3070,6 +3291,7 @@ int H2TCEvalConstExprNode(
             int32_t     lhsNode = H2AstFirstChild(c->ast, exprNode);
             int32_t     rhsNode = lhsNode >= 0 ? H2AstNextSibling(c->ast, lhsNode) : -1;
             int32_t     extraNode = rhsNode >= 0 ? H2AstNextSibling(c->ast, rhsNode) : -1;
+            H2TokenKind op = (H2TokenKind)n->op;
             H2CTFEValue lhsValue;
             H2CTFEValue rhsValue;
             int         lhsIsConst = 0;
@@ -3084,6 +3306,20 @@ int H2TCEvalConstExprNode(
                 *outIsConst = 0;
                 return 0;
             }
+            if (op == H2Tok_LOGICAL_AND || op == H2Tok_LOGICAL_OR) {
+                if (lhsValue.kind != H2CTFEValue_BOOL) {
+                    H2TCConstSetReasonNode(evalCtx, lhsNode, "expression is not const-evaluable");
+                    *outIsConst = 0;
+                    return 0;
+                }
+                if ((op == H2Tok_LOGICAL_AND && lhsValue.b == 0)
+                    || (op == H2Tok_LOGICAL_OR && lhsValue.b != 0))
+                {
+                    *outValue = lhsValue;
+                    *outIsConst = 1;
+                    return 0;
+                }
+            }
             if (H2TCEvalConstExprNode(evalCtx, rhsNode, &rhsValue, &rhsIsConst) != 0) {
                 return -1;
             }
@@ -3091,7 +3327,7 @@ int H2TCEvalConstExprNode(
                 *outIsConst = 0;
                 return 0;
             }
-            if (!H2TCConstEvalApplyBinary(c, (H2TokenKind)n->op, &lhsValue, &rhsValue, outValue)) {
+            if (!H2TCConstEvalApplyBinary(c, op, &lhsValue, &rhsValue, outValue)) {
                 H2TCConstSetReasonNode(evalCtx, exprNode, "expression is not const-evaluable");
                 *outIsConst = 0;
                 return 0;
@@ -6569,6 +6805,7 @@ static int H2TCInvokeConstFunctionByIndex(
     evalCtx->nonConstReason = NULL;
     evalCtx->nonConstStart = 0;
     evalCtx->nonConstEnd = 0;
+    evalCtx->nonConstTraceDepth = 0;
     c->activeConstEvalCtx = evalCtx;
 
     if (c->funcs[fnIndex].returnType == c->typeType) {
@@ -6865,6 +7102,7 @@ int H2TCResolveConstCallMir(
                 fnIndex = H2TCFindPkgConstCallableFunction(
                     c, aliasStart, aliasEnd, nameStart, nameEnd, argCount - 1u);
                 if (fnIndex >= 0) {
+                    H2TCConstEvalRememberRootCallNode(evalCtx, callNode, callCalleeNode);
                     return H2TCInvokeConstFunctionByIndex(
                         evalCtx,
                         nameStart,
@@ -6916,6 +7154,7 @@ int H2TCResolveConstCallMir(
             {
                 invokeHasCallContext = 1;
             }
+            H2TCConstEvalRememberRootCallNode(evalCtx, callNode, callCalleeNode);
             return H2TCInvokeConstFunctionByIndex(
                 evalCtx,
                 fn->nameStart,
@@ -7030,6 +7269,7 @@ int H2TCResolveConstCallMir(
     {
         invokeHasCallContext = 1;
     }
+    H2TCConstEvalRememberRootCallNode(evalCtx, callNode, callCalleeNode);
     return H2TCInvokeConstFunctionByIndex(
         evalCtx,
         nameStart,
@@ -7151,6 +7391,7 @@ static int H2TCConstEvalDirectCall(
         {
             invokeHasCallContext = 1;
         }
+        H2TCConstEvalRememberRootCallNode(evalCtx, exprNode, calleeNode);
         return H2TCInvokeConstFunctionByIndex(
             evalCtx,
             fn->nameStart,
@@ -7237,6 +7478,9 @@ int H2TCEvalTopLevelConstNodeAt(
     evalCtx->nonConstReason = NULL;
     evalCtx->nonConstStart = 0;
     evalCtx->nonConstEnd = 0;
+    evalCtx->nonConstTraceDepth = 0;
+    evalCtx->rootCallOwnerFnIndex = -1;
+    evalCtx->rootCallStart = 0;
     if (H2TCTryMirTopLevelConst(evalCtx, nodeId, nameIndex, outValue, &isConst, &mirSupported) != 0)
     {
         c->constEvalState[nodeId] = H2TCConstEval_UNSEEN;
@@ -7298,9 +7542,7 @@ int H2TCConstBoolExpr(H2TypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
     const H2AstNode*  n;
     *isConst = 0;
     *out = 0;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
@@ -7358,18 +7600,18 @@ int H2TCConstBoolExpr(H2TypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         evalCtxStorage.nonConstReason = NULL;
         evalCtxStorage.nonConstStart = 0;
         evalCtxStorage.nonConstEnd = 0;
+        evalCtxStorage.nonConstTraceDepth = 0;
         evalCtx = &evalCtxStorage;
     } else {
         memset(&evalCtxStorage, 0, sizeof(evalCtxStorage));
         evalCtxStorage.tc = c;
+        evalCtxStorage.rootCallOwnerFnIndex = -1;
         evalCtx = &evalCtxStorage;
     }
     if (H2TCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx->nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx->nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx->nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, evalCtx);
     if (!valueIsConst) {
         return 0;
     }
@@ -7379,9 +7621,11 @@ int H2TCConstBoolExpr(H2TypeCheckCtx* c, int32_t nodeId, int* out, int* isConst)
         return 0;
     }
     if (value.kind != H2CTFEValue_BOOL) {
-        c->lastConstEvalReason = "expression evaluated to a non-boolean value";
-        c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
-        c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
+        H2TCSetLastConstEvalReason(
+            c,
+            "expression evaluated to a non-boolean value",
+            c->ast->nodes[nodeId].start,
+            c->ast->nodes[nodeId].end);
         return 0;
     }
     *out = value.b ? 1 : 0;
@@ -7395,9 +7639,7 @@ int H2TCConstIntExpr(H2TypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
     H2CTFEValue       value;
     int               valueIsConst = 0;
     *isConst = 0;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
@@ -7407,25 +7649,27 @@ int H2TCConstIntExpr(H2TypeCheckCtx* c, int32_t nodeId, int64_t* out, int* isCon
         evalCtxStorage.nonConstReason = NULL;
         evalCtxStorage.nonConstStart = 0;
         evalCtxStorage.nonConstEnd = 0;
+        evalCtxStorage.nonConstTraceDepth = 0;
         evalCtx = &evalCtxStorage;
     } else {
         memset(&evalCtxStorage, 0, sizeof(evalCtxStorage));
         evalCtxStorage.tc = c;
+        evalCtxStorage.rootCallOwnerFnIndex = -1;
         evalCtx = &evalCtxStorage;
     }
     if (H2TCEvalConstExprNode(evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx->nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx->nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx->nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, evalCtx);
     if (!valueIsConst) {
         return 0;
     }
     if (H2CTFEValueToInt64(&value, out) != 0) {
-        c->lastConstEvalReason = "expression evaluated to a non-integer value";
-        c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
-        c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
+        H2TCSetLastConstEvalReason(
+            c,
+            "expression evaluated to a non-integer value",
+            c->ast->nodes[nodeId].start,
+            c->ast->nodes[nodeId].end);
         return 0;
     }
     *isConst = 1;
@@ -7437,20 +7681,17 @@ int H2TCConstFloatExpr(H2TypeCheckCtx* c, int32_t nodeId, double* out, int* isCo
     H2CTFEValue      value;
     int              valueIsConst = 0;
     *isConst = 0;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     if (H2TCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx.nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, &evalCtx);
     if (!valueIsConst) {
         return 0;
     }
@@ -7464,9 +7705,11 @@ int H2TCConstFloatExpr(H2TypeCheckCtx* c, int32_t nodeId, double* out, int* isCo
         *isConst = 1;
         return 0;
     }
-    c->lastConstEvalReason = "expression evaluated to a non-float value";
-    c->lastConstEvalReasonStart = c->ast->nodes[nodeId].start;
-    c->lastConstEvalReasonEnd = c->ast->nodes[nodeId].end;
+    H2TCSetLastConstEvalReason(
+        c,
+        "expression evaluated to a non-float value",
+        c->ast->nodes[nodeId].start,
+        c->ast->nodes[nodeId].end);
     return 0;
 }
 
@@ -7486,9 +7729,7 @@ int H2TCConstStringExpr(
     *outBytes = NULL;
     *outLen = 0;
     *outIsConst = 0;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
         return -1;
     }
@@ -7502,12 +7743,11 @@ int H2TCConstStringExpr(
     }
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     if (H2TCEvalConstExprNode(&evalCtx, nodeId, &value, &valueIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx.nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, &evalCtx);
     if (!valueIsConst || value.kind != H2CTFEValue_STRING) {
         return 0;
     }

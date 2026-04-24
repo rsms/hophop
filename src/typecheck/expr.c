@@ -1316,6 +1316,7 @@ static int H2TCTypeEmitCompilerDiagCall(
     int32_t          msgExprNode = msgNode;
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     if (msgNode >= 0 && (uint32_t)msgNode < c->ast->len
         && c->ast->nodes[msgNode].kind == H2Ast_CALL_ARG)
     {
@@ -3414,15 +3415,12 @@ int H2TCValidateConstInitializerExprNode(H2TypeCheckCtx* c, int32_t initNode) {
     int              rc;
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    evalCtx.rootCallOwnerFnIndex = -1;
+    H2TCClearLastConstEvalReason(c);
     if (H2TCEvalConstExprNode(&evalCtx, initNode, &value, &isConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx.nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, &evalCtx);
     if (isConst) {
         return 0;
     }
@@ -4060,6 +4058,7 @@ int H2TCValidateTopLevelConstEvaluable(H2TypeCheckCtx* c) {
     int32_t          child;
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     child = H2AstFirstChild(c->ast, c->ast->root);
     while (child >= 0) {
         const H2AstNode* n = &c->ast->nodes[child];
@@ -4081,20 +4080,19 @@ int H2TCValidateTopLevelConstEvaluable(H2TypeCheckCtx* c) {
                     child = H2AstNextSibling(c->ast, child);
                     continue;
                 }
-                c->lastConstEvalReason = NULL;
-                c->lastConstEvalReasonStart = 0;
-                c->lastConstEvalReasonEnd = 0;
+                H2TCClearLastConstEvalReason(c);
                 evalCtx.nonConstReason = NULL;
                 evalCtx.nonConstStart = 0;
                 evalCtx.nonConstEnd = 0;
+                evalCtx.nonConstTraceDepth = 0;
+                evalCtx.rootCallOwnerFnIndex = -1;
+                evalCtx.rootCallStart = 0;
                 evalCtx.fnDepth = 0;
                 evalCtx.execCtx = NULL;
                 if (H2TCEvalTopLevelConstNode(c, &evalCtx, child, &value, &isConst) != 0) {
                     return -1;
                 }
-                c->lastConstEvalReason = evalCtx.nonConstReason;
-                c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-                c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+                H2TCStoreLastConstEvalReason(c, &evalCtx);
                 if (!isConst) {
                     int rc;
                     if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd
@@ -4125,20 +4123,19 @@ int H2TCValidateTopLevelConstEvaluable(H2TypeCheckCtx* c) {
                     if (initNode < 0) {
                         return H2TCFailNode(c, child, H2Diag_ARITY_MISMATCH);
                     }
-                    c->lastConstEvalReason = NULL;
-                    c->lastConstEvalReasonStart = 0;
-                    c->lastConstEvalReasonEnd = 0;
+                    H2TCClearLastConstEvalReason(c);
                     evalCtx.nonConstReason = NULL;
                     evalCtx.nonConstStart = 0;
                     evalCtx.nonConstEnd = 0;
+                    evalCtx.nonConstTraceDepth = 0;
+                    evalCtx.rootCallOwnerFnIndex = -1;
+                    evalCtx.rootCallStart = 0;
                     evalCtx.fnDepth = 0;
                     evalCtx.execCtx = NULL;
                     if (H2TCEvalConstExprNode(&evalCtx, initNode, &value, &isConst) != 0) {
                         return -1;
                     }
-                    c->lastConstEvalReason = evalCtx.nonConstReason;
-                    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-                    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+                    H2TCStoreLastConstEvalReason(c, &evalCtx);
                     if (!isConst) {
                         int rc;
                         if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd

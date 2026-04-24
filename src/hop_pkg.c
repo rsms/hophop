@@ -217,6 +217,7 @@ static int CheckSourceWithSpec(const H2CheckRunSpec* spec) {
         .ctx = (void*)spec,
         .onDiag = TypecheckDiagSink,
         .flags = 0,
+        .filePath = spec != NULL ? spec->filename : NULL,
     };
 
     if (spec == NULL) {
@@ -5114,6 +5115,7 @@ static int CheckLoadedPackage(H2PackageLoader* loader, H2Package* pkg, int suppr
         H2TypeCheckCtx*    tcCtx;
         H2Diag             tcDiag = { 0 };
         H2TypeCheckOptions tcOptions = { 0 };
+        tcOptions.filePath = pkg->files[0].path;
         tcArenaCap64 = (uint64_t)pkg->files[0].sourceLen * 256u + 1024u * 1024u;
         if (tcArenaCap64 > UINT32_MAX) {
             return ErrorSimple("typecheck arena too large");

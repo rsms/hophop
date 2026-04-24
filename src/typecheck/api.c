@@ -74,17 +74,14 @@ int H2ConstEvalSessionEvalExpr(
         return -1;
     }
     c = &session->tc;
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     if (H2TCEvalConstExprNode(&evalCtx, exprNode, outValue, outIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx.nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, &evalCtx);
     return 0;
 }
 
@@ -110,17 +107,14 @@ int H2ConstEvalSessionEvalTopLevelConst(
         *outIsConst = 0;
         return 0;
     }
-    c->lastConstEvalReason = NULL;
-    c->lastConstEvalReasonStart = 0;
-    c->lastConstEvalReasonEnd = 0;
+    H2TCClearLastConstEvalReason(c);
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     if (H2TCEvalTopLevelConstNode(c, &evalCtx, constNode, outValue, outIsConst) != 0) {
         return -1;
     }
-    c->lastConstEvalReason = evalCtx.nonConstReason;
-    c->lastConstEvalReasonStart = evalCtx.nonConstStart;
-    c->lastConstEvalReasonEnd = evalCtx.nonConstEnd;
+    H2TCStoreLastConstEvalReason(c, &evalCtx);
     return 0;
 }
 

@@ -1,6 +1,6 @@
 mir
   dynamic_resolution=yes
-  insts=87 consts=20 sources=1 funcs=1 locals=4 fields=0 types=1 hosts=0 symbols=6
+  insts=91 consts=22 sources=1 funcs=1 locals=4 fields=0 types=1 hosts=0 symbols=6
 sources
   #0 len=445
 types
@@ -34,9 +34,11 @@ consts
   #16 INT value=1
   #17 INT value=4
   #18 INT value=4
-  #19 INT value=3
+  #19 BOOL true
+  #20 BOOL false
+  #21 INT value=3
 functions
-  #0 name="main" [67,71] source=#0 type=#4294967295 params=0 temps=0 locals=#0+4 insts=#0+87
+  #0 name="main" [67,71] source=#0 type=#4294967295 params=0 temps=0 locals=#0+4 insts=#0+91
     locals
       #0 name="y" [81,82] type=#0 flags=2
       #1 name="" [0,0] type=#0
@@ -119,14 +121,18 @@ functions
       73: LOCAL_LOAD local=#2 "sum" [233,236] span=[399,402]
       74: PUSH_CONST const=#17 span=[406,407]
       75: BINARY op=EQ span=[399,407]
-      76: LOCAL_LOAD local=#3 "i" [246,247] span=[411,412]
-      77: PUSH_CONST const=#18 span=[416,417]
-      78: BINARY op=EQ span=[411,417]
-      79: BINARY op=LOGICAL_AND span=[399,417]
-      80: UNARY op=NOT span=[397,417]
-      81: JUMP_IF_FALSE target=86 span=[394,442]
-      82: LOAD_IDENT symbol=#4 "platform" [423,431] span=[423,431]
-      83: PUSH_CONST const=#19 span=[437,438]
-      84: CALL symbol=#5 "exit" [432,436] argc=2 span=[432,436]
-      85: DROP span=[423,439]
-      86: RETURN_VOID span=[74,444]
+      76: JUMP_IF_FALSE target=83 span=[399,417]
+      77: LOCAL_LOAD local=#3 "i" [246,247] span=[411,412]
+      78: PUSH_CONST const=#18 span=[416,417]
+      79: BINARY op=EQ span=[411,417]
+      80: JUMP_IF_FALSE target=83 span=[399,417]
+      81: PUSH_CONST const=#19 span=[399,417]
+      82: JUMP target=84 span=[399,417]
+      83: PUSH_CONST const=#20 span=[399,417]
+      84: UNARY op=NOT span=[397,417]
+      85: JUMP_IF_FALSE target=90 span=[394,442]
+      86: LOAD_IDENT symbol=#4 "platform" [423,431] span=[423,431]
+      87: PUSH_CONST const=#21 span=[437,438]
+      88: CALL symbol=#5 "exit" [432,436] argc=2 span=[432,436]
+      89: DROP span=[423,439]
+      90: RETURN_VOID span=[74,444]

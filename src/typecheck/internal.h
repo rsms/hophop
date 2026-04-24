@@ -215,10 +215,14 @@ typedef struct {
     int32_t targetFnIndex;
 } H2TCCallTarget;
 
+#define H2TC_CONST_CALL_MAX_DEPTH 64u
+#define H2TC_CONST_FOR_MAX_ITERS  100000u
+
 typedef struct {
     H2Arena*     arena;
     const H2Ast* ast;
     H2StrView    src;
+    const char* _Nullable filePath;
     H2Diag* _Nullable diag;
     H2TCDiagSink diagSink;
 
@@ -273,6 +277,10 @@ typedef struct {
     const char* _Nullable lastConstEvalReason;
     uint32_t lastConstEvalReasonStart;
     uint32_t lastConstEvalReasonEnd;
+    int32_t  lastConstEvalTrace[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t lastConstEvalTraceDepth;
+    int32_t  lastConstEvalRootFnIndex;
+    uint32_t lastConstEvalRootCallStart;
 
     int32_t typeVoid;
     int32_t typeBool;
@@ -455,9 +463,6 @@ typedef struct {
     uint8_t  grouped;
 } H2TCVarLikeParts;
 
-#define H2TC_CONST_CALL_MAX_DEPTH 64u
-#define H2TC_CONST_FOR_MAX_ITERS  100000u
-
 struct H2TCConstEvalCtx {
     H2TypeCheckCtx* tc;
     H2CTFEExecCtx* _Nullable execCtx;
@@ -480,6 +485,10 @@ struct H2TCConstEvalCtx {
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;
     uint32_t nonConstEnd;
+    int32_t  nonConstTrace[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t nonConstTraceDepth;
+    int32_t  rootCallOwnerFnIndex;
+    uint32_t rootCallStart;
 };
 
 int H2TCEvalTopLevelConstNode(
@@ -829,6 +838,10 @@ int32_t H2TCVarLikeInitExprNodeAt(H2TypeCheckCtx* c, int32_t nodeId, int32_t nam
 int32_t H2TCVarLikeInitExprNode(H2TypeCheckCtx* c, int32_t nodeId);
 void    H2TCConstSetReason(
     H2TCConstEvalCtx* evalCtx, uint32_t start, uint32_t end, const char* reason);
+void H2TCClearLastConstEvalReason(H2TypeCheckCtx* c);
+void H2TCStoreLastConstEvalReason(H2TypeCheckCtx* c, const H2TCConstEvalCtx* evalCtx);
+void H2TCSetLastConstEvalReason(
+    H2TypeCheckCtx* c, const char* reason, uint32_t start, uint32_t end);
 void H2TCConstSetReasonNode(H2TCConstEvalCtx* evalCtx, int32_t nodeId, const char* reason);
 void H2TCAttachConstEvalReason(H2TypeCheckCtx* c);
 int  H2TCResolveConstIdent(

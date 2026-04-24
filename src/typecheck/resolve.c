@@ -166,6 +166,7 @@ static void H2TCInitConstEvalCtxFromParent(
     }
     memset(outCtx, 0, sizeof(*outCtx));
     outCtx->tc = c;
+    outCtx->rootCallOwnerFnIndex = -1;
     if (parent == NULL) {
         return;
     }
@@ -617,6 +618,7 @@ int H2TCResolveTypeNode(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                     if (resolvedConstType == c->typeType) {
                         memset(&evalCtx, 0, sizeof(evalCtx));
                         evalCtx.tc = c;
+                        evalCtx.rootCallOwnerFnIndex = -1;
                         if (H2TCEvalTopLevelConstNodeAt(
                                 c, &evalCtx, varLikeNode, varLikeNameIndex, &value, &isConst)
                             != 0)
@@ -3478,6 +3480,7 @@ int H2TCCheckConstBlocksForCall(
     execCtx.forIterLimit = H2TC_CONST_FOR_MAX_ITERS;
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
+    evalCtx.rootCallOwnerFnIndex = -1;
     evalCtx.execCtx = &execCtx;
     evalCtx.callArgs = callArgs;
     evalCtx.callArgCount = argCount;
@@ -3509,6 +3512,9 @@ int H2TCCheckConstBlocksForCall(
             evalCtx.nonConstReason = NULL;
             evalCtx.nonConstStart = 0;
             evalCtx.nonConstEnd = 0;
+            evalCtx.nonConstTraceDepth = 0;
+            evalCtx.rootCallOwnerFnIndex = -1;
+            evalCtx.rootCallStart = 0;
             rc = H2TCTryMirConstBlock(
                 &evalCtx, blockNode, &retValue, &didReturn, &isConst, &mirSupported);
             if (rc != 0) {
@@ -3527,9 +3533,7 @@ int H2TCCheckConstBlocksForCall(
             } else if (evalCtx.nonConstReason == NULL) {
                 H2TCConstSetReasonNode(&evalCtx, blockNode, "const block is not const-evaluable");
             }
-            c->lastConstEvalReason = c->activeConstEvalCtx->nonConstReason;
-            c->lastConstEvalReasonStart = c->activeConstEvalCtx->nonConstStart;
-            c->lastConstEvalReasonEnd = c->activeConstEvalCtx->nonConstEnd;
+            H2TCStoreLastConstEvalReason(c, c->activeConstEvalCtx);
             if (outError != NULL) {
                 outError->code = H2Diag_CONST_BLOCK_EVAL_FAILED;
                 outError->start = argCount > 0 ? callArgs[0].start : c->ast->nodes[child].start;

@@ -613,6 +613,7 @@
 {"id":"check:tests/str_index_infer_u8_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"checkpkg","input":"tests/str_index_infer_u8_ok.hop"}
 {"id":"check:tests/str_for_in_u8_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"checkpkg","input":"tests/str_for_in_u8_ok.hop"}
 {"id":"check:tests/str_format_invalid_placeholder_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_invalid_placeholder_bad.hop"}
+{"id":"check:tests/str_format_empty_placeholder_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"checkpkg","input":"tests/str_format_empty_placeholder_bad.hop","expect_stderr":"tests/str_format_empty_placeholder_bad.stderr"}
 {"id":"check:tests/str_format_arg_count_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_arg_count_bad.hop"}
 {"id":"check:tests/str_format_arg_type_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_arg_type_bad.hop"}
 {"id":"check:tests/str_format_arg_type_s_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_no_stdout","mode":"checkpkg","input":"tests/str_format_arg_type_s_bad.hop"}

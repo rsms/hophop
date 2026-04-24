@@ -219,6 +219,7 @@ typedef struct {
     void* _Nullable ctx;
     H2DiagSinkFn _Nullable onDiag;
     uint32_t flags;
+    const char* _Nullable filePath;
 } H2TypeCheckOptions;
 
 void        H2DiagClear(H2Diag* _Nullable diag);

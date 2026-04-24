@@ -13560,6 +13560,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
     if (n->kind == H2Ast_BINARY && (H2TokenKind)n->op != H2Tok_ASSIGN) {
         int32_t     lhsNode = n->firstChild;
         int32_t     rhsNode = lhsNode >= 0 ? ast->nodes[lhsNode].nextSibling : -1;
+        H2TokenKind op = (H2TokenKind)n->op;
         H2CTFEValue lhsValue;
         H2CTFEValue rhsValue;
         int         lhsIsConst = 0;
@@ -13569,17 +13570,34 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
             *outIsConst = 0;
             return 0;
         }
-        if (HOPEvalExecExprCb(p, lhsNode, &lhsValue, &lhsIsConst) != 0
-            || HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0)
-        {
+        if (HOPEvalExecExprCb(p, lhsNode, &lhsValue, &lhsIsConst) != 0) {
             return -1;
         }
-        if (!lhsIsConst || !rhsIsConst) {
+        if (!lhsIsConst) {
             *outIsConst = 0;
             return 0;
         }
-        handled = HOPEvalEvalBinary(
-            p, (H2TokenKind)n->op, &lhsValue, &rhsValue, outValue, outIsConst);
+        if (op == H2Tok_LOGICAL_AND || op == H2Tok_LOGICAL_OR) {
+            if (lhsValue.kind != H2CTFEValue_BOOL) {
+                *outIsConst = 0;
+                return 0;
+            }
+            if ((op == H2Tok_LOGICAL_AND && lhsValue.b == 0)
+                || (op == H2Tok_LOGICAL_OR && lhsValue.b != 0))
+            {
+                *outValue = lhsValue;
+                *outIsConst = 1;
+                return 0;
+            }
+        }
+        if (HOPEvalExecExprCb(p, rhsNode, &rhsValue, &rhsIsConst) != 0) {
+            return -1;
+        }
+        if (!rhsIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        handled = HOPEvalEvalBinary(p, op, &lhsValue, &rhsValue, outValue, outIsConst);
         if (handled < 0) {
             return -1;
         }
