@@ -1,10 +1,11 @@
 usage:
-    hop compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
+    hop compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile> [-o <output>]
 
 options:
     --platform <target>   target platform
     --arch <name>         target architecture
     --cache-dir <dir>     compiler cache directory
+    --diag-format <fmt>   diagnostics output format (`text` or `jsonl`)
     -o <output>           output executable path
 
 <target> is one of: cli-libc (default), cli-eval, wasm-min, playbit

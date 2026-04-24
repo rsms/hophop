@@ -1,1 +1,6 @@
 tests/consteval_string_index_nonconst_index_bad.hop:10:15: error: HOP2083: const block failed compile-time evaluation: identifier is not a const value in this context
+  10 | 	require_char("abc", n)
+    | 	             ^~~~~~~~
+tests/consteval_string_index_nonconst_index_bad.hop:4:12: note: identifier is not a const value in this context
+  4 | 		assert s[n] == 'b'
+    | 		         ^

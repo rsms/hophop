@@ -1,1 +1,4 @@
 tests/ast_bad_old_array_type.hop:3:12: error: HOP1007: expected type
+  3 |     var x [4]i32
+    |            ^
+tests/ast_bad_old_array_type.hop:3:12: note: expected type_kind type

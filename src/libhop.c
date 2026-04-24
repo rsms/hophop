@@ -7,6 +7,21 @@ typedef struct {
     uint32_t cap;
 } H2TokenBuf;
 
+static void H2DiagResetExtras(H2Diag* diag) {
+    diag->phase = H2DiagPhase_UNKNOWN;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
+}
+
 static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
@@ -21,6 +36,7 @@ static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t en
     diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
+    H2DiagResetExtras(diag);
 }
 
 void H2DiagClear(H2Diag* _Nullable diag) {
@@ -37,6 +53,112 @@ void H2DiagClear(H2Diag* _Nullable diag) {
     diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
+    H2DiagResetExtras(diag);
+}
+
+static int H2DiagAppendItems(
+    H2Arena*         arena,
+    void* _Nullable* dstItems,
+    uint32_t*        dstLen,
+    uint32_t         itemSize,
+    const void*      item) {
+    uint32_t need;
+    void*    out;
+    if (dstItems == NULL || dstLen == NULL || item == NULL) {
+        return -1;
+    }
+    if (arena == NULL) {
+        return -1;
+    }
+    if (*dstLen == UINT32_MAX) {
+        return -1;
+    }
+    need = *dstLen + 1u;
+    out = H2ArenaAlloc(arena, need * itemSize, (uint32_t)_Alignof(max_align_t));
+    if (out == NULL) {
+        return -1;
+    }
+    if (*dstLen > 0 && *dstItems != NULL) {
+        memcpy(out, *dstItems, (*dstLen) * itemSize);
+    }
+    memcpy((uint8_t*)out + (*dstLen) * itemSize, item, itemSize);
+    *dstItems = out;
+    *dstLen = need;
+    return 0;
+}
+
+int H2DiagAddNote(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagNoteKind kind,
+    uint32_t       start,
+    uint32_t       end,
+    const char* _Nullable message) {
+    H2DiagNote note;
+    if (diag == NULL) {
+        return 0;
+    }
+    note.kind = kind;
+    note.start = start;
+    note.end = end;
+    note.message = message;
+    if (H2DiagAppendItems(
+            arena,
+            (void* _Nullable*)&diag->notes,
+            &diag->notesLen,
+            (uint32_t)sizeof(H2DiagNote),
+            &note)
+        != 0)
+    {
+        return -1;
+    }
+    if (diag->relatedEnd <= diag->relatedStart) {
+        diag->relatedStart = start;
+        diag->relatedEnd = end;
+    }
+    return 0;
+}
+
+int H2DiagAddFixIt(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagFixItKind kind,
+    uint32_t        start,
+    uint32_t        end,
+    const char* _Nullable text) {
+    H2DiagFixIt fixIt;
+    if (diag == NULL) {
+        return 0;
+    }
+    fixIt.kind = kind;
+    fixIt.start = start;
+    fixIt.end = end;
+    fixIt.text = text;
+    return H2DiagAppendItems(
+        arena,
+        (void* _Nullable*)&diag->fixIts,
+        &diag->fixItsLen,
+        (uint32_t)sizeof(H2DiagFixIt),
+        &fixIt);
+}
+
+int H2DiagAddExpectation(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagExpectationKind kind,
+    const char* _Nullable text) {
+    H2DiagExpectation expectation;
+    if (diag == NULL) {
+        return 0;
+    }
+    expectation.kind = kind;
+    expectation.text = text;
+    return H2DiagAppendItems(
+        arena,
+        (void* _Nullable*)&diag->expectations,
+        &diag->expectationsLen,
+        (uint32_t)sizeof(H2DiagExpectation),
+        &expectation);
 }
 
 static uint32_t H2ArenaAlignUpU32(uint32_t value, uint32_t align) {
@@ -671,6 +793,7 @@ int H2Lex(H2Arena* arena, H2StrView src, H2TokenStream* out, H2Diag* _Nullable d
 
     if (diag != NULL) {
         *diag = (H2Diag){ 0 };
+        diag->phase = H2DiagPhase_LEX;
     }
     out->v = NULL;
     out->len = 0;
@@ -1203,6 +1326,7 @@ static int H2AstDumpNode(
 int H2AstDump(const H2Ast* ast, H2StrView src, H2Writer* w, H2Diag* _Nullable diag) {
     if (diag != NULL) {
         *diag = (H2Diag){ 0 };
+        diag->phase = H2DiagPhase_COMPILER;
     }
     if (ast == NULL || w == NULL || w->write == NULL || ast->nodes == NULL || ast->root < 0) {
         H2SetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);

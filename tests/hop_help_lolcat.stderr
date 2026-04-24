@@ -1,14 +1,14 @@
 usage:
     lolcat --version
-    lolcat run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    lolcat run [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>
     lolcat fmt [--check] [<file-or-dir> ...]
-    lolcat compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [-o <output>]
-    lolcat genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> [out]
-    lolcat check <srcfile>
-    lolcat checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
-    lolcat lex <srcfile>
-    lolcat ast <srcfile>
-    lolcat mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    lolcat compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile> [-o <output>]
+    lolcat genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile> [out]
+    lolcat check [--diag-format <text|jsonl>] <srcfile>
+    lolcat checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>
+    lolcat lex [--diag-format <text|jsonl>] <srcfile>
+    lolcat ast [--diag-format <text|jsonl>] <srcfile>
+    lolcat mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>
     lolcat --version
     lolcat --help
 

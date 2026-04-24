@@ -1,1 +1,6 @@
 tests/ast_bad.hop:3:23: error: HOP1006: expected expression
+  3 |     var x i32 = (1 + 2
+    |                       ^
+tests/ast_bad.hop:3:23: note: expected expr_form expression
+tests/ast_bad.hop:3:23: note: expected token RPAREN
+tests/ast_bad.hop:3:23: fix-it: insert ")"

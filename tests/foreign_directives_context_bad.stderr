@@ -1,1 +1,5 @@
 tests/foreign_directives_context_bad.hop:4:26: error: HOP1004: unexpected token
+  4 | pub fn helper(v i32) i32 context AppContext {
+    |                          ^~~~~~~
+tests/foreign_directives_context_bad.hop:4:26: note: expected token SEMICOLON
+tests/foreign_directives_context_bad.hop:4:26: fix-it: insert ";"

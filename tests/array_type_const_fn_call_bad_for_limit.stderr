@@ -1,1 +1,6 @@
 tests/array_type_const_fn_call_bad_for_limit.hop:9:13: error: HOP2054: array length must be a const integer expression: for-loop exceeded const-eval iteration limit
+  9 | 	var a [i32 spins(1)]
+    | 	           ^~~~~~~~
+tests/array_type_const_fn_call_bad_for_limit.hop:4:2: note: for-loop exceeded const-eval iteration limit
+  4 | 	for i = 0; i < n; i += 0 {}
+    | 	^~~~~~~~~~~~~~~~~~~~~~~~~~~

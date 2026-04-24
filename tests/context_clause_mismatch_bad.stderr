@@ -1,1 +1,5 @@
 tests/context_clause_mismatch_bad.hop:14:16: error: HOP1004: unexpected token
+  14 | fn f() context CtxA
+    |                ^~~~
+tests/context_clause_mismatch_bad.hop:14:16: note: expected token SEMICOLON
+tests/context_clause_mismatch_bad.hop:14:16: fix-it: insert ";"

@@ -1,1 +1,6 @@
 tests/consteval_string_index_oob_bad.hop:9:16: error: HOP2083: const block failed compile-time evaluation: index is out of bounds in const evaluation
+  9 | 	require_third("abc")
+    | 	              ^~~~~
+tests/consteval_string_index_oob_bad.hop:4:10: note: index is out of bounds in const evaluation
+  4 | 		assert s[3] == 0
+    | 		       ^~~~

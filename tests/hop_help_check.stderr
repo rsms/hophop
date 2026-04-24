@@ -1,2 +1,2 @@
 usage:
-    hop check <srcfile>
+    hop check [--diag-format <text|jsonl>] <srcfile>

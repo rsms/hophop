@@ -1,1 +1,6 @@
 tests/const_block_assert_fail_bad.hop:9:19: error: HOP2083: const block failed compile-time evaluation: assert condition evaluated to false during const evaluation
+  9 | 	must_be_positive(0)
+    | 	                 ^
+tests/const_block_assert_fail_bad.hop:4:3: note: assert condition evaluated to false during const evaluation
+  4 | 		assert n > 0
+    | 		^~~~~~~~~~~~

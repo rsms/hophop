@@ -18,6 +18,18 @@ void H2TCSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
     diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
+    diag->phase = H2DiagPhase_TYPECHECK;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
 }
 
 void H2TCSetDiagWithArg(
@@ -40,6 +52,18 @@ void H2TCSetDiagWithArg(
     diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
+    diag->phase = H2DiagPhase_TYPECHECK;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
 }
 
 int H2TCFailSpan(H2TypeCheckCtx* c, H2DiagCode code, uint32_t start, uint32_t end) {
@@ -53,26 +77,19 @@ int H2TCFailDuplicateDefinition(
     uint32_t        nameEnd,
     uint32_t        otherStart,
     uint32_t        otherEnd) {
-    const char prefix[] = "other declaration of '";
-    const char suffix[] = "'";
-    uint32_t   nameLen = (nameEnd > nameStart && nameEnd <= c->src.len) ? nameEnd - nameStart : 0;
-    uint32_t hintLen = (uint32_t)(sizeof(prefix) - 1u) + nameLen + (uint32_t)(sizeof(suffix) - 1u);
-    char*    hint;
     H2TCSetDiagWithArg(c->diag, H2Diag_DUPLICATE_SYMBOL, nameStart, nameEnd, nameStart, nameEnd);
     if (c->diag == NULL) {
         return -1;
     }
     c->diag->relatedStart = otherStart;
     c->diag->relatedEnd = otherEnd;
-    hint = (char*)H2ArenaAlloc(c->arena, hintLen + 1u, 1u);
-    if (hint != NULL) {
-        memcpy(hint, prefix, sizeof(prefix) - 1u);
-        if (nameLen > 0) {
-            memcpy(hint + sizeof(prefix) - 1u, c->src.ptr + nameStart, nameLen);
-        }
-        memcpy(hint + sizeof(prefix) - 1u + nameLen, suffix, sizeof(suffix));
-        c->diag->hintOverride = hint;
-    }
+    (void)H2DiagAddNote(
+        c->arena,
+        c->diag,
+        H2DiagNoteKind_PREVIOUS_DEFINITION,
+        otherStart,
+        otherEnd,
+        "previous definition is here");
     return -1;
 }
 

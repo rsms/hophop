@@ -1074,7 +1074,11 @@ def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
         env = case_env(case)
     except ValueError as e:
         return fail(str(e))
-    cp = run_cmd([str(argv0), *[str(arg) for arg in args_field]], cwd=work_dir, env=env)
+    cp = run_cmd(
+        [str(argv0), *[expand_expected_placeholders(str(arg)) for arg in args_field]],
+        cwd=work_dir,
+        env=env,
+    )
     expect_exit = int(case.get("expect_exit", 0))
     if cp.returncode != expect_exit:
         return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")

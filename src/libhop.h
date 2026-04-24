@@ -81,6 +81,46 @@ typedef enum {
     H2DiagType_WARNING = 1,
 } H2DiagType;
 
+typedef enum {
+    H2DiagPhase_UNKNOWN = 0,
+    H2DiagPhase_LEX,
+    H2DiagPhase_PARSE,
+    H2DiagPhase_RESOLVE,
+    H2DiagPhase_TYPECHECK,
+    H2DiagPhase_CONSTEVAL,
+    H2DiagPhase_MIR,
+    H2DiagPhase_CODEGEN_C,
+    H2DiagPhase_CODEGEN_WASM,
+    H2DiagPhase_COMPILER,
+} H2DiagPhase;
+
+typedef enum {
+    H2DiagNoteKind_RELATED = 0,
+    H2DiagNoteKind_PREVIOUS_DEFINITION,
+    H2DiagNoteKind_REQUIRED_BY,
+    H2DiagNoteKind_INFERRED_FROM,
+    H2DiagNoteKind_INSTANTIATED_FROM,
+    H2DiagNoteKind_CALLED_FROM,
+    H2DiagNoteKind_IMPORTED_HERE,
+    H2DiagNoteKind_CANDIDATE,
+    H2DiagNoteKind_BECAUSE_OF,
+} H2DiagNoteKind;
+
+typedef enum {
+    H2DiagFixItKind_REPLACE = 0,
+    H2DiagFixItKind_INSERT,
+    H2DiagFixItKind_DELETE,
+} H2DiagFixItKind;
+
+typedef enum {
+    H2DiagExpectationKind_TOKEN = 0,
+    H2DiagExpectationKind_DECL_FORM,
+    H2DiagExpectationKind_EXPR_FORM,
+    H2DiagExpectationKind_TYPE_KIND,
+    H2DiagExpectationKind_SYMBOL_KIND,
+    H2DiagExpectationKind_ARG_SHAPE,
+} H2DiagExpectationKind;
+
 typedef struct {
     const char* _Nullable ptr;
     uint32_t len;
@@ -90,6 +130,25 @@ typedef struct {
     void* _Nullable ctx;
     void (*write)(void* _Nullable ctx, const char* data, uint32_t len);
 } H2Writer;
+
+typedef struct {
+    H2DiagNoteKind kind;
+    uint32_t       start;
+    uint32_t       end;
+    const char* _Nullable message;
+} H2DiagNote;
+
+typedef struct {
+    H2DiagFixItKind kind;
+    uint32_t        start;
+    uint32_t        end;
+    const char* _Nullable text;
+} H2DiagFixIt;
+
+typedef struct {
+    H2DiagExpectationKind kind;
+    const char* _Nullable text;
+} H2DiagExpectation;
 
 typedef void* _Nullable (*H2ArenaGrowFn)(
     void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
@@ -142,6 +201,16 @@ typedef struct {
     uint32_t   relatedEnd;
     const char* _Nullable detail;
     const char* _Nullable hintOverride;
+    H2DiagPhase phase;
+    uint32_t    groupId;
+    uint8_t     isPrimary;
+    uint8_t     _reserved[3];
+    const H2DiagNote* _Nullable notes;
+    uint32_t notesLen;
+    const H2DiagFixIt* _Nullable fixIts;
+    uint32_t fixItsLen;
+    const H2DiagExpectation* _Nullable expectations;
+    uint32_t expectationsLen;
 } H2Diag;
 
 typedef void (*H2DiagSinkFn)(void* _Nullable ctx, const H2Diag* _Nonnull diag);
@@ -158,6 +227,25 @@ const char* H2DiagMessage(H2DiagCode code);
 const char* _Nullable H2DiagHint(H2DiagCode code);
 H2DiagType H2DiagTypeOfCode(H2DiagCode code);
 uint8_t    H2DiagArgCount(H2DiagCode code);
+int        H2DiagAddNote(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagNoteKind kind,
+    uint32_t       start,
+    uint32_t       end,
+    const char* _Nullable message);
+int H2DiagAddFixIt(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagFixItKind kind,
+    uint32_t        start,
+    uint32_t        end,
+    const char* _Nullable text);
+int H2DiagAddExpectation(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagExpectationKind kind,
+    const char* _Nullable text);
 
 typedef enum {
     H2Tok_INVALID = 0,

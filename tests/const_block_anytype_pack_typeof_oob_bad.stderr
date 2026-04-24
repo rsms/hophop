@@ -1,1 +1,6 @@
 tests/const_block_anytype_pack_typeof_oob_bad.hop:14:7: error: HOP2083: const block failed compile-time evaluation: anytype pack index is out of bounds
+  14 | 	demo("xxxx", 1, "2", true)
+    | 	     ^~~~~~~~~~~~~~~~~~~~
+tests/const_block_anytype_pack_typeof_oob_bad.hop:6:32: note: anytype pack index is out of bounds
+  6 | 				const t type = typeof(args[i])
+    | 				                           ^

@@ -58,12 +58,22 @@ const char* DisplayPath(const char* path) {
 static void DiagOffsetToLineCol(
     const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol);
 
+static H2DiagOutputFormat g_diagOutputFormat = H2DiagOutputFormat_TEXT;
+
 static const char* DiagIdOrFallback(H2DiagCode code) {
     const char* id = H2DiagId(code);
     if (id == NULL || id[0] == '\0') {
         return "HOP0000";
     }
     return id;
+}
+
+void SetDiagOutputFormat(H2DiagOutputFormat format) {
+    g_diagOutputFormat = format;
+}
+
+H2DiagOutputFormat GetDiagOutputFormat(void) {
+    return g_diagOutputFormat;
 }
 
 int Errorf(
@@ -362,6 +372,343 @@ static void DiagOffsetToLineCol(
     *outCol = col;
 }
 
+static const char* DiagPhaseName(H2DiagPhase phase) {
+    switch (phase) {
+        case H2DiagPhase_LEX:          return "lex";
+        case H2DiagPhase_PARSE:        return "parse";
+        case H2DiagPhase_RESOLVE:      return "resolve";
+        case H2DiagPhase_TYPECHECK:    return "typecheck";
+        case H2DiagPhase_CONSTEVAL:    return "consteval";
+        case H2DiagPhase_MIR:          return "mir";
+        case H2DiagPhase_CODEGEN_C:    return "codegen_c";
+        case H2DiagPhase_CODEGEN_WASM: return "codegen_wasm";
+        case H2DiagPhase_COMPILER:     return "compiler";
+        case H2DiagPhase_UNKNOWN:
+        default:                       return "unknown";
+    }
+}
+
+static const char* DiagNoteKindName(H2DiagNoteKind kind) {
+    switch (kind) {
+        case H2DiagNoteKind_PREVIOUS_DEFINITION: return "previous_definition";
+        case H2DiagNoteKind_REQUIRED_BY:         return "required_by";
+        case H2DiagNoteKind_INFERRED_FROM:       return "inferred_from";
+        case H2DiagNoteKind_INSTANTIATED_FROM:   return "instantiated_from";
+        case H2DiagNoteKind_CALLED_FROM:         return "called_from";
+        case H2DiagNoteKind_IMPORTED_HERE:       return "imported_here";
+        case H2DiagNoteKind_CANDIDATE:           return "candidate";
+        case H2DiagNoteKind_BECAUSE_OF:          return "because_of";
+        case H2DiagNoteKind_RELATED:
+        default:                                 return "related";
+    }
+}
+
+static const char* DiagFixItKindName(H2DiagFixItKind kind) {
+    switch (kind) {
+        case H2DiagFixItKind_INSERT:  return "insert";
+        case H2DiagFixItKind_DELETE:  return "delete";
+        case H2DiagFixItKind_REPLACE:
+        default:                      return "replace";
+    }
+}
+
+static const char* DiagExpectationKindName(H2DiagExpectationKind kind) {
+    switch (kind) {
+        case H2DiagExpectationKind_DECL_FORM:   return "decl_form";
+        case H2DiagExpectationKind_EXPR_FORM:   return "expr_form";
+        case H2DiagExpectationKind_TYPE_KIND:   return "type_kind";
+        case H2DiagExpectationKind_SYMBOL_KIND: return "symbol_kind";
+        case H2DiagExpectationKind_ARG_SHAPE:   return "arg_shape";
+        case H2DiagExpectationKind_TOKEN:
+        default:                                return "token";
+    }
+}
+
+static void DiagClampSpan(const char* _Nullable source, uint32_t* ioStart, uint32_t* ioEnd) {
+    uint32_t sourceLen;
+    if (ioStart == NULL || ioEnd == NULL) {
+        return;
+    }
+    if (source == NULL) {
+        if (*ioEnd < *ioStart) {
+            *ioEnd = *ioStart;
+        }
+        return;
+    }
+    sourceLen = (uint32_t)strlen(source);
+    if (*ioStart > sourceLen) {
+        *ioStart = sourceLen;
+    }
+    if (*ioEnd > sourceLen) {
+        *ioEnd = sourceLen;
+    }
+    if (*ioEnd < *ioStart) {
+        *ioEnd = *ioStart;
+    }
+}
+
+static char* _Nullable DiagDupFormatMessage(
+    const char* _Nullable source, const H2Diag* diag, int useIdentifierWording) {
+    const char* fmt = H2DiagMessage(diag->code);
+    uint8_t     argCount = H2DiagArgCount(diag->code);
+    uint32_t    spanStart = diag->start;
+    uint32_t    spanEnd = diag->end;
+    uint32_t    argStart = diag->argStart;
+    uint32_t    argEnd = diag->argEnd;
+    char*       arg = NULL;
+    char*       out = NULL;
+    int         need;
+
+    DiagClampSpan(source, &spanStart, &spanEnd);
+    DiagClampSpan(source, &argStart, &argEnd);
+
+    if (useIdentifierWording && diag->code == H2Diag_UNKNOWN_SYMBOL && source != NULL
+        && spanEnd > spanStart)
+    {
+        char* ident = H2CDupSlice(source, spanStart, spanEnd);
+        if (ident == NULL) {
+            return H2CDupCStr("unknown identifier");
+        }
+        need = snprintf(NULL, 0, "unknown identifier '%s'", ident);
+        if (need >= 0) {
+            out = (char*)malloc((size_t)need + 1u);
+            if (out != NULL) {
+                snprintf(out, (size_t)need + 1u, "unknown identifier '%s'", ident);
+            }
+        }
+        free(ident);
+        return out;
+    }
+    if (argCount == 0) {
+        return H2CDupCStr(fmt);
+    }
+    if (argCount != 1) {
+        return H2CDupCStr(fmt);
+    }
+    if (source != NULL && argEnd > argStart) {
+        arg = H2CDupSlice(source, argStart, argEnd);
+    } else {
+        arg = H2CDupCStr("");
+    }
+    if (arg == NULL) {
+        return H2CDupCStr(fmt);
+    }
+    need = snprintf(NULL, 0, fmt, arg);
+    if (need >= 0) {
+        out = (char*)malloc((size_t)need + 1u);
+        if (out != NULL) {
+            snprintf(out, (size_t)need + 1u, fmt, arg);
+        }
+    }
+    free(arg);
+    return out;
+}
+
+static void DiagPrintJsonEscaped(FILE* f, const char* _Nullable s) {
+    const unsigned char* p = (const unsigned char*)s;
+    if (s == NULL) {
+        fputs("null", f);
+        return;
+    }
+    fputc('"', f);
+    while (*p != 0) {
+        unsigned char c = *p++;
+        switch (c) {
+            case '"':  fputs("\\\"", f); break;
+            case '\\': fputs("\\\\", f); break;
+            case '\b': fputs("\\b", f); break;
+            case '\f': fputs("\\f", f); break;
+            case '\n': fputs("\\n", f); break;
+            case '\r': fputs("\\r", f); break;
+            case '\t': fputs("\\t", f); break;
+            default:
+                if (c < 0x20u) {
+                    fprintf(f, "\\u%04x", (unsigned)c);
+                } else {
+                    fputc((int)c, f);
+                }
+                break;
+        }
+    }
+    fputc('"', f);
+}
+
+static void DiagPrintJsonSpan(FILE* f, const char* _Nullable source, uint32_t start, uint32_t end) {
+    uint32_t line = 0;
+    uint32_t col = 0;
+    uint32_t endLine = 0;
+    uint32_t endCol = 0;
+    DiagClampSpan(source, &start, &end);
+    if (source != NULL) {
+        DiagOffsetToLineCol(source, start, &line, &col);
+        DiagOffsetToLineCol(source, end, &endLine, &endCol);
+    }
+    fprintf(
+        f,
+        "{\"start\":%u,\"end\":%u,\"line\":%u,\"column\":%u,\"end_line\":%u,\"end_column\":%u}",
+        start,
+        end,
+        line,
+        col,
+        endLine,
+        endCol);
+}
+
+static int DiagShouldPrintContext(const H2Diag* diag) {
+    return diag != NULL && (diag->notesLen > 0 || diag->fixItsLen > 0 || diag->expectationsLen > 0);
+}
+
+static uint32_t DiagAdvanceVisualColumn(uint32_t col, char c) {
+    if (c == '\t') {
+        return ((col / 8u) + 1u) * 8u;
+    }
+    return col + 1u;
+}
+
+static void DiagPrintSourceContext(const char* _Nullable source, uint32_t start, uint32_t end) {
+    uint32_t line = 0;
+    uint32_t lineStart;
+    uint32_t lineEnd;
+    uint32_t i;
+    uint32_t visualCol = 0;
+    uint32_t markLen = 1;
+    if (source == NULL) {
+        return;
+    }
+    DiagClampSpan(source, &start, &end);
+    lineStart = start;
+    while (lineStart > 0 && source[lineStart - 1u] != '\n') {
+        lineStart--;
+    }
+    lineEnd = end;
+    while (source[lineEnd] != '\0' && source[lineEnd] != '\n') {
+        lineEnd++;
+    }
+    DiagOffsetToLineCol(source, start, &line, &visualCol);
+    fprintf(stderr, "  %u | %.*s\n", line, (int)(lineEnd - lineStart), source + lineStart);
+    fprintf(stderr, "    | ");
+    visualCol = 0;
+    for (i = lineStart; i < start; i++) {
+        if (source[i] == '\t') {
+            fputc('\t', stderr);
+        } else {
+            fputc(' ', stderr);
+        }
+        visualCol = DiagAdvanceVisualColumn(visualCol, source[i]);
+    }
+    if (end > start) {
+        uint32_t spanCol = visualCol;
+        markLen = 0;
+        for (i = start; i < end; i++) {
+            uint32_t nextCol = DiagAdvanceVisualColumn(spanCol, source[i]);
+            markLen += nextCol - spanCol;
+            spanCol = nextCol;
+        }
+        if (markLen == 0) {
+            markLen = 1;
+        }
+    }
+    fputc('^', stderr);
+    for (i = 1; i < markLen; i++) {
+        fputc('~', stderr);
+    }
+    fputc('\n', stderr);
+}
+
+static void DiagPrintTextSecondary(
+    const char* filename,
+    const char* _Nullable source,
+    uint32_t    start,
+    uint32_t    end,
+    const char* label,
+    const char* _Nullable text,
+    int printContext) {
+    uint32_t line = start;
+    uint32_t col = end;
+    if (source != NULL) {
+        DiagOffsetToLineCol(source, start, &line, &col);
+    }
+    fprintf(stderr, "%s:%u:%u: %s: %s\n", DisplayPath(filename), line, col, label, text);
+    if (printContext) {
+        DiagPrintSourceContext(source, start, end);
+    }
+}
+
+static int PrintHOPDiagJSON(
+    const char* filename,
+    const char* _Nullable source,
+    const H2Diag* diag,
+    int           useIdentifierWording) {
+    uint32_t    i;
+    char*       message = DiagDupFormatMessage(source, diag, useIdentifierWording);
+    const char* hint =
+        (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
+            ? diag->hintOverride
+            : H2DiagHint(diag->code);
+    fprintf(stderr, "{");
+    fprintf(stderr, "\"id\":");
+    DiagPrintJsonEscaped(stderr, DiagIdOrFallback(diag->code));
+    fprintf(stderr, ",\"severity\":");
+    DiagPrintJsonEscaped(stderr, diag->type == H2DiagType_WARNING ? "warning" : "error");
+    fprintf(stderr, ",\"phase\":");
+    DiagPrintJsonEscaped(stderr, DiagPhaseName(diag->phase));
+    fprintf(stderr, ",\"message\":");
+    DiagPrintJsonEscaped(stderr, message != NULL ? message : H2DiagMessage(diag->code));
+    fprintf(stderr, ",\"detail\":");
+    DiagPrintJsonEscaped(stderr, diag->detail);
+    fprintf(stderr, ",\"hint\":");
+    DiagPrintJsonEscaped(stderr, hint);
+    fprintf(stderr, ",\"path\":");
+    DiagPrintJsonEscaped(stderr, DisplayPath(filename));
+    fprintf(stderr, ",\"span\":");
+    DiagPrintJsonSpan(stderr, source, diag->start, diag->end);
+    fprintf(
+        stderr,
+        ",\"group_id\":%u,\"is_primary\":%s",
+        diag->groupId,
+        diag->isPrimary ? "true" : "false");
+    fprintf(stderr, ",\"notes\":[");
+    for (i = 0; i < diag->notesLen; i++) {
+        if (i != 0) {
+            fputc(',', stderr);
+        }
+        fprintf(stderr, "{\"kind\":");
+        DiagPrintJsonEscaped(stderr, DiagNoteKindName(diag->notes[i].kind));
+        fprintf(stderr, ",\"message\":");
+        DiagPrintJsonEscaped(stderr, diag->notes[i].message);
+        fprintf(stderr, ",\"span\":");
+        DiagPrintJsonSpan(stderr, source, diag->notes[i].start, diag->notes[i].end);
+        fputc('}', stderr);
+    }
+    fprintf(stderr, "],\"fixits\":[");
+    for (i = 0; i < diag->fixItsLen; i++) {
+        if (i != 0) {
+            fputc(',', stderr);
+        }
+        fprintf(stderr, "{\"kind\":");
+        DiagPrintJsonEscaped(stderr, DiagFixItKindName(diag->fixIts[i].kind));
+        fprintf(stderr, ",\"span\":");
+        DiagPrintJsonSpan(stderr, source, diag->fixIts[i].start, diag->fixIts[i].end);
+        fprintf(stderr, ",\"text\":");
+        DiagPrintJsonEscaped(stderr, diag->fixIts[i].text);
+        fputc('}', stderr);
+    }
+    fprintf(stderr, "],\"expectations\":[");
+    for (i = 0; i < diag->expectationsLen; i++) {
+        if (i != 0) {
+            fputc(',', stderr);
+        }
+        fprintf(stderr, "{\"kind\":");
+        DiagPrintJsonEscaped(stderr, DiagExpectationKindName(diag->expectations[i].kind));
+        fprintf(stderr, ",\"text\":");
+        DiagPrintJsonEscaped(stderr, diag->expectations[i].text);
+        fputc('}', stderr);
+    }
+    fprintf(stderr, "]}\n");
+    free(message);
+    return diag->type == H2DiagType_WARNING ? 0 : -1;
+}
+
 static int PrintHOPDiagEx(
     const char* filename,
     const char* _Nullable source,
@@ -369,39 +716,17 @@ static int PrintHOPDiagEx(
     int           includeHint,
     int           useLineCol,
     int           useIdentifierWording) {
-    const char* msg = H2DiagMessage(diag->code);
-    uint8_t     argCount = H2DiagArgCount(diag->code);
+    char*       message;
     const char* diagId = DiagIdOrFallback(diag->code);
     const char* severity = diag->type == H2DiagType_WARNING ? "warning" : "error";
     const char* hint;
-    uint32_t    sourceLen = source != NULL ? (uint32_t)strlen(source) : 0u;
-    uint32_t    spanStart = diag->start;
-    uint32_t    spanEnd = diag->end;
-    uint32_t    argStart = diag->argStart;
-    uint32_t    argEnd = diag->argEnd;
     uint32_t    locA = diag->start;
     uint32_t    locB = diag->end;
     uint32_t    hintLocA = diag->start;
     uint32_t    hintLocB = diag->end;
-    if (source != NULL) {
-        if (spanStart > sourceLen) {
-            spanStart = sourceLen;
-        }
-        if (spanEnd > sourceLen) {
-            spanEnd = sourceLen;
-        }
-        if (spanEnd < spanStart) {
-            spanEnd = spanStart;
-        }
-        if (argStart > sourceLen) {
-            argStart = sourceLen;
-        }
-        if (argEnd > sourceLen) {
-            argEnd = sourceLen;
-        }
-        if (argEnd < argStart) {
-            argEnd = argStart;
-        }
+    uint32_t    i;
+    if (GetDiagOutputFormat() == H2DiagOutputFormat_JSONL) {
+        return PrintHOPDiagJSON(filename, source, diag, useIdentifierWording);
     }
     if (useLineCol && source != NULL) {
         DiagOffsetToLineCol(source, diag->start, &locA, &locB);
@@ -413,36 +738,9 @@ static int PrintHOPDiagEx(
         }
     }
 
+    message = DiagDupFormatMessage(source, diag, useIdentifierWording);
     fprintf(stderr, "%s:%u:%u: %s: %s: ", DisplayPath(filename), locA, locB, severity, diagId);
-
-    if (useIdentifierWording && diag->code == H2Diag_UNKNOWN_SYMBOL && source != NULL
-        && spanEnd > spanStart)
-    {
-        char* ident = H2CDupSlice(source, spanStart, spanEnd);
-        if (ident != NULL) {
-            fprintf(stderr, "unknown identifier '%s'", ident);
-            free(ident);
-        } else {
-            fputs("unknown identifier", stderr);
-        }
-    } else if (argCount == 0) {
-        fputs(msg, stderr);
-    } else if (argCount == 1) {
-        char* arg = NULL;
-        if (source != NULL && argEnd > argStart) {
-            arg = H2CDupSlice(source, argStart, argEnd);
-        } else {
-            arg = H2CDupCStr("");
-        }
-        if (arg == NULL) {
-            fputs(msg, stderr);
-        } else {
-            fprintf(stderr, msg, arg);
-            free(arg);
-        }
-    } else {
-        fputs(msg, stderr);
-    }
+    fputs(message != NULL ? message : H2DiagMessage(diag->code), stderr);
     if (diag->detail != NULL && diag->detail[0] != '\0') {
         if (diag->code == H2Diag_SWITCH_MISSING_CASES) {
             fprintf(stderr, " %s", diag->detail);
@@ -459,6 +757,42 @@ static int PrintHOPDiagEx(
             diag->argEnd > 0 ? (100.0 * (double)diag->argStart / (double)diag->argEnd) : 0.0);
     }
     fputc('\n', stderr);
+    if (DiagShouldPrintContext(diag)) {
+        DiagPrintSourceContext(source, diag->start, diag->end);
+        for (i = 0; i < diag->notesLen; i++) {
+            const char* text =
+                diag->notes[i].message != NULL
+                    ? diag->notes[i].message
+                    : DiagNoteKindName(diag->notes[i].kind);
+            DiagPrintTextSecondary(
+                filename, source, diag->notes[i].start, diag->notes[i].end, "note", text, 1);
+        }
+        for (i = 0; i < diag->expectationsLen; i++) {
+            char        buffer[256];
+            const char* kindName = DiagExpectationKindName(diag->expectations[i].kind);
+            const char* text = diag->expectations[i].text != NULL ? diag->expectations[i].text : "";
+            snprintf(buffer, sizeof(buffer), "expected %s %s", kindName, text);
+            DiagPrintTextSecondary(filename, source, diag->start, diag->end, "note", buffer, 0);
+        }
+        for (i = 0; i < diag->fixItsLen; i++) {
+            char        buffer[256];
+            const char* text = diag->fixIts[i].text != NULL ? diag->fixIts[i].text : "";
+            if (diag->fixIts[i].kind == H2DiagFixItKind_DELETE) {
+                snprintf(buffer, sizeof(buffer), "delete highlighted text");
+            } else {
+                snprintf(
+                    buffer, sizeof(buffer), "%s %s", DiagFixItKindName(diag->fixIts[i].kind), text);
+            }
+            DiagPrintTextSecondary(
+                filename,
+                source,
+                diag->fixIts[i].start,
+                diag->fixIts[i].end,
+                "fix-it",
+                buffer,
+                diag->fixIts[i].kind != H2DiagFixItKind_INSERT);
+        }
+    }
 
     (void)includeHint;
     hint = (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
@@ -474,6 +808,7 @@ static int PrintHOPDiagEx(
             diagId,
             hint);
     }
+    free(message);
     return diag->type == H2DiagType_WARNING ? 0 : -1;
 }
 

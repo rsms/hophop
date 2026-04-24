@@ -1,1 +1,4 @@
 tests/platform_import_alias_bad.hop:2:8: error: HOP1004: unexpected token
+  2 | import p "platform"
+    |        ^
+tests/platform_import_alias_bad.hop:2:8: note: expected token STRING

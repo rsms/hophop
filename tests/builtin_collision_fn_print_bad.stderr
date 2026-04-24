@@ -1,2 +1,6 @@
 tests/builtin_collision_fn_print_bad.hop:2:4: error: HOP2001: duplicate definition 'print'
-tests/builtin_collision_fn_print_bad.hop:3:1: hint: HOP2001: other declaration of 'print'
+  2 | fn print(message &str) {}
+    |    ^~~~~
+tests/builtin_collision_fn_print_bad.hop:3:1: note: previous definition is here
+  3 | 
+    | ^

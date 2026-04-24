@@ -70,6 +70,8 @@
 {"id":"cli.mir.help.stderr","suite":"cli","kind":"hop_cli","args":["mir","--help"],"expect_exit":0,"expect_stderr":"tests/hop_help_mir.stderr"}
 {"id":"cli.mir.help.short.stderr","suite":"cli","kind":"hop_cli","args":["mir","-h"],"expect_exit":0,"expect_stderr":"tests/hop_help_mir.stderr"}
 {"id":"cli.check.missing_arg.stderr","suite":"cli","kind":"hop_cli","args":["check"],"expect_exit":2,"expect_stderr":"tests/hop_help_check.stderr"}
+{"id":"cli.check.jsonl.stderr","suite":"cli","kind":"hop_cli","args":["check","--diag-format","jsonl","{{ROOT}}/tests/duplicate_definition_name_bad.hop"],"expect_exit":1,"expect_stderr":"tests/diag_jsonl_duplicate_definition.stderr"}
+{"id":"cli.ast.jsonl.stderr","suite":"cli","kind":"hop_cli","args":["ast","--diag-format","jsonl","{{ROOT}}/tests/ast_bad.hop"],"expect_exit":1,"expect_stderr":"tests/diag_jsonl_ast_bad.stderr"}
 {"id":"cli.version.stdout","suite":"cli","kind":"hop_cli","args":["--version"],"expect_exit":0,"stdout_empty":false,"stderr_empty":true,"stdout_contains":"HopHop compiler version 1 ("}
 {"id":"cli.unknown_command.stderr","suite":"cli","kind":"hop_cli","args":["sdf"],"expect_exit":2,"expect_stderr":"tests/hop_unknown_command.stderr"}
 {"id":"mir:tests/mir_cstr_runtime_ok.hop","suite":"spec.lex_parse_check","kind":"hop_stdout_eq","mode":"mir","input":"tests/mir_cstr_runtime_ok.hop","expect":"tests/mir_cstr_runtime_ok.mir"}

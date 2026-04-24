@@ -85,6 +85,7 @@ Runs `hop` with an explicit raw argument list for CLI behavior tests.
 Required:
 
 - `args` (array of strings): argv entries after the executable name
+- `args` entries may use `{{ROOT}}` to refer to the repository root
 
 Optional:
 

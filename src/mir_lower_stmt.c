@@ -76,6 +76,22 @@ static void H2MirLowerStmtSetDiag(
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
+    diag->phase = H2DiagPhase_MIR;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
 }
 
 static void H2MirLowerStmtSetUnsupportedDetail(

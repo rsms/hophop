@@ -98,19 +98,23 @@ static void PrintUsage(const char* argv0) {
         stderr,
         "usage:\n"
         "    %s --version\n"
-        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
+        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] <pkgdir|srcfile>\n"
         "    %s fmt [--check] [<file-or-dir> ...]\n"
-        "    %s compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile> "
-        "[-o <output>]\n"
+        "    %s compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] <pkgdir|srcfile> [-o <output>]\n"
         "    %s genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] "
         "<pkgdir|srcfile> "
         "[out]\n"
-        "    %s check <srcfile>\n"
+        "    %s check [--diag-format <text|jsonl>] <srcfile>\n"
         "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] "
         "<pkgdir|srcfile>\n"
-        "    %s lex <srcfile>\n"
-        "    %s ast <srcfile>\n"
-        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n"
+        "    %s lex [--diag-format <text|jsonl>] <srcfile>\n"
+        "    %s ast [--diag-format <text|jsonl>] <srcfile>\n"
+        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] <pkgdir|srcfile>\n"
         "    %s --version\n"
         "    %s --help\n"
         "\n"
@@ -140,7 +144,8 @@ static void PrintSharedPlatformOptions(void) {
         "\noptions:\n"
         "    --platform <target>   target platform\n"
         "    --arch <name>         target architecture\n"
-        "    --cache-dir <dir>     compiler cache directory\n");
+        "    --cache-dir <dir>     compiler cache directory\n"
+        "    --diag-format <fmt>   diagnostics output format (`text` or `jsonl`)\n");
 }
 
 static void PrintRunHelp(const char* argv0) {
@@ -148,7 +153,8 @@ static void PrintRunHelp(const char* argv0) {
     fprintf(
         stderr,
         "usage:\n"
-        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n",
+        "    %s run [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] <pkgdir|srcfile>\n",
         progname);
     PrintSharedPlatformOptions();
     PrintPlatformTargetList();
@@ -173,6 +179,7 @@ static void PrintCompileHelp(const char* argv0) {
         stderr,
         "usage:\n"
         "    %s compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] "
         "<pkgdir|srcfile> [-o <output>]\n",
         progname);
     PrintSharedPlatformOptions();
@@ -187,8 +194,10 @@ static void PrintGenpkgHelp(const char* argv0, const char* mode) {
         fprintf(
             stderr,
             "    %s genpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "[--diag-format <text|jsonl>] "
             "<pkgdir|srcfile> [out]\n"
             "    %s genpkg:<backend> [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "[--diag-format <text|jsonl>] "
             "<pkgdir|srcfile> [out]\n",
             progname,
             progname);
@@ -196,6 +205,7 @@ static void PrintGenpkgHelp(const char* argv0, const char* mode) {
         fprintf(
             stderr,
             "    %s %s [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+            "[--diag-format <text|jsonl>] "
             "<pkgdir|srcfile> [out]\n",
             progname,
             mode);
@@ -206,7 +216,7 @@ static void PrintGenpkgHelp(const char* argv0, const char* mode) {
 
 static void PrintCheckHelp(const char* argv0) {
     const char* progname = ProgramBasename(argv0);
-    fprintf(stderr, "usage:\n    %s check <srcfile>\n", progname);
+    fprintf(stderr, "usage:\n    %s check [--diag-format <text|jsonl>] <srcfile>\n", progname);
 }
 
 static void PrintCheckpkgHelp(const char* argv0) {
@@ -215,6 +225,7 @@ static void PrintCheckpkgHelp(const char* argv0) {
         stderr,
         "usage:\n"
         "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] "
         "<pkgdir|srcfile>\n",
         progname);
     PrintSharedPlatformOptions();
@@ -223,12 +234,12 @@ static void PrintCheckpkgHelp(const char* argv0) {
 
 static void PrintLexHelp(const char* argv0) {
     const char* progname = ProgramBasename(argv0);
-    fprintf(stderr, "usage:\n    %s lex <srcfile>\n", progname);
+    fprintf(stderr, "usage:\n    %s lex [--diag-format <text|jsonl>] <srcfile>\n", progname);
 }
 
 static void PrintAstHelp(const char* argv0) {
     const char* progname = ProgramBasename(argv0);
-    fprintf(stderr, "usage:\n    %s ast <srcfile>\n", progname);
+    fprintf(stderr, "usage:\n    %s ast [--diag-format <text|jsonl>] <srcfile>\n", progname);
 }
 
 static void PrintMirHelp(const char* argv0) {
@@ -236,7 +247,8 @@ static void PrintMirHelp(const char* argv0) {
     fprintf(
         stderr,
         "usage:\n"
-        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>\n",
+        "    %s mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "[--diag-format <text|jsonl>] <pkgdir|srcfile>\n",
         progname);
     PrintSharedPlatformOptions();
     PrintPlatformTargetList();
@@ -304,6 +316,7 @@ static int ParseSharedCommandOptions(
     const char** outPlatformTarget,
     const char** outArchTarget,
     const char** outCacheDirArg,
+    const char** outDiagFormat,
     int* _Nullable outTestingBuild,
     int* _Nullable outHasPlatformTarget) {
     while (argi < argc) {
@@ -331,6 +344,14 @@ static int ParseSharedCommandOptions(
                 return -1;
             }
             *outCacheDirArg = argv[argi + 1];
+            argi += 2;
+            continue;
+        }
+        if (StrEq(argv[argi], "--diag-format")) {
+            if (argi + 1 >= argc) {
+                return -1;
+            }
+            *outDiagFormat = argv[argi + 1];
             argi += 2;
             continue;
         }
@@ -362,6 +383,22 @@ static int ValidateArchTargetOrUsage(const char* archTarget) {
     return 2;
 }
 
+static int ParseDiagOutputFormatOrUsage(const char* name, H2DiagOutputFormat* outFormat) {
+    if (name == NULL || outFormat == NULL) {
+        return -1;
+    }
+    if (StrEq(name, "text")) {
+        *outFormat = H2DiagOutputFormat_TEXT;
+        return 0;
+    }
+    if (StrEq(name, "jsonl")) {
+        *outFormat = H2DiagOutputFormat_JSONL;
+        return 0;
+    }
+    fprintf(stderr, "invalid diagnostic format: %s\n", name);
+    return 2;
+}
+
 static int IsKnownCommand(const char* mode) {
     if (StrEq(mode, "run") || StrEq(mode, "fmt") || StrEq(mode, "compile") || StrEq(mode, "check")
         || StrEq(mode, "checkpkg") || StrEq(mode, "lex") || StrEq(mode, "ast")
@@ -380,19 +417,21 @@ static int ErrorUnknownCommand(const char* argv0, const char* mode) {
 }
 
 int main(int argc, char* argv[]) {
-    const char* mode;
-    const char* filename = NULL;
-    const char* outFilename = NULL;
-    const char* platformTarget = NULL;
-    const char* archTarget = NULL;
-    const char* cacheDirArg = NULL;
-    char        backendName[32];
-    int         genpkgMode;
-    int         hasPlatformTarget = 0;
-    int         testingBuild = 0;
-    char*       source;
-    uint32_t    sourceLen;
-    int         argi;
+    const char*        mode;
+    const char*        filename = NULL;
+    const char*        outFilename = NULL;
+    const char*        platformTarget = NULL;
+    const char*        archTarget = NULL;
+    const char*        cacheDirArg = NULL;
+    const char*        diagFormatArg = "text";
+    char               backendName[32];
+    int                genpkgMode;
+    int                hasPlatformTarget = 0;
+    int                testingBuild = 0;
+    H2DiagOutputFormat diagOutputFormat = H2DiagOutputFormat_TEXT;
+    char*              source;
+    uint32_t           sourceLen;
+    int                argi;
 
     if (argc == 1) {
         PrintUsage(argv[0]);
@@ -426,11 +465,23 @@ int main(int argc, char* argv[]) {
     if (StrEq(mode, "compile")) {
         platformTarget = H2_DEFAULT_PLATFORM_TARGET;
         argi = ParseSharedCommandOptions(
-            argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
+            argc,
+            argv,
+            2,
+            &platformTarget,
+            &archTarget,
+            &cacheDirArg,
+            &diagFormatArg,
+            &testingBuild,
+            NULL);
         if (argi < 0) {
             PrintCommandHelp(argv[0], mode);
             return 2;
         }
+        if (ParseDiagOutputFormatOrUsage(diagFormatArg, &diagOutputFormat) != 0) {
+            return 2;
+        }
+        SetDiagOutputFormat(diagOutputFormat);
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
@@ -464,11 +515,23 @@ int main(int argc, char* argv[]) {
     if (StrEq(mode, "run")) {
         platformTarget = H2_EVAL_PLATFORM_TARGET;
         argi = ParseSharedCommandOptions(
-            argc, argv, 2, &platformTarget, &archTarget, &cacheDirArg, &testingBuild, NULL);
+            argc,
+            argv,
+            2,
+            &platformTarget,
+            &archTarget,
+            &cacheDirArg,
+            &diagFormatArg,
+            &testingBuild,
+            NULL);
         if (argi < 0 || argc - argi != 1) {
             PrintCommandHelp(argv[0], mode);
             return 2;
         }
+        if (ParseDiagOutputFormatOrUsage(diagFormatArg, &diagOutputFormat) != 0) {
+            return 2;
+        }
+        SetDiagOutputFormat(diagOutputFormat);
         if (ValidatePlatformTargetOrUsage(platformTarget) != 0) {
             return 2;
         }
@@ -499,6 +562,7 @@ int main(int argc, char* argv[]) {
             &platformTarget,
             &archTarget,
             &cacheDirArg,
+            &diagFormatArg,
             &testingBuild,
             &hasPlatformTarget);
         if (argi < 0 || argc - argi != 1) {
@@ -517,7 +581,19 @@ int main(int argc, char* argv[]) {
             return 2;
         }
     } else if (StrEq(mode, "check") || StrEq(mode, "lex") || StrEq(mode, "ast")) {
-        if (argc != 3) {
+        argi = ParseSharedCommandOptions(
+            argc,
+            argv,
+            argi,
+            &platformTarget,
+            &archTarget,
+            &cacheDirArg,
+            &diagFormatArg,
+            &testingBuild,
+            &hasPlatformTarget);
+        if (argi < 0 || argc - argi != 1 || platformTarget != NULL || archTarget != NULL
+            || cacheDirArg != NULL || testingBuild || hasPlatformTarget)
+        {
             PrintCommandHelp(argv[0], mode);
             return 2;
         }
@@ -529,6 +605,7 @@ int main(int argc, char* argv[]) {
             &platformTarget,
             &archTarget,
             &cacheDirArg,
+            &diagFormatArg,
             &testingBuild,
             &hasPlatformTarget);
         if (argi < 0) {
@@ -561,6 +638,10 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "unknown mode: %s\n", mode);
         return 2;
     }
+    if (ParseDiagOutputFormatOrUsage(diagFormatArg, &diagOutputFormat) != 0) {
+        return 2;
+    }
+    SetDiagOutputFormat(diagOutputFormat);
     if (genpkgMode == 1) {
         const char* genpkgPlatformTarget = hasPlatformTarget ? platformTarget : NULL;
         if (!hasPlatformTarget && StrEq(backendName, "c")) {

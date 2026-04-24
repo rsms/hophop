@@ -1,1 +1,6 @@
 tests/const_local_initializer_nonconst_bad.hop:3:12: error: HOP2055: const initializer must be a const expression: identifier is not a const value in this context
+  3 | 	const y = x + 1
+    | 	          ^
+tests/const_local_initializer_nonconst_bad.hop:3:12: note: identifier is not a const value in this context
+  3 | 	const y = x + 1
+    | 	          ^

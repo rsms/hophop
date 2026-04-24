@@ -1,1 +1,6 @@
 tests/const_local_grouped_initializer_nonconst_bad.hop:3:18: error: HOP2055: const initializer must be a const expression: identifier is not a const value in this context
+  3 | 	const a, b = 1, x
+    | 	                ^
+tests/const_local_grouped_initializer_nonconst_bad.hop:3:18: note: identifier is not a const value in this context
+  3 | 	const a, b = 1, x
+    | 	                ^

@@ -12,6 +12,22 @@ static void H2PSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, 
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
+    diag->phase = H2DiagPhase_PARSE;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
 }
 
 static void H2PSetDiagWithArg(
@@ -30,6 +46,22 @@ static void H2PSetDiagWithArg(
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
+    diag->relatedStart = 0;
+    diag->relatedEnd = 0;
+    diag->detail = NULL;
+    diag->hintOverride = NULL;
+    diag->phase = H2DiagPhase_PARSE;
+    diag->groupId = 0;
+    diag->isPrimary = 1;
+    diag->_reserved[0] = 0;
+    diag->_reserved[1] = 0;
+    diag->_reserved[2] = 0;
+    diag->notes = NULL;
+    diag->notesLen = 0;
+    diag->fixIts = NULL;
+    diag->fixItsLen = 0;
+    diag->expectations = NULL;
+    diag->expectationsLen = 0;
 }
 
 typedef struct {
@@ -74,15 +106,66 @@ static int H2PMatch(H2Parser* p, H2TokenKind kind) {
     return 1;
 }
 
+static const char* _Nullable H2PInsertionText(H2TokenKind kind) {
+    switch (kind) {
+        case H2Tok_COMMA:     return "\",\"";
+        case H2Tok_SEMICOLON: return "\";\"";
+        case H2Tok_RPAREN:    return "\")\"";
+        case H2Tok_RBRACK:    return "\"]\"";
+        case H2Tok_RBRACE:    return "\"}\"";
+        case H2Tok_LPAREN:    return "\"(\"";
+        case H2Tok_LBRACK:    return "\"[\"";
+        case H2Tok_LBRACE:    return "\"{\"";
+        default:              return NULL;
+    }
+}
+
+static void H2PAttachGenericExpectation(H2Parser* p, H2DiagCode code) {
+    if (p == NULL || p->diag == NULL) {
+        return;
+    }
+    switch (code) {
+        case H2Diag_EXPECTED_DECL:
+            (void)H2DiagAddExpectation(
+                p->arena, p->diag, H2DiagExpectationKind_DECL_FORM, "declaration");
+            break;
+        case H2Diag_EXPECTED_EXPR:
+            (void)H2DiagAddExpectation(
+                p->arena, p->diag, H2DiagExpectationKind_EXPR_FORM, "expression");
+            break;
+        case H2Diag_EXPECTED_TYPE:
+            (void)H2DiagAddExpectation(p->arena, p->diag, H2DiagExpectationKind_TYPE_KIND, "type");
+            break;
+        default: break;
+    }
+}
+
 static int H2PFail(H2Parser* p, H2DiagCode code) {
     const H2Token* t = H2PPeek(p);
     H2PSetDiag(p->diag, code, t->start, t->end);
+    H2PAttachGenericExpectation(p, code);
     return -1;
 }
 
 static int H2PExpect(H2Parser* p, H2TokenKind kind, H2DiagCode code, const H2Token** out) {
     if (!H2PAt(p, kind)) {
-        return H2PFail(p, code);
+        const H2Token* t = H2PPeek(p);
+        H2PSetDiag(p->diag, code, t->start, t->end);
+        H2PAttachGenericExpectation(p, code);
+        if (p->diag != NULL) {
+            (void)H2DiagAddExpectation(
+                p->arena, p->diag, H2DiagExpectationKind_TOKEN, H2TokenKindName(kind));
+            if (H2PInsertionText(kind) != NULL) {
+                (void)H2DiagAddFixIt(
+                    p->arena,
+                    p->diag,
+                    H2DiagFixItKind_INSERT,
+                    t->start,
+                    t->start,
+                    H2PInsertionText(kind));
+            }
+        }
+        return -1;
     }
     *out = H2PPeek(p);
     p->pos++;

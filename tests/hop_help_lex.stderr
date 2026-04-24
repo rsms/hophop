@@ -1,2 +1,2 @@
 usage:
-    hop lex <srcfile>
+    hop lex [--diag-format <text|jsonl>] <srcfile>

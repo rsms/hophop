@@ -1,9 +1,10 @@
 usage:
-    hop checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] <pkgdir|srcfile>
+    hop checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>
 
 options:
     --platform <target>   target platform
     --arch <name>         target architecture
     --cache-dir <dir>     compiler cache directory
+    --diag-format <fmt>   diagnostics output format (`text` or `jsonl`)
 
 <target> is one of: cli-libc (default), cli-eval, wasm-min, playbit

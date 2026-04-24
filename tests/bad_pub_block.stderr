@@ -1,1 +1,4 @@
 tests/bad_pub_block.hop:2:5: error: HOP1005: expected declaration
+  2 | pub {
+    |     ^
+tests/bad_pub_block.hop:2:5: note: expected decl_form declaration

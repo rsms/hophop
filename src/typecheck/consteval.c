@@ -290,7 +290,17 @@ void H2TCAttachConstEvalReason(H2TypeCheckCtx* c) {
     {
         return;
     }
+    c->diag->phase = H2DiagPhase_CONSTEVAL;
     c->diag->detail = H2TCAllocDiagText(c, c->lastConstEvalReason);
+    if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd) {
+        (void)H2DiagAddNote(
+            c->arena,
+            c->diag,
+            H2DiagNoteKind_BECAUSE_OF,
+            c->lastConstEvalReasonStart,
+            c->lastConstEvalReasonEnd,
+            c->lastConstEvalReason);
+    }
 }
 
 static int32_t H2TCFindPkgQualifiedFunctionValueIndexBySlice(

@@ -1,1 +1,4 @@
 tests/ast_bad_mutref_slice_type.hop:2:14: error: HOP1007: expected type
+  2 | fn main(a mut&[i32]) i32 {
+    |              ^
+tests/ast_bad_mutref_slice_type.hop:2:14: note: expected type_kind type

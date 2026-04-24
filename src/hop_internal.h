@@ -174,6 +174,11 @@ typedef struct {
     uint8_t argEndMapped;
 } H2RemapDiagStatus;
 
+typedef enum {
+    H2DiagOutputFormat_TEXT = 0,
+    H2DiagOutputFormat_JSONL,
+} H2DiagOutputFormat;
+
 #define H2_DEFAULT_PLATFORM_TARGET  "cli-libc"
 #define H2_EVAL_PLATFORM_TARGET     "cli-eval"
 #define H2_WASM_MIN_PLATFORM_TARGET "wasm-min"
@@ -215,6 +220,8 @@ int PrintHOPDiag(
     const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint);
 int PrintHOPDiagLineCol(
     const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint);
+void               SetDiagOutputFormat(H2DiagOutputFormat format);
+H2DiagOutputFormat GetDiagOutputFormat(void);
 void* _Nullable CodegenArenaGrow(void* _Nullable ctx, uint32_t minSize, uint32_t* _Nonnull outSize);
 void     CodegenArenaFree(void* _Nullable ctx, void* _Nullable block, uint32_t blockSize);
 int      CompactAstInArena(H2Arena* arena, H2Ast* ast);

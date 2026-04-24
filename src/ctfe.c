@@ -80,6 +80,7 @@ int H2CTFEEvalExprEx(
 
     if (diag != NULL) {
         *diag = (H2Diag){ 0 };
+        diag->phase = H2DiagPhase_CONSTEVAL;
     }
     if (arena == NULL || ast == NULL || outValue == NULL || outIsConst == NULL) {
         if (diag != NULL) {
@@ -89,6 +90,7 @@ int H2CTFEEvalExprEx(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->phase = H2DiagPhase_CONSTEVAL;
         }
         return -1;
     }
