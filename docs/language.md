@@ -666,7 +666,8 @@ fn f() {
 - [BI-PRINT-001][Stable] Argument MUST be `str`-assignable.
 - [BI-PRINT-002][Stable] Effective context MUST provide field `logger`.
 - [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `logger` beyond field presence.
-- [BI-PRINT-004][Provisional] `Reference-hop` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
+- [BI-PRINT-004][Stable] `print` output MUST end with a line break.
+- [BI-PRINT-005][Provisional] `Reference-hop` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
 
 ### 9.9 `fmt(format, args...)`
 - [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.

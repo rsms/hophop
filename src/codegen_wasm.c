@@ -39,6 +39,8 @@ typedef struct {
     uint16_t wasmParamValueCount;
     uint16_t wasmLocalValueCount;
     uint16_t hiddenLocalStart;
+    uint16_t directCallScratchI32Start;
+    uint16_t directCallScratchI64Start;
     uint16_t frameBaseLocal;
     uint16_t scratch0Local;
     uint16_t scratch1Local;
@@ -64,6 +66,11 @@ typedef struct {
     uint8_t  usesFrame;
     uint8_t  _reserved[1];
 } HOPWasmEmitState;
+
+enum {
+    HOPWasmDirectCallScratchI32Count = 64u,
+    HOPWasmDirectCallScratchI64Count = 32u,
+};
 
 typedef struct {
     uint32_t objectOffset;
@@ -1790,6 +1797,21 @@ static bool WasmFunctionNeedsIndirectScratch(const H2MirProgram* program, const 
     return false;
 }
 
+static bool WasmFunctionNeedsDirectCallScratch(
+    const H2MirProgram* program, const H2MirFunction* fn) {
+    uint32_t pc;
+    if (program == NULL || fn == NULL) {
+        return false;
+    }
+    for (pc = 0; pc < fn->instLen; pc++) {
+        const H2MirInst* inst = &program->insts[fn->instStart + pc];
+        if (inst->op == H2MirOp_CALL_FN && H2MirCallArgCountFromTok(inst->tok) > 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool WasmSigMatchesAllocatorIndirect(const HOPWasmFnSig* sig) {
     if (sig == NULL || sig->wasmParamCount != 7u || sig->wasmResultCount != 1u
         || sig->wasmResultTypes[0] != 0x7fu)
@@ -2010,6 +2032,8 @@ static int WasmPrepareFunctionState(
     }
     memset(state, 0, sizeof(*state));
     state->allocCallTempOffset = UINT32_MAX;
+    state->directCallScratchI32Start = UINT16_MAX;
+    state->directCallScratchI64Start = UINT16_MAX;
     state->scratchI64Local = UINT16_MAX;
     if (fn->localCount > sizeof(state->localKinds)) {
         WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
@@ -2177,6 +2201,23 @@ static int WasmPrepareFunctionState(
         state->wasmLocalValueCount = (uint16_t)(nextValueIndex + 8u);
     } else {
         state->wasmLocalValueCount = nextValueIndex;
+    }
+    if (WasmFunctionNeedsDirectCallScratch(program, fn)) {
+        if ((uint32_t)state->wasmLocalValueCount + HOPWasmDirectCallScratchI32Count
+                + HOPWasmDirectCallScratchI64Count
+            > UINT16_MAX)
+        {
+            WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+            if (diag != NULL) {
+                diag->detail = "too many Wasm locals";
+            }
+            return -1;
+        }
+        state->directCallScratchI32Start = state->wasmLocalValueCount;
+        state->directCallScratchI64Start =
+            (uint16_t)(state->directCallScratchI32Start + HOPWasmDirectCallScratchI32Count);
+        state->wasmLocalValueCount =
+            (uint16_t)(state->directCallScratchI64Start + HOPWasmDirectCallScratchI64Count);
     }
     return 0;
 }
@@ -6074,6 +6115,10 @@ static int WasmEmitFunctionRange(
                 const H2MirFunction* callee;
                 const HOPWasmFnSig*  calleeSig;
                 uint32_t             argIndex;
+                uint16_t             argLocal[32];
+                uint8_t              argSlotCount[32];
+                uint32_t             nextI32Scratch = 0u;
+                uint32_t             nextI64Scratch = 0u;
                 uint32_t             tempOffset = UINT32_MAX;
                 if (inst->aux >= program->funcLen) {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_INTERNAL, inst->start, inst->end);
@@ -6088,21 +6133,99 @@ static int WasmEmitFunctionRange(
                     }
                     return -1;
                 }
-                for (argIndex = 0; argIndex < argc; argIndex++) {
+                if (argc > sizeof(argLocal) / sizeof(argLocal[0])
+                    || (argc > 0u
+                        && (state->directCallScratchI32Start == UINT16_MAX
+                            || state->directCallScratchI64Start == UINT16_MAX)))
+                {
+                    WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                    if (diag != NULL) {
+                        diag->detail = "unsupported call shape";
+                    }
+                    return -1;
+                }
+                for (argIndex = argc; argIndex > 0u; argIndex--) {
                     uint8_t  argType = 0;
                     uint32_t argTypeRef = UINT32_MAX;
-                    uint8_t  expectedType = calleeSig->logicalParamKinds[argc - 1u - argIndex];
-                    if (WasmStackPopEx(state, &argType, &argTypeRef) != 0) {
-                        return -1;
-                    }
-                    if (WasmAdaptCallArgValue(body, program, expectedType, argType, argTypeRef)
-                        != 0)
+                    uint8_t  expectedType = calleeSig->logicalParamKinds[argIndex - 1u];
+                    uint32_t expectedSlotCount = WasmTypeKindSlotCount(expectedType);
+                    uint32_t actualSlotCount = 0u;
+                    if (WasmStackPopEx(state, &argType, &argTypeRef) != 0
+                        || (actualSlotCount = WasmTypeKindSlotCount(argType)) == 0u
+                        || expectedSlotCount == 0u
+                        || (actualSlotCount != expectedSlotCount
+                            && !(actualSlotCount == 1u && expectedSlotCount == 1u))
+                        || WasmAdaptCallArgValue(body, program, expectedType, argType, argTypeRef)
+                               != 0)
                     {
                         WasmSetDiag(
                             diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                         if (diag != NULL) {
                             diag->detail = "call argument type mismatch";
                         }
+                        return -1;
+                    }
+                    argSlotCount[argIndex - 1u] = (uint8_t)expectedSlotCount;
+                    if (expectedType == HOPWasmType_I64) {
+                        if (nextI64Scratch >= HOPWasmDirectCallScratchI64Count
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(
+                                   body,
+                                   (uint16_t)(state->directCallScratchI64Start + nextI64Scratch))
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        argLocal[argIndex - 1u] =
+                            (uint16_t)(state->directCallScratchI64Start + nextI64Scratch);
+                        nextI64Scratch++;
+                    } else if (expectedSlotCount == 2u) {
+                        if (nextI32Scratch + 1u >= HOPWasmDirectCallScratchI32Count
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(
+                                   body,
+                                   (uint16_t)(state->directCallScratchI32Start + nextI32Scratch
+                                              + 1u))
+                                   != 0
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(
+                                   body,
+                                   (uint16_t)(state->directCallScratchI32Start + nextI32Scratch))
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        argLocal[argIndex - 1u] =
+                            (uint16_t)(state->directCallScratchI32Start + nextI32Scratch);
+                        nextI32Scratch += 2u;
+                    } else {
+                        if (nextI32Scratch >= HOPWasmDirectCallScratchI32Count
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(
+                                   body,
+                                   (uint16_t)(state->directCallScratchI32Start + nextI32Scratch))
+                                   != 0)
+                        {
+                            return -1;
+                        }
+                        argLocal[argIndex - 1u] =
+                            (uint16_t)(state->directCallScratchI32Start + nextI32Scratch);
+                        nextI32Scratch++;
+                    }
+                }
+                for (argIndex = 0; argIndex < argc; argIndex++) {
+                    if (argSlotCount[argIndex] == 2u) {
+                        if (WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, argLocal[argIndex]) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, (uint16_t)(argLocal[argIndex] + 1u)) != 0)
+                        {
+                            return -1;
+                        }
+                    } else if (
+                        WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, argLocal[argIndex]) != 0)
+                    {
                         return -1;
                     }
                 }
@@ -6778,6 +6901,24 @@ static int WasmEmitFunctionBody(
             localValueTypes[localValueTypeLen++] = 0x7eu;
         }
     }
+    if (state.directCallScratchI32Start != UINT16_MAX) {
+        uint32_t scratchIndex;
+        if (localValueTypeLen + HOPWasmDirectCallScratchI32Count + HOPWasmDirectCallScratchI64Count
+            > sizeof(localValueTypes))
+        {
+            WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+            if (diag != NULL) {
+                diag->detail = "too many Wasm locals";
+            }
+            return -1;
+        }
+        for (scratchIndex = 0u; scratchIndex < HOPWasmDirectCallScratchI32Count; scratchIndex++) {
+            localValueTypes[localValueTypeLen++] = 0x7fu;
+        }
+        for (scratchIndex = 0u; scratchIndex < HOPWasmDirectCallScratchI64Count; scratchIndex++) {
+            localValueTypes[localValueTypeLen++] = 0x7eu;
+        }
+    }
     if (WasmAppendLocalDecls(body, localValueTypes, localValueTypeLen) != 0) {
         return -1;
     }
@@ -7133,7 +7274,8 @@ static int EmitWasmBackend(
     HOPWasmEntryLayout     entry = { 0 };
     HOPWasmForeignMetadata foreign = { 0 };
     uint32_t               i;
-    uint32_t               exportCount = 1u;
+    bool                   importMemory = WasmIsPlaybitPlatform(unit);
+    uint32_t               exportCount = importMemory ? 0u : 1u;
     const char             wasmHeader[8] = { '\0', 'a', 's', 'm', 0x01, 0x00, 0x00, 0x00 };
     (void)backend;
 
@@ -7286,10 +7428,21 @@ static int EmitWasmBackend(
         goto oom;
     }
 
-    if (imports.importFuncCount != 0u || imports.importGlobalCount != 0u) {
-        uint32_t importDeclCount = imports.importFuncCount + imports.importGlobalCount;
+    if (imports.importFuncCount != 0u || imports.importGlobalCount != 0u || importMemory) {
+        uint32_t importDeclCount =
+            imports.importFuncCount + imports.importGlobalCount + (importMemory ? 1u : 0u);
         if (WasmAppendULEB(&importSec, importDeclCount) != 0) {
             goto oom;
+        }
+        if (importMemory) {
+            if (WasmAppendULEB(&importSec, 3u) != 0 || WasmAppendBytes(&importSec, "env", 3u) != 0
+                || WasmAppendULEB(&importSec, 6u) != 0
+                || WasmAppendBytes(&importSec, "memory", 6u) != 0
+                || WasmAppendByte(&importSec, 0x02u) != 0 || WasmAppendByte(&importSec, 0x03u) != 0
+                || WasmAppendULEB(&importSec, 512u) != 0 || WasmAppendULEB(&importSec, 65536u) != 0)
+            {
+                goto oom;
+            }
         }
         for (i = 0; i < foreign.len; i++) {
             const H2ForeignLinkageEntry* entry = &foreign.entries[i];
@@ -7381,14 +7534,17 @@ static int EmitWasmBackend(
         }
     }
 
-    if (WasmAppendULEB(&memSec, 1u) != 0 || WasmAppendByte(&memSec, 0x00u) != 0
-        || WasmAppendULEB(&memSec, (imports.needsFrameGlobal && imports.needsHeapGlobal) ? 2u : 1u)
-               != 0)
-    {
-        goto oom;
-    }
-    if (WasmAppendSection(&out, 5u, &memSec) != 0) {
-        goto oom;
+    if (!importMemory) {
+        if (WasmAppendULEB(&memSec, 1u) != 0 || WasmAppendByte(&memSec, 0x00u) != 0
+            || WasmAppendULEB(
+                   &memSec, (imports.needsFrameGlobal && imports.needsHeapGlobal) ? 2u : 1u)
+                   != 0)
+        {
+            goto oom;
+        }
+        if (WasmAppendSection(&out, 5u, &memSec) != 0) {
+            goto oom;
+        }
     }
     if (imports.needsFrameGlobal || imports.needsHeapGlobal) {
         uint32_t globalCount =
@@ -7443,10 +7599,12 @@ static int EmitWasmBackend(
     if (WasmAppendULEB(&exportSec, exportCount) != 0) {
         goto oom;
     }
-    if (WasmAppendULEB(&exportSec, 6u) != 0 || WasmAppendBytes(&exportSec, "memory", 6u) != 0
-        || WasmAppendByte(&exportSec, 0x02u) != 0 || WasmAppendULEB(&exportSec, 0u) != 0)
-    {
-        goto oom;
+    if (!importMemory) {
+        if (WasmAppendULEB(&exportSec, 6u) != 0 || WasmAppendBytes(&exportSec, "memory", 6u) != 0
+            || WasmAppendByte(&exportSec, 0x02u) != 0 || WasmAppendULEB(&exportSec, 0u) != 0)
+        {
+            goto oom;
+        }
     }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         const H2MirFunction* fn = &unit->mirProgram->funcs[i];

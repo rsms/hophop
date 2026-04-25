@@ -210,8 +210,8 @@ Behavior:
 fn print(message &str)
 ```
 
-`print` writes a UTF-8 message to standard output.
-It is implemented by calling `context.log.handler(&context.log, message, LogLevel.Info, 0)`.
+`print` writes a UTF-8 message to standard output and ends the message with a line break.
+It is implemented by calling `context.logger.handler(&context.logger, message, LogLevel.Info, 0)`.
 
 
 ### `sizeof`

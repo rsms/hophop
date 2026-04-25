@@ -157,6 +157,8 @@ Optional:
 - `expect_exports` (array of strings): exact export name list
 - `expect_imports` (array of strings): exact imported `module.field` name list
 - `expect_func_count` (integer): expected function section count
+- `expect_playbit_log_stdout` (string): for `platform: "playbit"`, instantiate the module in
+  Node with a minimal Playbit syscall harness and compare captured log writes to this file
 
 ## Typical usage
 

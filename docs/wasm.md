@@ -138,6 +138,11 @@ This lets the backend use one consistent addressing model for:
 The exact byte layout is an implementation detail, but the rules must remain
 deterministic so the same input package always produces the same module shape.
 
+The memory owner is platform-specific. Plain and `wasm-min` modules define and
+export their linear memory so the test runner can inspect it. `playbit` modules
+instead import shared `env.memory`, because the Playbit VM host provides that
+memory and reads guest syscall buffers from it.
+
 ## How the module is built
 
 The backend writes the binary Wasm module directly.

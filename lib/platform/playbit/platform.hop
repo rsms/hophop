@@ -257,6 +257,11 @@ pub struct Buf {
 	len   int
 }
 
+struct LogLineBufs {
+	message Buf
+	newline Buf
+}
+
 pub struct HandleInfo {
 	handle     Handle
 	rights     Rights
@@ -419,16 +424,33 @@ fn log_write_impl(message &str, flags u32) Err {
 	return pb_syscall(1, op: 32, arg1, arg2: 1, arg3: flags as u64, arg4: 0, arg5: 0, arg6: 0) as Err
 }
 
+fn log_write_line_impl(message &str, flags u32) Err {
+	var bytes   &[u8] = message
+	var newline u8    = 10
+	var data    *u8   = (null as rawptr) as *u8
+	if len(bytes) > 0 {
+		data = &bytes[0]
+	}
+	var bufs LogLineBufs
+	bufs.message.bytes = data
+	bufs.message.len = len(bytes)
+	bufs.newline.bytes = &newline
+	bufs.newline.len = 1
+	var bufv *Buf = &bufs.message
+	var arg1 u64  = bufv as u64
+	return pb_syscall(1, op: 32, arg1, arg2: 2, arg3: flags as u64, arg4: 0, arg5: 0, arg6: 0) as Err
+}
+
 pub fn exit(status i32) {
 	_ = pb_syscall(1, op: 31, arg1: status as u64, arg2: 0, arg3: 0, arg4: 0, arg5: 0, arg6: 0)
 }
 
 pub fn console_log(message &str, flags i32) {
-	_ = log_write_impl(message, flags: flags as u32)
+	_ = log_write_line_impl(message, flags: flags as u32)
 }
 
 pub fn panic(message &str, flags i32) {
-	_ = log_write_impl(message, flags: flags as u32)
+	_ = log_write_line_impl(message, flags: flags as u32)
 	exit(1)
 }
 

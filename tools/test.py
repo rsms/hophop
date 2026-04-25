@@ -1218,6 +1218,63 @@ def parse_wasm_module(data: bytes) -> dict[str, Any]:
     return {"section_ids": section_ids, "exports": exports, "imports": imports, "func_count": func_count}
 
 
+def validate_wasm_module(output_path: Path) -> tuple[bool, str]:
+    node = shutil.which("node")
+    if node is None:
+        return fail("missing node executable for Wasm validation")
+    script = (
+        'const fs=require("fs");'
+        "new WebAssembly.Module(fs.readFileSync(process.argv[1]));"
+    )
+    cp = run_cmd([node, "-e", script, str(output_path)])
+    if cp.returncode != 0:
+        detail = cp.stderr.strip() or cp.stdout.strip()
+        return fail(f"wasm validation failed\n{detail}")
+    return ok()
+
+
+def run_playbit_wasm_log_output(output_path: Path) -> tuple[bool, str, str]:
+    node = shutil.which("node")
+    if node is None:
+        return False, "missing node executable for Playbit Wasm runtime check", ""
+    script = (
+        'const fs=require("fs");'
+        "const mem=new WebAssembly.Memory({initial:512,maximum:65536,shared:true});"
+        "const logs=[];"
+        "const imports={env:{memory:mem},pb:{pb_syscall(handle,op,arg1,arg2,arg3,arg4,arg5,arg6){"
+        "if(op===32){"
+        "const u8=new Uint8Array(mem.buffer);"
+        "const dv=new DataView(mem.buffer);"
+        "let s='';"
+        "for(let i=0;i<Number(arg2);i++){"
+        "const off=Number(arg1)+i*8;"
+        "const ptr=dv.getUint32(off,true);"
+        "const len=dv.getUint32(off+4,true);"
+        "s+=Buffer.from(u8.subarray(ptr,ptr+len)).toString('utf8');"
+        "}"
+        "logs.push(s);"
+        "}"
+        "return 0n;"
+        "}}};"
+        "const bytes=fs.readFileSync(process.argv[1]);"
+        "const inst=new WebAssembly.Instance(new WebAssembly.Module(bytes),imports);"
+        "if(typeof inst.exports._start !== 'function'){throw new Error('missing _start export');}"
+        "inst.exports._start();"
+        "process.stdout.write(JSON.stringify(logs.join('')));"
+    )
+    cp = run_cmd([node, "-e", script, str(output_path)])
+    if cp.returncode != 0:
+        detail = cp.stderr.strip() or cp.stdout.strip()
+        return False, f"Playbit Wasm runtime check failed\n{detail}", ""
+    try:
+        actual = json.loads(cp.stdout)
+    except json.JSONDecodeError as e:
+        return False, f"Playbit Wasm runtime check produced invalid JSON: {e}\n{cp.stdout}", ""
+    if not isinstance(actual, str):
+        return False, f"Playbit Wasm runtime check produced non-string JSON: {actual!r}", ""
+    return True, "", actual
+
+
 def compile_harness(ctx: RunContext, work_dir: Path, header_path: Path, harness_relpath: str) -> tuple[bool, str]:
     template_path = abs_path(harness_relpath)
     template = template_path.read_text()
@@ -1296,6 +1353,9 @@ def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path
         info = parse_wasm_module(output_path.read_bytes())
     except ValueError as e:
         return fail(f"invalid wasm output: {e}")
+    ok_validate, detail = validate_wasm_module(output_path)
+    if not ok_validate:
+        return False, detail
 
     if "expect_section_ids" in case and info["section_ids"] != list(case["expect_section_ids"]):
         return fail(
@@ -1309,6 +1369,24 @@ def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path
         return fail(
             f"func_count mismatch: expected {int(case['expect_func_count'])}, got {info['func_count']}"
         )
+    expected_playbit_log_path = case.get("expect_playbit_log_stdout")
+    if expected_playbit_log_path is not None:
+        if str(case.get("platform", "")) != "playbit":
+            return fail("expect_playbit_log_stdout requires platform playbit")
+        ok_runtime, detail, actual_log = run_playbit_wasm_log_output(output_path)
+        if not ok_runtime:
+            return False, detail
+        expected_log = read_text(str(expected_playbit_log_path))
+        if actual_log != expected_log:
+            diff = "".join(
+                difflib.unified_diff(
+                    expected_log.splitlines(True),
+                    actual_log.splitlines(True),
+                    fromfile=str(expected_playbit_log_path),
+                    tofile="actual.playbit.log",
+                )
+            )
+            return fail(f"Playbit log output mismatch:\n{diff}")
     return ok()
 
 
