@@ -1,5 +1,5 @@
 tests/context_duplicate_with_field_bad.hop:10:16: error: HOP1004: unexpected token
-  10 | fn f() context Ctx {}
-    |                ^~~
+   10 | fn f() context Ctx {}
+      |                ^~~
 tests/context_duplicate_with_field_bad.hop:10:16: note: expected token SEMICOLON
 tests/context_duplicate_with_field_bad.hop:10:16: fix-it: insert ";"

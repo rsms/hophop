@@ -2,8 +2,8 @@ tests/array_type_const_fn_call_bad_stmt.hop:8:13: error: HOP2054: array length m
 Call trace:
   tests/array_type_const_fn_call_bad_stmt.hop:2:4: next
   tests/array_type_const_fn_call_bad_stmt.hop:8:16: main
-  8 | 	var a [i32 next(2)]
-    | 	           ^~~~~~~
+    8 | 	var a [i32 next(2)]
+      | 	           ^~~~~~~
 tests/array_type_const_fn_call_bad_stmt.hop:3:8: note: deferred statement cannot alter control flow in const evaluation
-  3 | 	defer return x
-    | 	      ^~~~~~~~
+    3 | 	defer return x
+      | 	      ^~~~~~~~

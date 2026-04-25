@@ -1,6 +1,6 @@
 tests/topconst_const_initializer_nonconst_unused_bad.hop:4:11: error: HOP2055: const initializer must be a const expression: identifier is not a const value in this context
-  4 | const N = X
-    |           ^
+    4 | const N = X
+      |           ^
 tests/topconst_const_initializer_nonconst_unused_bad.hop:4:11: note: identifier is not a const value in this context
-  4 | const N = X
-    |           ^
+    4 | const N = X
+      |           ^

@@ -1,6 +1,6 @@
 tests/duplicate_definition_name_bad.hop:3:8: error: HOP2001: duplicate definition 'Foo'
-  3 | struct Foo {}
-    |        ^~~
+    3 | struct Foo {}
+      |        ^~~
 tests/duplicate_definition_name_bad.hop:1:8: note: previous definition is here
-  1 | struct Foo {}
-    |        ^~~
+    1 | struct Foo {}
+      |        ^~~

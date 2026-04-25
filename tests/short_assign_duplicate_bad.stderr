@@ -1,6 +1,6 @@
 tests/short_assign_duplicate_bad.hop:3:5: error: HOP2001: duplicate definition 'x'
-  3 | 	x, x := 1, 2
-    | 	   ^
+    3 | 	x, x := 1, 2
+      | 	   ^
 tests/short_assign_duplicate_bad.hop:3:2: note: previous definition is here
-  3 | 	x, x := 1, 2
-    | 	^
+    3 | 	x, x := 1, 2
+      | 	^

@@ -1,5 +1,5 @@
 tests/context_with_equals_bad.hop:2:16: error: HOP1004: unexpected token
-  2 | fn f() context struct {
-    |                ^~~~~~
+    2 | fn f() context struct {
+      |                ^~~~~~
 tests/context_with_equals_bad.hop:2:16: note: expected token SEMICOLON
 tests/context_with_equals_bad.hop:2:16: fix-it: insert ";"

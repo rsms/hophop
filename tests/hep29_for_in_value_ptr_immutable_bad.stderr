@@ -1,4 +1,4 @@
 tests/hep29_for_in_value_ptr_immutable_bad.hop:5:6: error: HOP1004: unexpected token
-  5 | 	for *v in ro {
-    | 	    ^
+    5 | 	for *v in ro {
+      | 	    ^
 tests/hep29_for_in_value_ptr_immutable_bad.hop:5:6: note: expected token IDENT

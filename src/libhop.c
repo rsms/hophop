@@ -94,6 +94,18 @@ int H2DiagAddNote(
     uint32_t       start,
     uint32_t       end,
     const char* _Nullable message) {
+    return H2DiagAddNoteEx(arena, diag, kind, start, end, message, NULL, NULL);
+}
+
+int H2DiagAddNoteEx(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagNoteKind kind,
+    uint32_t       start,
+    uint32_t       end,
+    const char* _Nullable message,
+    const char* _Nullable path,
+    const char* _Nullable source) {
     H2DiagNote note;
     if (diag == NULL) {
         return 0;
@@ -102,6 +114,8 @@ int H2DiagAddNote(
     note.start = start;
     note.end = end;
     note.message = message;
+    note.path = path;
+    note.source = source;
     if (H2DiagAppendItems(
             arena,
             (void* _Nullable*)&diag->notes,

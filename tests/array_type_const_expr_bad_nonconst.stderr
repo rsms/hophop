@@ -1,6 +1,6 @@
 tests/array_type_const_expr_bad_nonconst.hop:4:13: error: HOP2054: array length must be a const integer expression: identifier is not a const value in this context
-  4 | 	var a [i32 n]
-    | 	           ^
+    4 | 	var a [i32 n]
+      | 	           ^
 tests/array_type_const_expr_bad_nonconst.hop:4:13: note: identifier is not a const value in this context
-  4 | 	var a [i32 n]
-    | 	           ^
+    4 | 	var a [i32 n]
+      | 	           ^

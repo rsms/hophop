@@ -1,6 +1,6 @@
 tests/nested_type_member_name_conflict_bad.hop:4:9: error: HOP2001: duplicate definition 'value'
-  4 | 	struct value {
-    | 	       ^~~~~
+    4 | 	struct value {
+      | 	       ^~~~~
 tests/nested_type_member_name_conflict_bad.hop:3:2: note: previous definition is here
-  3 | 	value i64
-    | 	^~~~~
+    3 | 	value i64
+      | 	^~~~~

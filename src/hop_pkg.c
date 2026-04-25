@@ -146,6 +146,176 @@ static int CheckRunHasRemap(const H2CheckRunSpec* spec) {
     return spec != NULL && spec->remapMap != NULL && spec->remapSource != NULL;
 }
 
+static void RemapSpanOffsetToLineCol(
+    const char* source,
+    uint32_t    spanStart,
+    uint32_t    spanEnd,
+    uint32_t    offset,
+    uint32_t*   outLine,
+    uint32_t*   outCol) {
+    uint32_t i;
+    uint32_t line = 1;
+    uint32_t col = 1;
+    if (outLine != NULL) {
+        *outLine = 1;
+    }
+    if (outCol != NULL) {
+        *outCol = 1;
+    }
+    if (source == NULL || spanEnd <= spanStart) {
+        return;
+    }
+    if (offset < spanStart) {
+        offset = spanStart;
+    } else if (offset > spanEnd) {
+        offset = spanEnd;
+    }
+    i = spanStart;
+    while (i < offset && source[i] != '\0') {
+        if (source[i] == '\n') {
+            line++;
+            col = 1;
+        } else {
+            col++;
+        }
+        i++;
+    }
+    if (outLine != NULL) {
+        *outLine = line;
+    }
+    if (outCol != NULL) {
+        *outCol = col;
+    }
+}
+
+static uint32_t RemapSpanLineColToOffset(
+    const char* source,
+    uint32_t    spanStart,
+    uint32_t    spanEnd,
+    uint32_t    targetLine,
+    uint32_t    targetCol) {
+    uint32_t i = spanStart;
+    uint32_t line = 1;
+    uint32_t col = 1;
+    if (source == NULL || spanEnd <= spanStart) {
+        return spanStart;
+    }
+    if (targetLine == 0) {
+        targetLine = 1;
+    }
+    if (targetCol == 0) {
+        targetCol = 1;
+    }
+    while (i < spanEnd && source[i] != '\0') {
+        if (line == targetLine && col == targetCol) {
+            return i;
+        }
+        if (source[i] == '\n') {
+            if (line == targetLine) {
+                return i;
+            }
+            line++;
+            col = 1;
+        } else {
+            col++;
+        }
+        i++;
+    }
+    return spanEnd;
+}
+
+static int RemapCombinedOffsetForNote(
+    const H2CheckRunSpec* spec,
+    uint32_t              offset,
+    uint32_t*             outOffset,
+    const char**          outPath,
+    const char**          outSource) {
+    uint32_t i;
+    if (outOffset != NULL) {
+        *outOffset = offset;
+    }
+    if (outPath != NULL) {
+        *outPath = NULL;
+    }
+    if (outSource != NULL) {
+        *outSource = NULL;
+    }
+    if (spec == NULL || spec->remapMap == NULL || spec->source == NULL || outOffset == NULL) {
+        return 0;
+    }
+    for (i = 0; i < spec->remapMap->len; i++) {
+        const H2CombinedSourceSpan* s = &spec->remapMap->spans[i];
+        uint32_t                    line = 1;
+        uint32_t                    col = 1;
+        if (offset < s->combinedStart || offset > s->combinedEnd) {
+            continue;
+        }
+        if (offset >= s->combinedEnd) {
+            *outOffset = s->sourceEnd;
+        } else if (s->source != NULL) {
+            RemapSpanOffsetToLineCol(
+                spec->source, s->combinedStart, s->combinedEnd, offset, &line, &col);
+            *outOffset = RemapSpanLineColToOffset(
+                s->source, s->sourceStart, s->sourceEnd, line, col);
+        } else {
+            uint32_t fileIndex = 0;
+            if (!RemapCombinedOffset(
+                    spec->remapMap, offset, outOffset, &fileIndex, outPath, outSource))
+            {
+                return 0;
+            }
+        }
+        if (outPath != NULL) {
+            *outPath = s->path;
+        }
+        if (outSource != NULL) {
+            *outSource = s->source;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static void RemapCombinedDiagNotes(
+    const H2CheckRunSpec* spec, const H2Diag* diagIn, H2Diag* diagOut) {
+    H2DiagNote* notes;
+    uint32_t    i;
+    if (spec == NULL || diagIn == NULL || diagOut == NULL || diagIn->notesLen == 0
+        || spec->remapMap == NULL)
+    {
+        return;
+    }
+    notes = (H2DiagNote*)calloc(diagIn->notesLen, sizeof(H2DiagNote));
+    if (notes == NULL) {
+        return;
+    }
+    for (i = 0; i < diagIn->notesLen; i++) {
+        uint32_t    mappedStart = diagIn->notes[i].start;
+        uint32_t    mappedEnd = diagIn->notes[i].end;
+        const char* path = NULL;
+        const char* source = NULL;
+        int         startMapped = RemapCombinedOffsetForNote(
+            spec, diagIn->notes[i].start, &mappedStart, &path, &source);
+        int endMapped = RemapCombinedOffsetForNote(
+            spec, diagIn->notes[i].end, &mappedEnd, &path, &source);
+        notes[i] = diagIn->notes[i];
+        if (startMapped) {
+            notes[i].start = mappedStart;
+        }
+        if (endMapped) {
+            notes[i].end = mappedEnd;
+        }
+        if (startMapped || endMapped) {
+            notes[i].path = path;
+            notes[i].source = source;
+        } else if (!startMapped && !endMapped) {
+            notes[i].path = "<combined>";
+            notes[i].source = spec->source;
+        }
+    }
+    diagOut->notes = notes;
+}
+
 static int EmitCheckDiag(
     const H2CheckRunSpec* spec,
     const H2Diag*         diag,
@@ -157,6 +327,8 @@ static int EmitCheckDiag(
     H2Diag            remappedDiag;
     H2RemapDiagStatus remapStatus = { 0 };
     uint32_t          remappedFileIndex = 0;
+    H2DiagNote*       ownedNotes = NULL;
+    int               rc;
 
     if (spec == NULL || diag == NULL) {
         return -1;
@@ -178,6 +350,8 @@ static int EmitCheckDiag(
             return 0;
         }
         if (remapStatus.startMapped) {
+            RemapCombinedDiagNotes(spec, diag, &remappedDiag);
+            ownedNotes = (H2DiagNote*)remappedDiag.notes;
             toPrint = &remappedDiag;
             displaySource = spec->remapSource;
         } else {
@@ -186,9 +360,11 @@ static int EmitCheckDiag(
             displayFilename = "<combined>";
         }
     }
-    return spec->useLineColDiag
-             ? PrintHOPDiagLineCol(displayFilename, displaySource, toPrint, includeHint)
-             : PrintHOPDiag(displayFilename, displaySource, toPrint, includeHint);
+    rc = spec->useLineColDiag
+           ? PrintHOPDiagLineCol(displayFilename, displaySource, toPrint, includeHint)
+           : PrintHOPDiag(displayFilename, displaySource, toPrint, includeHint);
+    free(ownedNotes);
+    return rc;
 }
 
 static void TypecheckDiagSink(void* ctx, const H2Diag* diag) {
@@ -484,6 +660,27 @@ static uint32_t DeclTextSourceStart(const H2ParsedFile* file, int32_t nodeId) {
         return file->ast.nodes[firstDirective].start;
     }
     return file->ast.nodes[nodeId].start;
+}
+
+static uint32_t PubDeclTextSourceStart(const H2ParsedFile* file, int32_t nodeId) {
+    uint32_t         start;
+    uint32_t         end;
+    const H2AstNode* n;
+    if (file == NULL || nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return 0;
+    }
+    n = &file->ast.nodes[nodeId];
+    start = n->start;
+    end = n->end;
+    if ((n->flags & H2AstFlag_PUB) != 0 && start + 3u <= end
+        && memcmp(file->source + start, "pub", 3u) == 0)
+    {
+        start += 3u;
+        while (start < end && IsAsciiSpaceChar(file->source[start])) {
+            start++;
+        }
+    }
+    return start;
 }
 
 static int AppendDirectiveRunForDecl(
@@ -4662,7 +4859,8 @@ static int AppendAliasedPubDecls(
     const H2ImportRef* _Nullable imports,
     uint32_t importLen,
     int      includePrivateDecls,
-    int      forceFunctionDeclsOnly) {
+    int      forceFunctionDeclsOnly,
+    H2CombinedSourceMap* _Nullable sourceMap) {
     H2IdentMap* maps = NULL;
     uint32_t    mapLen = 0;
     uint32_t    declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
@@ -4696,11 +4894,17 @@ static int AppendAliasedPubDecls(
     }
 
     for (j = 0; j < sourcePkg->pubDeclLen; j++) {
-        char*       declText = sourcePkg->pubDecls[j].declText;
-        char*       declTextCopy = NULL;
-        const char* rewriteSource = declText;
-        uint32_t    rewriteSourceLen;
-        char*       rewritten = NULL;
+        const H2SymbolDecl* decl = &sourcePkg->pubDecls[j];
+        const H2ParsedFile* file = &sourcePkg->files[decl->fileIndex];
+        char*               declText = sourcePkg->pubDecls[j].declText;
+        char*               declTextCopy = NULL;
+        const char*         rewriteSource = declText;
+        uint32_t            rewriteSourceLen;
+        char*               rewritten = NULL;
+        uint32_t            combinedStart;
+        uint32_t            combinedEnd;
+        uint32_t            sourceStart = PubDeclTextSourceStart(file, decl->nodeId);
+        uint32_t            sourceEnd = file->ast.nodes[decl->nodeId].end;
         if (forceFunctionDeclsOnly && sourcePkg->pubDecls[j].kind == H2Ast_FN) {
             const char* bodyStart = strchr(declText, '{');
             if (bodyStart != NULL) {
@@ -4726,8 +4930,27 @@ static int AppendAliasedPubDecls(
         if (rc != 0) {
             goto done;
         }
+        combinedStart = b->len;
+        combinedEnd = combinedStart + (rewritten != NULL ? (uint32_t)strlen(rewritten) : 0u);
         if (rewritten == NULL || SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
             free(rewritten);
+            goto done;
+        }
+        if (sourceMap != NULL
+            && CombinedSourceMapAdd(
+                   sourceMap,
+                   combinedStart,
+                   combinedEnd,
+                   sourceStart,
+                   sourceEnd,
+                   decl->fileIndex,
+                   decl->nodeId,
+                   file->path,
+                   file->source)
+                   != 0)
+        {
+            free(rewritten);
+            rc = ErrorSimple("out of memory");
             goto done;
         }
         free(rewritten);
@@ -4737,6 +4960,10 @@ static int AppendAliasedPubDecls(
         const H2ParsedFile* file = &sourcePkg->files[decl->fileIndex];
         char*               namedRewritten = NULL;
         char*               rewritten = NULL;
+        uint32_t            combinedStart;
+        uint32_t            combinedEnd;
+        uint32_t            sourceStart = DeclTextSourceStart(file, decl->nodeId);
+        uint32_t            sourceEnd = file->ast.nodes[decl->nodeId].end;
         rc = RewriteDeclTextForNamedImports(
             sourcePkg, file, decl->nodeId, decl->declText, &namedRewritten);
         if (rc != 0) {
@@ -4754,9 +4981,29 @@ static int AppendAliasedPubDecls(
             free(namedRewritten);
             goto done;
         }
+        combinedStart = b->len;
+        combinedEnd = combinedStart + (rewritten != NULL ? (uint32_t)strlen(rewritten) : 0u);
         if (rewritten == NULL || SBAppendCStr(b, rewritten) != 0 || SBAppendCStr(b, "\n") != 0) {
             free(namedRewritten);
             free(rewritten);
+            goto done;
+        }
+        if (sourceMap != NULL
+            && CombinedSourceMapAdd(
+                   sourceMap,
+                   combinedStart,
+                   combinedEnd,
+                   sourceStart,
+                   sourceEnd,
+                   decl->fileIndex,
+                   decl->nodeId,
+                   file->path,
+                   file->source)
+                   != 0)
+        {
+            free(namedRewritten);
+            free(rewritten);
+            rc = ErrorSimple("out of memory");
             goto done;
         }
         free(namedRewritten);
@@ -4844,7 +5091,8 @@ static int AppendImportedPackageSurface(
     int                      includePrivateImportDecls,
     H2EmittedImportSurface** emitted,
     uint32_t*                emittedLen,
-    uint32_t*                emittedCap) {
+    uint32_t*                emittedCap,
+    H2CombinedSourceMap* _Nullable sourceMap) {
     uint32_t j;
     int      includePrivateDecls;
     if (b == NULL || dep == NULL || alias == NULL || emitted == NULL || emittedLen == NULL
@@ -4871,7 +5119,8 @@ static int AppendImportedPackageSurface(
                    NULL,
                    0,
                    0,
-                   IsSelectedPlatformImportPath(loader, dep->imports[j].path))
+                   IsSelectedPlatformImportPath(loader, dep->imports[j].path),
+                   sourceMap)
                    != 0)
         {
             return -1;
@@ -4899,7 +5148,8 @@ static int AppendImportedPackageSurface(
             dep->imports,
             dep->importLen,
             includePrivateDecls,
-            loader != NULL && dep == loader->selectedPlatformPkg)
+            loader != NULL && dep == loader->selectedPlatformPkg,
+            sourceMap)
         != 0)
     {
         return -1;
@@ -4960,7 +5210,8 @@ int BuildCombinedPackageSource(
                 includePrivateImportDecls,
                 &emitted,
                 &emittedLen,
-                &emittedCap)
+                &emittedCap,
+                sourceMap)
             != 0)
         {
             free(b.v);
@@ -5036,7 +5287,9 @@ int BuildCombinedPackageSource(
                    sourceStart,
                    sourceEnd,
                    decl->fileIndex,
-                   decl->nodeId)
+                   decl->nodeId,
+                   file->path,
+                   file->source)
                    != 0)
         {
             free(namedRewritten);

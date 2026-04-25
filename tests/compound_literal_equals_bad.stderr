@@ -1,5 +1,5 @@
 tests/compound_literal_equals_bad.hop:8:19: error: HOP1004: unexpected token
-  8 | 	var v Vec2 = { x = 1, y: 2 }
-    | 	                 ^
+    8 | 	var v Vec2 = { x = 1, y: 2 }
+      | 	                 ^
 tests/compound_literal_equals_bad.hop:8:19: note: expected token RBRACE
 tests/compound_literal_equals_bad.hop:8:19: fix-it: insert "}"

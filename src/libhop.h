@@ -136,6 +136,8 @@ typedef struct {
     uint32_t       start;
     uint32_t       end;
     const char* _Nullable message;
+    const char* _Nullable path;
+    const char* _Nullable source;
 } H2DiagNote;
 
 typedef struct {
@@ -235,6 +237,15 @@ int        H2DiagAddNote(
     uint32_t       start,
     uint32_t       end,
     const char* _Nullable message);
+int H2DiagAddNoteEx(
+    H2Arena* _Nullable arena,
+    H2Diag* _Nullable diag,
+    H2DiagNoteKind kind,
+    uint32_t       start,
+    uint32_t       end,
+    const char* _Nullable message,
+    const char* _Nullable path,
+    const char* _Nullable source);
 int H2DiagAddFixIt(
     H2Arena* _Nullable arena,
     H2Diag* _Nullable diag,

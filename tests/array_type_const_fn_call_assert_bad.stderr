@@ -3,8 +3,8 @@ Call trace:
   tests/array_type_const_fn_call_assert_bad.hop:2:4: leaf
   tests/array_type_const_fn_call_assert_bad.hop:7:4: count
   tests/array_type_const_fn_call_assert_bad.hop:12:16: main
-  12 | 	var a [i32 count(2)]
-    | 	           ^~~~~~~~
+   12 | 	var a [i32 count(2)]
+      | 	           ^~~~~~~~
 tests/array_type_const_fn_call_assert_bad.hop:3:2: note: assert condition evaluated to false during const evaluation
-  3 | 	assert n > 10, "n too small"
-    | 	^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    3 | 	assert n > 10, "n too small"
+      | 	^~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -129,6 +129,8 @@ typedef struct {
     uint32_t sourceEnd;
     uint32_t fileIndex;
     int32_t  nodeId;
+    const char* _Nullable path;
+    const char* _Nullable source;
 } H2CombinedSourceSpan;
 
 typedef struct {
@@ -237,9 +239,16 @@ int      CombinedSourceMapAdd(
     uint32_t             sourceStart,
     uint32_t             sourceEnd,
     uint32_t             fileIndex,
-    int32_t              nodeId);
+    int32_t              nodeId,
+    const char* _Nullable path,
+    const char* _Nullable source);
 int RemapCombinedOffset(
-    const H2CombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex);
+    const H2CombinedSourceMap* map,
+    uint32_t                   offset,
+    uint32_t*                  outOffset,
+    uint32_t*                  outFileIndex,
+    const char* _Nullable* _Nullable outPath,
+    const char* _Nullable* _Nullable outSource);
 void RemapCombinedDiag(
     const H2CombinedSourceMap* map,
     const H2Diag*              diagIn,

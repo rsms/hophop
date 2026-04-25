@@ -1,5 +1,5 @@
 tests/context_missing_field_bad.hop:14:32: error: HOP1004: unexpected token
-  14 | fn log_event(msg &str) context TmpCtx {}
-    |                                ^~~~~~
+   14 | fn log_event(msg &str) context TmpCtx {}
+      |                                ^~~~~~
 tests/context_missing_field_bad.hop:14:32: note: expected token SEMICOLON
 tests/context_missing_field_bad.hop:14:32: fix-it: insert ";"

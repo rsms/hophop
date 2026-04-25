@@ -585,8 +585,8 @@ static void DiagPrintSourceContext(const char* _Nullable source, uint32_t start,
         lineEnd++;
     }
     DiagOffsetToLineCol(source, start, &line, &visualCol);
-    fprintf(stderr, "  %u | %.*s\n", line, (int)(lineEnd - lineStart), source + lineStart);
-    fprintf(stderr, "    | ");
+    fprintf(stderr, "%5u | %.*s\n", line, (int)(lineEnd - lineStart), source + lineStart);
+    fprintf(stderr, "      | ");
     visualCol = 0;
     for (i = lineStart; i < start; i++) {
         if (source[i] == '\t') {
@@ -669,6 +669,8 @@ static int PrintHOPDiagJSON(
         diag->isPrimary ? "true" : "false");
     fprintf(stderr, ",\"notes\":[");
     for (i = 0; i < diag->notesLen; i++) {
+        const char* notePath = diag->notes[i].path != NULL ? diag->notes[i].path : filename;
+        const char* noteSource = diag->notes[i].source != NULL ? diag->notes[i].source : source;
         if (i != 0) {
             fputc(',', stderr);
         }
@@ -676,8 +678,10 @@ static int PrintHOPDiagJSON(
         DiagPrintJsonEscaped(stderr, DiagNoteKindName(diag->notes[i].kind));
         fprintf(stderr, ",\"message\":");
         DiagPrintJsonEscaped(stderr, diag->notes[i].message);
+        fprintf(stderr, ",\"path\":");
+        DiagPrintJsonEscaped(stderr, DisplayPath(notePath));
         fprintf(stderr, ",\"span\":");
-        DiagPrintJsonSpan(stderr, source, diag->notes[i].start, diag->notes[i].end);
+        DiagPrintJsonSpan(stderr, noteSource, diag->notes[i].start, diag->notes[i].end);
         fputc('}', stderr);
     }
     fprintf(stderr, "],\"fixits\":[");
@@ -764,8 +768,16 @@ static int PrintHOPDiagEx(
                 diag->notes[i].message != NULL
                     ? diag->notes[i].message
                     : DiagNoteKindName(diag->notes[i].kind);
+            const char* noteFilename = diag->notes[i].path != NULL ? diag->notes[i].path : filename;
+            const char* noteSource = diag->notes[i].source != NULL ? diag->notes[i].source : source;
             DiagPrintTextSecondary(
-                filename, source, diag->notes[i].start, diag->notes[i].end, "note", text, 1);
+                noteFilename,
+                noteSource,
+                diag->notes[i].start,
+                diag->notes[i].end,
+                "note",
+                text,
+                1);
         }
         for (i = 0; i < diag->expectationsLen; i++) {
             char        buffer[256];
@@ -941,7 +953,9 @@ int CombinedSourceMapAdd(
     uint32_t             sourceStart,
     uint32_t             sourceEnd,
     uint32_t             fileIndex,
-    int32_t              nodeId) {
+    int32_t              nodeId,
+    const char* _Nullable path,
+    const char* _Nullable source) {
     if (map == NULL) {
         return 0;
     }
@@ -955,15 +969,28 @@ int CombinedSourceMapAdd(
     map->spans[map->len].sourceEnd = sourceEnd;
     map->spans[map->len].fileIndex = fileIndex;
     map->spans[map->len].nodeId = nodeId;
+    map->spans[map->len].path = path;
+    map->spans[map->len].source = source;
     map->len++;
     return 0;
 }
 
 int RemapCombinedOffset(
-    const H2CombinedSourceMap* map, uint32_t offset, uint32_t* outOffset, uint32_t* outFileIndex) {
+    const H2CombinedSourceMap* map,
+    uint32_t                   offset,
+    uint32_t*                  outOffset,
+    uint32_t*                  outFileIndex,
+    const char* _Nullable* _Nullable outPath,
+    const char* _Nullable* _Nullable outSource) {
     uint32_t i;
     if (map == NULL || outOffset == NULL || outFileIndex == NULL) {
         return 0;
+    }
+    if (outPath != NULL) {
+        *outPath = NULL;
+    }
+    if (outSource != NULL) {
+        *outSource = NULL;
     }
     for (i = 0; i < map->len; i++) {
         const H2CombinedSourceSpan* s = &map->spans[i];
@@ -993,6 +1020,12 @@ int RemapCombinedOffset(
         }
         *outOffset = mapped;
         *outFileIndex = s->fileIndex;
+        if (outPath != NULL) {
+            *outPath = s->path;
+        }
+        if (outSource != NULL) {
+            *outSource = s->source;
+        }
         return 1;
     }
     return 0;
@@ -1024,8 +1057,9 @@ void RemapCombinedDiag(
     if (map == NULL || map->len == 0) {
         return;
     }
-    startMapped = RemapCombinedOffset(map, diagIn->start, &diagOut->start, &fileIndexStart);
-    endMapped = RemapCombinedOffset(map, diagIn->end, &diagOut->end, &fileIndexEnd);
+    startMapped = RemapCombinedOffset(
+        map, diagIn->start, &diagOut->start, &fileIndexStart, NULL, NULL);
+    endMapped = RemapCombinedOffset(map, diagIn->end, &diagOut->end, &fileIndexEnd, NULL, NULL);
     if (outStatus != NULL) {
         outStatus->startMapped = startMapped ? 1u : 0u;
         outStatus->endMapped = endMapped ? 1u : 0u;
@@ -1038,8 +1072,9 @@ void RemapCombinedDiag(
     if (diagIn->argEnd > diagIn->argStart) {
         uint32_t argFileIndex = 0;
         argStartMapped = RemapCombinedOffset(
-            map, diagIn->argStart, &diagOut->argStart, &argFileIndex);
-        argEndMapped = RemapCombinedOffset(map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex);
+            map, diagIn->argStart, &diagOut->argStart, &argFileIndex, NULL, NULL);
+        argEndMapped = RemapCombinedOffset(
+            map, diagIn->argEnd, &diagOut->argEnd, &argFileIndex, NULL, NULL);
         if (outStatus != NULL) {
             outStatus->argStartMapped = argStartMapped ? 1u : 0u;
             outStatus->argEndMapped = argEndMapped ? 1u : 0u;

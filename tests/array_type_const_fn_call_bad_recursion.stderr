@@ -2,8 +2,8 @@ tests/array_type_const_fn_call_bad_recursion.hop:7:13: error: HOP2054: array len
 Call trace:
   tests/array_type_const_fn_call_bad_recursion.hop:2:4: rec
   tests/array_type_const_fn_call_bad_recursion.hop:7:16: main
-  7 | 	var a [i32 rec(1)]
-    | 	           ^~~~~~
+    7 | 	var a [i32 rec(1)]
+      | 	           ^~~~~~
 tests/array_type_const_fn_call_bad_recursion.hop:2:4: note: recursive const function calls are not supported
-  2 | fn rec(x i32) i32 {
-    |    ^~~
+    2 | fn rec(x i32) i32 {
+      |    ^~~

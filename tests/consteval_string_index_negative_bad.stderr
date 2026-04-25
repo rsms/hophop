@@ -1,6 +1,6 @@
 tests/consteval_string_index_negative_bad.hop:9:23: error: HOP2083: const block failed compile-time evaluation: index is negative in const evaluation
-  9 | 	require_non_negative("abc")
-    | 	                     ^~~~~
+    9 | 	require_non_negative("abc")
+      | 	                     ^~~~~
 tests/consteval_string_index_negative_bad.hop:4:10: note: index is negative in const evaluation
-  4 | 		assert s[-1 as int] == 'a'
-    | 		       ^~~~~~~~~~~~
+    4 | 		assert s[-1 as int] == 'a'
+      | 		       ^~~~~~~~~~~~
