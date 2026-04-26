@@ -107,9 +107,9 @@ static void PrintUsage(const char* argv0) {
         "[--diag-format <text|jsonl>] "
         "<pkgdir|srcfile> "
         "[out]\n"
-        "    %s check [--diag-format <text|jsonl>] <srcfile>\n"
-        "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "    %s check [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
         "[--diag-format <text|jsonl>] "
+        "[--no-import] "
         "<pkgdir|srcfile>\n"
         "    %s lex [--diag-format <text|jsonl>] <srcfile>\n"
         "    %s ast [--diag-format <text|jsonl>] <srcfile>\n"
@@ -120,7 +120,6 @@ static void PrintUsage(const char* argv0) {
         "\n"
         "<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit\n"
         "`hop run` defaults to cli-eval when --platform is omitted\n",
-        progname,
         progname,
         progname,
         progname,
@@ -216,19 +215,17 @@ static void PrintGenpkgHelp(const char* argv0, const char* mode) {
 
 static void PrintCheckHelp(const char* argv0) {
     const char* progname = ProgramBasename(argv0);
-    fprintf(stderr, "usage:\n    %s check [--diag-format <text|jsonl>] <srcfile>\n", progname);
-}
-
-static void PrintCheckpkgHelp(const char* argv0) {
-    const char* progname = ProgramBasename(argv0);
     fprintf(
         stderr,
         "usage:\n"
-        "    %s checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
+        "    %s check [--platform <target>] [--arch <name>] [--cache-dir <dir>] "
         "[--diag-format <text|jsonl>] "
+        "[--no-import] "
         "<pkgdir|srcfile>\n",
         progname);
     PrintSharedPlatformOptions();
+    fprintf(
+        stderr, "    --no-import           typecheck one source file without package imports\n");
     PrintPlatformTargetList();
 }
 
@@ -277,10 +274,6 @@ static int PrintCommandHelp(const char* argv0, const char* mode) {
         PrintCheckHelp(argv0);
         return 1;
     }
-    if (StrEq(mode, "checkpkg")) {
-        PrintCheckpkgHelp(argv0);
-        return 1;
-    }
     if (StrEq(mode, "lex")) {
         PrintLexHelp(argv0);
         return 1;
@@ -318,7 +311,8 @@ static int ParseSharedCommandOptions(
     const char** outCacheDirArg,
     const char** outDiagFormat,
     int* _Nullable outTestingBuild,
-    int* _Nullable outHasPlatformTarget) {
+    int* _Nullable outHasPlatformTarget,
+    int* _Nullable outNoImport) {
     while (argi < argc) {
         if (StrEq(argv[argi], "--platform")) {
             if (argi + 1 >= argc) {
@@ -362,6 +356,14 @@ static int ParseSharedCommandOptions(
             argi++;
             continue;
         }
+        if (StrEq(argv[argi], "--no-import")) {
+            if (outNoImport == NULL) {
+                break;
+            }
+            *outNoImport = 1;
+            argi++;
+            continue;
+        }
         break;
     }
     return argi;
@@ -401,8 +403,7 @@ static int ParseDiagOutputFormatOrUsage(const char* name, H2DiagOutputFormat* ou
 
 static int IsKnownCommand(const char* mode) {
     if (StrEq(mode, "run") || StrEq(mode, "fmt") || StrEq(mode, "compile") || StrEq(mode, "check")
-        || StrEq(mode, "checkpkg") || StrEq(mode, "lex") || StrEq(mode, "ast")
-        || StrEq(mode, "mir"))
+        || StrEq(mode, "lex") || StrEq(mode, "ast") || StrEq(mode, "mir"))
     {
         return 1;
     }
@@ -427,6 +428,7 @@ int main(int argc, char* argv[]) {
     char               backendName[32];
     int                genpkgMode;
     int                hasPlatformTarget = 0;
+    int                noImport = 0;
     int                testingBuild = 0;
     H2DiagOutputFormat diagOutputFormat = H2DiagOutputFormat_TEXT;
     char*              source;
@@ -473,6 +475,7 @@ int main(int argc, char* argv[]) {
             &cacheDirArg,
             &diagFormatArg,
             &testingBuild,
+            NULL,
             NULL);
         if (argi < 0) {
             PrintCommandHelp(argv[0], mode);
@@ -523,6 +526,7 @@ int main(int argc, char* argv[]) {
             &cacheDirArg,
             &diagFormatArg,
             &testingBuild,
+            NULL,
             NULL);
         if (argi < 0 || argc - argi != 1) {
             PrintCommandHelp(argv[0], mode);
@@ -554,7 +558,7 @@ int main(int argc, char* argv[]) {
     }
 
     argi = 2;
-    if (StrEq(mode, "checkpkg") || StrEq(mode, "mir")) {
+    if (StrEq(mode, "check") || StrEq(mode, "mir")) {
         argi = ParseSharedCommandOptions(
             argc,
             argv,
@@ -564,8 +568,24 @@ int main(int argc, char* argv[]) {
             &cacheDirArg,
             &diagFormatArg,
             &testingBuild,
-            &hasPlatformTarget);
-        if (argi < 0 || argc - argi != 1) {
+            &hasPlatformTarget,
+            StrEq(mode, "check") ? &noImport : NULL);
+        if (argi < 0) {
+            PrintCommandHelp(argv[0], mode);
+            return 2;
+        }
+        if (noImport && argc - argi != 1) {
+            fprintf(stderr, "--no-import expects exactly one source file\n");
+            return 2;
+        }
+        if (argc - argi != 1) {
+            PrintCommandHelp(argv[0], mode);
+            return 2;
+        }
+        if (noImport
+            && (platformTarget != NULL || archTarget != NULL || cacheDirArg != NULL || testingBuild
+                || hasPlatformTarget))
+        {
             PrintCommandHelp(argv[0], mode);
             return 2;
         }
@@ -590,7 +610,8 @@ int main(int argc, char* argv[]) {
             &cacheDirArg,
             &diagFormatArg,
             &testingBuild,
-            &hasPlatformTarget);
+            &hasPlatformTarget,
+            NULL);
         if (argi < 0 || argc - argi != 1 || platformTarget != NULL || archTarget != NULL
             || cacheDirArg != NULL || testingBuild || hasPlatformTarget)
         {
@@ -607,7 +628,8 @@ int main(int argc, char* argv[]) {
             &cacheDirArg,
             &diagFormatArg,
             &testingBuild,
-            &hasPlatformTarget);
+            &hasPlatformTarget,
+            NULL);
         if (argi < 0) {
             PrintCommandHelp(argv[0], mode);
             return 2;
@@ -617,9 +639,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (StrEq(mode, "check") || StrEq(mode, "lex") || StrEq(mode, "ast") || StrEq(mode, "checkpkg")
-        || StrEq(mode, "mir"))
-    {
+    if (StrEq(mode, "check") || StrEq(mode, "lex") || StrEq(mode, "ast") || StrEq(mode, "mir")) {
         filename = argv[argi];
     } else {
         if (argc - argi == 1) {
@@ -661,10 +681,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
-        && mode[5] == 'p' && mode[6] == 'k' && mode[7] == 'g' && mode[8] == '\0')
+        && mode[5] == '\0' && !noImport)
     {
         if (outFilename != NULL) {
-            fprintf(stderr, "unexpected output argument for mode checkpkg\n");
+            fprintf(stderr, "unexpected output argument for mode check\n");
             return 2;
         }
         return CheckPackageDir(
@@ -696,6 +716,13 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
+    if (noImport) {
+        struct stat st;
+        if (stat(filename, &st) == 0 && S_ISDIR(st.st_mode)) {
+            fprintf(stderr, "--no-import expects a source file, got directory: %s\n", filename);
+            return 2;
+        }
+    }
     if (ReadFile(filename, &source, &sourceLen) != 0) {
         return 1;
     }

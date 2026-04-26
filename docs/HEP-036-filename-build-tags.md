@@ -96,7 +96,7 @@ none match after filtering, loading fails with `no matching .hop files found in 
 Package commands accept `--arch <name>`:
 
 ```text
-hop checkpkg [--platform <target>] [--arch <name>] <pkgdir|srcfile>
+hop check [--platform <target>] [--arch <name>] <pkgdir|srcfile>
 hop mir [--platform <target>] [--arch <name>] <pkgdir|srcfile>
 hop genpkg:c [--platform <target>] [--arch <name>] <pkgdir|srcfile>
 hop compile [--platform <target>] [--arch <name>] <pkgdir|srcfile>

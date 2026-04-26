@@ -55,8 +55,8 @@ $ _build/macos-aarch64-debug/hop check examples/basic.hop
 Check a package:
 
 ```sh
-$ _build/macos-aarch64-debug/hop checkpkg examples/packages/app
-$ _build/macos-aarch64-debug/hop checkpkg examples/hello.hop
+$ _build/macos-aarch64-debug/hop check examples/packages/app
+$ _build/macos-aarch64-debug/hop check examples/hello.hop
 ```
 
 Transpile to C:

@@ -4,8 +4,7 @@ usage:
     hop fmt [--check] [<file-or-dir> ...]
     hop compile [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile> [-o <output>]
     hop genpkg[:backend] [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile> [out]
-    hop check [--diag-format <text|jsonl>] <srcfile>
-    hop checkpkg [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>
+    hop check [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] [--no-import] <pkgdir|srcfile>
     hop lex [--diag-format <text|jsonl>] <srcfile>
     hop ast [--diag-format <text|jsonl>] <srcfile>
     hop mir [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] <pkgdir|srcfile>

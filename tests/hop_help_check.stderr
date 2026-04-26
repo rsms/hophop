@@ -1,2 +1,11 @@
 usage:
-    hop check [--diag-format <text|jsonl>] <srcfile>
+    hop check [--platform <target>] [--arch <name>] [--cache-dir <dir>] [--diag-format <text|jsonl>] [--no-import] <pkgdir|srcfile>
+
+options:
+    --platform <target>   target platform
+    --arch <name>         target architecture
+    --cache-dir <dir>     compiler cache directory
+    --diag-format <fmt>   diagnostics output format (`text` or `jsonl`)
+    --no-import           typecheck one source file without package imports
+
+<target> is one of: cli-libc (default), cli-eval, wasm-min, playbit

@@ -1,0 +1,1 @@
+--no-import expects a source file, got directory: {{ROOT}}/tests/pkg_ok/app

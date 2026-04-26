@@ -4,7 +4,7 @@
 
 Single-file mode is supported for package commands:
 
-- `./_build/macos-aarch64-debug/hop checkpkg examples/single_file.hop`
+- `./_build/macos-aarch64-debug/hop check examples/single_file.hop`
 - `./_build/macos-aarch64-debug/hop genpkg:c examples/single_file.hop`
 
 ## Core
@@ -16,7 +16,7 @@ Single-file mode is supported for package commands:
 - Strings, `assert`, `len`, `cstr`: `examples/strings.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/strings.hop`
 - Full `str` capabilities (`&str`, `*str`, `[u8]` views, `concat`, `free`): `examples/str.hop`
-  - Check: `./_build/macos-aarch64-debug/hop checkpkg examples/str.hop`
+  - Check: `./_build/macos-aarch64-debug/hop check examples/str.hop`
 - Casts (`as`): `examples/casts.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/casts.hop`
 - `defer`: `examples/defer.hop`
@@ -39,7 +39,7 @@ Single-file mode is supported for package commands:
 - HEP-2 allocator `new` keyword forms: `examples/allocator.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/allocator.hop`
 - Arena allocator with `import "mem"` and `free_all`: `examples/arena_allocator.hop`
-  - Check: `./_build/macos-aarch64-debug/hop checkpkg examples/arena_allocator.hop`
+  - Check: `./_build/macos-aarch64-debug/hop check examples/arena_allocator.hop`
 - HEP-12 typed contexts/capabilities (`context`, `context { ... }`, `context context`):
   `examples/context.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/context.hop`
@@ -91,16 +91,16 @@ Single-file mode is supported for package commands:
 - Default alias from path tail:
   - App: `examples/imports-default/app`
   - Dependency: `examples/imports-default/lib/math`
-  - Check package: `./_build/macos-aarch64-debug/hop checkpkg examples/imports-default/app`
+  - Check package: `./_build/macos-aarch64-debug/hop check examples/imports-default/app`
   - Generate header: `./_build/macos-aarch64-debug/hop genpkg:c examples/imports-default/app`
 - Explicit alias for non-identifier path tail:
   - App: `examples/imports-explicit/app`
   - Dependency: `examples/imports-explicit/lib/math-v2`
-  - Check package: `./_build/macos-aarch64-debug/hop checkpkg examples/imports-explicit/app`
+  - Check package: `./_build/macos-aarch64-debug/hop check examples/imports-explicit/app`
 
 ## Package Example
 
 - App package: `examples/packages/app`
 - Dependency package: `examples/packages/math`
-- Package check: `./_build/macos-aarch64-debug/hop checkpkg examples/packages/app`
+- Package check: `./_build/macos-aarch64-debug/hop check examples/packages/app`
 - Generate C header: `./_build/macos-aarch64-debug/hop genpkg:c examples/packages/app`

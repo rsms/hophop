@@ -143,7 +143,8 @@ Here are a few examples:
 
 - `hop tokens file.hop` — tokenize
 - `hop ast file.hop` — parse + print AST
-- `hop check file.hop` — typecheck single file
+- `hop check <dir|file.hop>` — typecheck a package or single-file package
+- `hop check --no-import file.hop` — typecheck one file without loading package imports
 - `hop genpkg:c <dir|file.hop> [out.h]` — generate C output via C11 backend
 - `hop compile <dir|file.hop> -o <exe>` — compile via C11 backend + system compiler
 - `hop run <dir|file.hop>` — run with evaluator (not C11 backend)

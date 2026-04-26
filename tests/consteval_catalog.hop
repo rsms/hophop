@@ -1,7 +1,7 @@
 // Const-eval catalog test.
 //
 // Keep this file as the broad regression surface for compile-time evaluation.
-// This file is intended for `hop check` coverage.
+// This file is intended for `hop check --no-import` coverage.
 const BASE = 3
 
 fn expect_i(actual, want int) int {

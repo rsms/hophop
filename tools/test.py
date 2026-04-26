@@ -314,10 +314,10 @@ def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
         slug = sanitize_name(rel)
         append_case(
             {
-                "id": f"auto.examples.checkpkg.file.{slug}",
-                "suite": "integration.examples.auto.checkpkg",
+                "id": f"auto.examples.check.file.{slug}",
+                "suite": "integration.examples.auto.check",
                 "kind": "hop_ok",
-                "mode": "checkpkg",
+                "mode": "check",
                 "input": rel,
             }
         )
@@ -336,10 +336,10 @@ def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
         slug = sanitize_name(rel)
         append_case(
             {
-                "id": f"auto.examples.checkpkg.pkg.{slug}",
-                "suite": "integration.examples.auto.checkpkg",
+                "id": f"auto.examples.check.pkg.{slug}",
+                "suite": "integration.examples.auto.check",
                 "kind": "hop_ok",
-                "mode": "checkpkg",
+                "mode": "check",
                 "input": rel,
             }
         )
@@ -559,7 +559,7 @@ def hop_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
 
 
 def mode_uses_platform_flag(mode: str) -> bool:
-    return mode in ("run", "compile", "checkpkg", "mir") or mode.startswith("genpkg")
+    return mode in ("run", "compile", "check", "mir") or mode.startswith("genpkg")
 
 
 def hop_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
@@ -569,6 +569,8 @@ def hop_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
         mode = "lex"
     if mode:
         args.append(mode)
+    if bool(case.get("no_import", False)):
+        args.append("--no-import")
     if case.get("platform") is not None and mode_uses_platform_flag(mode):
         args.extend(["--platform", str(case["platform"])])
     if case.get("arch") is not None and mode_uses_platform_flag(mode):

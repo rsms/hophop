@@ -19,7 +19,7 @@ Build and test:
 Common CLI flow:
 
 ```sh
-_build/macos-aarch64-debug/hop checkpkg <dir|file.hop>
+_build/macos-aarch64-debug/hop check <dir|file.hop>
 _build/macos-aarch64-debug/hop genpkg:c <dir|file.hop> [out.h]
 _build/macos-aarch64-debug/hop compile [--cache-dir <dir>] <dir|file.hop> [-o <exe>]
 _build/macos-aarch64-debug/hop run [--cache-dir <dir>] <dir|file.hop>

@@ -16,7 +16,8 @@ Required fields for every entry:
 Common optional fields:
 
 - `input` (string): `.hop` file or package path
-- `mode` (string): `hop` mode (`_`, `ast`, `check`, `checkpkg`, `genpkg`, `genpkg:c`)
+- `mode` (string): `hop` mode (`_`, `ast`, `check`, `genpkg`, `genpkg:c`)
+- `no_import` (bool, default `false`): for `mode:"check"`, run `hop check --no-import`
 - `platform` (string): pass `--platform` for package commands
 - `arch` (string): pass `--arch` for package commands
 - `testing` (bool): pass the internal `--testing` flag for package commands

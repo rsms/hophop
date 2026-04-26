@@ -210,7 +210,7 @@ pub struct Context {
 }
 ```
 
-4. `hop` supports `--platform <target>` for `checkpkg`, `genpkg[:backend]`, `compile`, and `run`.
+4. `hop` supports `--platform <target>` for `check`, `genpkg[:backend]`, `compile`, and `run`.
    Default target is `cli-libc`.
 5. `import "platform/<target>"` is user-importable by default.
 6. C ABI entrypoint remains `__hop_MainContext*` (ABI name unchanged), with runtime/layout updated
