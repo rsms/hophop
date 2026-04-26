@@ -60,7 +60,7 @@
 body {
     background-color: var(--bg-color);
     color: var(--fg-color);
-    padding: 2rem;
+    padding: 2rem 2rem 6rem 2rem;
     margin: 0 auto;
     max-width: 40rem;
     min-height: 100vh;
@@ -99,10 +99,10 @@ h1, h2, h3, h4 {
     }
 }
 
-h2 { border-top: 1.5px solid var(--fg-color); padding-top: 1rem }
+h2 { border-top: 1.5px solid var(--fg-color); padding-top: 1rem; margin-top: 6rem; }
 h3 {
-    border-top: 1px solid color-mix(in oklab, var(--fg-color) 20%, var(--bg-color));
-    padding-top: 1rem;
+    /*border-top: 1px solid color-mix(in oklab, var(--fg-color) 20%, var(--bg-color));*/
+    margin-top: 6rem;
 }
 
 /*h1 { color: color-mix(in oklab, var(--fg-color) 100%, var(--bg-color)) }

@@ -6,7 +6,9 @@ title: hophop programming language
 The reference compiler is written in strict C11 and can run programs through an evaluator, generate WASM modules and generate freestanding C code of a hophop package.
 
 [Source on GitHub](https://github.com/rsms/hophop)<br>
-[Language specification](language/) [[md]](language/index.md)
+[Language specification](spec/) [[md]](spec/index.md)
+
+## Example
 
 ```hop
 fn main() {
@@ -14,12 +16,14 @@ fn main() {
 }
 ```
 
+Run it directly:
+
 ```sh
 $ hophop run hello.hop
 hej världen
 ```
 
-Compile a wasm module:
+Compile to wasm:
 
 ```sh
 $ hophop genpkg:wasm hello.hop hello.wasm
