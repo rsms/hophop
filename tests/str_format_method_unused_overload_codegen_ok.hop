@@ -1,0 +1,5 @@
+// Verifies rejected format overload template instances are not emitted.
+fn main() {
+	var s *str = "value = {}".format(123)
+	del s
+}

@@ -227,7 +227,7 @@ fn fmt_write_impl(buf *[u8], fmt &str, args ...anytype) int {
 	return fmt_write_impl_cap(buf, cap, fmt, args...)
 }
 
-pub fn format(const fmt &str, args ...anytype) *str {
+fn fmt_check_const_format(const fmt &str, args ...anytype) {
 	const {
 		var bs &[u8] = fmt
 		var ai int   = 0
@@ -294,7 +294,17 @@ pub fn format(const fmt &str, args ...anytype) *str {
 			error("format string error: too many arguments")
 		}
 	}
+}
+
+pub fn format(const fmt &str, args ...anytype) *str {
+	fmt_check_const_format(fmt, args...)
 	return format_str(fmt, args...)
+}
+
+pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
+	fmt_check_const_format(fmt, args...)
+	cap := len(buf)
+	return fmt_write_impl_cap(buf, cap, fmt, args...)
 }
 
 pub fn format_str(fmt &str, args ...anytype) *str {

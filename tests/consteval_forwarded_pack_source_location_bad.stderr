@@ -1,0 +1,1 @@
+tests/consteval_forwarded_pack_source_location_bad.hop:15:21: error: HOP2075: consteval error: forwarded pack span

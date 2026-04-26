@@ -91,8 +91,46 @@ static int H2TCConstEvalIsTrackedAnyPackName(
     {
         return 1;
     }
+    if (evalCtx->mirProgram != NULL && evalCtx->mirFunction != NULL
+        && (evalCtx->mirFunction->flags & H2MirFunctionFlag_VARIADIC) != 0u
+        && evalCtx->mirFunction->paramCount > 0u
+        && evalCtx->mirFunction->localStart <= evalCtx->mirProgram->localLen
+        && evalCtx->mirFunction->paramCount
+               <= evalCtx->mirProgram->localLen - evalCtx->mirFunction->localStart)
+    {
+        const H2MirLocal* packLocal =
+            &evalCtx->mirProgram
+                 ->locals[evalCtx->mirFunction->localStart + evalCtx->mirFunction->paramCount - 1u];
+        if (H2NameEqSlice(c->src, nameStart, nameEnd, packLocal->nameStart, packLocal->nameEnd)) {
+            return 1;
+        }
+    }
     localIdx = H2TCLocalFind(c, nameStart, nameEnd);
     return localIdx >= 0 && (c->locals[localIdx].flags & H2TCLocalFlag_ANYPACK) != 0;
+}
+
+static int H2TCConstEvalNodeHasPackType(H2TCConstEvalCtx* evalCtx, int32_t nodeId) {
+    H2TypeCheckCtx* c;
+    H2TCConstEvalCtx* _Nullable savedActiveEvalCtx;
+    int32_t typeId = -1;
+    int32_t baseTypeId;
+    if (evalCtx == NULL) {
+        return 0;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    savedActiveEvalCtx = c->activeConstEvalCtx;
+    c->activeConstEvalCtx = evalCtx;
+    if (H2TCTypeExpr(c, nodeId, &typeId) != 0) {
+        c->activeConstEvalCtx = savedActiveEvalCtx;
+        return 0;
+    }
+    c->activeConstEvalCtx = savedActiveEvalCtx;
+    baseTypeId = H2TCResolveAliasBaseType(c, typeId);
+    return baseTypeId >= 0 && (uint32_t)baseTypeId < c->typeLen
+        && c->types[baseTypeId].kind == H2TCType_PACK;
 }
 
 static void H2TCMirConstSetReasonCb(
@@ -2378,6 +2416,212 @@ static int H2TCConstEvalResolveTrackedAnyPackArgIndex(
     return 3;
 }
 
+static int H2TCConstEvalResolveForwardedAnyPackArgSpan(
+    H2TCConstEvalCtx* evalCtx,
+    int32_t           spreadExprNode,
+    int64_t           idxValue,
+    uint32_t*         outStart,
+    uint32_t*         outEnd) {
+    H2TypeCheckCtx* c;
+    uint32_t        depth;
+    if (outStart != NULL) {
+        *outStart = 0;
+    }
+    if (outEnd != NULL) {
+        *outEnd = 0;
+    }
+    if (evalCtx == NULL || outStart == NULL || outEnd == NULL || idxValue < 0) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || spreadExprNode < 0 || (uint32_t)spreadExprNode >= c->ast->len) {
+        return 1;
+    }
+    if (c->ast->nodes[spreadExprNode].kind == H2Ast_CALL_ARG) {
+        int32_t inner = H2AstFirstChild(c->ast, spreadExprNode);
+        if (inner < 0) {
+            return 1;
+        }
+        spreadExprNode = inner;
+    }
+    if (c->ast->nodes[spreadExprNode].kind != H2Ast_IDENT) {
+        return 1;
+    }
+    depth = evalCtx->callFrameDepth;
+    while (depth > 0) {
+        const H2TCCallArgInfo* callArgs;
+        const H2TCCallBinding* binding;
+        uint32_t               frameIndex = depth - 1u;
+        uint32_t               callArgCount;
+        uint32_t               packNameStart;
+        uint32_t               packNameEnd;
+        uint32_t               i;
+        uint32_t               ordinal = 0;
+        uint32_t               paramIndex;
+
+        callArgs = (const H2TCCallArgInfo*)evalCtx->callFrameArgs[frameIndex];
+        binding = (const H2TCCallBinding*)evalCtx->callFrameBindings[frameIndex];
+        callArgCount = evalCtx->callFrameArgCounts[frameIndex];
+        packNameStart = evalCtx->callFramePackParamNameStarts[frameIndex];
+        packNameEnd = evalCtx->callFramePackParamNameEnds[frameIndex];
+
+        if (callArgs == NULL || binding == NULL || callArgCount == 0
+            || packNameStart >= packNameEnd)
+        {
+            return 1;
+        }
+        if (!binding->isVariadic) {
+            return 1;
+        }
+        if (binding->spreadArgIndex != UINT32_MAX) {
+            uint32_t spreadArgIndex = binding->spreadArgIndex;
+            if (spreadArgIndex >= callArgCount || callArgs[spreadArgIndex].exprNode < 0
+                || (uint32_t)callArgs[spreadArgIndex].exprNode >= c->ast->len)
+            {
+                return 1;
+            }
+            spreadExprNode = callArgs[spreadArgIndex].exprNode;
+            if (c->ast->nodes[spreadExprNode].kind != H2Ast_IDENT) {
+                return 1;
+            }
+            depth = frameIndex;
+            continue;
+        }
+
+        paramIndex = binding->fixedCount;
+        for (i = 0; i < callArgCount; i++) {
+            if (binding->argParamIndices[i] != (int32_t)paramIndex) {
+                continue;
+            }
+            if ((int64_t)ordinal == idxValue) {
+                *outStart = callArgs[i].start;
+                *outEnd = callArgs[i].end;
+                return 0;
+            }
+            ordinal++;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static int H2TCConstEvalResolveTrackedAnyPackArgSpan(
+    H2TCConstEvalCtx* evalCtx, int32_t exprNode, uint32_t* outStart, uint32_t* outEnd) {
+    H2TypeCheckCtx*        c;
+    const H2TCCallBinding* binding;
+    const H2TCCallArgInfo* callArgs;
+    int32_t                baseNode;
+    int32_t                idxNode;
+    int32_t                extraNode;
+    int64_t                idxValue = 0;
+    uint32_t               callArgIndex = UINT32_MAX;
+    H2CTFEValue            idxConstValue;
+    int                    idxIsConst = 0;
+    int                    indexStatus;
+    if (outStart != NULL) {
+        *outStart = 0;
+    }
+    if (outEnd != NULL) {
+        *outEnd = 0;
+    }
+    if (evalCtx == NULL || outStart == NULL || outEnd == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    binding = (const H2TCCallBinding*)evalCtx->callBinding;
+    callArgs = (const H2TCCallArgInfo*)evalCtx->callArgs;
+
+    if (c != NULL && exprNode >= 0 && (uint32_t)exprNode < c->ast->len
+        && c->ast->nodes[exprNode].kind == H2Ast_INDEX
+        && (c->ast->nodes[exprNode].flags & H2AstFlag_INDEX_SLICE) == 0)
+    {
+        baseNode = H2AstFirstChild(c->ast, exprNode);
+        idxNode = baseNode >= 0 ? H2AstNextSibling(c->ast, baseNode) : -1;
+        extraNode = idxNode >= 0 ? H2AstNextSibling(c->ast, idxNode) : -1;
+        if (baseNode >= 0 && idxNode >= 0 && extraNode < 0
+            && H2TCEvalConstExprNode(evalCtx, idxNode, &idxConstValue, &idxIsConst) != 0)
+        {
+            return -1;
+        }
+        if (idxIsConst && H2CTFEValueToInt64(&idxConstValue, &idxValue) != 0) {
+            idxIsConst = 0;
+        }
+    }
+
+    indexStatus = H2TCConstEvalResolveTrackedAnyPackArgIndex(evalCtx, exprNode, &callArgIndex);
+    if (indexStatus == 0) {
+        if (callArgs == NULL || callArgIndex >= evalCtx->callArgCount) {
+            return -1;
+        }
+        if (callArgs[callArgIndex].spread && idxIsConst && idxValue >= 0) {
+            int forwardedStatus = H2TCConstEvalResolveForwardedAnyPackArgSpan(
+                evalCtx, callArgs[callArgIndex].exprNode, idxValue, outStart, outEnd);
+            if (forwardedStatus <= 0) {
+                return forwardedStatus;
+            }
+        }
+        *outStart = callArgs[callArgIndex].start;
+        *outEnd = callArgs[callArgIndex].end;
+        return 0;
+    }
+    if (indexStatus < 0 || indexStatus == 2 || indexStatus == 3) {
+        return indexStatus;
+    }
+
+    if (c == NULL || binding == NULL || callArgs == NULL || evalCtx->callArgCount == 0
+        || !binding->isVariadic || exprNode < 0 || (uint32_t)exprNode >= c->ast->len
+        || c->ast->nodes[exprNode].kind != H2Ast_INDEX
+        || (c->ast->nodes[exprNode].flags & H2AstFlag_INDEX_SLICE) != 0)
+    {
+        return 1;
+    }
+    baseNode = H2AstFirstChild(c->ast, exprNode);
+    idxNode = baseNode >= 0 ? H2AstNextSibling(c->ast, baseNode) : -1;
+    extraNode = idxNode >= 0 ? H2AstNextSibling(c->ast, idxNode) : -1;
+    if (baseNode < 0 || idxNode < 0 || extraNode >= 0
+        || c->ast->nodes[baseNode].kind != H2Ast_IDENT)
+    {
+        return 1;
+    }
+    if (H2TCEvalConstExprNode(evalCtx, idxNode, &idxConstValue, &idxIsConst) != 0) {
+        return -1;
+    }
+    if (!idxIsConst || H2CTFEValueToInt64(&idxConstValue, &idxValue) != 0) {
+        return 2;
+    }
+    if (idxValue < 0) {
+        return 3;
+    }
+    if (!H2TCConstEvalIsTrackedAnyPackName(
+            evalCtx, c->ast->nodes[baseNode].dataStart, c->ast->nodes[baseNode].dataEnd)
+        && !H2TCConstEvalNodeHasPackType(evalCtx, baseNode))
+    {
+        return 1;
+    }
+    if (binding->spreadArgIndex == UINT32_MAX) {
+        uint32_t paramIndex = binding->fixedCount;
+        uint32_t ordinal = 0;
+        uint32_t i;
+        for (i = 0; i < evalCtx->callArgCount; i++) {
+            if (binding->argParamIndices[i] != (int32_t)paramIndex) {
+                continue;
+            }
+            if ((int64_t)ordinal == idxValue) {
+                *outStart = callArgs[i].start;
+                *outEnd = callArgs[i].end;
+                return 0;
+            }
+            ordinal++;
+        }
+        return 3;
+    }
+    if (binding->spreadArgIndex >= evalCtx->callArgCount) {
+        return 1;
+    }
+    return H2TCConstEvalResolveForwardedAnyPackArgSpan(
+        evalCtx, callArgs[binding->spreadArgIndex].exprNode, idxValue, outStart, outEnd);
+}
+
 static int H2TCConstEvalGetConcreteCallArgType(
     H2TCConstEvalCtx* evalCtx, uint32_t callArgIndex, int32_t* outType) {
     H2TypeCheckCtx*        c;
@@ -2693,16 +2937,15 @@ int H2TCConstEvalSourceLocationOfCall(
         operandNode = inner;
     }
     {
-        uint32_t callArgIndex = 0;
-        int      packStatus = H2TCConstEvalResolveTrackedAnyPackArgIndex(
-            evalCtx, operandNode, &callArgIndex);
+        uint32_t start = 0;
+        uint32_t end = 0;
+        int      packStatus = H2TCConstEvalResolveTrackedAnyPackArgSpan(
+            evalCtx, operandNode, &start, &end);
         if (packStatus < 0) {
             return -1;
         }
         if (packStatus == 0) {
-            const H2TCCallArgInfo* callArgs = (const H2TCCallArgInfo*)evalCtx->callArgs;
-            H2TCConstEvalSetSourceLocationFromOffsets(
-                c, callArgs[callArgIndex].start, callArgs[callArgIndex].end, outValue);
+            H2TCConstEvalSetSourceLocationFromOffsets(c, start, end, outValue);
             *outIsConst = 1;
             return 0;
         }
@@ -6872,8 +7115,10 @@ static int H2TCInvokeConstFunctionByIndex(
     const void*        savedCallArgs;
     uint32_t           savedCallArgCount;
     const void*        savedCallBinding;
+    int32_t            savedCallFnIndex;
     uint32_t           savedCallPackParamNameStart;
     uint32_t           savedCallPackParamNameEnd;
+    uint32_t           savedCallFrameDepth;
     const H2CTFEValue* invokeArgs = args;
     H2CTFEValue        reorderedArgs[H2TC_MAX_CALL_ARGS];
     uint32_t           savedDepth;
@@ -7048,8 +7293,10 @@ static int H2TCInvokeConstFunctionByIndex(
     savedCallArgs = evalCtx->callArgs;
     savedCallArgCount = evalCtx->callArgCount;
     savedCallBinding = evalCtx->callBinding;
+    savedCallFnIndex = evalCtx->callFnIndex;
     savedCallPackParamNameStart = evalCtx->callPackParamNameStart;
     savedCallPackParamNameEnd = evalCtx->callPackParamNameEnd;
+    savedCallFrameDepth = evalCtx->callFrameDepth;
 
     paramFrame.parent = NULL;
     paramFrame.bindings = paramBindings;
@@ -7077,9 +7324,19 @@ static int H2TCInvokeConstFunctionByIndex(
     H2CTFEExecResetReason(&execCtx);
     evalCtx->execCtx = &execCtx;
     evalCtx->fnStack[evalCtx->fnDepth++] = fnIndex;
+    if (evalCtx->callFrameDepth < H2TC_CONST_CALL_MAX_DEPTH) {
+        uint32_t frameIndex = evalCtx->callFrameDepth++;
+        evalCtx->callFrameArgs[frameIndex] = savedCallArgs;
+        evalCtx->callFrameArgCounts[frameIndex] = savedCallArgCount;
+        evalCtx->callFrameBindings[frameIndex] = savedCallBinding;
+        evalCtx->callFrameFnIndices[frameIndex] = savedCallFnIndex;
+        evalCtx->callFramePackParamNameStarts[frameIndex] = savedCallPackParamNameStart;
+        evalCtx->callFramePackParamNameEnds[frameIndex] = savedCallPackParamNameEnd;
+    }
     evalCtx->callArgs = callArgs;
     evalCtx->callArgCount = callArgCount;
     evalCtx->callBinding = callBinding;
+    evalCtx->callFnIndex = fnIndex;
     evalCtx->callPackParamNameStart = callPackParamNameStart;
     evalCtx->callPackParamNameEnd = callPackParamNameEnd;
     evalCtx->nonConstReason = NULL;
@@ -7096,8 +7353,10 @@ static int H2TCInvokeConstFunctionByIndex(
             evalCtx->callArgs = savedCallArgs;
             evalCtx->callArgCount = savedCallArgCount;
             evalCtx->callBinding = savedCallBinding;
+            evalCtx->callFnIndex = savedCallFnIndex;
             evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
             evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+            evalCtx->callFrameDepth = savedCallFrameDepth;
             c->activeConstEvalCtx = savedActiveConstEvalCtx;
             if (rc != 0) {
                 return -1;
@@ -7115,8 +7374,10 @@ static int H2TCInvokeConstFunctionByIndex(
     evalCtx->callArgs = savedCallArgs;
     evalCtx->callArgCount = savedCallArgCount;
     evalCtx->callBinding = savedCallBinding;
+    evalCtx->callFnIndex = savedCallFnIndex;
     evalCtx->callPackParamNameStart = savedCallPackParamNameStart;
     evalCtx->callPackParamNameEnd = savedCallPackParamNameEnd;
+    evalCtx->callFrameDepth = savedCallFrameDepth;
     c->activeConstEvalCtx = savedActiveConstEvalCtx;
     if (rc != 0) {
         return -1;

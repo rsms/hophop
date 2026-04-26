@@ -1,0 +1,16 @@
+// Verifies forwarded anytype pack source locations point at the original caller argument.
+import "compiler"
+
+fn check_forwarded(args ...anytype) {
+	const {
+		compiler.error_at(source_location_of(args[1]), "forwarded pack span")
+	}
+}
+
+fn wrap_forwarded(args ...anytype) {
+	check_forwarded(args...)
+}
+
+fn main() {
+	wrap_forwarded(10, 20 as i64, 30)
+}

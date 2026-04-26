@@ -4325,6 +4325,9 @@ int CollectTemplateInstanceFnSigs(H2CBackendC* c) {
         if ((fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0) {
             continue;
         }
+        if (i >= tc->funcUsedCap || tc->funcUsed == NULL || tc->funcUsed[i] == 0u) {
+            continue;
+        }
         if (CodegenCTypeIdContainsTypeParam(tc, fn->returnType)
             || (fn->contextType >= 0 && CodegenCTypeIdContainsTypeParam(tc, fn->contextType)))
         {

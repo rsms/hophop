@@ -182,6 +182,21 @@ static void H2TCInitConstEvalCtxFromParent(
     outCtx->callFnIndex = parent->callFnIndex;
     outCtx->callPackParamNameStart = parent->callPackParamNameStart;
     outCtx->callPackParamNameEnd = parent->callPackParamNameEnd;
+    memcpy(outCtx->callFrameArgs, parent->callFrameArgs, sizeof(outCtx->callFrameArgs));
+    memcpy(
+        outCtx->callFrameArgCounts, parent->callFrameArgCounts, sizeof(outCtx->callFrameArgCounts));
+    memcpy(outCtx->callFrameBindings, parent->callFrameBindings, sizeof(outCtx->callFrameBindings));
+    memcpy(
+        outCtx->callFrameFnIndices, parent->callFrameFnIndices, sizeof(outCtx->callFrameFnIndices));
+    memcpy(
+        outCtx->callFramePackParamNameStarts,
+        parent->callFramePackParamNameStarts,
+        sizeof(outCtx->callFramePackParamNameStarts));
+    memcpy(
+        outCtx->callFramePackParamNameEnds,
+        parent->callFramePackParamNameEnds,
+        sizeof(outCtx->callFramePackParamNameEnds));
+    outCtx->callFrameDepth = parent->callFrameDepth;
     outCtx->fnDepth = parent->fnDepth;
     memcpy(outCtx->fnStack, parent->fnStack, sizeof(outCtx->fnStack));
 }
@@ -3556,11 +3571,38 @@ int H2TCCheckConstBlocksForCall(
     execCtx.forInIndexCtx = &evalCtx;
     execCtx.pendingReturnExprNode = -1;
     execCtx.forIterLimit = H2TC_CONST_FOR_MAX_ITERS;
-    memset(&evalCtx, 0, sizeof(evalCtx));
-    evalCtx.tc = c;
-    evalCtx.rootCallOwnerFnIndex = -1;
-    evalCtx.callFnIndex = fnIndex;
+    H2TCInitConstEvalCtxFromParent(c, savedActiveConstEvalCtx, &evalCtx);
     evalCtx.execCtx = &execCtx;
+    if (savedActiveConstEvalCtx != NULL && evalCtx.callFrameDepth < H2TC_CONST_CALL_MAX_DEPTH) {
+        uint32_t frameIndex = evalCtx.callFrameDepth++;
+        evalCtx.callFrameArgs[frameIndex] = savedActiveConstEvalCtx->callArgs;
+        evalCtx.callFrameArgCounts[frameIndex] = savedActiveConstEvalCtx->callArgCount;
+        evalCtx.callFrameBindings[frameIndex] = savedActiveConstEvalCtx->callBinding;
+        evalCtx.callFrameFnIndices[frameIndex] = savedActiveConstEvalCtx->callFnIndex;
+        evalCtx.callFramePackParamNameStarts[frameIndex] =
+            savedActiveConstEvalCtx->callPackParamNameStart;
+        evalCtx.callFramePackParamNameEnds[frameIndex] =
+            savedActiveConstEvalCtx->callPackParamNameEnd;
+    } else if (
+        c->currentFunctionIndex >= 0 && (uint32_t)c->currentFunctionIndex < c->funcLen
+        && evalCtx.callFrameDepth < H2TC_CONST_CALL_MAX_DEPTH)
+    {
+        const H2TCFunction* currentFn = &c->funcs[(uint32_t)c->currentFunctionIndex];
+        if (currentFn->templateCallArgs != NULL && currentFn->templateCallBinding != NULL) {
+            uint32_t frameIndex = evalCtx.callFrameDepth++;
+            evalCtx.callFrameArgs[frameIndex] = currentFn->templateCallArgs;
+            evalCtx.callFrameArgCounts[frameIndex] = currentFn->templateCallArgCount;
+            evalCtx.callFrameBindings[frameIndex] = currentFn->templateCallBinding;
+            evalCtx.callFrameFnIndices[frameIndex] = c->currentFunctionIndex;
+            if ((currentFn->flags & H2TCFunctionFlag_VARIADIC) != 0 && currentFn->paramCount > 0) {
+                uint32_t paramSlot = currentFn->paramTypeStart + currentFn->paramCount - 1u;
+                evalCtx.callFramePackParamNameStarts[frameIndex] =
+                    c->funcParamNameStarts[paramSlot];
+                evalCtx.callFramePackParamNameEnds[frameIndex] = c->funcParamNameEnds[paramSlot];
+            }
+        }
+    }
+    evalCtx.callFnIndex = fnIndex;
     evalCtx.callArgs = callArgs;
     evalCtx.callArgCount = argCount;
     evalCtx.callBinding = binding;
@@ -4308,6 +4350,28 @@ int H2TCInstantiateAnytypeFunctionForCall(
         f->templateRootFuncIndex = (int16_t)fnIndex;
         f->flags = (fn->flags & H2TCFunctionFlag_VARIADIC) | H2TCFunctionFlag_TEMPLATE
                  | H2TCFunctionFlag_TEMPLATE_INSTANCE;
+        f->templateCallArgs = NULL;
+        f->templateCallArgCount = 0;
+        f->templateCallBinding = NULL;
+        if (argCount > 0) {
+            H2TCCallArgInfo* callArgCopy = (H2TCCallArgInfo*)H2ArenaAlloc(
+                c->arena, sizeof(H2TCCallArgInfo) * argCount, (uint32_t)_Alignof(H2TCCallArgInfo));
+            if (callArgCopy == NULL) {
+                return H2TCFailNode(c, fn->declNode, H2Diag_ARENA_OOM);
+            }
+            memcpy(callArgCopy, callArgs, sizeof(H2TCCallArgInfo) * argCount);
+            f->templateCallArgs = callArgCopy;
+            f->templateCallArgCount = argCount;
+        }
+        {
+            H2TCCallBinding* bindingCopy = (H2TCCallBinding*)H2ArenaAlloc(
+                c->arena, sizeof(H2TCCallBinding), (uint32_t)_Alignof(H2TCCallBinding));
+            if (bindingCopy == NULL) {
+                return H2TCFailNode(c, fn->declNode, H2Diag_ARENA_OOM);
+            }
+            *bindingCopy = binding;
+            f->templateCallBinding = bindingCopy;
+        }
         for (p = 0; p < fn->templateArgCount; p++) {
             c->genericArgTypes[c->genericArgLen++] = templateArgTypes[p];
         }

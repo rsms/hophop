@@ -101,6 +101,9 @@ typedef struct {
     int16_t  templateRootNamedIndex;
 } H2TCNamedType;
 
+typedef struct H2TCCallArgInfo H2TCCallArgInfo;
+typedef struct H2TCCallBinding H2TCCallBinding;
+
 typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
@@ -115,6 +118,9 @@ typedef struct {
     uint16_t templateArgCount;
     int16_t  templateRootFuncIndex;
     uint16_t flags;
+    const H2TCCallArgInfo* _Nullable templateCallArgs;
+    uint32_t templateCallArgCount;
+    const H2TCCallBinding* _Nullable templateCallBinding;
 } H2TCFunction;
 
 enum {
@@ -486,6 +492,13 @@ struct H2TCConstEvalCtx {
     int32_t  callFnIndex;
     uint32_t callPackParamNameStart;
     uint32_t callPackParamNameEnd;
+    const void* _Nullable callFrameArgs[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t callFrameArgCounts[H2TC_CONST_CALL_MAX_DEPTH];
+    const void* _Nullable callFrameBindings[H2TC_CONST_CALL_MAX_DEPTH];
+    int32_t  callFrameFnIndices[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t callFramePackParamNameStarts[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t callFramePackParamNameEnds[H2TC_CONST_CALL_MAX_DEPTH];
+    uint32_t callFrameDepth;
     const char* _Nullable nonConstReason;
     uint32_t nonConstStart;
     uint32_t nonConstEnd;
@@ -554,7 +567,7 @@ int H2TCExprIsCompoundTemporary(H2TypeCheckCtx* c, int32_t exprNode);
 int H2TCExprNeedsExpectedType(H2TypeCheckCtx* c, int32_t exprNode);
 int H2TCExprIsAssignable(H2TypeCheckCtx* c, int32_t exprNode);
 
-typedef struct {
+typedef struct H2TCCallArgInfo {
     int32_t  argNode;
     int32_t  exprNode;
     uint32_t start;
@@ -575,7 +588,7 @@ typedef struct {
     uint32_t   argEnd;
 } H2TCCallMapError;
 
-typedef struct {
+typedef struct H2TCCallBinding {
     int      isVariadic;
     uint32_t fixedCount;
     uint32_t fixedInputCount;
