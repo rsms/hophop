@@ -42,12 +42,7 @@ static int ParseGenpkgMode(
     uint32_t outBackendCap) {
     const char* defaultBackend;
     uint32_t    i;
-    if (mode[0] != 'g' || mode[1] != 'e' || mode[2] != 'n' || mode[3] != 'p' || mode[4] != 'k'
-        || mode[5] != 'g')
-    {
-        return 0;
-    }
-    if (mode[6] == '\0') {
+    if (StrEq(mode, "genpkg")) {
         defaultBackend = DefaultGenpkgBackendName(platformTarget);
         i = (uint32_t)strlen(defaultBackend);
         if (i + 1u > outBackendCap) {
@@ -55,6 +50,11 @@ static int ParseGenpkgMode(
         }
         memcpy(outBackend, defaultBackend, (size_t)i + 1u);
         return 1;
+    }
+    if (mode[0] != 'g' || mode[1] != 'e' || mode[2] != 'n' || mode[3] != 'p' || mode[4] != 'k'
+        || mode[5] != 'g')
+    {
+        return 0;
     }
     if (mode[6] != ':') {
         return -1;
@@ -680,9 +680,7 @@ int main(int argc, char* argv[]) {
                  : 1;
     }
 
-    if (mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
-        && mode[5] == '\0' && !noImport)
-    {
+    if (StrEq(mode, "check") && !noImport) {
         if (outFilename != NULL) {
             fprintf(stderr, "unexpected output argument for mode check\n");
             return 2;
@@ -696,7 +694,7 @@ int main(int argc, char* argv[]) {
                  ? 0
                  : 1;
     }
-    if (mode[0] == 'm' && mode[1] == 'i' && mode[2] == 'r' && mode[3] == '\0') {
+    if (StrEq(mode, "mir")) {
         if (outFilename != NULL) {
             fprintf(stderr, "unexpected output argument for mode mir\n");
             return 2;
@@ -727,20 +725,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (mode[0] == 'l' && mode[1] == 'e' && mode[2] == 'x' && mode[3] == '\0') {
+    if (StrEq(mode, "lex")) {
         if (DumpTokens(filename, source, sourceLen) != 0) {
             free(source);
             return 1;
         }
-    } else if (mode[0] == 'a' && mode[1] == 's' && mode[2] == 't' && mode[3] == '\0') {
+    } else if (StrEq(mode, "ast")) {
         if (DumpAST(filename, source, sourceLen) != 0) {
             free(source);
             return 1;
         }
-    } else if (
-        mode[0] == 'c' && mode[1] == 'h' && mode[2] == 'e' && mode[3] == 'c' && mode[4] == 'k'
-        && mode[5] == '\0')
-    {
+    } else if (StrEq(mode, "check")) {
         if (CheckSource(filename, source, sourceLen) != 0) {
             free(source);
             return 1;

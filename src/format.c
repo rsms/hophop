@@ -1,4 +1,5 @@
 #include "libhop-impl.h"
+#include "hop_internal.h"
 
 H2_API_BEGIN
 
@@ -1113,7 +1114,7 @@ static int H2FmtCanDropRedundantLiteralCast(
 }
 
 static int H2FmtKeywordIsVar(const char* kw) {
-    return kw[0] == 'v' && kw[1] == 'a' && kw[2] == 'r' && kw[3] == '\0';
+    return StrEq(kw, "var");
 }
 
 static void H2FmtRewriteVarTypeFromLiteralCast(
