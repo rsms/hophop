@@ -5897,6 +5897,11 @@ static int HOPEvalClassifySimpleTypeNode(
     int32_t               typeNode,
     char*                 outKind,
     uint64_t* _Nullable outAliasTag);
+static int HOPEvalScoreArrayLikeArgForTypeNode(
+    const H2CTFEValue*  value,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    int* _Nullable outScore);
 static int HOPEvalAggregateDistanceToType(
     const HOPEvalProgram* p,
     const H2CTFEValue*    value,
@@ -5974,6 +5979,9 @@ static int HOPEvalValueMatchesExpectedTypeNode(
         return 1;
     }
     if (HOPEvalAggregateDistanceToType(p, value, typeFile, typeNode, &structDistance)) {
+        return 1;
+    }
+    if (HOPEvalScoreArrayLikeArgForTypeNode(value, typeFile, typeNode, NULL)) {
         return 1;
     }
     if (HOPEvalValueSimpleKind(sourceValue, &argKind, &argAliasTag)
@@ -6622,6 +6630,98 @@ static int HOPEvalClassifySimpleTypeNode(
     return 0;
 }
 
+static int HOPEvalTypeNodesSameBuiltin(
+    const H2ParsedFile* aFile, int32_t aNode, const H2ParsedFile* bFile, int32_t bNode) {
+    int32_t aCode = HOPEvalTypeCode_INVALID;
+    int32_t bCode = HOPEvalTypeCode_INVALID;
+    if (aFile == NULL || bFile == NULL || aNode < 0 || bNode < 0
+        || (uint32_t)aNode >= aFile->ast.len || (uint32_t)bNode >= bFile->ast.len)
+    {
+        return 0;
+    }
+    if (HOPEvalTypeCodeFromTypeNode(aFile, aNode, &aCode)
+        && HOPEvalTypeCodeFromTypeNode(bFile, bNode, &bCode))
+    {
+        return aCode == bCode;
+    }
+    return 0;
+}
+
+static int HOPEvalArrayTypeNodeMatchesArrayLikeTypeNode(
+    const HOPEvalArray* array, const H2ParsedFile* typeFile, int32_t typeNode, int* outScore) {
+    const H2AstNode* type;
+    int32_t          elemTypeNode = -1;
+    int              score = 0;
+    if (outScore != NULL) {
+        *outScore = 0;
+    }
+    if (array == NULL || array->file == NULL || typeFile == NULL || typeNode < 0
+        || (uint32_t)typeNode >= typeFile->ast.len)
+    {
+        return 0;
+    }
+    type = &typeFile->ast.nodes[typeNode];
+    switch (type->kind) {
+        case H2Ast_TYPE_ARRAY:
+            elemTypeNode = ASTFirstChild(&typeFile->ast, typeNode);
+            score = 12;
+            break;
+        case H2Ast_TYPE_SLICE:
+        case H2Ast_TYPE_MUTSLICE:
+            elemTypeNode = ASTFirstChild(&typeFile->ast, typeNode);
+            score = 10;
+            break;
+        case H2Ast_TYPE_PTR:
+        case H2Ast_TYPE_REF:
+        case H2Ast_TYPE_MUTREF: {
+            int32_t child = ASTFirstChild(&typeFile->ast, typeNode);
+            if (child < 0 || (uint32_t)child >= typeFile->ast.len) {
+                return 0;
+            }
+            switch (typeFile->ast.nodes[child].kind) {
+                case H2Ast_TYPE_ARRAY:
+                case H2Ast_TYPE_VARRAY:
+                case H2Ast_TYPE_SLICE:
+                case H2Ast_TYPE_MUTSLICE:
+                    elemTypeNode = ASTFirstChild(&typeFile->ast, child);
+                    score = 14;
+                    break;
+                default: return 0;
+            }
+            break;
+        }
+        default: return 0;
+    }
+    if (!HOPEvalTypeNodesSameBuiltin(array->file, array->elemTypeNode, typeFile, elemTypeNode)) {
+        return 0;
+    }
+    if (outScore != NULL) {
+        *outScore = score;
+    }
+    return 1;
+}
+
+static int HOPEvalScoreArrayLikeArgForTypeNode(
+    const H2CTFEValue*  value,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    int* _Nullable outScore) {
+    const H2CTFEValue* sourceValue;
+    HOPEvalArray*      array;
+    if (outScore != NULL) {
+        *outScore = 0;
+    }
+    if (value == NULL) {
+        return 0;
+    }
+    sourceValue = HOPEvalValueTargetOrSelf(value);
+    array = HOPEvalValueAsArray(sourceValue);
+    if (array == NULL) {
+        return 0;
+    }
+    return HOPEvalArrayTypeNodeMatchesArrayLikeTypeNode(array, typeFile, typeNode, outScore);
+}
+
 static int HOPEvalStructEmbeddedBase(
     const HOPEvalProgram* p,
     const H2ParsedFile*   structFile,
@@ -6740,6 +6840,7 @@ static int HOPEvalScoreFunctionCandidate(
         uint64_t argAliasTag = 0;
         uint64_t paramAliasTag = 0;
         uint32_t structDistance = 0;
+        int      arrayLikeScore = 0;
         int32_t  paramTypeNode = HOPEvalFunctionParamTypeNodeAt(
             fn, fn->isVariadic && i >= fixedCount ? fixedCount : i);
         if (paramTypeNode < 0) {
@@ -6762,23 +6863,32 @@ static int HOPEvalScoreFunctionCandidate(
             score += structDistance == 0 ? 16 : (int)(16u - structDistance);
             continue;
         }
-        if (!HOPEvalValueSimpleKind(&args[i], &argKind, &argAliasTag)
-            || !HOPEvalClassifySimpleTypeNode(
-                p, fn->file, paramTypeNode, &paramKind, &paramAliasTag)
-            || argKind != paramKind)
+        if (HOPEvalScoreArrayLikeArgForTypeNode(&args[i], fn->file, paramTypeNode, &arrayLikeScore))
         {
-            return 0;
+            score += arrayLikeScore;
+            continue;
         }
-        if (paramAliasTag != 0) {
-            if (argAliasTag != paramAliasTag) {
-                return 0;
+        if (HOPEvalValueSimpleKind(&args[i], &argKind, &argAliasTag)
+            && HOPEvalClassifySimpleTypeNode(p, fn->file, paramTypeNode, &paramKind, &paramAliasTag)
+            && argKind == paramKind)
+        {
+            if (paramAliasTag != 0) {
+                if (argAliasTag != paramAliasTag) {
+                    return 0;
+                }
+                score += 4;
+            } else if (argAliasTag != 0) {
+                score += 1;
+            } else {
+                score += 2;
             }
-            score += 4;
-        } else if (argAliasTag != 0) {
-            score += 1;
-        } else {
-            score += 2;
+            continue;
         }
+        if (HOPEvalValueMatchesExpectedTypeNode(p, fn->file, paramTypeNode, &args[i])) {
+            score += 2;
+            continue;
+        }
+        return 0;
     }
     *outScore = score;
     return 1;

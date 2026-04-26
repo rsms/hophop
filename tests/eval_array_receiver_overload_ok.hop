@@ -1,0 +1,19 @@
+fn pick(buf *[u8], const fmt &str, args ...anytype) int {
+	_ = len(buf)
+	_ = len(fmt)
+	_ = len(args)
+	return 1
+}
+
+fn pick(const fmt &str, args ...anytype) int {
+	_ = len(fmt)
+	_ = len(args)
+	return 2
+}
+
+fn main() {
+	var msg [u8 128]
+	var n = msg.pick("some_state={}", 123)
+	assert (n == 1)
+	assert (pick("some_state={}", 123) == 2)
+}
