@@ -1,4 +1,4 @@
-*.hop linguist-language=text
+*.hop linguist-language=Hare
 
 src/diagnostics_data.c linguist-generated
 src/diagnostics_enum.inc linguist-generated
