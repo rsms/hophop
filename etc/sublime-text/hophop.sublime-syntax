@@ -170,7 +170,7 @@ contexts:
             2: keyword.directive.hophop
 
     keywords:
-      - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|in|switch|case|default|break|continue|return|defer|assert|new|as|with)\b'
+      - match: '\b(import|pub|struct|union|enum|fn|var|const|if|else|for|in|switch|case|default|break|continue|return|defer|assert|new|del|as|with)\b'
         scope: keyword.control.hophop
       - match: '\b(context)\b(?=\s+{{ident}}\b)'
         scope: keyword.control.hophop
