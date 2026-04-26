@@ -1596,6 +1596,22 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
         if (H2TCIsSourceLocationOfName(c, callee->dataStart, callee->dataEnd)) {
             return H2TCTypeSourceLocationOfCall(c, nodeId, callee, outType);
         }
+        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const")) {
+            int32_t argNode = H2AstNextSibling(c->ast, calleeNode);
+            int32_t nextArgNode = argNode >= 0 ? H2AstNextSibling(c->ast, argNode) : -1;
+            int32_t ignoredType;
+            if (argNode < 0 || nextArgNode >= 0) {
+                return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
+            }
+            if (H2TCTypeExpr(c, argNode, &ignoredType) != 0) {
+                return -1;
+            }
+            if (c->typeBool < 0) {
+                return H2TCFailNode(c, nodeId, H2Diag_UNKNOWN_TYPE);
+            }
+            *outType = c->typeBool;
+            return 0;
+        }
         if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "kind")) {
             int32_t argNode = H2AstNextSibling(c->ast, calleeNode);
             int32_t argType;
@@ -2230,6 +2246,24 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
                 if (diagOp != H2TCCompilerDiagOp_NONE) {
                     return H2TCTypeCompilerDiagCall(c, nodeId, callee, diagOp, outType);
                 }
+            }
+            if (H2NameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect")
+                && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const"))
+            {
+                int32_t argNode = H2AstNextSibling(c->ast, calleeNode);
+                int32_t nextArgNode = argNode >= 0 ? H2AstNextSibling(c->ast, argNode) : -1;
+                int32_t ignoredType;
+                if (argNode < 0 || nextArgNode >= 0) {
+                    return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
+                }
+                if (H2TCTypeExpr(c, argNode, &ignoredType) != 0) {
+                    return -1;
+                }
+                if (c->typeBool < 0) {
+                    return H2TCFailNode(c, nodeId, H2Diag_UNKNOWN_TYPE);
+                }
+                *outType = c->typeBool;
+                return 0;
             }
         }
         if (recvNode < 0) {

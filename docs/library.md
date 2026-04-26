@@ -178,30 +178,27 @@ fn fmt(format str, ...args) *str
 - For non-const format strings, validation is deferred to runtime parsing.
 
 
-### `str.format`
+### `format` and `format_str`
 
-Import:
-
-```hop
-import "str" { format }
-```
-
-Signature:
+Signatures:
 
 ```hop
-fn format(buf *[u8], const format &str, args ...anytype) int
+fn format(const format &str, args ...anytype) *str
+fn format_str(format &str, args ...anytype) *str
 ```
 
 Behavior:
 
-- `str.format` is imported from package path `str`.
-- Supported placeholders are `{i}`, `{f}`, `{s}` with escapes `{{` and `}}`.
+- `format` and `format_str` are available without an explicit import.
+- The API and implementation are part of the implicit `builtin` package.
+- `format` returns a newly allocated `*str` for const-evaluable format strings; caller owns it and should `del` it.
+- `format_str(format &str, ...)` returns a newly allocated `*str` for non-const format strings; caller owns it and should `del` it.
+- Supported placeholders are `{}`, `{i}`, `{f}`, `{s}` with escapes `{{` and `}}`.
 - Placeholder count must match argument count.
-- Placeholder compatibility: `{i}` integer, `{f}` float, `{s}` values assignable to `&str`.
-- Validation runs in pure-HopHop `const { ... }` logic at call site and fails during typecheck.
+- Placeholder compatibility: `{}` accepts integer, float, and string values; `{i}` integer, `{f}` float, `{s}` values assignable to `&str`.
+- `format` validation runs in pure-HopHop `const { ... }` logic at call site and fails during typecheck.
+- Allocating `format_str(format &str, ...)` accepts non-const format strings and validates at runtime with panic on invalid format strings.
 - Current implementation supports up to 16 variadic arguments.
-- Return value is the payload byte count that would have been written without truncation.
-- If `len(buf) > 0`, implementation writes at most `len(buf)-1` payload bytes and writes a trailing NUL byte.
 
 
 ### `print`
@@ -318,6 +315,9 @@ Planned surface (draft):
   - `ptr(T)`
   - `slice(T)`
   - `array(T, N)`
+- Call-site constness reflection:
+  - `is_const(x)`
+  - `reflect.is_const(x)`
 
 Sketch examples:
 

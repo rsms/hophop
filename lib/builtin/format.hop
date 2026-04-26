@@ -98,82 +98,7 @@ fn fmt_write_i_any(buf *[u8], payloadCap, oi int, v anytype) int {
 	return 0
 }
 
-fn fmt_write_f_any(buf *[u8], payloadCap, oi int, v anytype) int {
-	const t = typeof(v)
-	if t == f32 || t == f64 {
-		return fmt_write_f64(buf, payloadCap, oi, x: v as f64)
-	}
-
-	panic("invalid format string: {f} requires floating-point argument")
-	return 0
-}
-
-fn fmt_write_s_any(buf *[u8], payloadCap, oi int, v anytype) int {
-	const t = typeof(v)
-	if t == typeof("" as &str) {
-		var text = v as &str
-		return fmt_write_text(buf, payloadCap, oi, text)
-	} else if t == type *str {
-		var text = v as *str
-		return fmt_write_text(buf, payloadCap, oi, text)
-	}
-	panic("invalid format string: {s} requires string argument")
-	return 0
-}
-
-pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
-	const {
-		var bs &[u8] = fmt
-		var ai int   = 0
-
-		for var i int = 0; i < len(bs); i += 1 {
-			var byte u8 = bs[i]
-			if byte == '{' {
-				if i + 1 < len(bs) && bs[i + 1] == '{' {
-					i += 1
-					continue
-				}
-				if i + 2 < len(bs) && bs[i + 2] == '}' {
-					var spec u8 = bs[i + 1]
-
-					assert ai < len(args)
-
-					if spec == 'i' {
-						if typeof(args[ai]) == i8 {} else if typeof(args[ai]) == i16 {} else if typeof(args[ai]) == i32 {} else if typeof(args[ai]) == i64 {} else if typeof(args[ai]) == int {} else if typeof(args[ai]) == u8 {} else if typeof(args[ai]) == u16 {} else if typeof(args[ai]) == u32 {} else if typeof(args[ai]) == u64 {} else if typeof(args[ai]) == uint {} else {
-							assert false
-						}
-					} else if spec == 'f' {
-						if typeof(args[ai]) == f32 {} else if typeof(args[ai]) == f64 {} else {
-							assert false
-						}
-					} else if spec == 's' {
-						if typeof(args[ai]) == typeof("" as &str) {} else {
-							assert false
-						}
-					} else {
-						assert false
-					}
-
-					ai += 1
-					i += 2
-					continue
-				}
-				assert false
-			}
-
-			if byte == '}' {
-				if i + 1 < len(bs) && bs[i + 1] == '}' {
-					i += 1
-					continue
-				}
-				assert false
-			}
-		}
-
-		assert ai == len(args)
-	}
-
-	var cap            = len(buf)
+fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 	var payloadCap int = 0
 	if cap > 0 {
 		payloadCap = cap - 1
@@ -199,6 +124,32 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
 			}
 
 			var spec = c1
+			if spec == '}' {
+				if ai >= len(args) {
+					panic("invalid format string: placeholder index out of bounds")
+					return 0
+				}
+				var t = typeof(args[ai])
+				if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {
+					oi = fmt_write_i_any(buf, payloadCap, oi, v: args[ai])
+				} else if t == f32 {
+					oi = fmt_write_f64(buf, payloadCap, oi, x: args[ai] as f32 as f64)
+				} else if t == f64 {
+					oi = fmt_write_f64(buf, payloadCap, oi, x: args[ai] as f64)
+				} else if t == typeof("" as &str) {
+					var text = args[ai] as &str
+					oi = fmt_write_text(buf, payloadCap, oi, text)
+				} else if t == type *str {
+					var text = args[ai] as *str
+					oi = fmt_write_text(buf, payloadCap, oi, text)
+				} else {
+					panic("invalid format string: {} requires integer, floating-point, or string argument")
+					return 0
+				}
+				ai += 1
+				continue
+			}
+
 			i += 1
 			if i >= len(bs) || bs[i] != '}' {
 				panic("invalid format string")
@@ -255,6 +206,11 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
 		oi = fmt_write_byte(buf, payloadCap, oi, byte)
 	}
 
+	if ai != len(args) {
+		panic("invalid format string: too many arguments")
+		return 0
+	}
+
 	if cap > 0 {
 		var nulPos = oi
 		if nulPos > payloadCap {
@@ -264,4 +220,88 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
 	}
 
 	return oi
+}
+
+fn fmt_write_impl(buf *[u8], fmt &str, args ...anytype) int {
+	var cap = len(buf)
+	return fmt_write_impl_cap(buf, cap, fmt, args...)
+}
+
+pub fn format(const fmt &str, args ...anytype) *str {
+	const {
+		var bs &[u8] = fmt
+		var ai int   = 0
+
+		for var i int = 0; i < len(bs); i += 1 {
+			var byte u8 = bs[i]
+			if byte == '{' {
+				if i + 1 < len(bs) && bs[i + 1] == '{' {
+					i += 1
+					continue
+				}
+				if i + 1 < len(bs) && bs[i + 1] == '}' {
+					if ai >= len(args) {
+						error("format string error: not enough arguments")
+					} else {
+						var t = typeof(args[ai])
+						if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else if t == f32 || t == f64 {} else if t == typeof("" as &str) || t == type *str {} else {
+							error_at(source_location_of(args[ai]), "format string error: {} requires integer, floating-point, or string argument")
+						}
+					}
+					ai += 1
+					i += 1
+					continue
+				}
+				if i + 2 < len(bs) && bs[i + 2] == '}' {
+					var spec u8 = bs[i + 1]
+					if ai >= len(args) {
+						error("format string error: not enough arguments")
+					} else if spec == 'i' {
+						var t = typeof(args[ai])
+						if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else {
+							error_at(source_location_of(args[ai]), "format string error: {i} requires integer argument")
+						}
+					} else if spec == 'f' {
+						var t = typeof(args[ai])
+						if t == f32 || t == f64 {} else {
+							error_at(source_location_of(args[ai]), "format string error: {f} requires floating-point argument")
+						}
+					} else if spec == 's' {
+						var t = typeof(args[ai])
+						if t == typeof("" as &str) || t == type *str {} else {
+							error_at(source_location_of(args[ai]), "format string error: {s} requires string argument")
+						}
+					} else {
+						error("format string error: invalid placeholder")
+					}
+					ai += 1
+					i += 2
+					continue
+				}
+				error("format string error: malformed placeholder")
+			}
+
+			if byte == '}' {
+				if i + 1 < len(bs) && bs[i + 1] == '}' {
+					i += 1
+					continue
+				}
+				error("format string error: unmatched '}'")
+			}
+		}
+
+		if ai != len(args) {
+			error("format string error: too many arguments")
+		}
+	}
+	return format_str(fmt, args...)
+}
+
+pub fn format_str(fmt &str, args ...anytype) *str {
+	var empty [u8 0]
+	var n     int  = fmt_write_impl(empty, fmt, args...)
+	var out   *str = new str{ len: n }
+	var cap   int  = n + 1
+	fmt_write_impl_cap(out, cap, fmt, args...)
+	return out
 }

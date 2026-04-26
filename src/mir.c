@@ -123,10 +123,11 @@ static int H2MirNameIsCompilerDiagBuiltin(H2StrView src, uint32_t start, uint32_
 
 static int H2MirNameIsLazyTypeBuiltin(H2StrView src, uint32_t start, uint32_t end) {
     return H2MirNameEqLiteral(src, start, end, "typeof")
-        || H2MirNameEqLiteral(src, start, end, "kind")
-        || H2MirNameEqLiteral(src, start, end, "base")
-        || H2MirNameEqLiteral(src, start, end, "is_alias")
-        || H2MirNameEqLiteral(src, start, end, "type_name")
+        || H2MirNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
+        || H2MirNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
+        || H2MirNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
+        || H2MirNameEqLiteralOrPkgBuiltin(src, start, end, "is_const", "reflect")
+        || H2MirNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
         || H2MirNameEqLiteral(src, start, end, "ptr")
         || H2MirNameEqLiteral(src, start, end, "slice")
         || H2MirNameEqLiteral(src, start, end, "array");
@@ -172,6 +173,7 @@ static int H2MirCallUsesLazyBuiltinLowering(const H2MirBuilder* b, int32_t callN
         && (H2MirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "kind")
             || H2MirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "base")
             || H2MirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || H2MirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "is_const")
             || H2MirNameEqLiteral(b->src, callee->dataStart, callee->dataEnd, "type_name")))
     {
         return 1;

@@ -1,6 +1,1 @@
-tests/str_format_empty_placeholder_bad.hop:6:2: error: HOP2083: const block failed compile-time evaluation: assert condition evaluated to false during const evaluation
-    6 |     out.format("x={}", 1 as i64)
-      |  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-lib/str/format.hop:161:5: note: assert condition evaluated to false during const evaluation
-  161 | 				assert false
-      | 				^~~~~~~~~~~~
+tests/str_format_empty_placeholder_bad.hop:6:1: error: HOP2075: consteval error: format string error: malformed placeholder

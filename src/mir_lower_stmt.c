@@ -693,6 +693,7 @@ static int H2MirStmtLowerNameIsLazyTypeBuiltin(
         || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "kind", "reflect")
         || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "base", "reflect")
         || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_alias", "reflect")
+        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_const", "reflect")
         || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "type_name", "reflect")
         || H2MirStmtLowerNameEqLiteral(c, start, end, "ptr")
         || H2MirStmtLowerNameEqLiteral(c, start, end, "slice")
@@ -742,6 +743,8 @@ static int H2MirStmtLowerCallUsesLazyBuiltin(const H2MirStmtLower* c, int32_t ca
                 c, callee->dataStart, callee->dataEnd, "base", "reflect")
             || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "is_alias", "reflect")
+            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
+                c, callee->dataStart, callee->dataEnd, "is_const", "reflect")
             || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
                 c, callee->dataStart, callee->dataEnd, "type_name", "reflect")))
     {

@@ -6,8 +6,8 @@ HEP-28 adds generic language/compiler primitives needed for library-defined, cal
 validation in HopHop.
 
 Primary target:
-- make APIs like `str.format` validate placeholders/types/count from pure HopHop code, without
-  special typecheck hooks or backend-specific lowering.
+- make APIs like builtin `format` validate placeholders/types/count from pure HopHop code, without
+  special typecheck hooks.
 
 Key additions:
 1. const-binding visibility for consteval in function bodies
@@ -19,8 +19,8 @@ Key additions:
 
 Status:
 - implemented
-- used by `lib/str/format.hop` to perform placeholder/count/type validation in pure HopHop
-- no `str.format`-specific compiler or backend hooks are required
+- used by `lib/builtin/format.hop` to perform placeholder/count/type validation in pure HopHop
+- no format-specific typechecker hooks are required
 
 ## Motivation
 
@@ -42,7 +42,7 @@ As a result, features like HEP-26 were forced into compiler and backend special-
 - keep semantics explicit and deterministic
 - avoid introducing runtime boxing/vtables for `...anytype`
 - avoid adding runtime dynamic indexing requirements for `...anytype` packs
-- avoid feature-specific compiler hardcoding (e.g. no `str.format` special paths)
+- avoid feature-specific compiler hardcoding for format validation
 
 ## Non-goals
 
@@ -99,7 +99,7 @@ Rules:
 Intended use in APIs:
 
 ```hop
-fn format(buf *[u8], const pattern &str, args ...anytype) uint {
+fn format(const pattern &str, args ...anytype) *str {
     const {
         validate_pattern(pattern, args...)
     }
@@ -132,7 +132,7 @@ fn score(x anytype) i64 {
 
 ### 5. Const-evaluable string/slice indexing for parser logic
 
-Library validation code like `str.format` needs to scan bytes in const strings using loops and
+Library validation code like builtin `format` needs to scan bytes in const strings using loops and
 index operations.
 
 Required behavior:
@@ -165,7 +165,7 @@ Add or clarify diagnostics for:
 ## Migration plan
 
 1. land HEP-28 primitives (`const { ... }`, const-binding visibility, pack-index consteval support).
-2. implement `str.format` call-site validation in pure HopHop using those primitives.
+2. implement builtin `format` call-site validation in pure HopHop using those primitives.
 3. keep runtime formatting/writing logic in HopHop, but remove/avoid runtime-only validation paths where
    compile-time checks already guarantee correctness.
 4. keep format-specific compiler/backend special-cases removed (or remove them if still present in

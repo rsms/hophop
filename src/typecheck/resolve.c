@@ -167,6 +167,7 @@ static void H2TCInitConstEvalCtxFromParent(
     memset(outCtx, 0, sizeof(*outCtx));
     outCtx->tc = c;
     outCtx->rootCallOwnerFnIndex = -1;
+    outCtx->callFnIndex = -1;
     if (parent == NULL) {
         return;
     }
@@ -178,6 +179,7 @@ static void H2TCInitConstEvalCtxFromParent(
     outCtx->callArgs = parent->callArgs;
     outCtx->callArgCount = parent->callArgCount;
     outCtx->callBinding = parent->callBinding;
+    outCtx->callFnIndex = parent->callFnIndex;
     outCtx->callPackParamNameStart = parent->callPackParamNameStart;
     outCtx->callPackParamNameEnd = parent->callPackParamNameEnd;
     outCtx->fnDepth = parent->fnDepth;
@@ -3390,7 +3392,8 @@ int H2TCCheckConstBlocksForCall(
                 variadicPackParamNameEnd = n->dataEnd;
             }
 
-            if (isConstParam && binding != NULL && paramBindings != NULL
+            if ((isConstParam || (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0)
+                && binding != NULL && paramBindings != NULL
                 && !H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "_"))
             {
                 int32_t          argIndex = -1;
@@ -3423,6 +3426,11 @@ int H2TCCheckConstBlocksForCall(
                         return -1;
                     }
                     if (!evalIsConst) {
+                        if (!isConstParam) {
+                            paramIndex++;
+                            child = H2AstNextSibling(c->ast, child);
+                            continue;
+                        }
                         if (outError != NULL) {
                             outError->code = H2Diag_CONST_BLOCK_EVAL_FAILED;
                             outError->start = callArgs[argIndex].start;
@@ -3481,6 +3489,7 @@ int H2TCCheckConstBlocksForCall(
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
     evalCtx.rootCallOwnerFnIndex = -1;
+    evalCtx.callFnIndex = fnIndex;
     evalCtx.execCtx = &execCtx;
     evalCtx.callArgs = callArgs;
     evalCtx.callArgCount = argCount;

@@ -80,6 +80,7 @@ static int HOPEvalNameIsLazyTypeBuiltin(const char* _Nullable src, uint32_t star
         || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
         || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
         || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
+        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_const", "reflect")
         || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
         || SliceEqCStr(src, start, end, "ptr") || SliceEqCStr(src, start, end, "slice")
         || SliceEqCStr(src, start, end, "array");
@@ -383,7 +384,9 @@ static int HOPEvalStringViewTypeCodeFromTypeNode(
     }
     childNode = n->firstChild;
     if ((file->ast.nodes[childNode].kind == H2Ast_TYPE_VARRAY
-         || file->ast.nodes[childNode].kind == H2Ast_TYPE_ARRAY)
+         || file->ast.nodes[childNode].kind == H2Ast_TYPE_ARRAY
+         || file->ast.nodes[childNode].kind == H2Ast_TYPE_SLICE
+         || file->ast.nodes[childNode].kind == H2Ast_TYPE_MUTSLICE)
         && file->ast.nodes[childNode].firstChild >= 0
         && HOPEvalIsU8ElementTypeNode(file, file->ast.nodes[childNode].firstChild))
     {
@@ -397,20 +400,75 @@ static int HOPEvalStringViewTypeCodeFromTypeNode(
 static int HOPEvalCloneStringValue(
     H2Arena* arena, const H2CTFEValue* inValue, H2CTFEValue* outValue, int32_t typeCode) {
     uint8_t* copyBytes = NULL;
+    uint32_t allocLen = inValue != NULL ? inValue->s.len : 0u;
     if (arena == NULL || inValue == NULL || outValue == NULL || inValue->kind != H2CTFEValue_STRING)
     {
         return 0;
     }
     *outValue = *inValue;
-    if (inValue->s.len > 0) {
-        copyBytes = (uint8_t*)H2ArenaAlloc(arena, inValue->s.len, (uint32_t)_Alignof(uint8_t));
+    if (typeCode == HOPEvalTypeCode_STR_PTR && allocLen < UINT32_MAX) {
+        allocLen++;
+    }
+    if (allocLen > 0) {
+        copyBytes = (uint8_t*)H2ArenaAlloc(arena, allocLen, (uint32_t)_Alignof(uint8_t));
         if (copyBytes == NULL) {
             return -1;
         }
-        memcpy(copyBytes, inValue->s.bytes, inValue->s.len);
+        memset(copyBytes, 0, allocLen);
+        if (inValue->s.bytes != NULL && inValue->s.len > 0) {
+            memcpy(copyBytes, inValue->s.bytes, inValue->s.len);
+        }
         outValue->s.bytes = copyBytes;
     }
     HOPEvalValueSetRuntimeTypeCode(outValue, typeCode);
+    return 1;
+}
+
+static int HOPEvalEnsureStringStorage(H2Arena* arena, H2CTFEValue* value) {
+    uint8_t* bytes;
+    uint32_t allocLen;
+    if (arena == NULL || value == NULL || value->kind != H2CTFEValue_STRING
+        || value->s.bytes != NULL)
+    {
+        return 0;
+    }
+    allocLen = value->s.len < UINT32_MAX ? value->s.len + 1u : value->s.len;
+    if (allocLen == 0) {
+        return 0;
+    }
+    bytes = (uint8_t*)H2ArenaAlloc(arena, allocLen, (uint32_t)_Alignof(uint8_t));
+    if (bytes == NULL) {
+        return -1;
+    }
+    memset(bytes, 0, allocLen);
+    value->s.bytes = bytes;
+    return 0;
+}
+
+static int HOPEvalAdaptStringValueForTypeCode(
+    H2Arena* arena, int32_t targetTypeCode, const H2CTFEValue* inValue, H2CTFEValue* outValue) {
+    int32_t currentTypeCode = HOPEvalTypeCode_INVALID;
+    if (arena == NULL || inValue == NULL || outValue == NULL || inValue->kind != H2CTFEValue_STRING)
+    {
+        return 0;
+    }
+    if (targetTypeCode != HOPEvalTypeCode_STR_REF && targetTypeCode != HOPEvalTypeCode_STR_PTR) {
+        return 0;
+    }
+    if (targetTypeCode == HOPEvalTypeCode_STR_PTR) {
+        if (HOPEvalValueGetRuntimeTypeCode(inValue, &currentTypeCode)
+            && currentTypeCode == HOPEvalTypeCode_STR_PTR)
+        {
+            *outValue = *inValue;
+            if (HOPEvalEnsureStringStorage(arena, outValue) != 0) {
+                return -1;
+            }
+            return 1;
+        }
+        return HOPEvalCloneStringValue(arena, inValue, outValue, targetTypeCode);
+    }
+    *outValue = *inValue;
+    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
     return 1;
 }
 
@@ -421,7 +479,6 @@ static int HOPEvalAdaptStringValueForType(
     const H2CTFEValue*  inValue,
     H2CTFEValue*        outValue) {
     int32_t targetTypeCode = HOPEvalTypeCode_INVALID;
-    int32_t currentTypeCode = HOPEvalTypeCode_INVALID;
     if (arena == NULL || typeFile == NULL || inValue == NULL || outValue == NULL
         || inValue->kind != H2CTFEValue_STRING)
     {
@@ -430,18 +487,7 @@ static int HOPEvalAdaptStringValueForType(
     if (!HOPEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)) {
         return 0;
     }
-    if (targetTypeCode == HOPEvalTypeCode_STR_PTR) {
-        if (HOPEvalValueGetRuntimeTypeCode(inValue, &currentTypeCode)
-            && currentTypeCode == HOPEvalTypeCode_STR_PTR)
-        {
-            *outValue = *inValue;
-            return 1;
-        }
-        return HOPEvalCloneStringValue(arena, inValue, outValue, targetTypeCode);
-    }
-    *outValue = *inValue;
-    HOPEvalValueSetRuntimeTypeCode(outValue, targetTypeCode);
-    return 1;
+    return HOPEvalAdaptStringValueForTypeCode(arena, targetTypeCode, inValue, outValue);
 }
 
 static int HOPEvalTypeCodeFromValue(const H2CTFEValue* value, int32_t* outTypeCode) {
@@ -1656,6 +1702,7 @@ static int HOPEvalCoerceValueToTypeNode(
     HOPEvalAggregate*  sourceAgg;
     const H2CTFEValue* optionalPayload = NULL;
     int32_t            targetTypeCode = HOPEvalTypeCode_INVALID;
+    int32_t            targetStringTypeCode = HOPEvalTypeCode_INVALID;
     uint32_t           i;
     if (p == NULL || typeFile == NULL || typeNode < 0 || inOutValue == NULL
         || (uint32_t)typeNode >= typeFile->ast.len)
@@ -1880,11 +1927,27 @@ static int HOPEvalCoerceValueToTypeNode(
         *inOutValue = targetValue;
     }
     if (HOPEvalStringViewTypeCodeFromTypeNode(typeFile, typeNode, &targetTypeCode)
+        && sourceValue->kind == H2CTFEValue_STRING)
+    {
+        H2CTFEValue* targetValue = HOPEvalValueReferenceTarget(inOutValue);
+        if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING) {
+            if (HOPEvalAdaptStringValueForType(
+                    p->arena, typeFile, typeNode, targetValue, targetValue)
+                < 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+    }
+    if (HOPEvalTypeCodeFromTypeNode(typeFile, typeNode, &targetStringTypeCode)
+        && (targetStringTypeCode == HOPEvalTypeCode_STR_REF
+            || targetStringTypeCode == HOPEvalTypeCode_STR_PTR)
         && sourceValue->kind != H2CTFEValue_STRING)
     {
         H2CTFEValue stringValue;
         int         stringRc = HOPEvalStringValueFromArrayBytes(
-            p->arena, sourceValue, targetTypeCode, &stringValue);
+            p->arena, sourceValue, targetStringTypeCode, &stringValue);
         if (stringRc < 0) {
             return -1;
         }
@@ -9339,6 +9402,30 @@ static int HOPEvalMirZeroInitLocal(
 static int HOPEvalMirCoerceValueForType(
     void* ctx, const H2MirTypeRef* typeRef, H2CTFEValue* inOutValue, H2Diag* _Nullable diag) {
     HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+    int32_t         targetTypeCode = HOPEvalTypeCode_INVALID;
+    if (p != NULL && typeRef != NULL && inOutValue != NULL
+        && (H2MirTypeRefIsStrRef(typeRef) || H2MirTypeRefIsStrPtr(typeRef)
+            || H2MirTypeRefIsU8Ptr(typeRef)))
+    {
+        const H2CTFEValue* sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
+        if (sourceValue->kind == H2CTFEValue_STRING) {
+            H2CTFEValue* targetValue = HOPEvalValueReferenceTarget(inOutValue);
+            targetTypeCode =
+                H2MirTypeRefIsStrRef(typeRef) ? HOPEvalTypeCode_STR_REF : HOPEvalTypeCode_STR_PTR;
+            if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING) {
+                return HOPEvalAdaptStringValueForTypeCode(
+                           p->arena, targetTypeCode, targetValue, targetValue)
+                             < 0
+                         ? -1
+                         : 0;
+            }
+            return HOPEvalAdaptStringValueForTypeCode(
+                       p->arena, targetTypeCode, inOutValue, inOutValue)
+                         < 0
+                     ? -1
+                     : 0;
+        }
+    }
     if (p == NULL || p->currentFile == NULL || typeRef == NULL || inOutValue == NULL
         || typeRef->astNode == UINT32_MAX || typeRef->astNode >= p->currentFile->ast.len)
     {
@@ -9378,6 +9465,17 @@ static int HOPEvalMirIndexValue(
         return 0;
     }
     array = HOPEvalValueAsArray(baseValue);
+    if (array == NULL && baseValue->kind == H2CTFEValue_STRING
+        && (uint64_t)indexInt < (uint64_t)baseValue->s.len)
+    {
+        if (HOPEvalEnsureStringStorage(p->arena, (H2CTFEValue*)baseValue) != 0) {
+            return -1;
+        }
+        HOPEvalValueSetInt(outValue, (int64_t)baseValue->s.bytes[(uint32_t)indexInt]);
+        HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
+        *outIsConst = 1;
+        return 0;
+    }
     if (array == NULL) {
         return 0;
     }
@@ -9421,8 +9519,11 @@ static int HOPEvalMirIndexAddr(
         if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
             && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
             && baseTypeCode == HOPEvalTypeCode_STR_PTR
-            && (uint64_t)indexInt < (uint64_t)targetValue->s.len)
+            && (uint64_t)indexInt <= (uint64_t)targetValue->s.len)
         {
+            if (HOPEvalEnsureStringStorage(p->arena, targetValue) != 0) {
+                return -1;
+            }
             H2CTFEValue* byteProxy = (H2CTFEValue*)H2ArenaAlloc(
                 p->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
             if (byteProxy == NULL) {
@@ -9433,6 +9534,10 @@ static int HOPEvalMirIndexAddr(
             HOPEvalValueSetReference(outValue, byteProxy);
             *outIsConst = 1;
             return 0;
+        }
+        if (p->currentExecCtx != NULL) {
+            H2CTFEExecSetReason(
+                p->currentExecCtx, 0, 0, "index address is not supported by evaluator backend");
         }
         return 0;
     }
@@ -10182,9 +10287,14 @@ static int HOPEvalMirHostCall(
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_PRINT && argCount == 1u && args[0].kind == H2CTFEValue_STRING) {
-        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
-            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
+    if (hostId == HOP_EVAL_MIR_HOST_PRINT && argCount == 1u) {
+        const H2CTFEValue* message = HOPEvalValueTargetOrSelf(&args[0]);
+        if (message == NULL || message->kind != H2CTFEValue_STRING) {
+            *outIsConst = 0;
+            return 0;
+        }
+        if (message->s.len > 0 && message->s.bytes != NULL) {
+            if (fwrite(message->s.bytes, 1, message->s.len, stdout) != message->s.len) {
                 return ErrorSimple("failed to write print output");
             }
         }
@@ -10479,6 +10589,12 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
                    callee->dataStart,
                    callee->dataEnd,
                    "is_alias",
+                   "reflect")
+            || HOPEvalNameEqLiteralOrPkgBuiltin(
+                   p->currentFile->source,
+                   callee->dataStart,
+                   callee->dataEnd,
+                   "is_const",
                    "reflect")
             || HOPEvalNameEqLiteralOrPkgBuiltin(
                    p->currentFile->source,
@@ -11267,10 +11383,13 @@ static int HOPEvalAssignExprCb(
             if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
                 && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
                 && baseTypeCode == HOPEvalTypeCode_STR_PTR && index >= 0
-                && (uint64_t)index < (uint64_t)targetValue->s.len
+                && (uint64_t)index <= (uint64_t)targetValue->s.len
                 && H2CTFEValueToInt64(&rhsValue, &byteValue) == 0 && byteValue >= 0
                 && byteValue <= 255)
             {
+                if (HOPEvalEnsureStringStorage(p->arena, targetValue) != 0) {
+                    return -1;
+                }
                 ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
                 HOPEvalValueSetInt(outValue, byteValue);
                 HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
@@ -11593,10 +11712,13 @@ static int HOPEvalAssignValueExprCb(
             if (targetValue != NULL && targetValue->kind == H2CTFEValue_STRING
                 && HOPEvalValueGetRuntimeTypeCode(targetValue, &baseTypeCode)
                 && baseTypeCode == HOPEvalTypeCode_STR_PTR && index >= 0
-                && (uint64_t)index < (uint64_t)targetValue->s.len
+                && (uint64_t)index <= (uint64_t)targetValue->s.len
                 && H2CTFEValueToInt64(inValue, &byteValue) == 0 && byteValue >= 0
                 && byteValue <= 255)
             {
+                if (HOPEvalEnsureStringStorage(p->arena, targetValue) != 0) {
+                    return -1;
+                }
                 ((uint8_t*)targetValue->s.bytes)[(uint32_t)index] = (uint8_t)byteValue;
                 HOPEvalValueSetInt(outValue, byteValue);
                 HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_U8);
@@ -12487,6 +12609,7 @@ static int HOPEvalResolveCallMir(
     int                    didReturn = 0;
     int                    isReflectKind = 0;
     int                    isReflectIsAlias = 0;
+    int                    isReflectIsConst = 0;
     int                    isReflectTypeName = 0;
     int                    isReflectBase = 0;
     int                    isTypeOf = 0;
@@ -12505,6 +12628,8 @@ static int HOPEvalResolveCallMir(
         p->currentFile->source, nameStart, nameEnd, "kind", "reflect");
     isReflectIsAlias = HOPEvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "is_alias", "reflect");
+    isReflectIsConst = HOPEvalNameEqLiteralOrPkgBuiltin(
+        p->currentFile->source, nameStart, nameEnd, "is_const", "reflect");
     isReflectTypeName = HOPEvalNameEqLiteralOrPkgBuiltin(
         p->currentFile->source, nameStart, nameEnd, "type_name", "reflect");
     isReflectBase = HOPEvalNameEqLiteralOrPkgBuiltin(
@@ -12532,6 +12657,17 @@ static int HOPEvalResolveCallMir(
             *outIsConst = 1;
             return 0;
         }
+    }
+    if (argCount == 1 && isReflectIsConst) {
+        outValue->kind = H2CTFEValue_BOOL;
+        outValue->i64 = 0;
+        outValue->f64 = 0.0;
+        outValue->b = args[0].kind == H2CTFEValue_REFERENCE ? 0u : 1u;
+        outValue->typeTag = 0;
+        outValue->s.bytes = NULL;
+        outValue->s.len = 0;
+        *outIsConst = 1;
+        return 0;
     }
     if (argCount == 1 && isReflectTypeName) {
         if (HOPEvalTypeNameOfValue((H2CTFEValue*)&args[0], outValue)) {

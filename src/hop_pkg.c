@@ -1852,9 +1852,22 @@ static int PackageHasExport(const H2Package* pkg, const char* name) {
     return 0;
 }
 
+static int ReflectPackageHasIntrinsicExportSlice(
+    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
+    if (pkg == NULL || pkg->name == NULL || !StrEq(pkg->name, "reflect")) {
+        return 0;
+    }
+    return SliceEqCStr(src, start, end, "kind") || SliceEqCStr(src, start, end, "base")
+        || SliceEqCStr(src, start, end, "is_alias") || SliceEqCStr(src, start, end, "is_const")
+        || SliceEqCStr(src, start, end, "type_name");
+}
+
 static int PackageHasExportSlice(
     const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
+    if (ReflectPackageHasIntrinsicExportSlice(pkg, src, start, end)) {
+        return 1;
+    }
     for (i = 0; i < pkg->pubDeclLen; i++) {
         size_t nameLen = strlen(pkg->pubDecls[i].name);
         if (nameLen == (size_t)(end - start)
@@ -4852,6 +4865,8 @@ oom:
     return ErrorSimple("out of memory");
 }
 
+static int PackagePrivateDeclIncludedInSurface(const H2Package* pkg, const H2SymbolDecl* decl);
+
 static int AppendAliasedPubDecls(
     H2StringBuilder* b,
     const H2Package* sourcePkg,
@@ -4864,33 +4879,49 @@ static int AppendAliasedPubDecls(
     H2IdentMap* maps = NULL;
     uint32_t    mapLen = 0;
     uint32_t    declLen = includePrivateDecls ? sourcePkg->declLen : 0u;
+    uint32_t    selectedDeclLen = 0;
     uint32_t    j;
+    uint32_t    mapIndex = 0;
     int         rc = -1;
 
-    if (declLen == 0 && sourcePkg->pubDeclLen == 0) {
+    if (includePrivateDecls) {
+        for (j = 0; j < declLen; j++) {
+            if (PackagePrivateDeclIncludedInSurface(sourcePkg, &sourcePkg->decls[j])) {
+                selectedDeclLen++;
+            }
+        }
+    }
+    if (selectedDeclLen == 0 && sourcePkg->pubDeclLen == 0) {
         return 0;
     }
-    mapLen = declLen + sourcePkg->pubDeclLen;
+    mapLen = selectedDeclLen + sourcePkg->pubDeclLen;
     maps = (H2IdentMap*)calloc(mapLen, sizeof(H2IdentMap));
     if (maps == NULL) {
         return ErrorSimple("out of memory");
     }
     for (j = 0; j < declLen; j++) {
-        maps[j].name = sourcePkg->decls[j].name;
-        maps[j].replacement = NULL;
-        if (BuildPrefixedName(alias, sourcePkg->decls[j].name, (char**)&maps[j].replacement) != 0) {
-            goto done;
+        if (!PackagePrivateDeclIncludedInSurface(sourcePkg, &sourcePkg->decls[j])) {
+            continue;
         }
-    }
-    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
-        maps[declLen + j].name = sourcePkg->pubDecls[j].name;
-        maps[declLen + j].replacement = NULL;
-        if (BuildPrefixedName(
-                alias, sourcePkg->pubDecls[j].name, (char**)&maps[declLen + j].replacement)
+        maps[mapIndex].name = sourcePkg->decls[j].name;
+        maps[mapIndex].replacement = NULL;
+        if (BuildPrefixedName(alias, sourcePkg->decls[j].name, (char**)&maps[mapIndex].replacement)
             != 0)
         {
             goto done;
         }
+        mapIndex++;
+    }
+    for (j = 0; j < sourcePkg->pubDeclLen; j++) {
+        maps[mapIndex].name = sourcePkg->pubDecls[j].name;
+        maps[mapIndex].replacement = NULL;
+        if (BuildPrefixedName(
+                alias, sourcePkg->pubDecls[j].name, (char**)&maps[mapIndex].replacement)
+            != 0)
+        {
+            goto done;
+        }
+        mapIndex++;
     }
 
     for (j = 0; j < sourcePkg->pubDeclLen; j++) {
@@ -4964,6 +4995,9 @@ static int AppendAliasedPubDecls(
         uint32_t            combinedEnd;
         uint32_t            sourceStart = DeclTextSourceStart(file, decl->nodeId);
         uint32_t            sourceEnd = file->ast.nodes[decl->nodeId].end;
+        if (!PackagePrivateDeclIncludedInSurface(sourcePkg, decl)) {
+            continue;
+        }
         rc = RewriteDeclTextForNamedImports(
             sourcePkg, file, decl->nodeId, decl->declText, &namedRewritten);
         if (rc != 0) {
@@ -5072,15 +5106,22 @@ static int HasEmittedImportSurface(
 
 static int PackageNeedsPrivateDeclSurface(const H2Package* pkg) {
     uint32_t i;
-    if (pkg->name != NULL && StrEq(pkg->name, "builtin")) {
-        return 0;
-    }
     for (i = 0; i < pkg->pubDeclLen; i++) {
         if (pkg->pubDecls[i].kind == H2Ast_FN) {
             return 1;
         }
     }
     return 0;
+}
+
+static int PackagePrivateDeclIncludedInSurface(const H2Package* pkg, const H2SymbolDecl* decl) {
+    if (pkg == NULL || decl == NULL || decl->name == NULL) {
+        return 0;
+    }
+    if (pkg->name == NULL || !StrEq(pkg->name, "builtin")) {
+        return 1;
+    }
+    return strncmp(decl->name, "fmt_", 4u) == 0;
 }
 
 static int AppendImportedPackageSurface(

@@ -457,6 +457,41 @@ int IsExportedTypeNode(const H2CBackendC* c, int32_t nodeId) {
     return map != NULL && IsTypeDeclKind(map->kind) && map->isExported;
 }
 
+static int SourceSliceHasPrefix(const char* src, uint32_t start, uint32_t end, const char* prefix) {
+    uint32_t i = 0;
+    if (end < start) {
+        return 0;
+    }
+    while (prefix[i] != '\0') {
+        if (start + i >= end || src[start + i] != prefix[i]) {
+            return 0;
+        }
+        i++;
+    }
+    return 1;
+}
+
+static int IsBuiltinFormatterSourceFnName(const H2CBackendC* c, const H2AstNode* n) {
+    return SliceEq(c->unit->source, n->dataStart, n->dataEnd, "format")
+        || SliceEq(c->unit->source, n->dataStart, n->dataEnd, "format_str")
+        || SourceSliceHasPrefix(c->unit->source, n->dataStart, n->dataEnd, "fmt_");
+}
+
+static int HasBuiltinFormatterTemplateInstance(const H2CBackendC* c) {
+    uint32_t i;
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        if ((sig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0
+            && (StrHasPrefix(sig->cName, "builtin__format__ti")
+                || StrHasPrefix(sig->cName, "builtin__format_str__ti")
+                || StrHasPrefix(sig->cName, "builtin__fmt_")))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int EmitEnumDecl(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
     const H2NameMap* map = FindDeclMap(c, nodeId);
     int32_t          child = AstFirstChild(&c->ast, nodeId);
@@ -2119,7 +2154,9 @@ int EmitDeclNode(
                 nSigs = (uint32_t)(sizeof(sigs) / sizeof(sigs[0]));
             }
             for (i = 0; i < nSigs; i++) {
-                if ((sigs[i]->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0) {
+                if ((sigs[i]->flags & (H2FnSigFlag_TEMPLATE_BASE | H2FnSigFlag_TEMPLATE_INSTANCE))
+                    != 0)
+                {
                     continue;
                 }
                 if (importedBeforeOwnOffset) {
@@ -2414,6 +2451,20 @@ int ShouldEmitDeclNode(const H2CBackendC* c, int32_t nodeId) {
     n = NodeAt(c, nodeId);
     if (n == NULL) {
         return 0;
+    }
+    if (n->kind == H2Ast_FN) {
+        const H2NameMap* map = FindDeclMap((H2CBackendC*)c, nodeId);
+        if (c->unit->packageName != NULL && StrEq(c->unit->packageName, "builtin")
+            && IsBuiltinFormatterSourceFnName(c, n))
+        {
+            return 1;
+        }
+        if (map != NULL && map->cName != NULL
+            && (StrEq(map->cName, "builtin__format") || StrEq(map->cName, "builtin__format_str")
+                || StrHasPrefix(map->cName, "builtin__fmt_")))
+        {
+            return HasBuiltinFormatterTemplateInstance(c);
+        }
     }
     if (c->options != NULL && c->options->emitNodeStartOffsetEnabled != 0
         && n->start < c->options->emitNodeStartOffset)

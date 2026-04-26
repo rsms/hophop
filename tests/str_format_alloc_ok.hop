@@ -1,0 +1,20 @@
+// Verifies allocated builtin string format and selector sugar.
+fn main() {
+	var s *str = "values = {}, {}".format(123, 456)
+	assert len(s) == len("values = 123, 456")
+	assert s[0] == 'v'
+	assert s[9] == '1'
+	assert s[10] == '2'
+	assert s[11] == '3'
+	assert s[14] == '4'
+	assert s[15] == '5'
+	assert s[16] == '6'
+	del s
+
+	var t *str = format("name={s}, n={i}", "Ada", 42)
+	assert len(t) == len("name=Ada, n=42")
+	assert t[5] == 'A'
+	assert t[12] == '4'
+	assert t[13] == '2'
+	del t
+}

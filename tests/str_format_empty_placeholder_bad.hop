@@ -1,7 +1,5 @@
-// Verifies string format empty placeholder is rejected.
-import "str" { format }
-
+// Verifies string format malformed placeholder is rejected.
 fn main() {
-    var out [u8 32]
-    out.format("x={}", 1 as i64)
+	var s *str = format("x={", 1 as i64)
+	del s
 }

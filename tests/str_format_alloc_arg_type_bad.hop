@@ -1,0 +1,5 @@
+// Verifies allocated format validates const format strings at compile time.
+fn main() {
+	var s *str = format("x={f}", 1 as i64)
+	del s
+}

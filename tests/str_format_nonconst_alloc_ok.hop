@@ -1,0 +1,15 @@
+// Verifies allocated format_str accepts a non-const format string.
+fn example(fmt &str) {
+	var s *str = fmt.format_str(123, 456)
+	assert len(s) == len("values = 123, 456")
+	assert s[0] == 'v'
+	assert s[9] == '1'
+	assert s[16] == '6'
+	print(s)
+	del s
+}
+
+fn main() {
+	var fmt &str = "values = {}, {}"
+	example(fmt)
+}

@@ -1,0 +1,1 @@
+tests/str_format_arg_type_s_bad.hop:3:31: error: HOP2075: consteval error: format string error: {s} requires string argument

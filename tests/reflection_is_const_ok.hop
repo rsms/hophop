@@ -1,0 +1,34 @@
+// Verifies reflection can distinguish const-evaluable arguments.
+import "reflect"
+
+fn expect_const(x anytype) {
+	const {
+		assert is_const(x)
+	}
+}
+
+fn expect_non_const(x anytype) {
+	const {
+		assert !is_const(x)
+	}
+}
+
+fn expect_pkg_const(x anytype) {
+	const {
+		assert reflect.is_const(x)
+	}
+}
+
+fn expect_pkg_non_const(x anytype) {
+	const {
+		assert !reflect.is_const(x)
+	}
+}
+
+fn main() {
+	var s &str = "hello"
+	expect_const("hello")
+	expect_non_const(s)
+	expect_pkg_const("world")
+	expect_pkg_non_const(s)
+}

@@ -406,6 +406,21 @@ void H2TCSetLocalUsageSuppress(H2TypeCheckCtx* c, int32_t localIdx, int suppress
     use->suppressWarning = suppress ? 1u : 0u;
 }
 
+static int H2TCFunctionNameHasPrefix(
+    H2TypeCheckCtx* c, const H2TCFunction* fn, const char* prefix) {
+    uint32_t prefixLen = 0;
+    if (c == NULL || fn == NULL || prefix == NULL || fn->nameEnd < fn->nameStart) {
+        return 0;
+    }
+    while (prefix[prefixLen] != '\0') {
+        prefixLen++;
+    }
+    if (fn->nameEnd - fn->nameStart < prefixLen) {
+        return 0;
+    }
+    return memcmp(c->src.ptr + fn->nameStart, prefix, prefixLen) == 0;
+}
+
 int H2TCEmitUnusedSymbolWarnings(H2TypeCheckCtx* c) {
     uint32_t i;
     if (c == NULL) {
@@ -416,6 +431,19 @@ int H2TCEmitUnusedSymbolWarnings(H2TypeCheckCtx* c) {
         H2DiagCode          code;
         H2Diag              warning;
         if (use->ownerFnIndex < 0 || use->suppressWarning || use->readCount > 0) {
+            continue;
+        }
+        if (use->nameStart >= use->nameEnd) {
+            continue;
+        }
+        if (use->ownerFnIndex >= 0 && (uint32_t)use->ownerFnIndex < c->funcLen
+            && H2TCFunctionNameHasPrefix(c, &c->funcs[(uint32_t)use->ownerFnIndex], "builtin__"))
+        {
+            continue;
+        }
+        if (use->ownerFnIndex >= 0 && (uint32_t)use->ownerFnIndex < c->funcLen
+            && H2TCFunctionNameHasPrefix(c, &c->funcs[(uint32_t)use->ownerFnIndex], "str__"))
+        {
             continue;
         }
         if (use->kind == H2TCLocalUseKind_PARAM) {
@@ -453,6 +481,15 @@ int H2TCEmitUnusedSymbolWarnings(H2TypeCheckCtx* c) {
             continue;
         }
         if ((c->ast->nodes[fnNode].flags & H2AstFlag_PUB) != 0) {
+            continue;
+        }
+        if (fn->nameStart >= fn->nameEnd) {
+            continue;
+        }
+        if (H2TCFunctionNameHasPrefix(c, fn, "builtin__")) {
+            continue;
+        }
+        if (H2TCFunctionNameHasPrefix(c, fn, "str__")) {
             continue;
         }
         warning = (H2Diag){ 0 };

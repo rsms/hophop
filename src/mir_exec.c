@@ -618,6 +618,8 @@ static int H2MirRunLoop(
                 H2MirExecValue ref;
                 H2MirExecValue v;
                 H2CTFEValue*   target;
+                uint8_t*       bytePtr = NULL;
+                int64_t        byteValue = 0;
                 if (H2CTFEPop(run, &ref) != 0 || H2CTFEPop(run, &v) != 0) {
                     return 0;
                 }
@@ -625,19 +627,19 @@ static int H2MirRunLoop(
                 if (target == NULL) {
                     return 0;
                 }
-                {
-                    uint8_t* bytePtr = NULL;
-                    int64_t  byteValue = 0;
-                    if (H2MirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
-                        if (H2CTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0
-                            || byteValue > 255)
-                        {
-                            return 0;
-                        }
-                        *bytePtr = (uint8_t)byteValue;
-                        target->i64 = byteValue;
-                        break;
+                if (H2MirValueAsByteRefProxy(target, &bytePtr) && bytePtr != NULL) {
+                    if (H2CTFEValueToInt64(&v, &byteValue) != 0 || byteValue < 0 || byteValue > 255)
+                    {
+                        H2MirSetReason(run, ins, "byte reference store value is not supported");
+                        return 0;
                     }
+                    *bytePtr = (uint8_t)byteValue;
+                    target->i64 = byteValue;
+                    break;
+                }
+                if (H2MirValueAsByteRefProxy(target, &bytePtr)) {
+                    H2MirSetReason(run, ins, "byte reference store target is null");
+                    return 0;
                 }
                 *target = v;
                 break;
@@ -904,6 +906,7 @@ static int H2MirRunLoop(
                     return -1;
                 }
                 if (!callOk) {
+                    H2MirSetReason(run, ins, "host call is not supported by evaluator backend");
                     return 0;
                 }
                 if (H2CTFEPush(run, &v) != 0) {

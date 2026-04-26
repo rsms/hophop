@@ -1,0 +1,5 @@
+// Verifies builtin format no longer blocks ordinary local names.
+fn main() {
+	var format int = 3
+	assert format == 3
+}

@@ -2393,6 +2393,211 @@ static int H2TCConstEvalGetConcreteCallArgType(
     return 1;
 }
 
+static void H2TCConstEvalSetBoolValue(H2CTFEValue* outValue, int value) {
+    if (outValue == NULL) {
+        return;
+    }
+    H2TCConstEvalSetNullValue(outValue);
+    outValue->kind = H2CTFEValue_BOOL;
+    outValue->b = value ? 1u : 0u;
+}
+
+static int H2TCConstEvalValueIsReflectImportAlias(H2TypeCheckCtx* c, const H2CTFEValue* value) {
+    const uint8_t* srcBytes;
+    const uint8_t* aliasPtr;
+    uint32_t       aliasStart;
+    uint32_t       aliasEnd;
+    if (c == NULL || value == NULL || value->kind != H2CTFEValue_SPAN
+        || value->typeTag != H2_TC_MIR_IMPORT_ALIAS_TAG || value->span.fileBytes == NULL)
+    {
+        return 0;
+    }
+    srcBytes = (const uint8_t*)c->src.ptr;
+    aliasPtr = value->span.fileBytes;
+    if (aliasPtr < srcBytes || (uint64_t)(aliasPtr - srcBytes) > UINT32_MAX) {
+        return 0;
+    }
+    aliasStart = (uint32_t)(aliasPtr - srcBytes);
+    aliasEnd = aliasStart + value->span.fileLen;
+    if (aliasEnd > c->src.len) {
+        return 0;
+    }
+    return H2NameEqLiteral(c->src, aliasStart, aliasEnd, "reflect");
+}
+
+static int H2TCConstEvalCallNodeIsReflectIsConst(H2TypeCheckCtx* c, int32_t callNode) {
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    int32_t          calleeNode;
+    int32_t          recvNode;
+    const H2AstNode* recv;
+    if (c == NULL || callNode < 0 || (uint32_t)callNode >= c->ast->len) {
+        return 0;
+    }
+    call = &c->ast->nodes[callNode];
+    if (call->kind != H2Ast_CALL) {
+        return 0;
+    }
+    calleeNode = H2AstFirstChild(c->ast, callNode);
+    if (calleeNode < 0 || (uint32_t)calleeNode >= c->ast->len) {
+        return 0;
+    }
+    callee = &c->ast->nodes[calleeNode];
+    if (callee->kind != H2Ast_FIELD_EXPR
+        || !H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const"))
+    {
+        return 0;
+    }
+    recvNode = H2AstFirstChild(c->ast, calleeNode);
+    if (recvNode < 0 || (uint32_t)recvNode >= c->ast->len) {
+        return 0;
+    }
+    recv = &c->ast->nodes[recvNode];
+    return recv->kind == H2Ast_IDENT
+        && H2NameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect");
+}
+
+static int H2TCConstEvalFindCallArgForParam(
+    H2TCConstEvalCtx* evalCtx, int32_t operandNode, uint32_t* outCallArgIndex) {
+    H2TypeCheckCtx*        c;
+    const H2TCCallBinding* binding;
+    const H2TCFunction*    fn;
+    int32_t                node;
+    uint32_t               paramIndex;
+    uint32_t               argIndex;
+    int                    packStatus;
+    if (outCallArgIndex != NULL) {
+        *outCallArgIndex = UINT32_MAX;
+    }
+    if (evalCtx == NULL || outCallArgIndex == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    binding = (const H2TCCallBinding*)evalCtx->callBinding;
+    if (c == NULL || binding == NULL || evalCtx->callArgs == NULL || evalCtx->callArgCount == 0) {
+        return 1;
+    }
+
+    packStatus = H2TCConstEvalResolveTrackedAnyPackArgIndex(evalCtx, operandNode, outCallArgIndex);
+    if (packStatus == 0) {
+        return 0;
+    }
+    if (packStatus < 0) {
+        return -1;
+    }
+
+    node = operandNode;
+    if (node >= 0 && (uint32_t)node < c->ast->len && c->ast->nodes[node].kind == H2Ast_CALL_ARG) {
+        int32_t inner = H2AstFirstChild(c->ast, node);
+        if (inner >= 0) {
+            node = inner;
+        }
+    }
+    if (node < 0 || (uint32_t)node >= c->ast->len || c->ast->nodes[node].kind != H2Ast_IDENT
+        || evalCtx->callFnIndex < 0 || (uint32_t)evalCtx->callFnIndex >= c->funcLen)
+    {
+        return 1;
+    }
+    fn = &c->funcs[evalCtx->callFnIndex];
+    for (paramIndex = 0; paramIndex < fn->paramCount; paramIndex++) {
+        if (H2NameEqSlice(
+                c->src,
+                c->funcParamNameStarts[fn->paramTypeStart + paramIndex],
+                c->funcParamNameEnds[fn->paramTypeStart + paramIndex],
+                c->ast->nodes[node].dataStart,
+                c->ast->nodes[node].dataEnd))
+        {
+            for (argIndex = 0; argIndex < evalCtx->callArgCount; argIndex++) {
+                if (binding->argParamIndices[argIndex] == (int32_t)paramIndex) {
+                    *outCallArgIndex = argIndex;
+                    return 0;
+                }
+            }
+            return 1;
+        }
+    }
+    return 1;
+}
+
+static int H2TCConstEvalReflectIsConstCall(
+    H2TCConstEvalCtx* evalCtx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst) {
+    H2TypeCheckCtx*        c;
+    const H2TCCallArgInfo* callArgs;
+    int32_t                calleeNode;
+    const H2AstNode*       callee;
+    int32_t                operandNode = -1;
+    int32_t                nextNode = -1;
+    uint32_t               callArgIndex = UINT32_MAX;
+    int                    findStatus;
+    H2CTFEValue            ignored;
+    int                    operandIsConst = 0;
+    if (evalCtx == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    c = evalCtx->tc;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return -1;
+    }
+    calleeNode = H2AstFirstChild(c->ast, exprNode);
+    callee = calleeNode >= 0 ? &c->ast->nodes[calleeNode] : NULL;
+    if (callee == NULL) {
+        return 1;
+    }
+    if (callee->kind == H2Ast_IDENT) {
+        if (!H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const")
+            && !H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "reflect__is_const"))
+        {
+            return 1;
+        }
+        operandNode = H2AstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? H2AstNextSibling(c->ast, operandNode) : -1;
+    } else if (callee->kind == H2Ast_FIELD_EXPR) {
+        int32_t          recvNode = H2AstFirstChild(c->ast, calleeNode);
+        const H2AstNode* recv =
+            recvNode >= 0 && (uint32_t)recvNode < c->ast->len ? &c->ast->nodes[recvNode] : NULL;
+        if (recv == NULL || recv->kind != H2Ast_IDENT
+            || !H2NameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect")
+            || !H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const"))
+        {
+            return 1;
+        }
+        operandNode = H2AstNextSibling(c->ast, calleeNode);
+        nextNode = operandNode >= 0 ? H2AstNextSibling(c->ast, operandNode) : -1;
+    } else {
+        return 1;
+    }
+    if (operandNode < 0 || nextNode >= 0) {
+        return 1;
+    }
+    if (c->ast->nodes[operandNode].kind == H2Ast_CALL_ARG) {
+        int32_t inner = H2AstFirstChild(c->ast, operandNode);
+        if (inner >= 0) {
+            operandNode = inner;
+        }
+    }
+    findStatus = H2TCConstEvalFindCallArgForParam(evalCtx, operandNode, &callArgIndex);
+    if (findStatus < 0) {
+        return -1;
+    }
+    if (findStatus == 0) {
+        callArgs = (const H2TCCallArgInfo*)evalCtx->callArgs;
+        if (callArgIndex >= evalCtx->callArgCount) {
+            return -1;
+        }
+        if (H2TCEvalConstExprNode(
+                evalCtx, callArgs[callArgIndex].exprNode, &ignored, &operandIsConst)
+            != 0)
+        {
+            return -1;
+        }
+    } else if (H2TCEvalConstExprNode(evalCtx, operandNode, &ignored, &operandIsConst) != 0) {
+        return -1;
+    }
+    H2TCConstEvalSetBoolValue(outValue, operandIsConst);
+    *outIsConst = 1;
+    return 0;
+}
+
 int H2TCConstEvalSourceLocationOfCall(
     H2TCConstEvalCtx* evalCtx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst) {
     H2TypeCheckCtx*  c;
@@ -3399,6 +3604,7 @@ int H2TCEvalConstExprNode(
         int              directCallStatus;
         int              lenStatus;
         int              sourceLocationStatus;
+        int              isConstStatus;
         int              reflectStatus;
         lenStatus = H2TCConstEvalLenCall(evalCtx, exprNode, outValue, outIsConst);
         if (lenStatus == 0) {
@@ -3420,6 +3626,13 @@ int H2TCEvalConstExprNode(
             return 0;
         }
         if (sourceLocationStatus < 0) {
+            return -1;
+        }
+        isConstStatus = H2TCConstEvalReflectIsConstCall(evalCtx, exprNode, outValue, outIsConst);
+        if (isConstStatus == 0) {
+            return 0;
+        }
+        if (isConstStatus < 0) {
             return -1;
         }
         if (callee != NULL && callee->kind == H2Ast_IDENT
@@ -5850,6 +6063,7 @@ static int H2TCMirConstCallNodeIsSpecialBuiltin(H2TypeCheckCtx* tc, int32_t call
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_const")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "ptr")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "slice")
@@ -5884,6 +6098,7 @@ static int H2TCMirConstCallNodeIsSpecialBuiltin(H2TypeCheckCtx* tc, int32_t call
         && (H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "kind")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "base")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_alias")
+            || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "is_const")
             || H2NameEqLiteral(tc->src, callee->dataStart, callee->dataEnd, "type_name")))
     {
         return 1;
@@ -5912,10 +6127,28 @@ static int H2TCMirConstResolveCallNode(
     if (evalCtx == NULL || evalCtx->tc == NULL || program == NULL || inst == NULL
         || outCallNode == NULL || inst->op != H2MirOp_CALL || inst->aux >= program->symbolLen)
     {
+        uint32_t rawNode;
+        if (evalCtx != NULL && evalCtx->tc != NULL && inst != NULL && outCallNode != NULL
+            && inst->op == H2MirOp_CALL)
+        {
+            rawNode = H2MirRawCallAuxNode(inst->aux);
+            if (rawNode < evalCtx->tc->ast->len
+                && evalCtx->tc->ast->nodes[rawNode].kind == H2Ast_CALL)
+            {
+                *outCallNode = (int32_t)rawNode;
+                return 1;
+            }
+        }
         return 0;
     }
     symbol = &program->symbols[inst->aux];
     if (symbol->kind != H2MirSymbol_CALL || symbol->target >= evalCtx->tc->ast->len) {
+        uint32_t rawNode = H2MirRawCallAuxNode(inst->aux);
+        if (rawNode < evalCtx->tc->ast->len && evalCtx->tc->ast->nodes[rawNode].kind == H2Ast_CALL)
+        {
+            *outCallNode = (int32_t)rawNode;
+            return 1;
+        }
         return 0;
     }
     *outCallNode = (int32_t)symbol->target;
@@ -6031,6 +6264,14 @@ int H2TCResolveConstCallMirPre(
     }
 
     status = H2TCConstEvalSourceLocationOfCall(evalCtx, callNode, outValue, outIsConst);
+    if (status < 0) {
+        return -1;
+    }
+    if (status == 0) {
+        return 1;
+    }
+
+    status = H2TCConstEvalReflectIsConstCall(evalCtx, callNode, outValue, outIsConst);
     if (status < 0) {
         return -1;
     }
@@ -6965,6 +7206,13 @@ int H2TCResolveConstCallMir(
         if (status < 0) {
             return -1;
         }
+        status = H2TCConstEvalReflectIsConstCall(evalCtx, callNode, outValue, outIsConst);
+        if (status == 0) {
+            return 0;
+        }
+        if (status < 0) {
+            return -1;
+        }
         status = H2TCConstEvalTypeReflectionCall(evalCtx, callNode, outValue, outIsConst);
         if (status == 0) {
             return 0;
@@ -7085,6 +7333,24 @@ int H2TCResolveConstCallMir(
         if (reflectArgStatus < 0) {
             return -1;
         }
+    }
+
+    if (H2NameEqLiteral(c->src, nameStart, nameEnd, "is_const")
+        || H2NameEqLiteral(c->src, nameStart, nameEnd, "reflect.is_const")
+        || H2NameEqLiteral(c->src, nameStart, nameEnd, "reflect__is_const"))
+    {
+        if (argCount == 1u
+            || (argCount == 2u && H2TCConstEvalValueIsReflectImportAlias(c, &args[0])))
+        {
+            H2TCConstEvalSetBoolValue(outValue, 1);
+            *outIsConst = 1;
+            return 0;
+        }
+    }
+    if (H2TCConstEvalCallNodeIsReflectIsConst(c, callNode)) {
+        H2TCConstEvalSetBoolValue(outValue, 1);
+        *outIsConst = 1;
+        return 0;
     }
 
     if (args != NULL && argCount > 0 && args[0].kind == H2CTFEValue_SPAN

@@ -13,6 +13,7 @@ Current status in `Reference-hop` (phase 1 building blocks):
 - builtin `kind(t)` / `t.kind()` exists (returns `reflect.Kind`, fallback `u8` if unavailable)
 - builtin `base(t)` / `t.base()` exists for alias type values
 - builtin `is_alias(t)` / `t.is_alias()` exists (returns `bool`)
+- builtin `is_const(x)` / `reflect.is_const(x)` exists for call-site constness checks
 - builtin `type_name(t)` / `t.type_name()` exists (returns `&str`)
 - `typeof(TypeName)` currently evaluates to `type` (metatype of type-values)
 - `reflect.Kind` enum package surface exists; `fields()` is not implemented yet
@@ -125,6 +126,7 @@ Operations on type values:
 - `T.base() -> __hop_primtype` (valid for alias types; otherwise compile-time error)
 - `T.type_name() -> &str`
 - `T.fields() -> [reflect.Field]` (valid for `struct`/`union`; otherwise compile-time error)
+- `is_const(x) -> bool` and `reflect.is_const(x) -> bool`
 - `ptr(T) -> __hop_primtype`
 - `slice(T) -> __hop_primtype`
 - `array(T, N) -> __hop_primtype`
@@ -144,6 +146,8 @@ Alias equality details are an open design point (see Open questions).
 3. No runtime metadata table is required for operations that are fully compile-time.
 4. If reflection results are lowered into runtime values (for example materialized field lists),
    codegen emits the minimum required static data.
+5. `is_const(x)` is intended for `const { ... }` validation and specialization. It reports
+   whether the operand supplied at the current call site is const-evaluable.
 
 ---
 

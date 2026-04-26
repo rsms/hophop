@@ -480,6 +480,7 @@ struct H2TCConstEvalCtx {
     const void* _Nullable callArgs;
     uint32_t callArgCount;
     const void* _Nullable callBinding;
+    int32_t  callFnIndex;
     uint32_t callPackParamNameStart;
     uint32_t callPackParamNameEnd;
     const char* _Nullable nonConstReason;

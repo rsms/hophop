@@ -1,44 +1,13 @@
-import "str" { format }
-
 const SHOWCASE_FORMAT &str = "user={s}, score={i}, ratio={f}, braces={{ok}}"
 
-fn out_eq(out *[u8], n int, want &str) bool {
-	if n != len(want) {
-		return false
-	}
-	var want_bytes &[u8] = want
-	for var i int = 0; i < n; i += 1 {
-		if out[i] != want_bytes[i] {
-			return false
-		}
-	}
-	return true
-}
-
 fn main() {
-	// Placeholder support: {s}, {i}, {f}. Escape braces with {{ and }}.
-	var out [u8 128]
-	var n   int = format(buf: out, SHOWCASE_FORMAT, "Ada", 42, 0.625)
-	assert out_eq(out, n, want: "user=Ada, score=42, ratio=0.625, braces={ok}")
-	assert out[n] == 0
+	// Placeholder support: {}, {s}, {i}, {f}. Escape braces with {{ and }}.
+	var out *str = format(SHOWCASE_FORMAT, "Ada", 42, 0.625)
+	assert len(out) == len("user=Ada, score=42, ratio=0.625, braces={ok}")
+	del out
 
-	// Truncation contract:
-	// - return value is full logical payload length
-	// - if len(buf) > 0, write at most len(buf)-1 payload bytes and trailing NUL
-	var tiny [u8 8]
-	var tn   int = format(buf: tiny, "abcdefghi")
-	assert tn == 9
-	assert tiny[0] == 'a'
-	assert tiny[1] == 'b'
-	assert tiny[2] == 'c'
-	assert tiny[3] == 'd'
-	assert tiny[4] == 'e'
-	assert tiny[5] == 'f'
-	assert tiny[6] == 'g'
-	assert tiny[7] == 0
-
-	// Zero-capacity buffer: writes nothing, still returns full logical length.
-	var zero [u8 0]
-	var zn   int = format(buf: zero, "abcdef")
-	assert zn == 6
+	var s *str = "values = {}, {}".format(123, 456)
+	print(s)
+	assert len(s) == len("values = 123, 456")
+	del s
 }

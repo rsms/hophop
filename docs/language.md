@@ -669,13 +669,15 @@ fn f() {
 - [BI-PRINT-004][Stable] `print` output MUST end with a line break.
 - [BI-PRINT-005][Provisional] `Reference-hop` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
 
-### 9.9 `fmt(format, args...)`
-- [BI-FMT-001][Provisional] `fmt` requires at least one argument; the first argument MUST be `str`-assignable.
-- [BI-FMT-002][Provisional] `fmt` requires effective context field `allocator` compatible with `MemAllocator`.
-- [BI-FMT-003][Provisional] `fmt` returns `*str`.
-- [BI-FMT-004][Provisional] In v1, supported placeholders are `{i}` (integer) and `{r}` (reflective).
+### 9.9 `format(format, args...)` and `format_str(format, args...)`
+- [BI-FMT-001][Provisional] `format` and `format_str` are available without an explicit import.
+- [BI-FMT-001.1][Provisional] `format` and `format_str` are builtin package functions.
+- [BI-FMT-002][Provisional] `format` and `format_str(format, args...)` require effective context field `allocator` compatible with `MemAllocator`.
+- [BI-FMT-003][Provisional] `format` and `format_str(format, args...)` return `*str`.
+- [BI-FMT-004][Provisional] Supported placeholders are `{}`, `{i}`, `{f}`, and `{s}`.
 - [BI-FMT-005][Provisional] `{{` and `}}` represent literal braces.
-- [BI-FMT-006][Provisional] If format is const-evaluable, placeholder count and argument compatibility are checked at typecheck time.
+- [BI-FMT-006][Provisional] `format` placeholder count and argument compatibility are checked at typecheck time.
+- [BI-FMT-007][Provisional] Allocating `format_str(format &str, args...)` accepts non-const format strings and performs format validation at runtime.
 
 ### 9.10 `typeof(x)`
 - [BI-TYPEOF-001][Provisional] `typeof(x)` requires exactly one argument.
@@ -692,6 +694,7 @@ fn f() {
 - [BI-REFLECT-006][Provisional] `ptr(t)` requires one `type` operand and returns `type` representing `*t`.
 - [BI-REFLECT-007][Provisional] `slice(t)` requires one `type` operand and returns `type` representing `[t]`.
 - [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
+- [BI-REFLECT-009][Provisional] `is_const(x)` and `reflect.is_const(x)` return a const-evaluable `bool` indicating whether the call-site operand is const-evaluable. They are intended for `const { ... }` validation and specialization.
 - [BI-SOURCELOC-001][Provisional] `source_location_of(x)` and `builtin.source_location_of(x)` return `builtin.SourceLocation` for operand `x`.
 
 ### 9.12 `compiler.error*` / `compiler.warn*`

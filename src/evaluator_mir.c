@@ -64,6 +64,11 @@ typedef struct {
     H2Diag*             diag;
 } HOPEvalMirLowerCtx;
 
+static int HOPEvalBuiltinPackageFnHasHopEvaluatorBody(const HOPEvalFunction* fn) {
+    return fn != NULL && fn->isBuiltinPackageFn && fn->file != NULL && fn->file->path != NULL
+        && HasSuffix(fn->file->path, "/builtin/format.hop");
+}
+
 static int HOPEvalMirInitLowerCtx(
     HOPEvalProgram* p, uint32_t extraMirFuncs, HOPEvalMirLowerCtx* _Nonnull outCtx) {
     uint32_t*            evalToMir;
@@ -786,7 +791,7 @@ static int HOPEvalMirLowerFunction(
         return 1;
     }
     fn = &c->p->funcs[(uint32_t)evalFnIndex];
-    if (fn->isBuiltinPackageFn) {
+    if (fn->isBuiltinPackageFn && !HOPEvalBuiltinPackageFnHasHopEvaluatorBody(fn)) {
         return 0;
     }
     if (c->loweringFns != NULL) {

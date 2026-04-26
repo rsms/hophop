@@ -268,9 +268,12 @@ typedef struct {
 
 typedef struct {
     int       isVariadic;
+    int       activePackSpread;
     uint32_t  fixedCount;
     uint32_t  fixedInputCount;
     uint32_t  spreadArgIndex;
+    uint32_t  activePackSpreadArgIndex;
+    uint32_t  activePackSpreadParamStart;
     int32_t   fixedMappedArgNodes[H2CCG_MAX_CALL_ARGS];
     int32_t   explicitTailNodes[H2CCG_MAX_CALL_ARGS];
     int32_t   argParamIndices[H2CCG_MAX_CALL_ARGS];
