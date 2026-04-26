@@ -1,0 +1,14 @@
+// Verifies formatter output for nested multi-line block comments.
+fn nested_block_comment(x int) int {
+if x > 0 {
+/* outer comment
+    keep this body as written
+    /* nested comment
+      keep nested body as written
+    */
+  closing body line
+*/
+x += 1
+}
+return x
+}

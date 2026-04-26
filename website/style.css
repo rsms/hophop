@@ -1,0 +1,166 @@
+@font-face {
+    font-family: "JetBrainsMono";
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("fonts/JetBrainsMono.woff2") format("woff2");
+}
+@font-face {
+    font-family: "JetBrainsMono";
+    font-style: italic;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("fonts/JetBrainsMono-Italic.woff2") format("woff2");
+}
+
+:root {
+    font-family: InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --line-height: 1.4;
+    line-height: var(--line-height);
+    font-size: 16px;
+}
+
+:root {
+    --bg-color: #fff;
+    --fg-color: #050505;
+    --link-color: #0056ec;
+    --link-visited-color: #8228F4;
+}
+@media (prefers-color-scheme: dark) { :root {
+    --bg-color: #111;
+    --fg-color: #eee;
+    --link-color: #70CAFC;
+    --link-visited-color: #B79EFF;
+} }
+
+/* colors */
+:root {
+    --red:    rgb(244, 40, 0);
+    --salmon: rgb(255 70 38);
+    --green:  rgb(0, 175, 63);
+    --blue:   rgb(5, 111, 247);
+    --yellow: #ffe100;
+    --orange: #ff4a00;
+    --pink1:  rgb(255, 145, 169);
+    --neon1:  rgb(209, 255, 0);
+    /*--neon2:  rgb(0, 243, 255);*/
+}
+@supports (color: color(display-p3 1 1 1)) { :root {
+    --red:    color(display-p3 0.94 0.19 0.04);
+    --salmon: color(display-p3 0.97 0.42 0.31);
+    --green:  color(display-p3 0.083 0.75 0.283);
+    --blue:   color(display-p3 0.071 0.442 0.945);
+    --yellow: color(display-p3 1 0.86 0);
+    --orange: color(display-p3 1 0.43 0);
+    --pink1:  color(display-p3 1 0.64 0.703);
+    --neon1:  color(display-p3 0.856 1 0.205);
+    /*--neon2:  color(display-p3 0 1 0.984);*/
+}}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--fg-color);
+    padding: 2rem;
+    margin: 0 auto;
+    max-width: 40rem;
+    min-height: 100vh;
+    scrollbar-gutter: stable;
+
+    > h1.top { display: none }
+
+    .lilhop {
+        display:block;
+        img { margin-left:-20px }
+    }
+}
+
+a[href] { color:var(--link-color); text-decoration: none; }
+a[href]:visited { color:var(--link-visited-color); }
+a[href]:hover { text-decoration: underline; }
+a[href].subtle { color:inherit }
+
+b, strong { font-weight: 650; letter-spacing: 0.01em }
+
+p, h1, h2, h3, h4 {
+    text-wrap-style: pretty;
+    text-wrap-style: balance;
+}
+
+h1, h2, h3, h4 {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: 600;
+    margin: 2rem 0 1rem 0;
+
+    > a[href],
+    > a[href]:visited,
+    > a[href]:hover {
+        color: inherit;
+    }
+}
+
+h2 { border-top: 1.5px solid var(--fg-color); padding-top: 1rem }
+h3 {
+    border-top: 1px solid color-mix(in oklab, var(--fg-color) 20%, var(--bg-color));
+    padding-top: 1rem;
+}
+
+/*h1 { color: color-mix(in oklab, var(--fg-color) 100%, var(--bg-color)) }
+h2 { color: color-mix(in oklab, var(--fg-color) 100%, var(--bg-color)) }
+h3 { color: color-mix(in oklab, var(--fg-color) 80%, var(--bg-color)) }
+h4 { color: color-mix(in oklab, var(--fg-color) 60%, var(--bg-color)) }
+p  { color: color-mix(in oklab, var(--fg-color) 60%, var(--bg-color)) }*/
+
+hr {
+    height: 0;
+    border: none;
+    border-bottom: 1.5px solid var(--fg-color);
+    margin: 2.5rem 0 1.5rem 0;
+}
+
+/*********************************************************************************************/
+/* code  */
+
+code, pre {
+    font-family: JetBrainsMono, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-variant-ligatures: no-contextual; /* disable JBM ligatures */
+    font-size: 98%;
+    padding: 0;
+    font-weight: 420;
+    line-height: 1.3;
+}
+code {
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+pre {
+    padding: 0;
+    overflow-x: auto;
+
+    code {
+        background: none;
+        padding: 0;
+        word-break: normal;
+        white-space: pre;
+    }
+
+    .hl-comment { color: #868685; }
+    .hl-type { color: salmon; }
+    .hl-title { color: #000; font-weight: 700; }
+    .hl-params {  }
+    .hl-keyword { color: #000099; }
+    .hl-number, .hl-constant { color: #760054; }
+    .hl-string { color: #0D6431; }
+    .hl-built_in { color: #990099; }
+
+    @media (prefers-color-scheme: dark) {
+        color: var(--code-fgcolor);
+        .hl-comment { color: #888; }
+        .hl-title { color: #fff; }
+        .hl-params { }
+        .hl-keyword { color: #8888ff; }
+        .hl-number, .hl-constant { color: #92ccb0; }
+        .hl-string { color: #92ccb0; }
+        .hl-built_in { color: #ff99ff; }
+    }
+}

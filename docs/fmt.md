@@ -48,10 +48,16 @@ A practical implication: comment-only separators reset alignment even when surro
 - Trailing comments stay on the same line when possible.
 - For aligned runs, trailing comments align by column inside each contiguous comment run.
 - A non-commented line in the middle of a run breaks trailing-comment alignment continuity.
+- Multi-line block comments are placed at the outer indentation level, and their interior bytes are
+  preserved literally.
 
 ## Top-level declaration spacing
 
 - Top-level declarations are separated by one blank line.
+- Top-level `var`/`const` declarations preserve source blank-line grouping:
+  adjacent declarations with no blank source line format as one aligned run, while one or more
+  source blank lines collapse to one formatted blank line.
+- Top-level `var`/`const` runs may align mixed `const` and `var` keywords in the same no-blank run.
 - Import declarations are special-cased as import groups (see below).
 
 ## Import formatting

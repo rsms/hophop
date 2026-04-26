@@ -1,0 +1,9 @@
+// Verifies formatter output for top-level var/const groups.
+const ok  = true
+var   yay = 5
+
+const longer_name = 10
+const short       = 20
+
+const final = 1
+var   last  = 2

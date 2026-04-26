@@ -1,0 +1,7 @@
+{
+  "name": "website",
+  "version": "1.0.0",
+  "devDependencies": {
+    "rsms-mkweb": "^0.2.13"
+  }
+}

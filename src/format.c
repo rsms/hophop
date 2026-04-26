@@ -1696,7 +1696,7 @@ static int H2FmtEmitCommentText(H2FmtCtx* c, const H2Comment* cm) {
     if (end < cm->start) {
         end = cm->start;
     }
-    return H2FmtWriteSlice(c, cm->start, end);
+    return H2FmtWriteSliceLiteral(c, cm->start, end);
 }
 
 static int H2FmtIsLeadingCommentForNode(const H2FmtCtx* c, const H2Comment* cm, int32_t nodeId) {
@@ -1998,7 +1998,8 @@ static int H2FmtEmitExpr(H2FmtCtx* c, int32_t nodeId, int forceParen);
 static int H2FmtEmitBlock(H2FmtCtx* c, int32_t nodeId);
 static int H2FmtEmitStmtInline(H2FmtCtx* c, int32_t nodeId);
 static int H2FmtEmitDecl(H2FmtCtx* c, int32_t nodeId);
-static int H2FmtEmitDirectiveGroup(H2FmtCtx* c, int32_t firstDirective, int32_t* outNext);
+static int H2FmtEmitDirectiveGroup(
+    H2FmtCtx* c, int32_t firstDirective, int32_t* outLast, int32_t* outNext);
 static int H2FmtEmitDirective(H2FmtCtx* c, int32_t nodeId);
 static int H2FmtEmitAggregateFieldBody(H2FmtCtx* c, int32_t firstFieldNodeId);
 static int H2FmtEmitExprList(H2FmtCtx* c, int32_t listNodeId);
@@ -3373,17 +3374,19 @@ static int H2FmtCanContinueAlignedGroup(H2FmtCtx* c, int32_t prevNodeId, int32_t
 static int H2FmtEmitStmt(H2FmtCtx* c, int32_t nodeId);
 
 typedef struct {
-    int32_t  nodeId;
-    int32_t  typeNode;
-    int32_t  initNode;
-    uint32_t nameLen;
-    uint32_t typeLen;
-    uint32_t initLen;
-    uint32_t codeLen;
-    uint8_t  hasType;
-    uint8_t  hasInit;
-    uint8_t  hasTrailingComment;
-    uint8_t  _pad;
+    int32_t     nodeId;
+    int32_t     typeNode;
+    int32_t     initNode;
+    const char* kw;
+    uint32_t    nameLen;
+    uint32_t    typeLen;
+    uint32_t    initLen;
+    uint32_t    codeLen;
+    uint32_t    kwLen;
+    uint8_t     hasType;
+    uint8_t     hasInit;
+    uint8_t     hasTrailingComment;
+    uint8_t     _pad;
 } H2FmtAlignedVarRow;
 
 typedef struct {
@@ -3551,6 +3554,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     H2FmtCtx*             c,
     int32_t               firstNodeId,
     const char*           kw,
+    int                   allowMixedKind,
     int32_t*              outLast,
     int32_t*              outNext,
     H2FmtAssignCarryHint* outCarryHint) {
@@ -3559,7 +3563,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     int32_t             prev = -1;
     uint32_t            count = 0;
     uint32_t            i;
-    uint32_t            kwLen = H2FmtCStrLen(kw);
+    uint32_t            maxKwLen = H2FmtCStrLen(kw);
     uint32_t            maxNameLenWithType = 0;
     uint32_t            maxNameLenNoType = 0;
     uint32_t            maxBeforeOpLen = 0;
@@ -3567,11 +3571,19 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     uint32_t*           commentRunMaxLens;
 
     while (cur >= 0) {
-        int32_t next = H2FmtNextSibling(c->ast, cur);
-        if (c->ast->nodes[cur].kind != kind) {
+        H2AstKind curKind = c->ast->nodes[cur].kind;
+        int32_t   next = H2FmtNextSibling(c->ast, cur);
+        if (allowMixedKind) {
+            if (curKind != H2Ast_VAR && curKind != H2Ast_CONST) {
+                break;
+            }
+        } else if (curKind != kind) {
             break;
         }
         if (H2FmtIsGroupedVarLike(c, cur)) {
+            break;
+        }
+        if ((c->ast->nodes[cur].flags & H2AstFlag_PUB) != 0) {
             break;
         }
         if (prev >= 0 && !H2FmtCanContinueAlignedGroup(c, prev, cur)) {
@@ -3596,6 +3608,11 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         const H2AstNode* n = &c->ast->nodes[cur];
         int32_t          typeNode = H2FmtFirstChild(c->ast, cur);
         int32_t          initNode = -1;
+        rows[i].kw = allowMixedKind ? (n->kind == H2Ast_CONST ? "const" : "var") : kw;
+        rows[i].kwLen = H2FmtCStrLen(rows[i].kw);
+        if (rows[i].kwLen > maxKwLen) {
+            maxKwLen = rows[i].kwLen;
+        }
         rows[i].nodeId = cur;
         rows[i].nameLen = n->dataEnd - n->dataStart;
         if (typeNode >= 0 && !H2FmtIsTypeNodeKind(c->ast->nodes[typeNode].kind)) {
@@ -3604,8 +3621,9 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         } else if (typeNode >= 0) {
             initNode = H2FmtNextSibling(c->ast, typeNode);
         }
-        H2FmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &typeNode, &initNode);
-        H2FmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &typeNode, &initNode);
+        H2FmtRewriteVarTypeFromLiteralCast(c->ast, c->src, rows[i].kw, 1u, &typeNode, &initNode);
+        H2FmtRewriteRedundantVarType(
+            c->ast, c->src, rows[i].kw, 1u, n->start, &typeNode, &initNode);
         rows[i].typeNode = typeNode;
         rows[i].initNode = initNode;
         rows[i].hasType = (uint8_t)(typeNode >= 0);
@@ -3631,7 +3649,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         if (rows[i].hasInit) {
             uint32_t nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
             uint32_t beforeOpLen =
-                kwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
+                maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
                 + (rows[i].hasType ? rows[i].typeLen : 0u);
             if (beforeOpLen > maxBeforeOpLen) {
                 maxBeforeOpLen = beforeOpLen;
@@ -3649,7 +3667,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     for (i = 0; i < count; i++) {
         uint32_t nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
         uint32_t codeLen =
-            kwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
+            maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
             + (rows[i].hasType ? rows[i].typeLen : 0u);
         if (rows[i].hasInit) {
             uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - codeLen;
@@ -3685,7 +3703,8 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         if (H2FmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
         }
-        if (H2FmtWriteCStr(c, kw) != 0 || H2FmtWriteChar(c, ' ') != 0
+        if (H2FmtWriteCStr(c, rows[i].kw) != 0
+            || H2FmtWriteSpaces(c, (maxKwLen - rows[i].kwLen) + 1u) != 0
             || H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {
             return -1;
@@ -3693,7 +3712,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         if (H2FmtWriteSpaces(c, nameColLen - rows[i].nameLen + (rows[i].hasType ? 1u : 0u)) != 0) {
             return -1;
         }
-        lineLen = kwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u);
+        lineLen = maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u);
         if (rows[i].hasType) {
             if (H2FmtEmitType(c, rows[i].typeNode) != 0) {
                 return -1;
@@ -4168,12 +4187,13 @@ static int H2FmtEmitBlock(H2FmtCtx* c, int32_t nodeId) {
                 }
             }
             if (c->ast->nodes[stmt].kind == H2Ast_VAR && !H2FmtIsGroupedVarLike(c, stmt)) {
-                if (H2FmtEmitAlignedVarOrConstGroup(c, stmt, "var", &last, &next, &carryHint) != 0)
+                if (H2FmtEmitAlignedVarOrConstGroup(c, stmt, "var", 0, &last, &next, &carryHint)
+                    != 0)
                 {
                     return -1;
                 }
             } else if (c->ast->nodes[stmt].kind == H2Ast_CONST && !H2FmtIsGroupedVarLike(c, stmt)) {
-                if (H2FmtEmitAlignedVarOrConstGroup(c, stmt, "const", &last, &next, &carryHint)
+                if (H2FmtEmitAlignedVarOrConstGroup(c, stmt, "const", 0, &last, &next, &carryHint)
                     != 0)
                 {
                     return -1;
@@ -6050,8 +6070,10 @@ static int H2FmtEmitDecl(H2FmtCtx* c, int32_t nodeId) {
     }
 }
 
-static int H2FmtEmitDirectiveGroup(H2FmtCtx* c, int32_t firstDirective, int32_t* outNext) {
+static int H2FmtEmitDirectiveGroup(
+    H2FmtCtx* c, int32_t firstDirective, int32_t* outLast, int32_t* outNext) {
     int32_t child = firstDirective;
+    int32_t last = -1;
     int32_t next = -1;
     int     first = 1;
     while (child >= 0 && c->ast->nodes[child].kind == H2Ast_DIRECTIVE) {
@@ -6062,6 +6084,7 @@ static int H2FmtEmitDirectiveGroup(H2FmtCtx* c, int32_t firstDirective, int32_t*
         if (H2FmtEmitDecl(c, child) != 0) {
             return -1;
         }
+        last = child;
         first = 0;
         child = next;
     }
@@ -6072,39 +6095,80 @@ static int H2FmtEmitDirectiveGroup(H2FmtCtx* c, int32_t firstDirective, int32_t*
         if (H2FmtEmitDecl(c, child) != 0) {
             return -1;
         }
+        last = child;
         next = H2FmtNextSibling(c->ast, child);
     }
+    *outLast = last;
     *outNext = next;
     return 0;
 }
 
+static int H2FmtIsTopLevelVarOrConstNode(H2FmtCtx* c, int32_t nodeId) {
+    H2AstKind kind;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    kind = c->ast->nodes[nodeId].kind;
+    return kind == H2Ast_VAR || kind == H2Ast_CONST;
+}
+
+static int H2FmtIsSimpleTopLevelAlignedVarOrConstNode(H2FmtCtx* c, int32_t nodeId) {
+    if (!H2FmtIsTopLevelVarOrConstNode(c, nodeId)) {
+        return 0;
+    }
+    if ((c->ast->nodes[nodeId].flags & H2AstFlag_PUB) != 0) {
+        return 0;
+    }
+    return !H2FmtIsGroupedVarLike(c, nodeId);
+}
+
+static int H2FmtNeedsTopLevelBlankLineBetween(H2FmtCtx* c, int32_t prevNodeId, int32_t nextNodeId) {
+    if (H2FmtIsTopLevelVarOrConstNode(c, prevNodeId)
+        && H2FmtIsTopLevelVarOrConstNode(c, nextNodeId))
+    {
+        return H2FmtNeedsBlankLineBeforeNode(c, prevNodeId, nextNodeId);
+    }
+    return 1;
+}
+
 static int H2FmtEmitFile(H2FmtCtx* c) {
-    int32_t child = H2FmtFirstChild(c->ast, c->ast->root);
-    int     first = 1;
+    int32_t              child = H2FmtFirstChild(c->ast, c->ast->root);
+    int32_t              prevEmitted = -1;
+    H2FmtAssignCarryHint carryHint;
+    memset(&carryHint, 0, sizeof(carryHint));
     while (child >= 0) {
-        int32_t next;
-        if (!first) {
-            if (H2FmtNewline(c) != 0 || H2FmtNewline(c) != 0) {
+        int32_t last = child;
+        int32_t next = H2FmtNextSibling(c->ast, child);
+        if (prevEmitted >= 0) {
+            if (H2FmtNewline(c) != 0) {
+                return -1;
+            }
+            if (H2FmtNeedsTopLevelBlankLineBetween(c, prevEmitted, child) && H2FmtNewline(c) != 0) {
                 return -1;
             }
         }
-        next = H2FmtNextSibling(c->ast, child);
         if (c->ast->nodes[child].kind == H2Ast_IMPORT) {
             int32_t lastSourceNode = child;
             if (H2FmtEmitImportGroup(c, child, &lastSourceNode, &next) != 0) {
                 return -1;
             }
+            last = lastSourceNode;
         } else if (c->ast->nodes[child].kind == H2Ast_DIRECTIVE) {
-            if (H2FmtEmitDirectiveGroup(c, child, &next) != 0) {
+            if (H2FmtEmitDirectiveGroup(c, child, &last, &next) != 0) {
+                return -1;
+            }
+        } else if (H2FmtIsSimpleTopLevelAlignedVarOrConstNode(c, child)) {
+            const char* kw = c->ast->nodes[child].kind == H2Ast_CONST ? "const" : "var";
+            if (H2FmtEmitAlignedVarOrConstGroup(c, child, kw, 1, &last, &next, &carryHint) != 0) {
                 return -1;
             }
         } else if (H2FmtEmitDecl(c, child) != 0) {
             return -1;
         }
-        first = 0;
+        prevEmitted = last;
         child = next;
     }
-    if (!first && H2FmtNewline(c) != 0) {
+    if (prevEmitted >= 0 && H2FmtNewline(c) != 0) {
         return -1;
     }
     if (H2FmtEmitRemainingComments(c) != 0) {

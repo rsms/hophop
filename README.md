@@ -1,6 +1,6 @@
 # HopHop
 
-<img src="etc/hophop.svg" width="116" height="100">
+<img src="website/hophop.svg" width="116" height="100">
 
 HopHop is a small programming language and reference compiler.
 
