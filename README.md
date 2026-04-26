@@ -46,13 +46,6 @@ $ _build/macos-aarch64-debug/hop run examples/hello.hop
 hello world
 ```
 
-Compile and run through the C11 backend:
-
-```sh
-$ _build/macos-aarch64-debug/hop compile examples/hello.hop -o hello
-./hello
-```
-
 Check (parse, resolve & typecheck) a single file:
 
 ```sh
