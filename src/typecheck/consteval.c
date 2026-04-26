@@ -305,6 +305,8 @@ int H2TCMirConstBindFrame(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -1040,6 +1042,43 @@ int H2TCResolveConstIdent(
                 outValue->span.endColumn = 0;
                 *outIsConst = 1;
                 return 0;
+            }
+            if ((local->flags & H2TCLocalFlag_CONST) != 0 && local->initExprNode == -1
+                && c->currentFunctionIndex >= 0 && (uint32_t)c->currentFunctionIndex < c->funcLen)
+            {
+                const H2TCFunction* fn = &c->funcs[(uint32_t)c->currentFunctionIndex];
+                uint32_t            p;
+                for (p = 0; p < fn->paramCount; p++) {
+                    uint32_t paramSlot = fn->paramTypeStart + p;
+                    int32_t  callArgExprNode;
+                    if (paramSlot >= c->funcParamLen) {
+                        continue;
+                    }
+                    if (!H2NameEqSlice(
+                            c->src,
+                            c->funcParamNameStarts[paramSlot],
+                            c->funcParamNameEnds[paramSlot],
+                            local->nameStart,
+                            local->nameEnd))
+                    {
+                        continue;
+                    }
+                    callArgExprNode = c->funcParamCallArgExprNodes[paramSlot];
+                    if (callArgExprNode < 0 || (uint32_t)callArgExprNode >= c->ast->len) {
+                        break;
+                    }
+                    if (c->ast->nodes[callArgExprNode].kind == H2Ast_IDENT
+                        && H2NameEqSlice(
+                            c->src,
+                            c->ast->nodes[callArgExprNode].dataStart,
+                            c->ast->nodes[callArgExprNode].dataEnd,
+                            local->nameStart,
+                            local->nameEnd))
+                    {
+                        break;
+                    }
+                    return H2TCEvalConstExprNode(evalCtx, callArgExprNode, outValue, outIsConst);
+                }
             }
             if ((local->flags & H2TCLocalFlag_CONST) != 0 && local->initExprNode != -1) {
                 int32_t initExprNode = local->initExprNode;

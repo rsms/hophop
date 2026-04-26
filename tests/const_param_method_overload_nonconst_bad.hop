@@ -1,0 +1,23 @@
+// Verifies const-parameter diagnostics for method overloads report the selected fmt argument.
+fn validate(const fmt &str, args ...anytype) {
+	const {
+		assert len(fmt) == 4
+		assert len(args) == 1
+	}
+}
+
+fn format(const fmt &str, args ...anytype) int {
+	validate(fmt, args...)
+	return len(fmt)
+}
+
+fn format(buf *[u8], const fmt &str, args ...anytype) int {
+	validate(fmt, args...)
+	return len(buf) + len(fmt)
+}
+
+fn main() {
+	var msg [u8 128]
+	var f = "x={}"
+	_ = msg.format(f, 123)
+}

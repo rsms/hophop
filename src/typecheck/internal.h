@@ -248,6 +248,9 @@ typedef struct {
     uint32_t* funcParamNameStarts;
     uint32_t* funcParamNameEnds;
     uint8_t*  funcParamFlags;
+    uint32_t* funcParamCallArgStarts;
+    uint32_t* funcParamCallArgEnds;
+    int32_t*  funcParamCallArgExprNodes;
     uint32_t  funcParamLen;
     uint32_t  funcParamCap;
 

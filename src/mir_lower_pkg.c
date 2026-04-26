@@ -16,6 +16,8 @@ static void H2MirLowerPkgSetDiag(
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
 }
 
 typedef struct {

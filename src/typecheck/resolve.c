@@ -186,6 +186,68 @@ static void H2TCInitConstEvalCtxFromParent(
     memcpy(outCtx->fnStack, parent->fnStack, sizeof(outCtx->fnStack));
 }
 
+static int H2TCFindForwardedConstParamCallSpan(
+    H2TypeCheckCtx* c, int32_t argExprNode, uint32_t* outStart, uint32_t* outEnd) {
+    const H2AstNode*    n;
+    int32_t             localIdx;
+    const H2TCLocal*    local;
+    const H2TCFunction* fn;
+    uint32_t            p;
+    if (outStart != NULL) {
+        *outStart = 0;
+    }
+    if (outEnd != NULL) {
+        *outEnd = 0;
+    }
+    if (c == NULL || c->ast == NULL || outStart == NULL || outEnd == NULL || argExprNode < 0
+        || (uint32_t)argExprNode >= c->ast->len || c->currentFunctionIndex < 0
+        || (uint32_t)c->currentFunctionIndex >= c->funcLen)
+    {
+        return 0;
+    }
+    n = &c->ast->nodes[argExprNode];
+    if (n->kind == H2Ast_CALL_ARG) {
+        int32_t inner = H2AstFirstChild(c->ast, argExprNode);
+        if (inner < 0 || (uint32_t)inner >= c->ast->len) {
+            return 0;
+        }
+        n = &c->ast->nodes[inner];
+    }
+    if (n->kind != H2Ast_IDENT) {
+        return 0;
+    }
+    localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
+    if (localIdx < 0) {
+        return 0;
+    }
+    local = &c->locals[localIdx];
+    if ((local->flags & H2TCLocalFlag_CONST) == 0) {
+        return 0;
+    }
+    fn = &c->funcs[(uint32_t)c->currentFunctionIndex];
+    for (p = 0; p < fn->paramCount; p++) {
+        uint32_t paramSlot = fn->paramTypeStart + p;
+        if (paramSlot >= c->funcParamLen || c->funcParamCallArgEnds[paramSlot] <= 0) {
+            continue;
+        }
+        if (H2NameEqSlice(
+                c->src,
+                c->funcParamNameStarts[paramSlot],
+                c->funcParamNameEnds[paramSlot],
+                local->nameStart,
+                local->nameEnd))
+        {
+            if (c->funcParamCallArgEnds[paramSlot] > c->funcParamCallArgStarts[paramSlot]) {
+                *outStart = c->funcParamCallArgStarts[paramSlot];
+                *outEnd = c->funcParamCallArgEnds[paramSlot];
+                return 1;
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
 int H2TCResolveAnonAggregateTypeNode(
     H2TypeCheckCtx* c, int32_t nodeId, int isUnion, int32_t* outType) {
     int32_t          fieldNode = H2AstFirstChild(c->ast, nodeId);
@@ -3252,9 +3314,17 @@ int H2TCCheckConstParamArgs(
             continue;
         }
         if (outError != NULL) {
+            uint32_t forwardedStart = 0;
+            uint32_t forwardedEnd = 0;
             outError->code = code;
             outError->start = callArgs[i].start;
             outError->end = callArgs[i].end;
+            if (H2TCFindForwardedConstParamCallSpan(
+                    c, callArgs[i].exprNode, &forwardedStart, &forwardedEnd))
+            {
+                outError->start = forwardedStart;
+                outError->end = forwardedEnd;
+            }
             if (paramNameEnds[p] > paramNameStarts[p]) {
                 outError->argStart = paramNameStarts[p];
                 outError->argEnd = paramNameEnds[p];
@@ -4170,6 +4240,7 @@ int H2TCInstantiateAnytypeFunctionForCall(
         H2TCFunction* f = &c->funcs[idx];
         int32_t       typeId;
         for (p = 0; p < fn->paramCount; p++) {
+            uint32_t argIndex;
             c->funcParamTypes[c->funcParamLen + p] = resolvedParamTypes[p];
             c->funcParamNameStarts[c->funcParamLen + p] =
                 c->funcParamNameStarts[fn->paramTypeStart + p];
@@ -4177,6 +4248,31 @@ int H2TCInstantiateAnytypeFunctionForCall(
                 c->funcParamNameEnds[fn->paramTypeStart + p];
             c->funcParamFlags[c->funcParamLen + p] =
                 c->funcParamFlags[fn->paramTypeStart + p] & H2TCFuncParamFlag_CONST;
+            c->funcParamCallArgStarts[c->funcParamLen + p] = 0;
+            c->funcParamCallArgEnds[c->funcParamLen + p] = 0;
+            c->funcParamCallArgExprNodes[c->funcParamLen + p] = -1;
+            if ((c->funcParamFlags[c->funcParamLen + p] & H2TCFuncParamFlag_CONST) != 0) {
+                int32_t mappedExprNode =
+                    p < H2TC_MAX_CALL_ARGS ? binding.fixedMappedArgExprNodes[p] : -1;
+                if (mappedExprNode >= 0 && (uint32_t)mappedExprNode < c->ast->len) {
+                    c->funcParamCallArgStarts[c->funcParamLen + p] =
+                        c->ast->nodes[mappedExprNode].start;
+                    c->funcParamCallArgEnds[c->funcParamLen + p] =
+                        c->ast->nodes[mappedExprNode].end;
+                    c->funcParamCallArgExprNodes[c->funcParamLen + p] = mappedExprNode;
+                } else {
+                    for (argIndex = 0; argIndex < argCount; argIndex++) {
+                        if (binding.argParamIndices[argIndex] == (int32_t)p) {
+                            c->funcParamCallArgStarts[c->funcParamLen + p] =
+                                callArgs[argIndex].start;
+                            c->funcParamCallArgEnds[c->funcParamLen + p] = callArgs[argIndex].end;
+                            c->funcParamCallArgExprNodes[c->funcParamLen + p] =
+                                callArgs[argIndex].exprNode;
+                            break;
+                        }
+                    }
+                }
+            }
         }
         f->nameStart = fn->nameStart;
         f->nameEnd = fn->nameEnd;
@@ -4263,6 +4359,7 @@ int H2TCResolveCallFromCandidates(
     int              hasAutoRefType = 0;
     H2TCCallMapError firstMapError;
     int              hasMapError = 0;
+    uint32_t         firstMapErrorCost = UINT32_MAX;
     uint32_t         bestTotal = 0;
     uint32_t         i;
     uint32_t         p;
@@ -4321,6 +4418,7 @@ int H2TCResolveCallFromCandidates(
                 if (instantiateStatus == 2 && !hasMapError && mapError.code != 0) {
                     hasMapError = 1;
                     firstMapError = mapError;
+                    firstMapErrorCost = UINT32_MAX;
                 }
                 continue;
             }
@@ -4344,6 +4442,7 @@ int H2TCResolveCallFromCandidates(
                 if (prepStatus == 2 && !hasMapError && mapError.code != 0) {
                     hasMapError = 1;
                     firstMapError = mapError;
+                    firstMapErrorCost = UINT32_MAX;
                 }
                 continue;
             }
@@ -4443,9 +4542,16 @@ int H2TCResolveCallFromCandidates(
             }
         }
         if (!viable) {
-            if (!hasMapError && mapError.code != 0) {
+            if (mapError.code != 0
+                && (!hasMapError
+                    || ((mapError.code == H2Diag_CONST_PARAM_ARG_NOT_CONST
+                         || mapError.code == H2Diag_CONST_PARAM_SPREAD_NOT_CONST
+                         || mapError.code == H2Diag_CONST_BLOCK_EVAL_FAILED)
+                        && curTotal < firstMapErrorCost)))
+            {
                 hasMapError = 1;
                 firstMapError = mapError;
+                firstMapErrorCost = curTotal;
             }
             continue;
         }

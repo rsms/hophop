@@ -85,6 +85,8 @@ void SetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t e
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
 }
 
 int EnsureCapArena(

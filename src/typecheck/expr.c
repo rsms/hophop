@@ -23,6 +23,8 @@ static int H2TCFailUnaryOpTypeMismatch(
     if (exprNode >= 0 && (uint32_t)exprNode < c->ast->len) {
         c->diag->argStart = c->ast->nodes[exprNode].start;
         c->diag->argEnd = c->ast->nodes[exprNode].end;
+        c->diag->argText = NULL;
+        c->diag->argTextLen = 0;
     }
     return rc;
 }
@@ -2466,7 +2468,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
                 0,
                 &resolvedFn,
                 &mutRefTempArgNode);
-            if (status == 2) {
+            if (status == 2 || status == 6) {
                 status = H2TCResolveCallByName(
                     c,
                     callee->dataStart,
@@ -2495,7 +2497,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
                     0,
                     &resolvedFn,
                     &mutRefTempArgNode);
-                if (prefixedStatus == 2) {
+                if (prefixedStatus == 2 || prefixedStatus == 6) {
                     prefixedStatus = H2TCResolveCallByPkgMethod(
                         c,
                         recvPkgStart,

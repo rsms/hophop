@@ -14,6 +14,8 @@ static void H2MirLowerSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uin
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
 }
 
 static int H2MirLowerParseIntLiteral(H2StrView src, uint32_t start, uint32_t end, int64_t* out) {
@@ -546,6 +548,8 @@ int H2MirLowerAppendExprAsFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -567,6 +571,8 @@ int H2MirLowerAppendExprAsFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -593,6 +599,8 @@ int H2MirLowerAppendExprAsFunction(
                 diag->end = typeNode->end;
                 diag->argStart = 0;
                 diag->argEnd = 0;
+                diag->argText = NULL;
+                diag->argTextLen = 0;
             }
             return -1;
         }
@@ -605,6 +613,8 @@ int H2MirLowerAppendExprAsFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -621,6 +631,8 @@ int H2MirLowerAppendExprAsFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -649,6 +661,8 @@ int H2MirLowerExprAsFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }

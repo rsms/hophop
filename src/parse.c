@@ -12,6 +12,8 @@ static void H2PSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, 
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;
@@ -46,6 +48,8 @@ static void H2PSetDiagWithArg(
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;

@@ -1,0 +1,15 @@
+// Verifies const parameters can be forwarded to another const parameter.
+fn needs_const(const fmt &str, args ...anytype) {
+	const {
+		assert len(fmt) == 4
+		assert len(args) == 1
+	}
+}
+
+fn wrapper(const fmt &str, args ...anytype) {
+	needs_const(fmt, args...)
+}
+
+fn main() {
+	wrapper("x={}", 123)
+}

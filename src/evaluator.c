@@ -9218,6 +9218,8 @@ static int HOPEvalMirMakeAggregate(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -9502,6 +9504,8 @@ static int HOPEvalMirZeroInitLocal(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -9546,6 +9550,8 @@ static int HOPEvalMirCoerceValueForType(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -10501,6 +10507,8 @@ static int HOPEvalMirEnterFunction(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }
@@ -10514,6 +10522,8 @@ static int HOPEvalMirEnterFunction(
                 diag->end = 0;
                 diag->argStart = 0;
                 diag->argEnd = 0;
+                diag->argText = NULL;
+                diag->argTextLen = 0;
             }
             return -1;
         }
@@ -10528,6 +10538,8 @@ static int HOPEvalMirEnterFunction(
                 diag->end = 0;
                 diag->argStart = 0;
                 diag->argEnd = 0;
+                diag->argText = NULL;
+                diag->argTextLen = 0;
             }
             return -1;
         } else {
@@ -10586,6 +10598,8 @@ static int HOPEvalMirBindFrame(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
         }
         return -1;
     }

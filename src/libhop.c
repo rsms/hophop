@@ -32,6 +32,8 @@ static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t en
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;
@@ -49,6 +51,8 @@ void H2DiagClear(H2Diag* _Nullable diag) {
     diag->end = 0;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;

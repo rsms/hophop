@@ -343,6 +343,17 @@ static int EmitCheckDiag(
             &remappedFileIndex,
             spec->remapSource,
             &remapStatus);
+        if (diag->argEnd > diag->argStart
+            && (diag->code == H2Diag_CONST_PARAM_ARG_NOT_CONST
+                || diag->code == H2Diag_CONST_PARAM_SPREAD_NOT_CONST)
+            && spec->source != NULL)
+        {
+            uint32_t sourceLen = (uint32_t)strlen(spec->source);
+            if (diag->argEnd <= sourceLen) {
+                remappedDiag.argText = spec->source + diag->argStart;
+                remappedDiag.argTextLen = diag->argEnd - diag->argStart;
+            }
+        }
         (void)remappedFileIndex;
         if (dropUnmappedUnusedWarnings && IsUnusedWarningDiag(diag->code)
             && !remapStatus.startMapped && !remapStatus.endMapped)

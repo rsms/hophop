@@ -2277,6 +2277,12 @@ int H2TCBuildCheckedContext(
         arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
     c.funcParamFlags = (uint8_t*)H2ArenaAlloc(
         arena, sizeof(uint8_t) * capBase * 8u, (uint32_t)_Alignof(uint8_t));
+    c.funcParamCallArgStarts = (uint32_t*)H2ArenaAlloc(
+        arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
+    c.funcParamCallArgEnds = (uint32_t*)H2ArenaAlloc(
+        arena, sizeof(uint32_t) * capBase * 8u, (uint32_t)_Alignof(uint32_t));
+    c.funcParamCallArgExprNodes = (int32_t*)H2ArenaAlloc(
+        arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
     c.genericArgTypes = (int32_t*)H2ArenaAlloc(
         arena, sizeof(int32_t) * capBase * 16u, (uint32_t)_Alignof(int32_t));
     c.scratchParamTypes = (int32_t*)H2ArenaAlloc(
@@ -2309,11 +2315,12 @@ int H2TCBuildCheckedContext(
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
         || c.funcUsed == NULL || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL
         || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL || c.genericArgTypes == NULL
-        || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL || c.locals == NULL
-        || c.localUses == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
-        || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
-        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL
-        || c.callTargets == NULL)
+        || c.funcParamCallArgStarts == NULL || c.funcParamCallArgEnds == NULL
+        || c.funcParamCallArgExprNodes == NULL || c.scratchParamTypes == NULL
+        || c.scratchParamFlags == NULL || c.locals == NULL || c.localUses == NULL
+        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
+        || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL || c.warningDedup == NULL
+        || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL || c.callTargets == NULL)
     {
         H2TCSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
@@ -2374,6 +2381,11 @@ int H2TCBuildCheckedContext(
     c.lastConstEvalRootCallStart = 0;
     memset(c.lastConstEvalTrace, 0, sizeof(c.lastConstEvalTrace));
     memset(c.funcParamFlags, 0, sizeof(uint8_t) * c.funcParamCap);
+    memset(c.funcParamCallArgStarts, 0, sizeof(uint32_t) * c.funcParamCap);
+    memset(c.funcParamCallArgEnds, 0, sizeof(uint32_t) * c.funcParamCap);
+    for (i = 0; i < c.funcParamCap; i++) {
+        c.funcParamCallArgExprNodes[i] = -1;
+    }
     memset(c.scratchParamFlags, 0, sizeof(uint8_t) * c.scratchParamCap);
     memset(c.funcUsed, 0, sizeof(uint8_t) * c.funcUsedCap);
     if (ast->len > 0) {
@@ -2472,6 +2484,11 @@ int H2TCBuildCheckedContext(
     }
 
     for (i = 0; i < c.funcLen; i++) {
+        if ((c.funcs[i].flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0
+            && (i >= c.funcUsedCap || c.funcUsed[i] == 0))
+        {
+            continue;
+        }
         if (H2TCTypeFunctionBody(&c, (int32_t)i) != 0) {
             return -1;
         }

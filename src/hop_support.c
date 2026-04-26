@@ -485,7 +485,9 @@ static char* _Nullable DiagDupFormatMessage(
     if (argCount != 1) {
         return H2CDupCStr(fmt);
     }
-    if (source != NULL && argEnd > argStart) {
+    if (diag->argText != NULL && diag->argTextLen > 0) {
+        arg = H2CDupSlice(diag->argText, 0, diag->argTextLen);
+    } else if (source != NULL && argEnd > argStart) {
         arg = H2CDupSlice(source, argStart, argEnd);
     } else {
         arg = H2CDupCStr("");

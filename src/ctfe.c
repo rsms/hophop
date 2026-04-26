@@ -90,6 +90,8 @@ int H2CTFEEvalExprEx(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
             diag->phase = H2DiagPhase_CONSTEVAL;
         }
         return -1;

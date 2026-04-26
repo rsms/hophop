@@ -199,8 +199,10 @@ typedef struct {
     uint32_t   end;
     uint32_t   argStart;
     uint32_t   argEnd;
-    uint32_t   relatedStart;
-    uint32_t   relatedEnd;
+    const char* _Nullable argText;
+    uint32_t argTextLen;
+    uint32_t relatedStart;
+    uint32_t relatedEnd;
     const char* _Nullable detail;
     const char* _Nullable hintOverride;
     H2DiagPhase phase;

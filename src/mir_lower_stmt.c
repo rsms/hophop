@@ -76,6 +76,8 @@ static void H2MirLowerStmtSetDiag(
     diag->end = end;
     diag->argStart = 0;
     diag->argEnd = 0;
+    diag->argText = NULL;
+    diag->argTextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;

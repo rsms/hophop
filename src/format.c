@@ -6159,6 +6159,8 @@ int H2Format(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
             diag->relatedStart = 0;
             diag->relatedEnd = 0;
             diag->detail = NULL;
@@ -6191,6 +6193,8 @@ int H2Format(
                 diag->end = 0;
                 diag->argStart = 0;
                 diag->argEnd = 0;
+                diag->argText = NULL;
+                diag->argTextLen = 0;
                 diag->relatedStart = 0;
                 diag->relatedEnd = 0;
                 diag->detail = NULL;
@@ -6209,6 +6213,8 @@ int H2Format(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
             diag->relatedStart = 0;
             diag->relatedEnd = 0;
             diag->detail = NULL;
@@ -6225,6 +6231,8 @@ int H2Format(
             diag->end = 0;
             diag->argStart = 0;
             diag->argEnd = 0;
+            diag->argText = NULL;
+            diag->argTextLen = 0;
             diag->relatedStart = 0;
             diag->relatedEnd = 0;
             diag->detail = NULL;

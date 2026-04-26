@@ -961,6 +961,9 @@ int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
                 c->funcParamNameEnds[c->funcParamLen] = ch->dataEnd;
                 c->funcParamFlags[c->funcParamLen] =
                     c->scratchParamFlags[paramIndex] & H2TCFuncParamFlag_CONST;
+                c->funcParamCallArgStarts[c->funcParamLen] = 0;
+                c->funcParamCallArgEnds[c->funcParamLen] = 0;
+                c->funcParamCallArgExprNodes[c->funcParamLen] = -1;
                 c->funcParamLen++;
                 paramIndex++;
             }
