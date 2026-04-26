@@ -98,3 +98,4 @@ Implemented core includes:
 - [HEP-036-filename-build-tags.md](HEP-036-filename-build-tags.md)
 - [HEP-037-short-variable-declarations.md](HEP-037-short-variable-declarations.md)
 - [HEP-038-selective-gc.md](HEP-038-selective-gc.md)
+- [HEP-039-array-literals.md](HEP-039-array-literals.md)
