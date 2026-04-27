@@ -3883,6 +3883,82 @@ int HOPEvalTypeValueFromTypeNode(
     return 1;
 }
 
+static int HOPEvalTypeValueFromArrayRuntimeValue(
+    HOPEvalProgram* p, const H2CTFEValue* value, H2CTFEValue* outValue) {
+    const H2CTFEValue*    targetValue;
+    const HOPEvalArray*   array;
+    const H2AstNode*      typeNode = NULL;
+    H2CTFEValue           elemType;
+    int32_t               elemTypeCode = HOPEvalTypeCode_INVALID;
+    int                   elemTypeRc = 0;
+    HOPEvalReflectedType* rt;
+    if (p == NULL || value == NULL || outValue == NULL) {
+        return 0;
+    }
+    targetValue = HOPEvalValueTargetOrSelf(value);
+    array = HOPEvalValueAsArray(targetValue);
+    if (array == NULL) {
+        return 0;
+    }
+    if (array->file != NULL && array->typeNode >= 0
+        && (uint32_t)array->typeNode < array->file->ast.len)
+    {
+        typeNode = &array->file->ast.nodes[array->typeNode];
+        if (typeNode->kind == H2Ast_TYPE_ARRAY) {
+            return HOPEvalTypeValueFromTypeNode(p, array->file, array->typeNode, outValue);
+        }
+    }
+    if (array->file != NULL && array->elemTypeNode >= 0
+        && (uint32_t)array->elemTypeNode < array->file->ast.len)
+    {
+        elemTypeRc = HOPEvalTypeValueFromTypeNode(p, array->file, array->elemTypeNode, &elemType);
+        if (elemTypeRc < 0) {
+            return -1;
+        }
+    } else if (array->len > 0 && array->elems != NULL) {
+        const H2CTFEValue* elemValue = HOPEvalValueTargetOrSelf(&array->elems[0]);
+        HOPEvalAggregate*  elemAgg = HOPEvalValueAsAggregate(elemValue);
+        if (elemAgg != NULL && elemAgg->file != NULL && elemAgg->nodeId >= 0
+            && (uint32_t)elemAgg->nodeId < elemAgg->file->ast.len)
+        {
+            uint8_t namedKind = 0;
+            switch (elemAgg->file->ast.nodes[elemAgg->nodeId].kind) {
+                case H2Ast_STRUCT: namedKind = HOPEvalTypeKind_STRUCT; break;
+                case H2Ast_UNION:  namedKind = HOPEvalTypeKind_UNION; break;
+                case H2Ast_ENUM:   namedKind = HOPEvalTypeKind_ENUM; break;
+                default:           break;
+            }
+            if (namedKind != 0) {
+                elemTypeRc = HOPEvalMakeNamedTypeValue(
+                    p, elemAgg->file, elemAgg->nodeId, namedKind, &elemType);
+                if (elemTypeRc < 0) {
+                    return -1;
+                }
+            }
+        } else if (HOPEvalTypeCodeFromValue(elemValue, &elemTypeCode)) {
+            HOPEvalValueSetSimpleTypeValue(&elemType, elemTypeCode);
+            elemTypeRc = 1;
+        }
+    }
+    if (elemTypeRc <= 0) {
+        return elemTypeRc;
+    }
+    rt = (HOPEvalReflectedType*)H2ArenaAlloc(
+        p->arena, sizeof(HOPEvalReflectedType), (uint32_t)_Alignof(HOPEvalReflectedType));
+    if (rt == NULL) {
+        return -1;
+    }
+    memset(rt, 0, sizeof(*rt));
+    rt->kind = HOPEvalReflectType_ARRAY;
+    rt->namedKind = HOPEvalTypeKind_ARRAY;
+    rt->file = array->file;
+    rt->nodeId = array->typeNode;
+    rt->arrayLen = array->len;
+    rt->elemType = elemType;
+    HOPEvalValueSetReflectedTypeValue(outValue, rt);
+    return 1;
+}
+
 static H2CTFEExecBinding* _Nullable HOPEvalFindBinding(
     const H2CTFEExecCtx* _Nullable execCtx,
     const H2ParsedFile* file,
@@ -7351,8 +7427,14 @@ static int HOPEvalCompareValues(
             HOPEvalReflectedType* rhsType = HOPEvalValueAsReflectedType(rhsValue);
             if (lhsType != NULL && rhsType != NULL) {
                 if (lhsType->kind != rhsType->kind || lhsType->namedKind != rhsType->namedKind
-                    || lhsType->file != rhsType->file || lhsType->nodeId != rhsType->nodeId
                     || lhsType->arrayLen != rhsType->arrayLen)
+                {
+                    *outCmp = 1;
+                    *outHandled = 1;
+                    return 0;
+                }
+                if (lhsType->kind == HOPEvalReflectType_NAMED
+                    && (lhsType->file != rhsType->file || lhsType->nodeId != rhsType->nodeId))
                 {
                     *outCmp = 1;
                     *outHandled = 1;
@@ -13144,6 +13226,16 @@ static int HOPEvalResolveCallMir(
                 return 0;
             }
         }
+        {
+            int arrayTypeRc = HOPEvalTypeValueFromArrayRuntimeValue(p, &args[0], outValue);
+            if (arrayTypeRc < 0) {
+                return -1;
+            }
+            if (arrayTypeRc > 0) {
+                *outIsConst = 1;
+                return 0;
+            }
+        }
         if (HOPEvalTypeCodeFromValue(&args[0], &typeCode)) {
             HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
             *outIsConst = 1;
@@ -14244,6 +14336,16 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
                         *outIsConst = 1;
                         return 0;
                     }
+                }
+            }
+            {
+                int arrayTypeRc = HOPEvalTypeValueFromArrayRuntimeValue(p, &argValue, outValue);
+                if (arrayTypeRc < 0) {
+                    return -1;
+                }
+                if (arrayTypeRc > 0) {
+                    *outIsConst = 1;
+                    return 0;
                 }
             }
             if (!HOPEvalTypeCodeFromValue(&argValue, &typeCode)) {

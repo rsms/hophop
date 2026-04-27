@@ -1,0 +1,12 @@
+// Verifies evaluator typeof for inferred array literals.
+fn main() {
+	greetings := [
+		"Hei"
+		"Hello"
+	]
+
+	assert typeof(greetings) == type [&str 2]
+	for greeting in greetings {
+		assert typeof(greeting) == typeof("" as &str)
+	}
+}
