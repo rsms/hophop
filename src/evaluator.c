@@ -9804,6 +9804,78 @@ static int HOPEvalMirCoerceValueForType(
     void* ctx, const H2MirTypeRef* typeRef, H2CTFEValue* inOutValue, H2Diag* _Nullable diag) {
     HOPEvalProgram* p = (HOPEvalProgram*)ctx;
     int32_t         targetTypeCode = HOPEvalTypeCode_INVALID;
+    if (p != NULL && typeRef != NULL && inOutValue != NULL && H2MirTypeRefIsFixedArrayStr(typeRef))
+    {
+        const H2CTFEValue* sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
+        HOPEvalArray*      sourceArray = HOPEvalValueAsArray(sourceValue);
+        uint32_t           targetLen = H2MirTypeRefFixedArrayCount(typeRef);
+        HOPEvalArray*      targetArray;
+        uint32_t           i;
+        if (sourceArray == NULL || sourceArray->len != targetLen) {
+            return 0;
+        }
+        targetArray = HOPEvalAllocArrayView(p, p->currentFile, -1, -1, NULL, targetLen);
+        if (targetArray == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (targetLen > 0u) {
+            targetArray->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * targetLen, (uint32_t)_Alignof(H2CTFEValue));
+            if (targetArray->elems == NULL) {
+                return ErrorSimple("out of memory");
+            }
+        }
+        for (i = 0; i < targetLen; i++) {
+            targetArray->elems[i] = sourceArray->elems[i];
+            if (HOPEvalAdaptStringValueForTypeCode(
+                    p->arena,
+                    HOPEvalTypeCode_STR_REF,
+                    &targetArray->elems[i],
+                    &targetArray->elems[i])
+                < 0)
+            {
+                return -1;
+            }
+            if (HOPEvalValueTargetOrSelf(&targetArray->elems[i])->kind != H2CTFEValue_STRING) {
+                return 0;
+            }
+        }
+        HOPEvalValueSetArray(inOutValue, p->currentFile, -1, targetArray);
+        return 0;
+    }
+    if (p != NULL && typeRef != NULL && inOutValue != NULL && typeRef->astNode == UINT32_MAX) {
+        int64_t asInt = 0;
+        double  asFloat = 0.0;
+        switch (H2MirTypeRefScalarKind(typeRef)) {
+            case H2MirTypeScalar_I32:
+            case H2MirTypeScalar_I64:
+                if (H2CTFEValueToInt64(inOutValue, &asInt) != 0) {
+                    return 0;
+                }
+                HOPEvalValueSetInt(inOutValue, asInt);
+                return 0;
+            case H2MirTypeScalar_F32:
+            case H2MirTypeScalar_F64:
+                if (inOutValue->kind == H2CTFEValue_FLOAT) {
+                    asFloat = inOutValue->f64;
+                } else if (inOutValue->kind == H2CTFEValue_INT) {
+                    asFloat = (double)inOutValue->i64;
+                } else if (inOutValue->kind == H2CTFEValue_BOOL) {
+                    asFloat = inOutValue->b ? 1.0 : 0.0;
+                } else {
+                    return 0;
+                }
+                inOutValue->kind = H2CTFEValue_FLOAT;
+                inOutValue->i64 = 0;
+                inOutValue->f64 = asFloat;
+                inOutValue->b = 0;
+                inOutValue->typeTag = 0;
+                inOutValue->s.bytes = NULL;
+                inOutValue->s.len = 0;
+                return 0;
+            case H2MirTypeScalar_NONE: break;
+        }
+    }
     if (p != NULL && typeRef != NULL && inOutValue != NULL
         && (H2MirTypeRefIsStrRef(typeRef) || H2MirTypeRefIsStrPtr(typeRef)
             || H2MirTypeRefIsU8Ptr(typeRef)))

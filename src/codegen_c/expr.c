@@ -4783,17 +4783,29 @@ int TypeRefContainerWritable(const H2TypeRef* t) {
 }
 
 int EmitElementTypeName(H2CBackendC* c, const H2TypeRef* t, int asConst) {
-    int i;
+    int         i;
+    const char* baseName;
+    int         ptrDepth;
     if (!t->valid || t->baseName == NULL) {
         return -1;
     }
     if (asConst && BufAppendCStr(&c->out, "const ") != 0) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, t->baseName) != 0) {
+    if (TypeRefIsBorrowedStrValue(t)
+        || (t->containerKind == H2TypeContainer_ARRAY && t->containerPtrDepth == 0
+            && t->ptrDepth == 1 && IsStrBaseName(t->baseName)))
+    {
+        baseName = "__hop_str";
+        ptrDepth = 0;
+    } else {
+        baseName = t->baseName;
+        ptrDepth = t->ptrDepth;
+    }
+    if (BufAppendCStr(&c->out, baseName) != 0) {
         return -1;
     }
-    for (i = 0; i < t->ptrDepth; i++) {
+    for (i = 0; i < ptrDepth; i++) {
         if (BufAppendChar(&c->out, '*') != 0) {
             return -1;
         }
@@ -5068,7 +5080,7 @@ static int ResolveForInElemType(
         t.containerPtrDepth = 0;
         t.hasArrayLen = 0;
         t.arrayLen = 0;
-        t.readOnly = 0;
+        t.readOnly = (t.ptrDepth == 1 && IsStrBaseName(t.baseName)) ? 1 : 0;
         *outElemType = t;
         return 0;
     }
@@ -9234,6 +9246,38 @@ int EmitArrayLiteral(H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable 
     return needsCompoundCast ? BufAppendChar(&c->out, ')') : 0;
 }
 
+static int EmitFixedStrArrayLiteralInitializer(
+    H2CBackendC* c, int32_t nodeId, const H2TypeRef* elemType) {
+    int32_t  child = AstFirstChild(&c->ast, nodeId);
+    uint32_t i = 0;
+    if (BufAppendChar(&c->out, '{') != 0) {
+        return -1;
+    }
+    while (child >= 0) {
+        const H2AstNode* childNode = NodeAt(c, child);
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (childNode != NULL
+            && (childNode->kind == H2Ast_STRING
+                || (childNode->kind == H2Ast_BINARY && (H2TokenKind)childNode->op == H2Tok_ADD)))
+        {
+            int32_t literalId = -1;
+            if ((uint32_t)child < c->stringLitByNodeLen) {
+                literalId = c->stringLitByNode[child];
+            }
+            if (literalId < 0 || EmitStringLiteralValue(c, literalId, 0) != 0) {
+                return -1;
+            }
+        } else if (EmitExprCoerced(c, child, elemType) != 0) {
+            return -1;
+        }
+        i++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    return BufAppendChar(&c->out, '}');
+}
+
 int EmitExpr_IDENT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     const H2Local* local = NULL;
     int32_t        topVarLikeNode = -1;
@@ -11712,6 +11756,42 @@ int EmitShortAssignStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             isBlank[i] ? -1 : FindLocalIndexBySlice(c, name->dataStart, name->dataEnd);
     }
 
+    if (nameCount == 1u && rhsCount == 1u && existingLocal[0] < 0 && !isBlank[0]) {
+        int32_t          rhsNode = ListItemAt(&c->ast, rhsList, 0);
+        const H2AstNode* rhs = NodeAt(c, rhsNode);
+        H2TypeRef        directType;
+        H2TypeRef        directElemType;
+        if (rhs != NULL && rhs->kind == H2Ast_ARRAY_LIT
+            && InferVarLikeDeclType(c, rhsNode, &directType) == 0 && directType.valid
+            && directType.containerKind == H2TypeContainer_ARRAY)
+        {
+            const H2AstNode* name = NodeAt(c, nameNodes[0]);
+            char* localName = DupSlice(c, c->unit->source, name->dataStart, name->dataEnd);
+            directElemType = directType;
+            directElemType.containerKind = H2TypeContainer_SCALAR;
+            directElemType.containerPtrDepth = 0;
+            directElemType.hasArrayLen = 0;
+            directElemType.arrayLen = 0;
+            if (!TypeRefIsStr(&directElemType)) {
+                goto skip_direct_array_decl;
+            }
+            directElemType.baseName = "__hop_str";
+            if (localName == NULL || EnsureAnonTypeVisible(c, &directType, depth) != 0) {
+                return -1;
+            }
+            EmitIndent(c, depth);
+            if (EmitTypeRefWithName(c, &directType, localName) != 0
+                || BufAppendCStr(&c->out, " = ") != 0
+                || EmitFixedStrArrayLiteralInitializer(c, rhsNode, &directElemType) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0 || AddLocal(c, localName, directType) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+    }
+skip_direct_array_decl:
+
     if (rhsCount == nameCount) {
         for (i = 0; i < nameCount; i++) {
             int32_t rhsNode = ListItemAt(&c->ast, rhsList, i);
@@ -11870,6 +11950,7 @@ int EmitForStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
         const char*    nextTmpName = "__hop_forin_next";
         char*          valueName = NULL;
         char*          keyName = NULL;
+        int            useArraySeqPtr = 0;
         int            rc;
 
         TypeRefSetInvalid(&elemType);
@@ -12136,17 +12217,26 @@ int EmitForStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             return -1;
         }
 
+        useArraySeqPtr = useSequencePath && sourceType.containerKind == H2TypeContainer_ARRAY
+                      && sourceType.containerPtrDepth == 0;
         if (EnsureAnonTypeVisible(c, &sourceType, depth + 1u) != 0) {
             PopScope(c);
             return -1;
         }
-        EmitIndent(c, depth + 1u);
-        if (EmitTypeRefWithName(c, &sourceType, useSequencePath ? seqTmpName : sourceTmpName) != 0
-            || BufAppendCStr(&c->out, " = ") != 0 || EmitExpr(c, sourceNode) != 0
-            || BufAppendCStr(&c->out, ";\n") != 0)
         {
-            PopScope(c);
-            return -1;
+            H2TypeRef sourceTmpType = sourceType;
+            if (useArraySeqPtr) {
+                sourceTmpType.containerPtrDepth = 1;
+            }
+            EmitIndent(c, depth + 1u);
+            if (EmitTypeRefWithName(c, &sourceTmpType, useSequencePath ? seqTmpName : sourceTmpName)
+                    != 0
+                || BufAppendCStr(&c->out, " = ") != 0 || EmitExpr(c, sourceNode) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                PopScope(c);
+                return -1;
+            }
         }
 
         if (useSequencePath) {

@@ -9,6 +9,7 @@ typedef struct {
     uint32_t nameStart;
     uint32_t nameEnd;
     uint32_t slot;
+    uint32_t typeRef;
     int32_t  typeNode;
     int32_t  initExprNode;
     uint8_t  mutable;
@@ -242,6 +243,7 @@ static int H2MirStmtLowerPushLocal(
     c->locals[c->localLen].nameStart = nameStart;
     c->locals[c->localLen].nameEnd = nameEnd;
     c->locals[c->localLen].slot = slot;
+    c->locals[c->localLen].typeRef = local.typeRef;
     c->locals[c->localLen].typeNode = typeNode;
     c->locals[c->localLen].initExprNode = initExprNode;
     c->locals[c->localLen].mutable = mutable ? 1u : 0u;
@@ -252,6 +254,77 @@ static int H2MirStmtLowerPushLocal(
     }
     c->localLen++;
     return 0;
+}
+
+static int H2MirStmtLowerPushLocalWithTypeRef(
+    H2MirStmtLower*     c,
+    uint32_t            nameStart,
+    uint32_t            nameEnd,
+    int                 mutable,
+    int                 isParam,
+    int                 zeroInit,
+    const H2MirTypeRef* typeRef,
+    int32_t             initExprNode,
+    uint32_t* _Nullable outSlot) {
+    H2MirLocal local = { 0 };
+    uint32_t   slot = 0;
+    if (c == NULL || typeRef == NULL) {
+        return -1;
+    }
+    if (H2MirStmtLowerEnsureLocalCap(c, c->localLen + 1u) != 0) {
+        return -1;
+    }
+    local.typeRef = UINT32_MAX;
+    local.flags = mutable ? H2MirLocalFlag_MUTABLE : H2MirLocalFlag_NONE;
+    local.nameStart = nameStart;
+    local.nameEnd = nameEnd;
+    if (isParam) {
+        local.flags |= H2MirLocalFlag_PARAM;
+    }
+    if (zeroInit) {
+        local.flags |= H2MirLocalFlag_ZERO_INIT;
+    }
+    if (H2MirProgramBuilderAddType(&c->builder, typeRef, &local.typeRef) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    if (H2MirProgramBuilderAddLocal(&c->builder, &local, &slot) != 0) {
+        H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
+        return -1;
+    }
+    c->locals[c->localLen].nameStart = nameStart;
+    c->locals[c->localLen].nameEnd = nameEnd;
+    c->locals[c->localLen].slot = slot;
+    c->locals[c->localLen].typeRef = local.typeRef;
+    c->locals[c->localLen].typeNode = -1;
+    c->locals[c->localLen].initExprNode = initExprNode;
+    c->locals[c->localLen].mutable = mutable ? 1u : 0u;
+    c->locals[c->localLen]._reserved[0] = 0;
+    c->locals[c->localLen]._reserved[1] = 0;
+    if (outSlot != NULL) {
+        *outSlot = slot;
+    }
+    c->localLen++;
+    return 0;
+}
+
+static int H2MirStmtLowerPushLocalWithTypeRefIndex(
+    H2MirStmtLower* c,
+    uint32_t        nameStart,
+    uint32_t        nameEnd,
+    int             mutable,
+    int             isParam,
+    int             zeroInit,
+    uint32_t        typeRefIndex,
+    int32_t         initExprNode,
+    uint32_t* _Nullable outSlot) {
+    H2MirTypeRef typeRef;
+    if (c == NULL || typeRefIndex >= c->builder.typeLen) {
+        return -1;
+    }
+    typeRef = c->builder.types[typeRefIndex];
+    return H2MirStmtLowerPushLocalWithTypeRef(
+        c, nameStart, nameEnd, mutable, isParam, zeroInit, &typeRef, initExprNode, outSlot);
 }
 
 static int H2MirStmtLowerFindLocal(
@@ -278,6 +351,34 @@ static int H2MirStmtLowerFindLocal(
             }
             if (outMutable != NULL) {
                 *outMutable = local->mutable != 0;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int H2MirStmtLowerFindLocalTypeRef(
+    const H2MirStmtLower* c, uint32_t nameStart, uint32_t nameEnd, uint32_t* outTypeRef) {
+    uint32_t nameLen;
+    uint32_t i;
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (c == NULL || nameEnd < nameStart || nameEnd > c->src.len) {
+        return 0;
+    }
+    nameLen = nameEnd - nameStart;
+    i = c->localLen;
+    while (i > 0) {
+        const H2MirLowerLocal* local;
+        i--;
+        local = &c->locals[i];
+        if (local->nameEnd >= local->nameStart && local->nameEnd - local->nameStart == nameLen
+            && memcmp(c->src.ptr + local->nameStart, c->src.ptr + nameStart, nameLen) == 0)
+        {
+            if (outTypeRef != NULL) {
+                *outTypeRef = local->typeRef;
             }
             return 1;
         }
@@ -937,6 +1038,85 @@ static int H2MirStmtLowerAppendTupleMake(
     }
     return H2MirStmtLowerAppendInst(
         c, H2MirOp_TUPLE_MAKE, (uint16_t)elemCount, aux, start, end, NULL);
+}
+
+static int H2MirStmtLowerAddFixedStrArrayType(
+    H2MirStmtLower* c, uint32_t elemCount, uint32_t* outTypeRef) {
+    H2MirTypeRef typeRef = { 0 };
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (c == NULL || elemCount == 0u || elemCount > 0xffffu) {
+        return -1;
+    }
+    typeRef.astNode = UINT32_MAX;
+    typeRef.sourceRef = UINT32_MAX;
+    typeRef.flags = H2MirTypeFlag_FIXED_ARRAY | H2MirTypeFlag_FIXED_ARRAY_STR;
+    typeRef.aux = H2MirTypeAuxMakeFixedArray(H2MirIntKind_NONE, elemCount);
+    return H2MirProgramBuilderAddType(&c->builder, &typeRef, outTypeRef);
+}
+
+static int H2MirStmtLowerArrayLitAllStrings(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outElemCount) {
+    const H2AstNode* expr;
+    uint32_t         elemCount = 0;
+    int32_t          child;
+    if (outElemCount != NULL) {
+        *outElemCount = 0;
+    }
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != H2Ast_ARRAY_LIT) {
+        return 0;
+    }
+    child = expr->firstChild;
+    while (child >= 0) {
+        if ((uint32_t)child >= c->ast->len || c->ast->nodes[child].kind != H2Ast_STRING) {
+            return 0;
+        }
+        elemCount++;
+        child = c->ast->nodes[child].nextSibling;
+    }
+    if (elemCount == 0u) {
+        return 0;
+    }
+    if (outElemCount != NULL) {
+        *outElemCount = elemCount;
+    }
+    return 1;
+}
+
+static int H2MirStmtLowerArrayLitStrExprWithTypeRef(
+    H2MirStmtLower* c, int32_t exprNode, uint32_t typeRefIndex) {
+    const H2AstNode* expr;
+    uint32_t         elemCount = 0;
+    int32_t          child;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len
+        || typeRefIndex == UINT32_MAX)
+    {
+        return -1;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != H2Ast_ARRAY_LIT) {
+        c->supported = 0;
+        return 0;
+    }
+    child = expr->firstChild;
+    while (child >= 0) {
+        if ((uint32_t)child >= c->ast->len || c->ast->nodes[child].kind != H2Ast_STRING) {
+            c->supported = 0;
+            return 0;
+        }
+        if (H2MirStmtLowerExpr(c, child) != 0 || !c->supported) {
+            return c->supported ? -1 : 0;
+        }
+        elemCount++;
+        child = c->ast->nodes[child].nextSibling;
+    }
+    return H2MirStmtLowerAppendInst(
+        c, H2MirOp_TUPLE_MAKE, (uint16_t)elemCount, typeRefIndex, expr->start, expr->end, NULL);
 }
 
 static int H2MirStmtLowerRangeHasChar(H2StrView src, uint32_t start, uint32_t end, char ch) {
@@ -2917,6 +3097,121 @@ static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
     if (valueDiscard) {
         iterFlags |= H2MirIterFlag_VALUE_DISCARD;
     }
+    if (!hasKey && !valueRef && !valueDiscard && c->ast->nodes[sourceNode].kind == H2Ast_IDENT) {
+        uint32_t sourceTypeRef = UINT32_MAX;
+        if (H2MirStmtLowerFindLocalTypeRef(
+                c,
+                c->ast->nodes[sourceNode].dataStart,
+                c->ast->nodes[sourceNode].dataEnd,
+                &sourceTypeRef)
+            && sourceTypeRef < c->builder.typeLen
+            && H2MirTypeRefIsFixedArrayStr(&c->builder.types[sourceTypeRef]))
+        {
+            H2MirTypeRef intType = { 0 };
+            H2MirTypeRef strRefType = { 0 };
+            uint32_t     idxSlot = UINT32_MAX;
+            uint32_t     strValueSlot = UINT32_MAX;
+            uint32_t     loopLen = H2MirTypeRefFixedArrayCount(&c->builder.types[sourceTypeRef]);
+            uint32_t     incrStartPc;
+
+            intType.astNode = UINT32_MAX;
+            intType.sourceRef = UINT32_MAX;
+            intType.flags = H2MirTypeScalar_I32;
+            intType.aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_I32);
+            strRefType.astNode = UINT32_MAX;
+            strRefType.sourceRef = UINT32_MAX;
+            strRefType.flags = H2MirTypeFlag_STR_REF;
+            strRefType.aux = 0u;
+            if (H2MirStmtLowerPushLocalWithTypeRefIndex(
+                    c, 0, 0, 0, 0, 0, sourceTypeRef, -1, &sourceSlot)
+                    != 0
+                || H2MirStmtLowerPushLocalWithTypeRef(c, 0, 0, 1, 0, 0, &intType, -1, &idxSlot) != 0
+                || H2MirStmtLowerPushLocalWithTypeRef(
+                       c,
+                       c->ast->nodes[valueNode].dataStart,
+                       c->ast->nodes[valueNode].dataEnd,
+                       1,
+                       0,
+                       0,
+                       &strRefType,
+                       -1,
+                       &strValueSlot)
+                       != 0)
+            {
+                c->localLen = scopeMark;
+                return -1;
+            }
+            if (H2MirStmtLowerExpr(c, sourceNode) != 0 || !c->supported) {
+                c->localLen = scopeMark;
+                return c->supported ? -1 : 0;
+            }
+            if (H2MirStmtLowerAppendInst(
+                    c, H2MirOp_LOCAL_STORE, 0, sourceSlot, s->start, s->end, NULL)
+                    != 0
+                || H2MirStmtLowerAppendIntConst(c, 0, s->start, s->end) != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_LOCAL_STORE, 0, idxSlot, s->start, s->end, NULL)
+                       != 0)
+            {
+                c->localLen = scopeMark;
+                return -1;
+            }
+            loopStartPc = H2MirStmtLowerFnPc(c);
+            if (!H2MirStmtLowerPushControl(c, 1, loopStartPc)) {
+                c->localLen = scopeMark;
+                return 0;
+            }
+            if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL)
+                    != 0
+                || H2MirStmtLowerAppendIntConst(c, (int64_t)loopLen, s->start, s->end) != 0
+                || H2MirStmtLowerAppendInst(c, H2MirOp_BINARY, H2Tok_LT, 0, s->start, s->end, NULL)
+                       != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_JUMP_IF_FALSE, 0, UINT32_MAX, s->start, s->end, &condFalseJump)
+                       != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_LOCAL_LOAD, 0, sourceSlot, s->start, s->end, NULL)
+                       != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL)
+                       != 0
+                || H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, s->start, s->end, NULL) != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_LOCAL_STORE, 0, strValueSlot, s->start, s->end, NULL)
+                       != 0)
+            {
+                c->localLen = scopeMark;
+                c->controlLen--;
+                return -1;
+            }
+            if (H2MirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+                c->localLen = scopeMark;
+                c->controlLen--;
+                return c->supported ? -1 : 0;
+            }
+            incrStartPc = H2MirStmtLowerFnPc(c);
+            if (H2MirStmtLowerAppendInst(c, H2MirOp_LOCAL_LOAD, 0, idxSlot, s->start, s->end, NULL)
+                    != 0
+                || H2MirStmtLowerAppendIntConst(c, 1, s->start, s->end) != 0
+                || H2MirStmtLowerAppendInst(c, H2MirOp_BINARY, H2Tok_ADD, 0, s->start, s->end, NULL)
+                       != 0
+                || H2MirStmtLowerAppendInst(
+                       c, H2MirOp_LOCAL_STORE, 0, idxSlot, s->start, s->end, NULL)
+                       != 0
+                || H2MirStmtLowerAppendInst(c, H2MirOp_JUMP, 0, loopStartPc, s->start, s->end, NULL)
+                       != 0)
+            {
+                c->localLen = scopeMark;
+                c->controlLen--;
+                return -1;
+            }
+            loopEndPc = H2MirStmtLowerFnPc(c);
+            c->builder.insts[condFalseJump].aux = loopEndPc;
+            H2MirStmtLowerFinishControl(c, incrStartPc, loopEndPc);
+            c->localLen = scopeMark;
+            return 0;
+        }
+    }
     if (H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &sourceSlot) != 0
         || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &iterSlot) != 0)
     {
@@ -3460,6 +3755,7 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
             uint32_t rhsCount;
             uint32_t i;
             uint32_t tempSlots[256];
+            uint32_t rhsTypeRefs[256];
             uint32_t existingSlots[256];
             uint8_t  existingMutable[256];
             uint8_t  isExisting[256];
@@ -3491,6 +3787,7 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
                 isExisting[i] = 0;
                 existingSlots[i] = UINT32_MAX;
                 existingMutable[i] = 0;
+                rhsTypeRefs[i] = UINT32_MAX;
                 if (!isBlank[i]
                     && H2MirStmtLowerFindLocal(c, name->dataStart, name->dataEnd, &slot, &mutable))
                 {
@@ -3501,13 +3798,31 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
             }
             if (rhsCount == lhsCount) {
                 for (i = 0; i < rhsCount; i++) {
-                    int32_t rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    int32_t  rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    uint32_t elemCount = 0;
+                    int isStrArrayLit = H2MirStmtLowerArrayLitAllStrings(c, rhsExpr, &elemCount);
+                    if (isStrArrayLit
+                        && H2MirStmtLowerAddFixedStrArrayType(c, elemCount, &rhsTypeRefs[i]) != 0)
+                    {
+                        return -1;
+                    }
                     if (rhsExpr < 0
-                        || H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]) != 0)
+                        || (rhsTypeRefs[i] != UINT32_MAX
+                                ? H2MirStmtLowerPushLocalWithTypeRefIndex(
+                                      c, 0, 0, 0, 0, 0, rhsTypeRefs[i], -1, &tempSlots[i])
+                                : H2MirStmtLowerPushLocal(c, 0, 0, 0, 0, 0, -1, -1, &tempSlots[i]))
+                               != 0)
                     {
                         return rhsExpr < 0 ? 0 : -1;
                     }
-                    if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
+                    if (isStrArrayLit) {
+                        if (H2MirStmtLowerArrayLitStrExprWithTypeRef(c, rhsExpr, rhsTypeRefs[i])
+                                != 0
+                            || !c->supported)
+                        {
+                            return c->supported ? -1 : 0;
+                        }
+                    } else if (H2MirStmtLowerExpr(c, rhsExpr) != 0 || !c->supported) {
                         return c->supported ? -1 : 0;
                     }
                     if (H2MirStmtLowerAppendInst(
@@ -3575,18 +3890,30 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
                     }
                     targetSlot = existingSlots[i];
                 } else if (
-                    H2MirStmtLowerPushLocal(
-                        c,
-                        name->dataStart,
-                        name->dataEnd,
-                        1,
-                        0,
-                        0,
-                        -1,
-                        rhsCount == lhsCount ? H2MirStmtLowerAstListItemAt(c->ast, rhsList, i)
-                                             : H2MirStmtLowerAstListItemAt(c->ast, rhsList, 0u),
-                        &targetSlot)
-                    != 0)
+                    rhsCount == lhsCount && rhsTypeRefs[i] != UINT32_MAX
+                        ? H2MirStmtLowerPushLocalWithTypeRefIndex(
+                              c,
+                              name->dataStart,
+                              name->dataEnd,
+                              1,
+                              0,
+                              0,
+                              rhsTypeRefs[i],
+                              H2MirStmtLowerAstListItemAt(c->ast, rhsList, i),
+                              &targetSlot)
+                        : H2MirStmtLowerPushLocal(
+                              c,
+                              name->dataStart,
+                              name->dataEnd,
+                              1,
+                              0,
+                              0,
+                              -1,
+                              rhsCount == lhsCount
+                                  ? H2MirStmtLowerAstListItemAt(c->ast, rhsList, i)
+                                  : H2MirStmtLowerAstListItemAt(c->ast, rhsList, 0u),
+                              &targetSlot)
+                              != 0)
                 {
                     return -1;
                 }

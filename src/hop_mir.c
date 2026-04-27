@@ -7560,10 +7560,10 @@ static void EnrichMirTypeFlags(const H2PackageLoader* loader, H2MirProgram* prog
                  | H2MirTypeFlag_STR_OBJ | H2MirTypeFlag_U8_PTR | H2MirTypeFlag_I32_PTR
                  | H2MirTypeFlag_I8_PTR | H2MirTypeFlag_U16_PTR | H2MirTypeFlag_I16_PTR
                  | H2MirTypeFlag_U32_PTR | H2MirTypeFlag_FIXED_ARRAY
-                 | H2MirTypeFlag_FIXED_ARRAY_VIEW | H2MirTypeFlag_SLICE_VIEW
-                 | H2MirTypeFlag_VARRAY_VIEW | H2MirTypeFlag_AGG_SLICE_VIEW
-                 | H2MirTypeFlag_AGGREGATE | H2MirTypeFlag_OPAQUE_PTR | H2MirTypeFlag_OPTIONAL
-                 | H2MirTypeFlag_FUNC_REF))
+                 | H2MirTypeFlag_FIXED_ARRAY_VIEW | H2MirTypeFlag_FIXED_ARRAY_STR
+                 | H2MirTypeFlag_SLICE_VIEW | H2MirTypeFlag_VARRAY_VIEW
+                 | H2MirTypeFlag_AGG_SLICE_VIEW | H2MirTypeFlag_AGGREGATE | H2MirTypeFlag_OPAQUE_PTR
+                 | H2MirTypeFlag_OPTIONAL | H2MirTypeFlag_FUNC_REF))
             | ClassifyMirTypeFlags(loader, program, file, typeRef);
         typeRef->aux = ClassifyMirTypeAux(loader, program, file, typeRef);
     }
@@ -7993,6 +7993,7 @@ typedef enum {
     MirInferredType_ARRAY_I16,
     MirInferredType_ARRAY_U32,
     MirInferredType_ARRAY_I32,
+    MirInferredType_ARRAY_STR,
     MirInferredType_SLICE_U8,
     MirInferredType_SLICE_I8,
     MirInferredType_SLICE_U16,
@@ -8042,6 +8043,9 @@ static MirInferredType MirInferredTypeFromTypeRef(const H2MirTypeRef* typeRef) {
     }
     if ((flags & H2MirTypeFlag_FUNC_REF) != 0) {
         return MirInferredType_FUNC_REF;
+    }
+    if (H2MirTypeRefIsFixedArrayStr(typeRef)) {
+        return MirInferredType_ARRAY_STR;
     }
     if ((flags & (H2MirTypeFlag_FIXED_ARRAY | H2MirTypeFlag_FIXED_ARRAY_VIEW)) != 0) {
         switch (H2MirTypeRefIntKind(typeRef)) {
@@ -8453,6 +8457,20 @@ static void InferMirStraightLineLocalTypes(
                     }
                     stackTypes[stackLen] = MirInferredType_AGG;
                     stackTypeRefs[stackLen++] = inst->aux;
+                    break;
+                case H2MirOp_TUPLE_MAKE:
+                    if (inst->aux < program->typeLen
+                        && H2MirTypeRefIsFixedArrayStr(&program->types[inst->aux]))
+                    {
+                        uint32_t elemCount = H2MirCallArgCountFromTok(inst->tok);
+                        if (stackLen < elemCount) {
+                            supported = 0;
+                            break;
+                        }
+                        stackLen -= elemCount;
+                        stackTypes[stackLen] = MirInferredType_ARRAY_STR;
+                        stackTypeRefs[stackLen++] = inst->aux;
+                    }
                     break;
                 case H2MirOp_ALLOC_NEW: {
                     uint32_t typeRef = UINT32_MAX;
@@ -8955,6 +8973,9 @@ static void InferMirStraightLineLocalTypes(
                         if (stackTypeRefs[stackLen - 1u] == UINT32_MAX) {
                             supported = 0;
                         }
+                    } else if (stackTypes[stackLen - 1u] == MirInferredType_ARRAY_STR) {
+                        stackTypes[stackLen - 1u] = MirInferredType_STR_REF;
+                        stackTypeRefs[stackLen - 1u] = UINT32_MAX;
                     } else {
                         stackTypes[stackLen - 1u] = MirInferredType_I32;
                         stackTypeRefs[stackLen - 1u] = UINT32_MAX;

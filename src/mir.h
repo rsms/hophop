@@ -210,6 +210,7 @@ enum {
     H2MirTypeFlag_STR_OBJ = 0x00800000u,
     H2MirTypeFlag_VARRAY_VIEW = 0x01000000u,
     H2MirTypeFlag_AGG_SLICE_VIEW = 0x02000000u,
+    H2MirTypeFlag_FIXED_ARRAY_STR = 0x04000000u,
 };
 
 typedef enum {
@@ -320,6 +321,11 @@ static inline int H2MirTypeRefIsU32Ptr(const H2MirTypeRef* typeRef) {
 
 static inline int H2MirTypeRefIsFixedArray(const H2MirTypeRef* typeRef) {
     return typeRef != NULL && (typeRef->flags & H2MirTypeFlag_FIXED_ARRAY) != 0;
+}
+
+static inline int H2MirTypeRefIsFixedArrayStr(const H2MirTypeRef* typeRef) {
+    return H2MirTypeRefIsFixedArray(typeRef)
+        && (typeRef->flags & H2MirTypeFlag_FIXED_ARRAY_STR) != 0;
 }
 
 static inline int H2MirTypeRefIsFixedArrayView(const H2MirTypeRef* typeRef) {

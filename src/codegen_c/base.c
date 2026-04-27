@@ -462,6 +462,19 @@ static int TypeRefIsPointerBackedStrC(const H2TypeRef* t) {
         && !TypeRefIsBorrowedStrValueC(t);
 }
 
+static int TypeRefIsFixedArrayBorrowedStrC(const H2TypeRef* t) {
+    return t != NULL && t->valid && t->containerKind == H2TypeContainer_ARRAY && t->ptrDepth == 1
+        && IsStrBaseName(t->baseName);
+}
+
+static void TypeRefLowerFixedArrayBorrowedStrStorage(H2TypeRef* t) {
+    if (TypeRefIsFixedArrayBorrowedStrC(t)) {
+        t->baseName = "__hop_str";
+        t->ptrDepth = 0;
+        t->readOnly = 0;
+    }
+}
+
 const H2AstNode* _Nullable NodeAt(const H2CBackendC* c, int32_t nodeId);
 
 int ParseArrayLenLiteral(const char* src, uint32_t start, uint32_t end, uint32_t* outLen) {
@@ -5510,6 +5523,7 @@ int EmitTypeNameWithDepth(H2CBackendC* c, const H2TypeRef* type) {
     if (TypeRefLowerForStorage(c, type, &lowered) != 0) {
         return -1;
     }
+    TypeRefLowerFixedArrayBorrowedStrStorage(&lowered);
     t = &lowered;
     if (!t->valid) {
         return BufAppendCStr(&c->out, "void");
@@ -5594,6 +5608,7 @@ int EmitTypeWithName(H2CBackendC* c, int32_t typeNode, const char* name) {
     if (TypeRefLowerForStorage(c, &t, &lowered) != 0) {
         return -1;
     }
+    TypeRefLowerFixedArrayBorrowedStrStorage(&lowered);
     pointerBackedOptional = TypeRefIsPointerBackedOptional(&t);
     src = &lowered;
     if (src->containerKind == H2TypeContainer_SLICE_RO
@@ -5725,6 +5740,7 @@ int EmitTypeRefWithName(H2CBackendC* c, const H2TypeRef* t, const char* name) {
     if (TypeRefLowerForStorage(c, t, &lowered) != 0) {
         return -1;
     }
+    TypeRefLowerFixedArrayBorrowedStrStorage(&lowered);
     src = &lowered;
     if (!src->valid) {
         return -1;
