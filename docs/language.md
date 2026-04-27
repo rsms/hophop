@@ -546,6 +546,13 @@ fn f() {
 - [EXPR-COMPOUND-009][Stable] Tagged-enum payload construction is via explicit variant type in the literal type position: `Enum.Variant{ ... }`.
 - [EXPR-COMPOUND-010][Stable] `Enum.Variant{ ... }` type-checks against payload fields of that exact variant only.
 
+### 6.5 Array literals
+- [EXPR-ARRAY-LIT-001][Provisional] `[expr, ...]` forms an array literal expression. Elements may be separated by commas, semicolons, or inserted semicolons, and a trailing separator is allowed.
+- [EXPR-ARRAY-LIT-002][Provisional] Without an expected type, a non-empty array literal infers a fixed array `[T N]` from the common element type and element count. `[]` requires an expected type.
+- [EXPR-ARRAY-LIT-003][Provisional] With expected `[T N]`, each supplied element is checked against `T`; fewer than `N` elements default-initialize the trailing elements, and more than `N` elements is invalid.
+- [EXPR-ARRAY-LIT-004][Provisional] With expected readonly `&[T N]` or `&[T]`, all elements must be const-evaluable and the compiler materializes immutable static storage. Bare array literals do not bind to mutable pointer or reference storage.
+- [EXPR-ARRAY-LIT-005][Provisional] `new [expr, ...]` allocates initialized array storage. Without an expected type it produces `*[T N]`; with expected `*[T]` it allocates dynamic-size storage using the literal length; with expected `*[T N]` it allocates fixed-size storage with default-filled trailing elements.
+
 ## 7. Statements and Control Flow
 
 - [STMT-IF-001][Stable] `if` condition MUST be bool or optional.

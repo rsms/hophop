@@ -59,6 +59,181 @@ int H2TCValidateMemAllocatorArg(H2TypeCheckCtx* c, int32_t nodeId, int32_t alloc
     return 0;
 }
 
+static uint32_t H2TCArrayLitElementCount(H2TypeCheckCtx* c, int32_t nodeId) {
+    uint32_t count = 0;
+    int32_t  child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        count++;
+        child = H2AstNextSibling(c->ast, child);
+    }
+    return count;
+}
+
+static int H2TCArrayLitValidateConstElements(H2TypeCheckCtx* c, int32_t nodeId) {
+    int32_t child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        H2TCConstEvalCtx evalCtx;
+        H2CTFEValue      value;
+        int              isConst = 0;
+        memset(&evalCtx, 0, sizeof(evalCtx));
+        evalCtx.tc = c;
+        evalCtx.rootCallOwnerFnIndex = -1;
+        H2TCClearLastConstEvalReason(c);
+        if (H2TCEvalConstExprNode(&evalCtx, child, &value, &isConst) != 0) {
+            return -1;
+        }
+        H2TCStoreLastConstEvalReason(c, &evalCtx);
+        if (!isConst) {
+            int rc;
+            if (c->lastConstEvalReasonStart < c->lastConstEvalReasonEnd
+                && c->lastConstEvalReasonEnd <= c->src.len)
+            {
+                rc = H2TCFailSpan(
+                    c,
+                    H2Diag_ARRAY_LITERAL_READONLY_CONST_REQUIRED,
+                    c->lastConstEvalReasonStart,
+                    c->lastConstEvalReasonEnd);
+            } else {
+                rc = H2TCFailNode(c, child, H2Diag_ARRAY_LITERAL_READONLY_CONST_REQUIRED);
+            }
+            H2TCAttachConstEvalReason(c);
+            return rc;
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+int H2TCTypeArrayLit(H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType) {
+    const H2AstNode* n;
+    int32_t          expectedBase = -1;
+    int32_t          targetType = -1;
+    int32_t          elemType = -1;
+    uint32_t         targetLen = 0;
+    uint32_t         elemCount;
+    int              expectedReadonlyRef = 0;
+    int              hasTargetLen = 0;
+    int32_t          child;
+
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return H2TCFailSpan(c, H2Diag_EXPECTED_EXPR, 0, 0);
+    }
+    n = &c->ast->nodes[nodeId];
+    elemCount = H2TCArrayLitElementCount(c, nodeId);
+
+    if (expectedType >= 0 && (uint32_t)expectedType < c->typeLen) {
+        expectedBase = H2TCResolveAliasBaseType(c, expectedType);
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+            && c->types[expectedBase].kind == H2TCType_REF)
+        {
+            if (H2TCTypeIsMutable(&c->types[expectedBase])) {
+                return H2TCFailNode(c, nodeId, H2Diag_ARRAY_LITERAL_MUT_REF_FORBIDDEN);
+            }
+            expectedReadonlyRef = 1;
+            targetType = c->types[expectedBase].baseType;
+            expectedBase = H2TCResolveAliasBaseType(c, targetType);
+        } else {
+            if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+                && c->types[expectedBase].kind == H2TCType_PTR)
+            {
+                return H2TCFailNode(c, nodeId, H2Diag_ARRAY_LITERAL_MUT_REF_FORBIDDEN);
+            }
+            targetType = expectedType;
+        }
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen) {
+            const H2TCType* t = &c->types[expectedBase];
+            if (t->kind == H2TCType_ARRAY) {
+                elemType = t->baseType;
+                targetLen = t->arrayLen;
+                hasTargetLen = 1;
+            } else if (t->kind == H2TCType_SLICE && !H2TCTypeIsMutable(t)) {
+                elemType = t->baseType;
+                targetLen = elemCount;
+                hasTargetLen = 1;
+            }
+        }
+    }
+
+    if (elemType >= 0) {
+        uint32_t i = 0;
+        if (hasTargetLen && elemCount > targetLen) {
+            return H2TCFailNode(c, nodeId, H2Diag_ARRAY_LITERAL_TOO_MANY_ELEMENTS);
+        }
+        child = H2AstFirstChild(c->ast, nodeId);
+        while (child >= 0) {
+            int32_t childType;
+            if (H2TCTypeExprExpected(c, child, elemType, &childType) != 0) {
+                return -1;
+            }
+            if (!H2TCCanAssign(c, elemType, childType)) {
+                return H2TCFailTypeMismatchDetail(c, child, child, childType, elemType);
+            }
+            i++;
+            child = H2AstNextSibling(c->ast, child);
+        }
+        (void)i;
+        if (expectedReadonlyRef && H2TCArrayLitValidateConstElements(c, nodeId) != 0) {
+            return -1;
+        }
+        if (expectedReadonlyRef) {
+            *outType = expectedType;
+            return 0;
+        }
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+            && c->types[expectedBase].kind == H2TCType_SLICE)
+        {
+            int32_t arrayType = H2TCInternArrayType(c, elemType, elemCount, n->start, n->end);
+            if (arrayType < 0) {
+                return -1;
+            }
+            *outType = arrayType;
+            return 0;
+        }
+        *outType = targetType;
+        return 0;
+    }
+
+    if (elemCount == 0u) {
+        return H2TCFailNode(c, nodeId, H2Diag_ARRAY_LITERAL_EMPTY_TYPE_UNKNOWN);
+    }
+
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        int32_t childType;
+        if (H2TCTypeExpr(c, child, &childType) != 0) {
+            return -1;
+        }
+        if (childType == c->typeNull) {
+            return H2TCFailNode(c, child, H2Diag_INFER_NULL_TYPE_UNKNOWN);
+        }
+        if (childType == c->typeVoid) {
+            return H2TCFailNode(c, child, H2Diag_INFER_VOID_TYPE_UNKNOWN);
+        }
+        if (elemType < 0) {
+            elemType = childType;
+        } else if (H2TCCoerceForBinary(c, elemType, childType, &elemType) != 0) {
+            return H2TCFailTypeMismatchDetail(c, child, child, childType, elemType);
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    if (H2TCConcretizeInferredType(c, elemType, &elemType) != 0) {
+        return -1;
+    }
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        int32_t childType;
+        if (H2TCTypeExprExpected(c, child, elemType, &childType) != 0) {
+            return -1;
+        }
+        if (!H2TCCanAssign(c, elemType, childType)) {
+            return H2TCFailTypeMismatchDetail(c, child, child, childType, elemType);
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    *outType = H2TCInternArrayType(c, elemType, elemCount, n->start, n->end);
+    return *outType < 0 ? -1 : 0;
+}
+
 int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     const H2AstNode* n;
     int32_t          typeNode;
@@ -85,6 +260,53 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
     hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
     hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
+    if ((n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+        int32_t litNode = H2AstFirstChild(c->ast, nodeId);
+        int32_t expected = c->activeExpectedNewType;
+        int32_t expectedBase = expected >= 0 ? H2TCResolveAliasBaseType(c, expected) : -1;
+        int32_t litExpected = -1;
+        int32_t litType;
+        int32_t pointee;
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+            && c->types[expectedBase].kind == H2TCType_PTR)
+        {
+            pointee = c->types[expectedBase].baseType;
+            if (pointee >= 0 && (uint32_t)pointee < c->typeLen) {
+                int32_t pointeeBase = H2TCResolveAliasBaseType(c, pointee);
+                if (pointeeBase >= 0 && (uint32_t)pointeeBase < c->typeLen
+                    && c->types[pointeeBase].kind == H2TCType_SLICE)
+                {
+                    litExpected = pointee;
+                } else {
+                    litExpected = pointee;
+                }
+            }
+        }
+        if (litNode < 0 || (uint32_t)litNode >= c->ast->len
+            || c->ast->nodes[litNode].kind != H2Ast_ARRAY_LIT)
+        {
+            return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_EXPR);
+        }
+        if (H2TCTypeArrayLit(c, litNode, litExpected, &litType) != 0) {
+            return -1;
+        }
+        if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
+            && c->types[expectedBase].kind == H2TCType_PTR)
+        {
+            if (!H2TCCanAssign(c, c->types[expectedBase].baseType, litType)) {
+                return H2TCFailTypeMismatchDetail(
+                    c, litNode, litNode, litType, c->types[expectedBase].baseType);
+            }
+            *outType = expected;
+            return 0;
+        }
+        resultType = H2TCInternPtrType(c, litType, n->start, n->end);
+        if (resultType < 0) {
+            return -1;
+        }
+        *outType = resultType;
+        return 0;
+    }
 
     typeNode = H2AstFirstChild(c->ast, nodeId);
     if (typeNode < 0) {
@@ -206,6 +428,9 @@ int H2TCExprIsCompoundTemporary(H2TypeCheckCtx* c, int32_t exprNode) {
         return H2TCExprIsCompoundTemporary(c, inner);
     }
     if (n->kind == H2Ast_COMPOUND_LIT) {
+        return 1;
+    }
+    if (n->kind == H2Ast_ARRAY_LIT) {
         return 1;
     }
     if (n->kind == H2Ast_UNARY && n->op == H2Tok_AND) {
@@ -686,6 +911,17 @@ int H2TCTypeExprExpected(
 
     if (n->kind == H2Ast_COMPOUND_LIT) {
         return H2TCTypeCompoundLit(c, nodeId, expectedType, outType);
+    }
+    if (n->kind == H2Ast_ARRAY_LIT) {
+        return H2TCTypeArrayLit(c, nodeId, expectedType, outType);
+    }
+    if (n->kind == H2Ast_NEW && (n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+        int32_t savedExpectedNewType = c->activeExpectedNewType;
+        int     rc;
+        c->activeExpectedNewType = expectedType;
+        rc = H2TCTypeExpr(c, nodeId, outType);
+        c->activeExpectedNewType = savedExpectedNewType;
+        return rc;
     }
     if (n->kind == H2Ast_INDEX) {
         int32_t packType = -1;
@@ -3421,6 +3657,7 @@ int H2TCTypeExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case H2Ast_RUNE:              return H2TCTypeExpr_RUNE(c, nodeId, n, outType);
         case H2Ast_BOOL:              return H2TCTypeExpr_BOOL(c, nodeId, n, outType);
         case H2Ast_COMPOUND_LIT:      return H2TCTypeExpr_COMPOUND_LIT(c, nodeId, n, outType);
+        case H2Ast_ARRAY_LIT:         return H2TCTypeArrayLit(c, nodeId, -1, outType);
         case H2Ast_CALL_WITH_CONTEXT: return H2TCTypeExpr_CALL_WITH_CONTEXT(c, nodeId, n, outType);
         case H2Ast_NEW:               return H2TCTypeExpr_NEW(c, nodeId, n, outType);
         case H2Ast_CALL:              return H2TCTypeExpr_CALL(c, nodeId, n, outType);

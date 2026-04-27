@@ -1,0 +1,1 @@
+tests/array_literals_mut_pointer_bad.hop:3:17: error: HOP2115: array literal cannot bind to mutable reference or pointer storage

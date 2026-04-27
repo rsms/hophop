@@ -902,6 +902,23 @@ static int H2MirBuildExprNode(H2MirBuilder* b, int32_t nodeId) {
             return H2MirEmitInstEx(
                 b, H2MirOp_TUPLE_MAKE, (H2TokenKind)elemCount, (uint32_t)nodeId, n->start, n->end);
         }
+        case H2Ast_ARRAY_LIT: {
+            int32_t  child = n->firstChild;
+            uint32_t elemCount = 0;
+            while (child >= 0) {
+                if (H2MirBuildExprNode(b, child) != 0) {
+                    return -1;
+                }
+                if (elemCount == UINT16_MAX) {
+                    b->supported = 0;
+                    return 0;
+                }
+                elemCount++;
+                child = b->ast->nodes[child].nextSibling;
+            }
+            return H2MirEmitInstEx(
+                b, H2MirOp_TUPLE_MAKE, (H2TokenKind)elemCount, (uint32_t)nodeId, n->start, n->end);
+        }
         case H2Ast_CALL: {
             int32_t  callee = b->ast->nodes[nodeId].firstChild;
             int32_t  arg;

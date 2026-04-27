@@ -1,0 +1,6 @@
+tests/array_literals_readonly_nonconst_bad.hop:3:21: error: HOP2114: array literal bound to readonly storage requires const-evaluable elements: identifier is not a const value in this context
+    3 | 	var a &[int] = [1, x]
+      | 	                   ^
+tests/array_literals_readonly_nonconst_bad.hop:3:21: note: identifier is not a const value in this context
+    3 | 	var a &[int] = [1, x]
+      | 	                   ^

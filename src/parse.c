@@ -1182,11 +1182,49 @@ static int H2PParseCompoundLiteralTail(H2Parser* p, int32_t typeNode, int32_t* o
     return 0;
 }
 
+static int H2PParseArrayLiteral(H2Parser* p, int32_t* out) {
+    const H2Token* lb;
+    const H2Token* rb;
+    int32_t        lit;
+
+    if (H2PExpect(p, H2Tok_LBRACK, H2Diag_EXPECTED_EXPR, &lb) != 0) {
+        return -1;
+    }
+    lit = H2PNewNode(p, H2Ast_ARRAY_LIT, lb->start, lb->end);
+    if (lit < 0) {
+        return -1;
+    }
+
+    while (!H2PAt(p, H2Tok_RBRACK) && !H2PAt(p, H2Tok_EOF)) {
+        int32_t elem;
+        if (H2PParseExpr(p, 1, &elem) != 0) {
+            return -1;
+        }
+        if (H2PAddChild(p, lit, elem) != 0) {
+            return -1;
+        }
+        if (H2PMatch(p, H2Tok_COMMA) || H2PMatch(p, H2Tok_SEMICOLON)) {
+            if (H2PAt(p, H2Tok_RBRACK)) {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+
+    if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &rb) != 0) {
+        return -1;
+    }
+    p->nodes[lit].end = rb->end;
+    *out = lit;
+    return 0;
+}
+
 static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
     const H2Token* kw = H2PPrev(p);
     const H2Token* rb;
     int32_t        n;
-    int32_t        typeNode;
+    int32_t        typeNode = -1;
     int32_t        countNode = -1;
     int32_t        initNode = -1;
     int32_t        allocNode = -1;
@@ -1197,17 +1235,35 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
     }
 
     if (H2PMatch(p, H2Tok_LBRACK)) {
-        if (H2PParseType(p, &typeNode) != 0) {
-            return -1;
+        uint32_t savedPos = p->pos;
+        uint32_t savedNodeLen = p->nodeLen;
+        H2Diag   savedDiag = { 0 };
+        int      parsedCount = 0;
+        if (p->diag != NULL) {
+            savedDiag = *p->diag;
         }
-        if (H2PParseExpr(p, 1, &countNode) != 0) {
-            return -1;
+        if (H2PParseType(p, &typeNode) == 0 && H2PParseExpr(p, 1, &countNode) == 0
+            && H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &rb) == 0)
+        {
+            parsedCount = 1;
         }
-        if (H2PExpect(p, H2Tok_RBRACK, H2Diag_EXPECTED_EXPR, &rb) != 0) {
-            return -1;
+        if (parsedCount) {
+            p->nodes[n].flags |= H2AstFlag_NEW_HAS_COUNT;
+            p->nodes[n].end = rb->end;
+        } else {
+            p->pos = savedPos - 1u;
+            p->nodeLen = savedNodeLen;
+            if (p->diag != NULL) {
+                *p->diag = savedDiag;
+            }
+            if (H2PParseArrayLiteral(p, &initNode) != 0) {
+                return -1;
+            }
+            p->nodes[n].flags |= H2AstFlag_NEW_HAS_ARRAY_LIT;
+            p->nodes[n].end = p->nodes[initNode].end;
+            typeNode = -1;
+            countNode = -1;
         }
-        p->nodes[n].flags |= H2AstFlag_NEW_HAS_COUNT;
-        p->nodes[n].end = rb->end;
     } else {
         if (H2PParseType(p, &typeNode) != 0) {
             return -1;
@@ -1230,7 +1286,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
         p->nodes[n].end = p->nodes[allocNode].end;
     }
 
-    if (H2PAddChild(p, n, typeNode) != 0) {
+    if (typeNode >= 0 && H2PAddChild(p, n, typeNode) != 0) {
         return -1;
     }
     if (countNode >= 0) {
@@ -1428,6 +1484,10 @@ static int H2PParsePrimary(H2Parser* p, int32_t* out) {
         }
         *out = tupleExpr;
         return 0;
+    }
+
+    if (H2PAt(p, H2Tok_LBRACK)) {
+        return H2PParseArrayLiteral(p, out);
     }
 
     if (H2PMatch(p, H2Tok_SIZEOF)) {
@@ -3776,6 +3836,7 @@ const char* H2AstKindName(H2AstKind kind) {
         case H2Ast_CONTEXT_BIND:      return "CONTEXT_BIND";
         case H2Ast_COMPOUND_LIT:      return "COMPOUND_LIT";
         case H2Ast_COMPOUND_FIELD:    return "COMPOUND_FIELD";
+        case H2Ast_ARRAY_LIT:         return "ARRAY_LIT";
         case H2Ast_INDEX:             return "INDEX";
         case H2Ast_FIELD_EXPR:        return "FIELD_EXPR";
         case H2Ast_CAST:              return "CAST";

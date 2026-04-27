@@ -1407,6 +1407,20 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
         }
         return H2MirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
     }
+    if (expr->kind == H2Ast_ARRAY_LIT) {
+        elemCount = H2MirStmtLowerAstListCount(c->ast, exprNode);
+        for (i = 0; i < elemCount; i++) {
+            int32_t itemNode = H2MirStmtLowerAstListItemAt(c->ast, exprNode, i);
+            if (itemNode < 0) {
+                c->supported = 0;
+                return 0;
+            }
+            if (H2MirStmtLowerExpr(c, itemNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+        }
+        return H2MirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
+    }
     if (expr->kind == H2Ast_UNWRAP) {
         int32_t childNode = expr->firstChild;
         if (childNode < 0 || (uint32_t)childNode >= c->ast->len

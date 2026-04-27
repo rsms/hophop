@@ -429,6 +429,7 @@ typedef enum {
     H2Ast_CONTEXT_BIND,
     H2Ast_COMPOUND_LIT,
     H2Ast_COMPOUND_FIELD,
+    H2Ast_ARRAY_LIT,
     H2Ast_INDEX,
     H2Ast_FIELD_EXPR,
     H2Ast_CAST,
@@ -473,6 +474,7 @@ enum {
     H2AstFlag_FOR_IN_VALUE_REF = 0x00080000u,
     H2AstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
     H2AstFlag_DEL_HAS_ALLOC = 0x00400000u,
+    H2AstFlag_NEW_HAS_ARRAY_LIT = 0x00800000u,
 };
 
 typedef uint32_t H2Features;

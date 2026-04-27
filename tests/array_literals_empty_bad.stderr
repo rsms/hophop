@@ -1,0 +1,1 @@
+tests/array_literals_empty_bad.hop:3:10: error: HOP2112: empty array literal requires an expected array type

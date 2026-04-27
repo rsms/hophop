@@ -1719,6 +1719,56 @@ static int HOPEvalCoerceValueToTypeNode(
     }
     type = &typeFile->ast.nodes[typeNode];
     sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
+    if (type->kind == H2Ast_TYPE_ARRAY && sourceValue->kind == H2CTFEValue_ARRAY) {
+        HOPEvalArray* sourceArray = HOPEvalValueAsArray(sourceValue);
+        int32_t       elemTypeNode = ASTFirstChild(&typeFile->ast, typeNode);
+        uint32_t      targetLen = 0;
+        uint32_t      i;
+        HOPEvalArray* targetArray;
+        if (sourceArray == NULL || elemTypeNode < 0
+            || !HOPEvalParseUintSlice(typeFile->source, type->dataStart, type->dataEnd, &targetLen))
+        {
+            return 0;
+        }
+        if (sourceArray->len > targetLen) {
+            return 0;
+        }
+        targetArray = HOPEvalAllocArrayView(p, typeFile, typeNode, elemTypeNode, NULL, targetLen);
+        if (targetArray == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (targetLen > 0u) {
+            targetArray->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * targetLen, (uint32_t)_Alignof(H2CTFEValue));
+            if (targetArray->elems == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            memset(targetArray->elems, 0, sizeof(H2CTFEValue) * targetLen);
+        }
+        for (i = 0; i < sourceArray->len; i++) {
+            targetArray->elems[i] = sourceArray->elems[i];
+            if (HOPEvalCoerceValueToTypeNode(p, typeFile, elemTypeNode, &targetArray->elems[i])
+                != 0)
+            {
+                return -1;
+            }
+        }
+        while (i < targetLen) {
+            int elemIsConst = 0;
+            if (HOPEvalZeroInitTypeNode(
+                    p, typeFile, elemTypeNode, &targetArray->elems[i], &elemIsConst)
+                != 0)
+            {
+                return -1;
+            }
+            if (!elemIsConst) {
+                return 0;
+            }
+            i++;
+        }
+        HOPEvalValueSetArray(inOutValue, typeFile, typeNode, targetArray);
+        return 0;
+    }
     if (type->kind == H2Ast_TYPE_OPTIONAL) {
         int32_t payloadTypeNode = type->firstChild;
         if (sourceValue->kind == H2CTFEValue_OPTIONAL) {
@@ -2967,6 +3017,13 @@ static int HOPEvalResolveCallMirPre(
     H2Diag* _Nullable diag);
 static int HOPEvalEvalTopVar(
     HOPEvalProgram* p, uint32_t topVarIndex, H2CTFEValue* outValue, int* outIsConst);
+static int HOPEvalEvalArrayLiteral(
+    HOPEvalProgram*     p,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst);
 static int HOPEvalInvokeFunction(
     HOPEvalProgram* p,
     int32_t         fnIndex,
@@ -4826,6 +4883,26 @@ static int HOPEvalEvalNewExpr(
     }
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
+    }
+    if (p->currentFile->ast.nodes[exprNode].kind == H2Ast_NEW
+        && (p->currentFile->ast.nodes[exprNode].flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    {
+        int32_t     litNode = p->currentFile->ast.nodes[exprNode].firstChild;
+        H2CTFEValue arrayValue;
+        int         arrayIsConst = 0;
+        if (litNode < 0 || (uint32_t)litNode >= p->currentFile->ast.len) {
+            return 0;
+        }
+        if (HOPEvalEvalArrayLiteral(
+                p, litNode, expectedTypeFile, expectedTypeNode, &arrayValue, &arrayIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!arrayIsConst) {
+            return 0;
+        }
+        return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst);
     }
     if (!HOPEvalDecodeNewExprNodes(
             p->currentFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
@@ -8289,6 +8366,131 @@ static int HOPEvalEvalCompoundLiteral(
     return 0;
 }
 
+static int HOPEvalArrayLiteralExpectedElemType(
+    const H2ParsedFile* typeFile, int32_t typeNode, int32_t* outElemTypeNode, uint32_t* outLen) {
+    const H2AstNode* n;
+    int32_t          child;
+    if (outElemTypeNode != NULL) {
+        *outElemTypeNode = -1;
+    }
+    if (outLen != NULL) {
+        *outLen = UINT32_MAX;
+    }
+    if (typeFile == NULL || typeNode < 0 || (uint32_t)typeNode >= typeFile->ast.len) {
+        return 0;
+    }
+    n = &typeFile->ast.nodes[typeNode];
+    if (n->kind == H2Ast_TYPE_REF || n->kind == H2Ast_TYPE_MUTREF || n->kind == H2Ast_TYPE_PTR) {
+        child = n->firstChild;
+        return HOPEvalArrayLiteralExpectedElemType(typeFile, child, outElemTypeNode, outLen);
+    }
+    if (n->kind == H2Ast_TYPE_ARRAY) {
+        uint32_t len = 0;
+        child = n->firstChild;
+        if (outElemTypeNode != NULL) {
+            *outElemTypeNode = child;
+        }
+        if (outLen != NULL) {
+            if (!HOPEvalParseUintSlice(typeFile->source, n->dataStart, n->dataEnd, &len)) {
+                len = 0;
+            }
+            *outLen = len;
+        }
+        return 1;
+    }
+    if (n->kind == H2Ast_TYPE_SLICE || n->kind == H2Ast_TYPE_MUTSLICE) {
+        if (outElemTypeNode != NULL) {
+            *outElemTypeNode = n->firstChild;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int HOPEvalExecExprWithTypeNode(
+    HOPEvalProgram*     p,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst);
+
+static int HOPEvalEvalArrayLiteral(
+    HOPEvalProgram*     p,
+    int32_t             exprNode,
+    const H2ParsedFile* typeFile,
+    int32_t             typeNode,
+    H2CTFEValue*        outValue,
+    int*                outIsConst) {
+    const H2Ast*        ast;
+    HOPEvalArray*       array;
+    uint32_t            elemCount;
+    uint32_t            targetLen = UINT32_MAX;
+    uint32_t            len;
+    int32_t             elemTypeNode = -1;
+    int32_t             child;
+    uint32_t            i = 0;
+    const H2ParsedFile* arrayFile;
+    if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    ast = &p->currentFile->ast;
+    elemCount = AstListCount(ast, exprNode);
+    if (HOPEvalArrayLiteralExpectedElemType(typeFile, typeNode, &elemTypeNode, &targetLen)) {
+        len = targetLen == UINT32_MAX ? elemCount : targetLen;
+        arrayFile = typeFile;
+    } else {
+        len = elemCount;
+        arrayFile = p->currentFile;
+    }
+    if (elemCount > len) {
+        *outIsConst = 0;
+        return 0;
+    }
+    array = HOPEvalAllocArrayView(p, arrayFile, typeNode, elemTypeNode, NULL, len);
+    if (array == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    if (len > 0u) {
+        array->elems = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue) * len, (uint32_t)_Alignof(H2CTFEValue));
+        if (array->elems == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        memset(array->elems, 0, sizeof(H2CTFEValue) * len);
+    }
+    child = ASTFirstChild(ast, exprNode);
+    while (child >= 0) {
+        int elemIsConst = 0;
+        if (HOPEvalExecExprWithTypeNode(
+                p, child, arrayFile, elemTypeNode, &array->elems[i], &elemIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!elemIsConst) {
+            *outIsConst = 0;
+            return 0;
+        }
+        i++;
+        child = ASTNextSibling(ast, child);
+    }
+    while (i < len) {
+        int elemIsConst = 0;
+        if (elemTypeNode < 0
+            || HOPEvalZeroInitTypeNode(p, arrayFile, elemTypeNode, &array->elems[i], &elemIsConst)
+                   != 0)
+        {
+            *outIsConst = 0;
+            return 0;
+        }
+        i++;
+    }
+    HOPEvalValueSetArray(outValue, arrayFile, typeNode, array);
+    *outIsConst = 1;
+    return 0;
+}
+
 static int HOPEvalExecExprWithTypeNode(
     HOPEvalProgram*     p,
     int32_t             exprNode,
@@ -8352,6 +8554,9 @@ static int HOPEvalExecExprWithTypeNode(
             typeNode,
             outValue,
             outIsConst);
+    }
+    if (ast->nodes[exprNode].kind == H2Ast_ARRAY_LIT) {
+        return HOPEvalEvalArrayLiteral(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     }
     if (ast->nodes[exprNode].kind == H2Ast_NEW) {
         return HOPEvalEvalNewExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
@@ -11189,6 +11394,31 @@ static int HOPEvalMirAllocNew(
         return -1;
     }
     newFile = p->currentFile;
+    if (exprNode >= 0 && (uint32_t)exprNode < newFile->ast.len
+        && newFile->ast.nodes[exprNode].kind == H2Ast_NEW
+        && (newFile->ast.nodes[exprNode].flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    {
+        const H2ParsedFile* expectedTypeFile = NULL;
+        int32_t             expectedTypeNode = -1;
+        int32_t             litNode = newFile->ast.nodes[exprNode].firstChild;
+        H2CTFEValue         arrayValue;
+        int                 arrayIsConst = 0;
+        if (litNode < 0 || (uint32_t)litNode >= newFile->ast.len) {
+            return 0;
+        }
+        (void)HOPEvalFindExpectedTypeForInitExpr(
+            newFile, exprNode, &expectedTypeFile, &expectedTypeNode);
+        if (HOPEvalEvalArrayLiteral(
+                p, litNode, expectedTypeFile, expectedTypeNode, &arrayValue, &arrayIsConst)
+            != 0)
+        {
+            return -1;
+        }
+        if (!arrayIsConst) {
+            return 0;
+        }
+        return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst) == 0 ? 1 : -1;
+    }
     if (!HOPEvalDecodeNewExprNodes(newFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
@@ -13227,6 +13457,10 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
     if (n->kind == H2Ast_COMPOUND_LIT) {
         return HOPEvalEvalCompoundLiteral(
             p, exprNode, p->currentFile, p->currentFile, -1, outValue, outIsConst);
+    }
+
+    if (n->kind == H2Ast_ARRAY_LIT) {
+        return HOPEvalEvalArrayLiteral(p, exprNode, p->currentFile, -1, outValue, outIsConst);
     }
 
     if (n->kind == H2Ast_NEW) {

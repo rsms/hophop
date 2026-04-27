@@ -133,6 +133,10 @@
 {"id": "HOP2109", "name": "FIELD_DEFAULTS_STRUCT_ONLY", "category": "semantic", "message": "field defaults are only allowed in structs"}
 {"id": "HOP2110", "name": "ENUM_ZERO_INIT_REQUIRES_ZERO_TAG", "category": "semantic", "message": "enum zero initialization requires a zero-valued tag"}
 {"id": "HOP2111", "name": "VAR_SIZE_BYVALUE_FORBIDDEN", "category": "semantic", "message": "variable-size type is not allowed by value"}
+{"id": "HOP2112", "name": "ARRAY_LITERAL_EMPTY_TYPE_UNKNOWN", "category": "semantic", "message": "empty array literal requires an expected array type"}
+{"id": "HOP2113", "name": "ARRAY_LITERAL_TOO_MANY_ELEMENTS", "category": "semantic", "message": "array literal has too many elements for target type"}
+{"id": "HOP2114", "name": "ARRAY_LITERAL_READONLY_CONST_REQUIRED", "category": "semantic", "message": "array literal bound to readonly storage requires const-evaluable elements"}
+{"id": "HOP2115", "name": "ARRAY_LITERAL_MUT_REF_FORBIDDEN", "category": "semantic", "message": "array literal cannot bind to mutable reference or pointer storage"}
 {"id": "HOP3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "HOP3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "HOP3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

@@ -323,6 +323,7 @@ typedef struct {
     int      hasImplicitMainRootContext;
     int32_t  implicitMainContextType;
     int32_t  activeExpectedCallType;
+    int32_t  activeExpectedNewType;
     int32_t  activeCallWithNode;
     int32_t  currentFunctionIndex;
     int      currentFunctionIsCompareHook;

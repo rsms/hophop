@@ -1,0 +1,10 @@
+// Verifies formatter output for array literals.
+fn main(){
+a:=[1,2,3]
+b:=[
+1,
+2
+3,4,
+]
+c:=new [1,2,3]
+}

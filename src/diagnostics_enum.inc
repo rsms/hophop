@@ -162,9 +162,17 @@ H2Diag_NONE = 0, H2Diag_UNEXPECTED_CHAR, /* HOP1001: unexpected character */
     H2Diag_FIELD_DEFAULTS_STRUCT_ONLY, /* HOP2109: field defaults are only allowed in structs */
     H2Diag_ENUM_ZERO_INIT_REQUIRES_ZERO_TAG, /* HOP2110: enum zero initialization requires a
                                                 zero-valued tag */
-    H2Diag_VAR_SIZE_BYVALUE_FORBIDDEN,   /* HOP2111: variable-size type is not allowed by value */
-    H2Diag_CODEGEN_INTERNAL,             /* HOP3001: internal codegen error */
-    H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, /* HOP3002: Wasm backend does not support this MIR */
+    H2Diag_VAR_SIZE_BYVALUE_FORBIDDEN, /* HOP2111: variable-size type is not allowed by value */
+    H2Diag_ARRAY_LITERAL_EMPTY_TYPE_UNKNOWN, /* HOP2112: empty array literal requires an expected
+                                                array type */
+    H2Diag_ARRAY_LITERAL_TOO_MANY_ELEMENTS,  /* HOP2113: array literal has too many elements for
+                                                target type */
+    H2Diag_ARRAY_LITERAL_READONLY_CONST_REQUIRED, /* HOP2114: array literal bound to readonly
+                                                     storage requires const-evaluable elements */
+    H2Diag_ARRAY_LITERAL_MUT_REF_FORBIDDEN,       /* HOP2115: array literal cannot bind to mutable
+                                                     reference or pointer storage */
+    H2Diag_CODEGEN_INTERNAL,                      /* HOP3001: internal codegen error */
+    H2Diag_WASM_BACKEND_UNSUPPORTED_MIR,      /* HOP3002: Wasm backend does not support this MIR */
     H2Diag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* HOP3003: Wasm backend does not support this
                                                  hostcall */
     H2Diag_WASM_BACKEND_PLATFORM_REQUIRED, /* HOP3004: Wasm backend requires a platform target for

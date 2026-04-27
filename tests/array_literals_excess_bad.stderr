@@ -1,0 +1,1 @@
+tests/array_literals_excess_bad.hop:3:18: error: HOP2113: array literal has too many elements for target type

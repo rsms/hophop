@@ -1,0 +1,25 @@
+// Verifies typechecking for array literals.
+fn use_ro(xs &[int]) int {
+	return len(xs)
+}
+
+fn main(x int) {
+	var inferred         = [1, 2, 3]
+	var single           = [1]
+	var runtime          = [1, x]
+	var empty  [int 0]   = []
+	var padded [int 64]  = [1, 2, 3]
+	var ro     &[int]    = [1, 2, 3]
+	var p                = new [1, 2, 3]
+	var q      *[int]    = new [1, 2, 3]
+	var r      *[int 64] = new [1, 2, 3]
+	_ = inferred[2]
+	_ = single[0]
+	_ = runtime[1]
+	_ = len(empty)
+	_ = padded[63]
+	_ = use_ro(ro)
+	_ = p[0]
+	_ = q[1]
+	_ = r[63]
+}

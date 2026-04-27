@@ -1,0 +1,5 @@
+// Verifies readonly array literal storage requires const elements.
+fn main(x int) {
+	var a &[int] = [1, x]
+	_ = a
+}

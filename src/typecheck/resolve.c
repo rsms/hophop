@@ -2072,6 +2072,11 @@ int H2TCCanAssign(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType) {
         return 1;
     }
 
+    if (dst->kind == H2TCType_ARRAY) {
+        return src->kind == H2TCType_ARRAY && dst->baseType == src->baseType
+            && src->arrayLen <= dst->arrayLen;
+    }
+
     if (src->kind == H2TCType_NAMED && H2TCIsTypeDerivedFromEmbedded(c, srcType, dstType)) {
         return 1;
     }

@@ -1,0 +1,23 @@
+// Verifies runtime behavior for array literals.
+fn main() {
+	var a            = [1, 2, 3]
+	var b   [int 5]  = [1, 2]
+	var ro  &[int]   = [4, 5, 6]
+	var fix &[int 3] = [7, 8, 9]
+	var p            = new [10, 11, 12]
+	var q   *[int]   = new [13, 14, 15]
+	var r   *[int 5] = new [16, 17]
+	assert (len(a) == 3)
+	assert (a[1] == 2)
+	assert (len(b) == 5)
+	assert (b[4] == 0)
+	assert (len(ro) == 3)
+	assert (ro[2] == 6)
+	assert (fix[1] == 8)
+	assert (len(p) == 3)
+	assert (p[2] == 12)
+	assert (len(q) == 3)
+	assert (q[0] == 13)
+	assert (len(r) == 5)
+	assert (r[4] == 0)
+}

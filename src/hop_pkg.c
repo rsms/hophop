@@ -3600,6 +3600,7 @@ static int CollectExprImportRewritesNode(
         case H2Ast_BINARY:
         case H2Ast_CONTEXT_OVERLAY:
         case H2Ast_CONTEXT_BIND:
+        case H2Ast_ARRAY_LIT:
         case H2Ast_INDEX:
         case H2Ast_CAST:
         case H2Ast_SIZEOF:

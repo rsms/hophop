@@ -31,11 +31,10 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/hop check examples/anonymous_aggregates.hop`
 - Pointers and arrays: `examples/pointers_arrays.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/pointers_arrays.hop`
+- Arrays, literals, slices, and heap array allocation: `examples/arrays.hop`
+  - Check: `./_build/macos-aarch64-debug/hop check examples/arrays.hop`
 - Variable-size struct (dependent trailing field): `examples/vss.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/vss.hop`
-- HEP-2 references/slices (`*`, `[T]`, `*[T]`, slicing, implicit view conversions):
-  `examples/hep2_refs_slices.hop`
-  - Check: `./_build/macos-aarch64-debug/hop check examples/hep2_refs_slices.hop`
 - HEP-2 allocator `new` keyword forms: `examples/allocator.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/allocator.hop`
 - Arena allocator with `import "mem"` and `free_all`: `examples/arena_allocator.hop`

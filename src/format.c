@@ -2470,6 +2470,62 @@ static int H2FmtEmitExprCore(H2FmtCtx* c, int32_t nodeId) {
             }
             return H2FmtWriteChar(c, ')');
         }
+        case H2Ast_ARRAY_LIT: {
+            int32_t  cur = H2FmtFirstChild(c->ast, nodeId);
+            uint32_t rbPos;
+            if (!H2FmtFindCharBackwardInRange(c->src, n->start, n->end, ']', &rbPos)) {
+                return -1;
+            }
+            if (H2FmtWriteChar(c, '[') != 0) {
+                return -1;
+            }
+            if (cur < 0) {
+                return H2FmtWriteChar(c, ']');
+            }
+            if (!H2FmtRangeHasChar(c->src, n->start, n->end, '\n')) {
+                int first = 1;
+                while (cur >= 0) {
+                    if (!first && H2FmtWriteCStr(c, ", ") != 0) {
+                        return -1;
+                    }
+                    if (H2FmtEmitExpr(c, cur, 0) != 0) {
+                        return -1;
+                    }
+                    first = 0;
+                    cur = H2FmtNextSibling(c->ast, cur);
+                }
+                return H2FmtWriteChar(c, ']');
+            }
+            c->indent++;
+            while (cur >= 0) {
+                int32_t  next = H2FmtNextSibling(c->ast, cur);
+                uint32_t gapStart = c->ast->nodes[cur].end;
+                uint32_t gapEnd = next >= 0 ? c->ast->nodes[next].start : rbPos;
+                int      hasNewline = H2FmtRangeHasChar(c->src, gapStart, gapEnd, '\n');
+                int      hasComma = H2FmtRangeHasChar(c->src, gapStart, gapEnd, ',');
+                if (cur == H2FmtFirstChild(c->ast, nodeId) && H2FmtNewline(c) != 0) {
+                    return -1;
+                }
+                if (H2FmtEmitExpr(c, cur, 0) != 0) {
+                    return -1;
+                }
+                if (next >= 0) {
+                    if (!hasNewline && hasComma) {
+                        if (H2FmtWriteCStr(c, ", ") != 0) {
+                            return -1;
+                        }
+                    } else if (H2FmtNewline(c) != 0) {
+                        return -1;
+                    }
+                }
+                cur = next;
+            }
+            c->indent--;
+            if (H2FmtNewline(c) != 0) {
+                return -1;
+            }
+            return H2FmtWriteChar(c, ']');
+        }
         case H2Ast_CALL_WITH_CONTEXT: {
             int32_t callNode = H2FmtFirstChild(c->ast, nodeId);
             int32_t ctxNode = callNode >= 0 ? H2FmtNextSibling(c->ast, callNode) : -1;
@@ -2607,7 +2663,11 @@ static int H2FmtEmitExprCore(H2FmtCtx* c, int32_t nodeId) {
             if (H2FmtWriteCStr(c, "new ") != 0) {
                 return -1;
             }
-            if (count >= 0) {
+            if ((n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+                if (type >= 0 && H2FmtEmitExpr(c, type, 0) != 0) {
+                    return -1;
+                }
+            } else if (count >= 0) {
                 if (H2FmtWriteChar(c, '[') != 0 || (type >= 0 && H2FmtEmitType(c, type) != 0)
                     || H2FmtWriteChar(c, ' ') != 0 || H2FmtEmitExpr(c, count, 0) != 0
                     || H2FmtWriteChar(c, ']') != 0)

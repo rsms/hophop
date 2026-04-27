@@ -1,0 +1,5 @@
+// Verifies empty array literal without context is rejected.
+fn main() {
+	var a = []
+	_ = a
+}

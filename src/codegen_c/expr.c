@@ -697,6 +697,15 @@ int TypeRefAssignableCost(
         return -1;
     }
 
+    if (dst->containerKind == H2TypeContainer_ARRAY && src->containerKind == H2TypeContainer_ARRAY
+        && dst->containerPtrDepth == src->containerPtrDepth && dst->ptrDepth == src->ptrDepth
+        && dst->baseName != NULL && src->baseName != NULL && StrEq(dst->baseName, src->baseName)
+        && dst->hasArrayLen && src->hasArrayLen && src->arrayLen <= dst->arrayLen)
+    {
+        *outCost = dst->arrayLen == src->arrayLen ? 0 : 1;
+        return 0;
+    }
+
     if (dst->containerKind == H2TypeContainer_SLICE_RO
         || dst->containerKind == H2TypeContainer_SLICE_MUT)
     {
@@ -2927,6 +2936,134 @@ static int ResolveCallTargetByMappedCName(
 
 int InferExprType_IDENT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType);
 
+static uint32_t ArrayLitElementCount(H2CBackendC* c, int32_t nodeId) {
+    uint32_t count = 0;
+    int32_t  child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        count++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    return count;
+}
+
+static int ArrayLitElementTypeFromExpected(
+    const H2TypeRef* expectedType, H2TypeRef* outElem, uint32_t* outLen, int* outHasLen) {
+    H2TypeRef t;
+    if (outElem != NULL) {
+        TypeRefSetInvalid(outElem);
+    }
+    if (outLen != NULL) {
+        *outLen = 0;
+    }
+    if (outHasLen != NULL) {
+        *outHasLen = 0;
+    }
+    if (expectedType == NULL || !expectedType->valid || outElem == NULL) {
+        return 0;
+    }
+    t = *expectedType;
+    if (t.containerKind != H2TypeContainer_SCALAR && t.containerPtrDepth > 0) {
+        t.containerPtrDepth--;
+    }
+    if (t.containerKind == H2TypeContainer_ARRAY) {
+        *outElem = t;
+        outElem->containerKind = H2TypeContainer_SCALAR;
+        outElem->containerPtrDepth = 0;
+        outElem->arrayLen = 0;
+        outElem->hasArrayLen = 0;
+        if (outLen != NULL) {
+            *outLen = t.arrayLen;
+        }
+        if (outHasLen != NULL) {
+            *outHasLen = t.hasArrayLen;
+        }
+        return 1;
+    }
+    if (t.containerKind == H2TypeContainer_SLICE_RO || t.containerKind == H2TypeContainer_SLICE_MUT)
+    {
+        *outElem = t;
+        outElem->containerKind = H2TypeContainer_SCALAR;
+        outElem->containerPtrDepth = 0;
+        outElem->arrayLen = 0;
+        outElem->hasArrayLen = 0;
+        return 1;
+    }
+    return 0;
+}
+
+int InferArrayLiteralType(
+    H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable expectedType, H2TypeRef* outType) {
+    const H2AstNode* litNode = NodeAt(c, nodeId);
+    H2TypeRef        elemType;
+    uint32_t         elemCount;
+    uint32_t         expectedLen = 0;
+    int              hasExpectedLen = 0;
+    int32_t          child;
+    if (litNode == NULL || litNode->kind != H2Ast_ARRAY_LIT) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    elemCount = ArrayLitElementCount(c, nodeId);
+    if (ArrayLitElementTypeFromExpected(expectedType, &elemType, &expectedLen, &hasExpectedLen)) {
+        if (hasExpectedLen && elemCount > expectedLen) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        child = AstFirstChild(&c->ast, nodeId);
+        while (child >= 0) {
+            H2TypeRef childType;
+            uint8_t   cost = 0;
+            if (InferExprTypeExpected(c, child, &elemType, &childType) != 0 || !childType.valid
+                || TypeRefAssignableCost(c, &elemType, &childType, &cost) != 0)
+            {
+                TypeRefSetInvalid(outType);
+                return -1;
+            }
+            child = AstNextSibling(&c->ast, child);
+        }
+        *outType = elemType;
+        outType->containerKind = H2TypeContainer_ARRAY;
+        outType->arrayLen = hasExpectedLen ? expectedLen : elemCount;
+        outType->hasArrayLen = 1;
+        outType->readOnly = 0;
+        return 0;
+    }
+    if (elemCount == 0u) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    TypeRefSetInvalid(&elemType);
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        H2TypeRef childType;
+        if (InferExprType(c, child, &childType) != 0 || !childType.valid) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        if (!elemType.valid) {
+            elemType = childType;
+        } else {
+            uint8_t cost = 0;
+            if (TypeRefAssignableCost(c, &elemType, &childType, &cost) != 0) {
+                if (TypeRefAssignableCost(c, &childType, &elemType, &cost) != 0) {
+                    TypeRefSetInvalid(outType);
+                    return -1;
+                }
+                elemType = childType;
+            }
+        }
+        child = AstNextSibling(&c->ast, child);
+    }
+    CanonicalizeTypeRefBaseName(c, &elemType);
+    *outType = elemType;
+    outType->containerKind = H2TypeContainer_ARRAY;
+    outType->containerPtrDepth = 0;
+    outType->arrayLen = elemCount;
+    outType->hasArrayLen = 1;
+    outType->readOnly = 0;
+    return 0;
+}
+
 int InferCompoundLiteralType(
     H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable expectedType, H2TypeRef* outType) {
     const H2AstNode*      litNode = NodeAt(c, nodeId);
@@ -3266,6 +3403,9 @@ int InferExprTypeExpected(
 
     if (n->kind == H2Ast_COMPOUND_LIT) {
         return InferCompoundLiteralType(c, nodeId, expectedType, outType);
+    }
+    if (n->kind == H2Ast_ARRAY_LIT) {
+        return InferArrayLiteralType(c, nodeId, expectedType, outType);
     }
 
     if (n->kind == H2Ast_UNARY && (H2TokenKind)n->op == H2Tok_AND) {
@@ -4313,6 +4453,7 @@ int InferExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
     switch (n->kind) {
         case H2Ast_IDENT:             return InferExprType_IDENT(c, nodeId, n, outType);
         case H2Ast_COMPOUND_LIT:      return InferExprType_COMPOUND_LIT(c, nodeId, n, outType);
+        case H2Ast_ARRAY_LIT:         return InferArrayLiteralType(c, nodeId, NULL, outType);
         case H2Ast_CALL_WITH_CONTEXT: return InferExprType_CALL_WITH_CONTEXT(c, nodeId, n, outType);
         case H2Ast_CALL:              return InferExprType_CALL(c, nodeId, n, outType);
         case H2Ast_NEW:               return InferExprType_NEW(c, nodeId, n, outType);
@@ -4346,6 +4487,16 @@ int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
     uint32_t arrayLen;
 
     TypeRefSetInvalid(outType);
+    if (NodeAt(c, nodeId) != NULL && (NodeAt(c, nodeId)->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    {
+        int32_t litNode = AstFirstChild(&c->ast, nodeId);
+        if (InferArrayLiteralType(c, litNode, NULL, outType) != 0 || !outType->valid) {
+            TypeRefSetInvalid(outType);
+            return 0;
+        }
+        outType->containerPtrDepth++;
+        return 0;
+    }
     if (DecodeNewExprNodes(c, nodeId, &typeNode, &countNode, &initNode, &allocNode) != 0) {
         return 0;
     }
@@ -4510,6 +4661,7 @@ int EmitStringLiteralPool(H2CBackendC* c) {
 
 int EmitExpr(H2CBackendC* c, int32_t nodeId);
 int EmitExprCoerced(H2CBackendC* c, int32_t exprNode, const H2TypeRef* _Nullable dstType);
+int EmitArrayLiteral(H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable expectedType);
 int EmitAssertFormatArg(H2CBackendC* c, int32_t nodeId);
 
 int IsStrBaseName(const char* _Nullable s) {
@@ -7076,6 +7228,113 @@ int EmitNewExpr(
     int              dstIsRuntimeArrayMut = 0;
     int              isVarSizeStr = 0;
 
+    if (NodeAt(c, nodeId) != NULL && (NodeAt(c, nodeId)->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    {
+        int32_t          litNode = AstFirstChild(&c->ast, nodeId);
+        int32_t          allocNode = litNode >= 0 ? AstNextSibling(&c->ast, litNode) : -1;
+        const H2AstNode* lit = NodeAt(c, litNode);
+        H2TypeRef        expectedValue;
+        H2TypeRef        arrayType;
+        H2TypeRef        elemType;
+        uint32_t         elemCount;
+        int              useRuntimeSlice = 0;
+        uint32_t         i = 0;
+        int32_t          child;
+        TypeRefSetInvalid(&expectedValue);
+        if (lit == NULL || lit->kind != H2Ast_ARRAY_LIT) {
+            return -1;
+        }
+        if (dstType != NULL && dstType->valid) {
+            expectedValue = *dstType;
+            if (expectedValue.containerKind != H2TypeContainer_SCALAR) {
+                if (expectedValue.containerPtrDepth > 0) {
+                    expectedValue.containerPtrDepth--;
+                }
+            } else if (expectedValue.ptrDepth > 0) {
+                expectedValue.ptrDepth--;
+            }
+        }
+        if (InferArrayLiteralType(
+                c, litNode, expectedValue.valid ? &expectedValue : NULL, &arrayType)
+                != 0
+            || !arrayType.valid || arrayType.containerKind != H2TypeContainer_ARRAY)
+        {
+            return -1;
+        }
+        elemType = arrayType;
+        elemType.containerKind = H2TypeContainer_SCALAR;
+        elemType.containerPtrDepth = 0;
+        elemType.arrayLen = 0;
+        elemType.hasArrayLen = 0;
+        elemCount = ArrayLitElementCount(c, litNode);
+        if (dstType != NULL && dstType->valid
+            && (dstType->containerKind == H2TypeContainer_SLICE_RO
+                || dstType->containerKind == H2TypeContainer_SLICE_MUT)
+            && dstType->containerPtrDepth > 0)
+        {
+            useRuntimeSlice = 1;
+        }
+        if (BufAppendCStr(&c->out, "(__extension__({\n    ") != 0
+            || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendCStr(&c->out, "* __hop_p = (") != 0
+            || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendCStr(&c->out, "*)__hop_new_array((__hop_MemAllocator*)(") != 0
+            || EmitNewAllocArgExpr(c, allocNode) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
+            || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendCStr(&c->out, "), _Alignof(") != 0
+            || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendCStr(&c->out, "), (__hop_int)") != 0
+            || BufAppendU32(&c->out, useRuntimeSlice ? elemCount : arrayType.arrayLen) != 0
+            || BufAppendCStr(&c->out, ");\n    if (__hop_p != NULL) {\n") != 0)
+        {
+            return -1;
+        }
+        child = AstFirstChild(&c->ast, litNode);
+        while (child >= 0) {
+            if (BufAppendCStr(&c->out, "        __hop_p[") != 0 || BufAppendU32(&c->out, i) != 0
+                || BufAppendCStr(&c->out, "] = ") != 0 || EmitExprCoerced(c, child, &elemType) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+            i++;
+            child = AstNextSibling(&c->ast, child);
+        }
+        if (useRuntimeSlice) {
+            if (BufAppendCStr(&c->out, "    }\n    ((") != 0
+                || EmitTypeNameWithDepth(c, &expectedValue) != 0
+                || BufAppendCStr(&c->out, "){ ") != 0
+                || BufAppendCStr(
+                       &c->out,
+                       dstType->containerKind == H2TypeContainer_SLICE_MUT
+                           ? "(void*)__hop_p"
+                           : "(const void*)__hop_p")
+                       != 0
+                || BufAppendCStr(&c->out, ", (__hop_int)") != 0
+                || BufAppendU32(&c->out, elemCount) != 0
+                || BufAppendCStr(&c->out, " });\n}))") != 0)
+            {
+                return -1;
+            }
+            (void)requireNonNull;
+            return 0;
+        }
+        if (BufAppendCStr(&c->out, "    }\n    (") != 0 || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendCStr(&c->out, " (*)[") != 0
+            || BufAppendU32(&c->out, arrayType.arrayLen) != 0 || BufAppendCStr(&c->out, "])") != 0)
+        {
+            return -1;
+        }
+        if (requireNonNull) {
+            if (BufAppendCStr(&c->out, "__hop_unwrap((const void*)__hop_p)") != 0) {
+                return -1;
+            }
+        } else if (BufAppendCStr(&c->out, "__hop_p") != 0) {
+            return -1;
+        }
+        return BufAppendCStr(&c->out, ";\n}))");
+    }
+
     if (DecodeNewExprNodes(c, nodeId, &typeNode, &countArg, &initArg, &allocArg) != 0) {
         return -1;
     }
@@ -7575,6 +7834,9 @@ int EmitExprCoerced(H2CBackendC* c, int32_t exprNode, const H2TypeRef* _Nullable
             }
         }
         return EmitCompoundLiteral(c, exprNode, dstType);
+    }
+    if (expr != NULL && expr->kind == H2Ast_ARRAY_LIT) {
+        return EmitArrayLiteral(c, exprNode, dstType);
     }
     if (expr != NULL && expr->kind == H2Ast_UNARY && (H2TokenKind)expr->op == H2Tok_AND) {
         int32_t          rhsNode = AstFirstChild(&c->ast, exprNode);
@@ -8846,6 +9108,132 @@ int EmitCompoundLiteral(H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullab
     return EmitCompoundLiteralDesignated(c, fieldNode, ownerType, &valueType);
 }
 
+static int EmitReadonlyArrayLiteralStatic(
+    H2CBackendC* c,
+    int32_t      nodeId,
+    const H2TypeRef* _Nonnull expectedType,
+    const H2TypeRef* _Nonnull arrayType,
+    const H2TypeRef* _Nonnull elemType,
+    uint32_t targetLen) {
+    uint32_t tempId = FmtNextTempId(c);
+    int32_t  child;
+    uint32_t i = 0;
+    if (BufAppendCStr(&c->out, "(__extension__({\n    static const ") != 0
+        || EmitElementTypeName(c, elemType, 0) != 0
+        || BufAppendCStr(&c->out, " __hop_array_lit_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendChar(&c->out, '[') != 0 || BufAppendU32(&c->out, targetLen) != 0
+        || BufAppendCStr(&c->out, "] = {") != 0)
+    {
+        return -1;
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (EmitExprCoerced(c, child, elemType) != 0) {
+            return -1;
+        }
+        i++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    if (BufAppendCStr(&c->out, "};\n    ") != 0) {
+        return -1;
+    }
+    if (expectedType->containerKind == H2TypeContainer_SLICE_RO) {
+        if (BufAppendCStr(&c->out, "((__hop_slice_ro){ (const void*)__hop_array_lit_") != 0
+            || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, ", (__hop_int)") != 0
+            || BufAppendU32(&c->out, arrayType->arrayLen) != 0
+            || BufAppendCStr(&c->out, " })") != 0)
+        {
+            return -1;
+        }
+    } else if (
+        expectedType->containerKind == H2TypeContainer_ARRAY && expectedType->containerPtrDepth > 0)
+    {
+        if (BufAppendChar(&c->out, '(') != 0 || EmitElementTypeName(c, elemType, 0) != 0
+            || BufAppendCStr(&c->out, "*)(uintptr_t)(const void*)__hop_array_lit_") != 0
+            || BufAppendU32(&c->out, tempId) != 0)
+        {
+            return -1;
+        }
+    } else {
+        return -1;
+    }
+    return BufAppendCStr(&c->out, ";\n}))");
+}
+
+int EmitArrayLiteral(H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable expectedType) {
+    H2TypeRef arrayType;
+    H2TypeRef elemType;
+    uint32_t  targetLen = 0;
+    int       hasTargetLen = 0;
+    int32_t   child;
+    uint32_t  i = 0;
+    int       needsCompoundCast;
+    if (InferArrayLiteralType(c, nodeId, expectedType, &arrayType) != 0 || !arrayType.valid
+        || arrayType.containerKind != H2TypeContainer_ARRAY)
+    {
+        return -1;
+    }
+    elemType = arrayType;
+    elemType.containerKind = H2TypeContainer_SCALAR;
+    elemType.containerPtrDepth = 0;
+    elemType.arrayLen = 0;
+    elemType.hasArrayLen = 0;
+    if (expectedType != NULL && expectedType->valid) {
+        H2TypeRef expectedElem;
+        if (ArrayLitElementTypeFromExpected(expectedType, &expectedElem, &targetLen, &hasTargetLen))
+        {
+            elemType = expectedElem;
+        }
+        if ((expectedType->readOnly || expectedType->containerKind == H2TypeContainer_SLICE_RO)
+            && (expectedType->containerKind == H2TypeContainer_SLICE_RO
+                || (expectedType->containerKind == H2TypeContainer_ARRAY
+                    && expectedType->containerPtrDepth > 0)))
+        {
+            return EmitReadonlyArrayLiteralStatic(
+                c,
+                nodeId,
+                expectedType,
+                &arrayType,
+                &elemType,
+                hasTargetLen ? targetLen : arrayType.arrayLen);
+        }
+    }
+    needsCompoundCast =
+        expectedType == NULL || !expectedType->valid
+        || expectedType->containerKind != H2TypeContainer_ARRAY
+        || expectedType->containerPtrDepth != 0;
+    if (needsCompoundCast) {
+        if (BufAppendCStr(&c->out, "((") != 0 || EmitElementTypeName(c, &elemType, 0) != 0
+            || BufAppendChar(&c->out, '[') != 0
+            || BufAppendU32(&c->out, hasTargetLen ? targetLen : arrayType.arrayLen) != 0
+            || BufAppendCStr(&c->out, "])") != 0)
+        {
+            return -1;
+        }
+    }
+    if (BufAppendChar(&c->out, '{') != 0) {
+        return -1;
+    }
+    child = AstFirstChild(&c->ast, nodeId);
+    while (child >= 0) {
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (EmitExprCoerced(c, child, &elemType) != 0) {
+            return -1;
+        }
+        i++;
+        child = AstNextSibling(&c->ast, child);
+    }
+    if (BufAppendChar(&c->out, '}') != 0) {
+        return -1;
+    }
+    return needsCompoundCast ? BufAppendChar(&c->out, ')') : 0;
+}
+
 int EmitExpr_IDENT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     const H2Local* local = NULL;
     int32_t        topVarLikeNode = -1;
@@ -8915,6 +9303,11 @@ int EmitExpr_BOOL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
 int EmitExpr_COMPOUND_LIT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     (void)n;
     return EmitCompoundLiteral(c, nodeId, NULL);
+}
+
+int EmitExpr_ARRAY_LIT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
+    (void)n;
+    return EmitArrayLiteral(c, nodeId, NULL);
 }
 
 int EmitExpr_STRING(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
@@ -10747,6 +11140,7 @@ int EmitExpr(H2CBackendC* c, int32_t nodeId) {
         case H2Ast_FLOAT:             rc = EmitExpr_FLOAT(c, nodeId, n); break;
         case H2Ast_BOOL:              rc = EmitExpr_BOOL(c, nodeId, n); break;
         case H2Ast_COMPOUND_LIT:      rc = EmitExpr_COMPOUND_LIT(c, nodeId, n); break;
+        case H2Ast_ARRAY_LIT:         rc = EmitExpr_ARRAY_LIT(c, nodeId, n); break;
         case H2Ast_STRING:            rc = EmitExpr_STRING(c, nodeId, n); break;
         case H2Ast_UNARY:             rc = EmitExpr_UNARY(c, nodeId, n); break;
         case H2Ast_BINARY:            rc = EmitExpr_BINARY(c, nodeId, n); break;

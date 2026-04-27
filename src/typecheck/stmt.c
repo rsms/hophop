@@ -2357,6 +2357,7 @@ int H2TCBuildCheckedContext(
     c.hasImplicitMainRootContext = 0;
     c.implicitMainContextType = -1;
     c.activeExpectedCallType = -1;
+    c.activeExpectedNewType = -1;
     c.activeCallWithNode = -1;
     c.currentFunctionIndex = -1;
     c.currentFunctionIsCompareHook = 0;

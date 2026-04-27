@@ -1,0 +1,5 @@
+// Verifies bare array literals do not allocate mutable pointer storage.
+fn main() {
+	var a *[int] = [1, 2]
+	_ = a
+}
