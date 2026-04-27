@@ -12,7 +12,17 @@ The reference compiler is written in strict C11 and can run programs through an 
 
 ```hop
 fn main() {
-	print("hej världen")
+    greetings := [
+    	"Hej världen!"
+        "Hello, world!"
+        "¡Hola Mundo!"
+        "Γειά σου Κόσμε!"
+        "Привіт, світе!"
+        "こんにちは世界！"
+    ]
+    for greeting in greetings {
+        print(greeting)
+    }
 }
 ```
 
@@ -88,13 +98,14 @@ Literals cover numbers, strings, runes, booleans and `null`. Strings can be inte
 Rune literals use single quotes and represent one Unicode scalar value. `null` is only assignable where the type explicitly accepts it, such as optionals and `rawptr`.
 
 ```hop
-const n = 42
-const hex = 0xff
-const pi = 3.14
-const msg = "hello\n"
-const raw = `hello\n`
-const letter = 'å'
-const ok = true
+n      := 42
+hex    := 0xff
+pi     := 3.14
+msg    := "hello\n"
+raw    := `hello\n`
+letter := 'å'
+ok     := true
+array  := [1, 2, 3]
 ```
 
 ### Variables
