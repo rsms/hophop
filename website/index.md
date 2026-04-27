@@ -2,8 +2,8 @@
 title: hophop programming language
 ---
 
-**hophop** is small programming language in the C/Go family.
-The reference compiler is written in strict C11 and can run programs through an evaluator, generate WASM modules and generate freestanding C code of a hophop package.
+**hophop** is a small programming language in the C/Go family.
+The reference compiler is written in strict C11 and can run programs through an evaluator, generate WASM modules and generate freestanding C code for a hophop package.
 
 [Source on GitHub](https://github.com/rsms/hophop)<br>
 [Language specification](spec/) [[md]](spec/index.md)
@@ -13,7 +13,7 @@ The reference compiler is written in strict C11 and can run programs through an 
 ```hop
 fn main() {
     greetings := [
-    	"Hej världen!"
+        "Hej världen!"
         "Hello, world!"
         "¡Hola Mundo!"
         "Γειά σου Κόσμε!"
@@ -29,36 +29,38 @@ fn main() {
 Run it directly:
 
 ```sh
-$ hophop run hello.hop
-hej världen
+$ hop run hello.hop
+Hej världen!
+Hello, world!
+¡Hola Mundo!
+Γειά σου Κόσμε!
+Привіт, світе!
+こんにちは世界！
 ```
 
-Compile to wasm:
+Compile a wasm-compatible package to wasm:
 
 ```sh
-$ hophop genpkg:wasm hello.hop hello.wasm
+$ hop genpkg:wasm --platform wasm-min app.hop app.wasm
 ```
 
 ## Language guide
 
-These sections are ordered from high-impact, small ideas to lower-level and more specialized features.
-
 ### Functions
 
-Functions are declared with `fn`. A definition has a body, while a declaration can omit the body when another package or backend provides the implementation. Programs run from `fn main()` with no parameters and no return type.
-
-Parameters use name-then-type order, and a single return type follows the parameter list. Calls use ordinary expression syntax.
+Functions are declared with `fn`. Programs start at `fn main()`
 
 ```hop
 fn add(a, b i32) i32 {
-	return a + b
+    return a + b
 }
 
 fn main() {
-	print("sum")
-	add(1, 2)
+    assert add(1, b: 2) == 3
 }
 ```
+
+Function-call arguments must be named at the call site, with the exception of the first argument. "Named" means either using a variable with the same name as the parameter or an explicit label `param: value`.
 
 HopHop uses [uniform function call syntax](https://en.wikipedia.org/wiki/Uniform_function_call_syntax) to support `expr.function()` calls without special syntax or a distinction between functions and methods.
 
@@ -68,7 +70,7 @@ struct Vec2 {
 }
 
 fn mul(v Vec2, exp f64) Vec2 {
-    return { x: v.x*exp, y: v.y*v.y }
+    return { x: v.x*exp, y: v.y*exp }
 }
 
 fn main() {
@@ -85,11 +87,11 @@ Most semicolons are inserted from newlines, so ordinary code is written one stat
 
 ```hop
 fn main() {
-	// line comment
-	/* outer
-	   /* nested */
-	   outer */
-	print("comments")
+    // line comment
+    /* outer
+       /* nested */
+       outer */
+    print("comments")
 }
 ```
 
@@ -101,14 +103,24 @@ Rune literals use single quotes and represent one Unicode codepoint.
 `null` is only assignable where the type explicitly accepts it, such as optionals and `rawptr`.
 
 ```hop
-n      := 42
-hex    := 0xff
-pi     := 3.14
-msg    := "hello\n"
-raw    := `hello\n`
-letter := 'å'
-ok     := true
-array  := [1, 2, 3]
+fn main() {
+    n      := 42
+    hex    := 0xff
+    pi     := 3.14
+    msg    := "hello\n"
+    raw    := `hello\n`
+    letter := 'å'
+    ok     := true
+    array  := [1, 2, 3]
+
+    assert n + hex == 297
+    assert pi > 3.0
+    assert len(msg) == 6
+    assert len(raw) == 7
+    assert letter == 'å'
+    assert ok
+    assert array[0] == 1
+}
 ```
 
 ### Variables
@@ -119,10 +131,15 @@ The type can be written explicitly or inferred from the initializer. `var x T` z
 
 ```hop
 fn main() {
-	const limit = 10
-	var count     = 0
-	var total i32 = 0
-	var ready bool
+    const limit = 10
+    var count     = 0
+    var total i32 = 0
+    var ready bool
+
+    count += limit
+    total = count as i32
+    assert total == 10
+    assert !ready
 }
 ```
 
@@ -132,10 +149,12 @@ Regular assignment uses `=`, compound assignment uses operators such as `+=`, an
 
 ```hop
 fn main() {
-	x := 1
-	x += 2
-	y, z := 3, 4
-	y, z = z, y
+    x := 1
+    x += 2
+    y, z := 3, 4
+    y, z = z, y
+    assert x == 3
+    assert y == 4 && z == 3
 }
 ```
 
@@ -147,13 +166,13 @@ Top-level declarations are collected before function bodies are checked, so func
 
 ```hop
 fn main() {
-	var x = 1
-	{
-		var x = 2
-		var _, y = x, 3
-		assert y == 3
-	}
-	assert x == 1
+    var x = 1
+    {
+        var x = 2
+        var _, y = x, 3
+        assert y == 3
+    }
+    assert x == 1
 }
 ```
 
@@ -165,11 +184,17 @@ Constant numeric expressions use `const_int` and `const_float` until they are as
 
 ```hop
 fn main() {
-	var signed i32    = -1
-	var size   uint   = 10
-	var text   &str   = "hej"
-	var r      rune   = 'h'
-	var p      rawptr = null
+    var signed i32    = -1
+    var size   uint   = 10
+    var text   &str   = "hej"
+    var r      rune   = 'h'
+    var p      rawptr = null
+
+    assert signed < 0
+    assert size == 10
+    assert len(text) == 3
+    assert r == 'h'
+    assert p == null
 }
 ```
 
@@ -181,24 +206,27 @@ Numeric conversions between concrete types are explicit. Casts use `as`, and poi
 
 ```hop
 fn main() {
-	var a i32 = 10
-	var b i64 = a as i64
-	var ok    = a > 0 && b < 100
-	var p     = null as rawptr
+    var a i32 = 10
+    var b i64 = a as i64
+    var ok    = a > 0 && b < 100
+    var p     = null as rawptr
+
+    assert ok
+    assert p == null
 }
 ```
 
 ### Control flow
 
-**if** conditions takes a `bool` conditional expression and splits execution into two branches
+**if** conditions take a `bool` conditional expression and split execution into two branches.
 
 ```hop
 fn greet(name ?&str) {
-	if name {
-		print(name)
-	} else {
-		print("anonymous")
-	}
+    if name {
+        print(name)
+    } else {
+        print("anonymous")
+    }
 }
 ```
 
@@ -210,11 +238,11 @@ The `for ... in` form can bind values, key/value pairs or discard values with `_
 
 ```hop
 fn count(items &[i32]) i32 {
-	var total = 0
-	for i, value in items {
-		total += i + value
-	}
-	return total
+    var total i32 = 0
+    for i, value in items {
+        total += (i as i32) + value
+    }
+    return total
 }
 ```
 
@@ -223,12 +251,12 @@ fn count(items &[i32]) i32 {
 Enum payload variants can be narrowed by switching on the enum value.
 
 ```hop
-fn classify(n i32) str {
-	switch {
-		case n < 0  { return "negative" }
-		case n == 0 { return "zero" }
-		default     { return "positive" }
-	}
+fn classify(n i32) &str {
+    switch {
+        case n < 0  { return "negative" }
+        case n == 0 { return "zero" }
+        default     { return "positive" }
+    }
 }
 ```
 
@@ -240,11 +268,11 @@ fn classify(n i32) str {
 
 ```hop
 fn use_value(x i32) {
-	defer print("leaving")
-	assert x >= 0, "expected non-negative"
-	if x == 0 {
-		panic("zero")
-	}
+    defer print("leaving")
+    assert x >= 0, "expected non-negative"
+    if x == 0 {
+        panic("zero")
+    }
 }
 ```
 
@@ -256,12 +284,12 @@ Arrays have fixed length in the type. Slices are unsized views and must be used 
 
 ```hop
 fn first(xs &[i32]) i32 {
-	assert len(xs) > 0
-	return xs[0]
+    assert len(xs) > 0
+    return xs[0]
 }
 
 fn prefix(xs &[i32]) &[i32] {
-	return xs[0:2]
+    return xs[0:2]
 }
 ```
 
@@ -274,11 +302,11 @@ The address-of operator `&` forms a read-only reference, and unary `*` dereferen
 
 ```hop
 fn read(x &i32) i32 {
-	return *x
+    return *x
 }
 
 fn set(x *i32, value i32) {
-	*x = value
+    *x = value
 }
 ```
 
@@ -290,11 +318,11 @@ A plain `T` can lift into `?T`, but an optional does not implicitly convert back
 Use control-flow narrowing for ordinary code and postfix `!` when an explicit runtime null trap is intended.
 
 ```hop
-fn length(s ?str) int {
-	if s == null {
-		return 0
-	}
-	return len(s)
+fn length(s ?&str) int {
+    if s == null {
+        return 0
+    }
+    return len(s)
 }
 ```
 
@@ -306,13 +334,13 @@ Unions may initialize at most one field explicitly.
 
 ```hop
 struct Point {
-	x i32 = 0
-	y i32 = 0
+    x i32 = 0
+    y i32 = 0
 }
 
 union Word {
-	i i32
-	u u32
+    i i32
+    u u32
 }
 ```
 
@@ -334,9 +362,13 @@ enum Result i32 {
 
 fn read(r Result) i32 {
     switch r {
-        case Result.Ok as ok { return ok.value }
-        case Result.Err      { return 0 }
+        case Result.Ok  { return r.value }
+        case Result.Err { return 0 }
     }
+}
+
+fn main() {
+    assert read(Result.Ok{ value: 7 }) == 7
 }
 ```
 
@@ -348,13 +380,15 @@ Field names can be dotted for nested initialization. Explicit initializers overr
 
 ```hop
 struct Size {
-	w i32
-	h i32
+    w i32
+    h i32
 }
 
 fn main() {
-	var size      = Size{ w: 640, h: 480 }
-	var same Size = { w: 640, h: 480 }
+    var size      = Size{ w: 640, h: 480 }
+    var same Size = { w: 640, h: 480 }
+    assert size.w == same.w
+    assert size.h == same.h
 }
 ```
 
@@ -368,7 +402,7 @@ Type names and value names live in separate namespaces, so a type and a function
 type UserId u64
 
 fn raw(id UserId) u64 {
-	return id
+    return id
 }
 ```
 
@@ -379,11 +413,14 @@ A package is a file or directory; there is no `package` keyword. Imports appear 
 `pub` exports a top-level declaration. Imports can use the default alias, an explicit alias, a side-effect-only `_` alias or named symbol imports.
 
 ```hop
-import "log" { Logger }
-import "math" as m
+import "compiler" as c { error }
 
-pub fn area(r f64) f64 {
-	return m.pi * r * r
+pub fn fail_with_alias() {
+    c.error("stopped by package alias")
+}
+
+pub fn fail_with_symbol() {
+    error("stopped by named import")
 }
 ```
 
@@ -425,11 +462,11 @@ Functions with tuple returns must return one value per position.
 
 ```hop
 fn apply(f fn(i32) i32, x i32) i32 {
-	return f(x)
+    return f(x)
 }
 
 fn divmod(a, b i32) (i32, i32) {
-	return a / b, a % b
+    return a / b, a % b
 }
 ```
 
@@ -445,26 +482,26 @@ depending on the receiver type and if `n` can be computed at compile time or not
 
 ```hop
 fn make_count() *i32 {
-	var p = new i32
-	*p = 1
-	return p
+    var p = new i32
+    *p = 1
+    return p
 }
 
 fn release(p *i32) {
-	del p
+    del p
 }
 ```
 
-`new` and `del` uses an allocator defined by `context.allocator` by default, and allows specifying an explicit allocator with `in`, e.g. `v := new [i32 3] in my_allocator`.
+`new` and `del` use the allocator defined by `context.allocator` by default. You can specify an explicit allocator with `in`, e.g. `v := new [i32 3] in my_allocator`.
 
 Unlike languages like C and Go, in hophop `*T` cannot be `null`. Instead, `?*T` [[optional]](#optional) must be used when something may be `null` (and checked before use.)
 
 ```hop
 fn example(never_null *int, may_be_null ?*int) {
-	if may_be_null {
-		// type automatically narrowed in positive branch
-		assert typeof(may_be_null) == *int
-	}
+    if may_be_null {
+        // type automatically narrowed in positive branch
+        assert typeof(may_be_null) == type *int
+    }
 }
 ```
 
@@ -474,12 +511,12 @@ fn example(never_null *int, may_be_null ?*int) {
 
 ```hop
 fn main() {
-	name := "hello" // type is &str
-	print(msg)
+    name := "hello" // type is &str
+    print(name)
 }
 ```
 
-`str` is a specialized type of `[u8]` that guarantees that its contents is valid UTF-8 text. An expression of type `&str` can be used wherever a value of type `&[u8]` or `&str` is needed, and an expression of type `*str` can be used as `*str`, `&str`, `*[u8]` and `&[u8]`. However, an expression of type `&[u8]` or `*[u8]` cannot be used as `&str` or `*str` without explicit cast. An explicit cast from `&[u8]` or `*[u8]` to `&str` or `*str` is the only way by which you can "break" the guarantee of a string containing valid UTF-8 data.
+`str` is a specialized type of `[u8]` that guarantees valid UTF-8 text. An expression of type `&str` can be used wherever a value of type `&[u8]` or `&str` is needed, and an expression of type `*str` can be used as `*str`, `&str`, `*[u8]` and `&[u8]`. However, an expression of type `&[u8]` or `*[u8]` cannot be used as `&str` or `*str` without explicit cast. An explicit cast from `&[u8]` or `*[u8]` to `&str` or `*str` is the only way to break the guarantee that a string contains valid UTF-8 data.
 
 ### Generics
 
@@ -489,11 +526,11 @@ Named generic types are instantiated in type positions with type arguments. Gene
 
 ```hop
 struct Box[T] {
-	value T
+    value T
 }
 
 fn get[T](box Box[T]) T {
-	return box.value
+    return box.value
 }
 ```
 
@@ -508,9 +545,11 @@ Reflection helpers such as `kind`, `base`, `is_alias`, `type_name`, `ptr`, `slic
 
 ```hop
 fn main() {
-	const T = type &[i32]
-	const U = typeof(123)
-	const P = ptr(U)
+    const T type = typeof(123 as i32)
+    const P type = ptr(T)
+
+    assert T == i32
+    assert P == ptr(i32)
 }
 ```
 
@@ -522,15 +561,15 @@ At the call site, arguments can be passed one by one or with a final spread argu
 
 ```hop
 fn sum(values ...i32) i32 {
-	var total = 0
-	for value in values {
-		total += value
-	}
-	return total
+    var total i32 = 0
+    for value in values {
+        total += value
+    }
+    return total
 }
 
 fn main() {
-	sum(1, 2, 3)
+    assert sum(1, 2, 3) == 6
 }
 ```
 
@@ -541,9 +580,15 @@ A parameter marked `const` requires a const-evaluable argument at the call site.
 Const evaluation also powers constant numeric values, `sizeof`, compile-time function calls and type-value computations.
 
 ```hop
-fn repeat(const n const_int, value i32) [i32 n] {
-	var result [i32 n]
-	return result
+fn make_array_type(const n uint) type {
+    return array(i32, N: n)
+}
+
+const FourI32 = make_array_type(4 as uint)
+
+fn main() {
+    var values FourI32
+    assert len(values) == 4
 }
 ```
 
@@ -569,11 +614,11 @@ The `compiler` package provides diagnostic functions for code that validates its
 import "compiler"
 
 fn require_positive(const n const_int) {
-	const {
-		if n <= 0 {
-			compiler.error("expected positive value")
-		}
-	}
+    const {
+        if n <= 0 {
+            compiler.error("expected positive value")
+        }
+    }
 }
 ```
 
@@ -584,12 +629,12 @@ Anonymous structs and unions can be written directly as types. Anonymous struct 
 This is useful for local shapes and context-like values that do not need a named declaration.
 
 ```hop
-fn distance(p struct { x f64; y f64 }) f64 {
-	return p.x*p.x + p.y*p.y
+fn length_squared(p struct { x f64; y f64 }) f64 {
+    return p.x*p.x + p.y*p.y
 }
 
 fn main() {
-	distance({ x: 3.0, y: 4.0 })
+    assert length_squared({ x: 3.0, y: 4.0 }) == 25.0
 }
 ```
 
@@ -601,16 +646,21 @@ Embedded bases support implicit upcasts by value, pointer and reference forms.
 
 ```hop
 struct Entity {
-	id u64
+    id u64
 }
 
 struct User {
-	Entity
-	name str
+    Entity
+    name &str
 }
 
 fn entity_id(e &Entity) u64 {
-	return e.id
+    return e.id
+}
+
+fn main() {
+    user := User{ Entity: { id: 42 }, name: "Ada" }
+    assert entity_id(&user) == 42
 }
 ```
 
@@ -622,12 +672,12 @@ VSS values cannot be used by value in locals, parameters or returns. They are in
 
 ```hop
 struct Packet {
-	len  u32
-	data [u8 .len]
+    len  u32
+    data [u8 .len]
 }
 
 fn packet_len(p &Packet) u32 {
-	return p.len
+    return p.len
 }
 ```
 
@@ -639,10 +689,10 @@ Operations such as `new`, `del`, `concat`, `fmt` and `print` use context capabil
 
 ```hop
 fn main() {
-	var alloc = context.allocator
-	var msg   = concat("hi, ", "there")
-	print(msg)
-	del msg in alloc
+    var alloc = context.allocator
+    var msg   = concat("hi, ", "there")
+    print(msg)
+    del msg in alloc
 }
 ```
 
@@ -656,7 +706,7 @@ The common platform import exposes process/platform operations such as `exit(sta
 import "platform"
 
 fn main() {
-	platform.exit(0)
+    platform.exit(0)
 }
 ```
 
@@ -668,11 +718,11 @@ This keeps the loop syntax simple while letting libraries define their own itera
 
 ```hop
 fn walk(xs &[i32]) i32 {
-	var total = 0
-	for value in xs {
-		total += value
-	}
-	return total
+    var total i32 = 0
+    for value in xs {
+        total += value
+    }
+    return total
 }
 ```
 
@@ -688,7 +738,7 @@ fn now() f64
 
 @export("run")
 pub fn run() {
-	now()
+    now()
 }
 ```
 
@@ -703,4 +753,3 @@ logger_wasm.hop
 logger_macos.hop
 logger_linux.hop
 ```
-
