@@ -18,6 +18,6 @@ fn format(buf *[u8], const fmt &str, args ...anytype) int {
 
 fn main() {
 	var msg [u8 128]
-	var f = "x={}"
+	f := "x={}"
 	_ = msg.format(f, 123)
 }

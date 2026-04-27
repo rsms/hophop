@@ -9,7 +9,7 @@ fn bump_a(p *Pair) {
 }
 
 fn main() {
-	var p = Pair{}
+	p := Pair{}
 	p.a = 4
 	bump_a(&p)
 	assert p.a == 9

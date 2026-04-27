@@ -21,7 +21,7 @@ fn next_value(it *BoxIter) ?*i32 {
 }
 
 fn main() {
-	var box = Box{ value: 5 }
+	box := Box{ value: 5 }
 	for &n in &box {
 		*n += 3
 	}

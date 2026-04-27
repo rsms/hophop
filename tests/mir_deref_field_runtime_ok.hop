@@ -10,7 +10,7 @@ fn write_box(b *Box) {
 
 fn main() {
 	var value i32 = 1
-	var box       = Box{}
+	box := Box{}
 	box.p = &value
 	write_box(&box)
 	assert value == 14

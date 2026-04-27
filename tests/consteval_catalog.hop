@@ -53,7 +53,7 @@ fn classify(x int) int {
 }
 
 fn defer_value(x int) int {
-	var y = x
+	y := x
 	defer y += 1
 	return y
 }
@@ -64,7 +64,7 @@ fn local_elem_size() int {
 }
 
 fn local_infer_elem_size() int {
-	var x = 1
+	x := 1
 	return sizeof(x) as int
 }
 

@@ -96,10 +96,10 @@ fn next_key_and_value(it *TableIterator) ?*PairKV {
 }
 
 fn main() {
-	var entry3 = ListEntry{ value: 3 }
-	var entry2 = ListEntry{ value: 2, next: &entry3 }
-	var entry1 = ListEntry{ value: 1, next: &entry2 }
-	var list   = List{ head: &entry1 }
+	entry3 := ListEntry{ value: 3 }
+	entry2 := ListEntry{ value: 2, next: &entry3 }
+	entry1 := ListEntry{ value: 1, next: &entry2 }
+	list := List{ head: &entry1 }
 
 	modify(&list)
 	assert sum_ref(&list) == 60
@@ -108,7 +108,7 @@ fn main() {
 	var entries [Entry 2]
 	entries[0] = Entry{ key: "aa", value: 2 }
 	entries[1] = Entry{ key: "bbb", value: 3 }
-	var table = Table{ entries: entries[:] }
+	table := Table{ entries: entries[:] }
 
 	var key_len_sum int
 	var value_sum   i32

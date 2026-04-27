@@ -24,13 +24,13 @@ struct Ordered {
 
 fn main() {
 	// retries + timeout_ms come from defaults
-	var a = Config{ mode: 1 }
+	a := Config{ mode: 1 }
 	assert a.retries == 3
 	assert a.timeout_ms == 3000
 	assert a.mode == 1
 
 	// explicit initializer overrides default for retries
-	var b = Config{ retries: 5, mode: 2 }
+	b := Config{ retries: 5, mode: 2 }
 	assert b.retries == 5
 	assert b.timeout_ms == 5000
 	assert b.mode == 2
@@ -38,7 +38,7 @@ fn main() {
 	// ordering example:
 	// explicit initializers evaluate first in source order (c then a),
 	// then defaults evaluate in field declaration order (b then c-default if needed).
-	var o = Ordered{ c: mark(9), a: mark(1) }
+	o := Ordered{ c: mark(9), a: mark(1) }
 	assert trace == 913
 	assert o.a == 1
 	assert o.b == 3

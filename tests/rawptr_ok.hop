@@ -3,7 +3,7 @@ fn main() {
 	var opaque2 rawptr = null
 	assert opaque1 == opaque2
 
-	var i              = 123
+	i := 123
 	var ip1     *int   = &i
 	var opaque3 rawptr = ip1 as rawptr
 	var ip2     *int   = opaque3 as *int

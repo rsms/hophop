@@ -182,11 +182,11 @@ fn main() {
 	assert seq_sum == 60
 
 	// Protocol iteration over a user-defined linked list.
-	var e3 = ListEntry{ value: 3 }
-	var e2 = ListEntry{ value: 2, next: &e3 }
-	var e1 = ListEntry{ value: 1, next: &e2 }
+	e3 := ListEntry{ value: 3 }
+	e2 := ListEntry{ value: 2, next: &e3 }
+	e1 := ListEntry{ value: 1, next: &e2 }
 
-	var list = List{ head: &e1 }
+	list := List{ head: &e1 }
 	modify(&list)
 	assert sum_ref(&list) == 60
 	assert sum_value(&list) == 60
@@ -206,7 +206,7 @@ fn main() {
 	entries[0] = KVEntry{ key: "aa", value: 2 }
 	entries[1] = KVEntry{ key: "bbb", value: 3 }
 	entries[2] = KVEntry{ key: "c", value: 4 }
-	var table = KVTable{ entries: entries[:] }
+	table := KVTable{ entries: entries[:] }
 
 	assert sum_key_lengths(&table) == 6
 	assert sum_table_values(&table) == 9

@@ -6,7 +6,7 @@ fn is_one(t Collection.Tag) bool {
 }
 
 fn main() {
-	var c = Collection{}
+	c := Collection{}
 	var v  Collection.Value
 	var it Collection.Item
 	v.i = 9

@@ -15,7 +15,7 @@ fn main() {
 	var c Counter
 	c.value = 21
 
-	var msg = "hi"
+	msg := "hi"
 
 	assert c.doubled() == doubled(c)
 	assert c.add(7) == add(c, d: 7)

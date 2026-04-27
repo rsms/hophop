@@ -36,7 +36,7 @@ fn free_block_chain(source *MemAllocator, block *ArenaBlock) {
 	var curSize int         = block.size
 	var flags   u32         = 0
 	var newSizeInOut        = &zero
-	var srcLoc              = SourceLocation{}
+	srcLoc := SourceLocation{}
 	source.handler(source, addr, align, curSize, newSizeInOut, flags, srcLoc)
 	del block
 	free_block_chain(source, block: next)

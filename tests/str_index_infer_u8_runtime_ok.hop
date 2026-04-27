@@ -1,11 +1,11 @@
 // Verifies runtime behavior for string index inference u8.
 fn first_ro(text &str) u8 {
-	var b = text
+	b := text
 	return b[0]
 }
 
 fn first_rw(text *str) u8 {
-	var b = text
+	b := text
 	return b[0]
 }
 

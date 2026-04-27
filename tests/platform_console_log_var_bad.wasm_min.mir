@@ -1,8 +1,8 @@
 mir
   dynamic_resolution=no
-  insts=7 consts=2 sources=2 funcs=4 locals=6 fields=0 types=5 hosts=0 symbols=2
+  insts=9 consts=2 sources=2 funcs=4 locals=7 fields=0 types=5 hosts=0 symbols=2
 sources
-  #0 len=158
+  #0 len=155
   #1 len=203
 types
   #0 astNode=6 source=#1 flags=1
@@ -12,34 +12,37 @@ types
   #4 astNode=24 source=#1 flags=1
 hosts
 symbols
-  #0 IDENT target=6 name="platform" [120,128]
-  #1 CALL target=8 name="console_log" [129,140] flags=1
+  #0 IDENT target=9 name="platform" [117,125]
+  #1 CALL target=11 name="console_log" [126,137] flags=1
 fields
 consts
   #0 STRING bytes="hello from platform"
   #1 INT value=0
 functions
-  #0 name="main" [77,81] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+7
+  #0 name="main" [77,81] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+9
     locals
-      #0 name="msg" [91,94] type=#1 flags=2
+      #0 name="" [0,0] type=#1
+      #1 name="msg" [87,90] type=#1 flags=2
     insts
-      0: PUSH_CONST const=#0 span=[97,118]
-      1: LOCAL_STORE local=#0 "msg" [91,94] span=[87,118]
-      2: LOCAL_LOAD local=#0 "msg" [91,94] span=[141,144]
-      3: PUSH_CONST const=#1 span=[153,154]
-      4: CALL_FN fn=#2 argc=2 span=[129,140]
-      5: DROP span=[120,155]
-      6: RETURN_VOID span=[84,157]
-  #1 name="exit" [36,40] source=#1 type=#4294967295 params=1 temps=0 locals=#1+1 insts=#7+0
+      0: PUSH_CONST const=#0 span=[94,115]
+      1: LOCAL_STORE local=#0 "" [0,0] span=[87,115]
+      2: LOCAL_LOAD local=#0 "" [0,0] span=[87,115]
+      3: LOCAL_STORE local=#1 "msg" [87,90] span=[87,115]
+      4: LOCAL_LOAD local=#1 "msg" [87,90] span=[138,141]
+      5: PUSH_CONST const=#1 span=[150,151]
+      6: CALL_FN fn=#2 argc=2 span=[126,137]
+      7: DROP span=[117,152]
+      8: RETURN_VOID span=[84,154]
+  #1 name="exit" [36,40] source=#1 type=#4294967295 params=1 temps=0 locals=#2+1 insts=#9+0
     locals
       #0 name="status" [41,47] type=#0 flags=3
     insts
-  #2 name="console_log" [97,108] source=#1 type=#4294967295 params=2 temps=0 locals=#2+2 insts=#7+0
+  #2 name="console_log" [97,108] source=#1 type=#4294967295 params=2 temps=0 locals=#3+2 insts=#9+0
     locals
       #0 name="message" [109,116] type=#1 flags=3
       #1 name="flags" [123,128] type=#2 flags=3
     insts
-  #3 name="panic" [172,177] source=#1 type=#4294967295 params=2 temps=0 locals=#4+2 insts=#7+0
+  #3 name="panic" [172,177] source=#1 type=#4294967295 params=2 temps=0 locals=#5+2 insts=#9+0
     locals
       #0 name="message" [178,185] type=#3 flags=3
       #1 name="flags" [192,197] type=#4 flags=3

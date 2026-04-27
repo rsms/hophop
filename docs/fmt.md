@@ -171,6 +171,7 @@ This is why `fmt_canonical` can legitimately contain both:
 - Redundant single-name `var` declaration types are removed when the initializer independently fixes the same type.
 - Current supported initializer contexts include explicit compound literals and local identifiers whose concrete type can be recovered from same-file declarations.
 - Initializers that rely on the declaration type, such as untyped compound literals, `null`, and literal casts, keep the explicit `var` type.
+- Local single-name `var` declarations with an initializer and no required explicit type format as short assignment syntax (`name := expr`) for simple literals, local identifiers, and explicit compound literals. Top-level declarations, grouped declarations, multi-name declarations, declarations without initializers, call initializers, array/new initializers, and `for` header initializers keep `var` syntax.
 
 ## Expression operator spacing
 

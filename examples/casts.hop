@@ -1,6 +1,6 @@
 // explicit type conversion using `as` between numeric types
 fn main() {
-	var x = 7
+	x := 7
 	var y = x as f64
 
 	if y > 0.0 {

@@ -1,8 +1,8 @@
 mir
   dynamic_resolution=no
-  insts=17 consts=3 sources=1 funcs=1 locals=1 fields=13 types=6 hosts=0 symbols=0
+  insts=19 consts=3 sources=1 funcs=1 locals=2 fields=13 types=6 hosts=0 symbols=0
 sources
-  #0 len=197
+  #0 len=194
 types
   #0 astNode=13 source=#0 flags=524288
   #1 astNode=16 source=#0 flags=524288
@@ -13,11 +13,11 @@ types
 hosts
 symbols
 fields
-  #0 ownerType=#4294967295 type=#4294967295 name="x" [161,162]
-  #1 ownerType=#4294967295 type=#4294967295 name="y" [167,168]
-  #2 ownerType=#4294967295 type=#4294967295 name="a" [151,152]
-  #3 ownerType=#4294967295 type=#4294967295 name="a" [186,187]
-  #4 ownerType=#4294967295 type=#4294967295 name="x" [188,189]
+  #0 ownerType=#4294967295 type=#4294967295 name="x" [158,159]
+  #1 ownerType=#4294967295 type=#4294967295 name="y" [164,165]
+  #2 ownerType=#4294967295 type=#4294967295 name="a" [148,149]
+  #3 ownerType=#4294967295 type=#4294967295 name="a" [183,184]
+  #4 ownerType=#4294967295 type=#4294967295 name="x" [185,186]
   #5 ownerType=#0 type=#2 name="a" [103,104]
   #6 ownerType=#0 type=#3 name="b" [112,113]
   #7 ownerType=#1 type=#4 name="x" [71,72]
@@ -31,24 +31,27 @@ consts
   #1 INT value=2
   #2 INT value=1
 functions
-  #0 name="main" [126,130] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+17
+  #0 name="main" [126,130] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+19
     locals
-      #0 name="o" [140,141] type=#0 flags=2
+      #0 name="" [0,0] type=#0
+      #1 name="o" [136,137] type=#0 flags=2
     insts
-      0: AGG_ZERO span=[144,175]
-      1: AGG_ZERO aux=1 span=[154,173]
-      2: PUSH_CONST const=#0 span=[164,165]
-      3: AGG_SET span=[161,162]
-      4: PUSH_CONST const=#1 span=[170,171]
-      5: AGG_SET aux=1 span=[167,168]
-      6: COERCE type=#1 span=[154,173]
-      7: AGG_SET aux=2 span=[151,152]
-      8: COERCE type=#0 span=[144,175]
-      9: LOCAL_STORE local=#0 "o" [140,141] span=[136,175]
-      10: LOCAL_LOAD local=#0 "o" [140,141] span=[184,185]
-      11: AGG_GET field=#3 "a" [186,187] span=[186,187]
-      12: AGG_GET field=#4 "x" [188,189] span=[188,189]
-      13: PUSH_CONST const=#2 span=[193,194]
-      14: BINARY op=EQ span=[184,194]
-      15: ASSERT span=[177,194]
-      16: RETURN_VOID span=[133,196]
+      0: AGG_ZERO span=[141,172]
+      1: AGG_ZERO aux=1 span=[151,170]
+      2: PUSH_CONST const=#0 span=[161,162]
+      3: AGG_SET span=[158,159]
+      4: PUSH_CONST const=#1 span=[167,168]
+      5: AGG_SET aux=1 span=[164,165]
+      6: COERCE type=#1 span=[151,170]
+      7: AGG_SET aux=2 span=[148,149]
+      8: COERCE type=#0 span=[141,172]
+      9: LOCAL_STORE local=#0 "" [0,0] span=[136,172]
+      10: LOCAL_LOAD local=#0 "" [0,0] span=[136,172]
+      11: LOCAL_STORE local=#1 "o" [136,137] span=[136,172]
+      12: LOCAL_LOAD local=#1 "o" [136,137] span=[181,182]
+      13: AGG_GET field=#3 "a" [183,184] span=[183,184]
+      14: AGG_GET field=#4 "x" [185,186] span=[185,186]
+      15: PUSH_CONST const=#2 span=[190,191]
+      16: BINARY op=EQ span=[181,191]
+      17: ASSERT span=[174,191]
+      18: RETURN_VOID span=[133,193]

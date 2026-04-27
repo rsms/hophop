@@ -39,7 +39,7 @@ fn rawptr_zero_ok() rawptr {
 }
 
 fn main() {
-	var i = 1
+	i := 1
 	var p = &i
 	assert ptr_assign_ok(p) == 1
 	assert ref_assign_ok(p) == 1

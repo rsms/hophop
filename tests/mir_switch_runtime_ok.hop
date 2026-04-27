@@ -2,7 +2,7 @@
 import "platform"
 
 fn main() {
-	var y = 0
+	y := 0
 
 	switch 2 {
 		case 0 { y = 10 }
@@ -16,8 +16,8 @@ fn main() {
 		platform.exit(2)
 	}
 
-	var sum = 0
-	var i   = 0
+	sum := 0
+	i := 0
 	for i < 4 {
 		switch {
 			case i == 0 {

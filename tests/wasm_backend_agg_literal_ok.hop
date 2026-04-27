@@ -5,7 +5,7 @@ struct Pair {
 }
 
 fn main() {
-	var p      = Pair{ x: 2 }
+	p := Pair{ x: 2 }
 	var q Pair = { x: 7, y: 9 }
 	q = { x: p.x + 3 }
 	assert p.x == 2

@@ -1,8 +1,8 @@
 mir
   dynamic_resolution=no
-  insts=19 consts=5 sources=1 funcs=3 locals=3 fields=0 types=7 hosts=0 symbols=2
+  insts=21 consts=5 sources=1 funcs=3 locals=4 fields=0 types=7 hosts=0 symbols=2
 sources
-  #0 len=185
+  #0 len=182
 types
   #0 astNode=4 source=#0 flags=1
   #1 astNode=3 source=#0 flags=1
@@ -13,8 +13,8 @@ types
   #6 astNode=4294967295 source=#0 flags=4194304
 hosts
 symbols
-  #0 IDENT target=22 name="add1" [154,158]
-  #1 IDENT target=25 name="add2" [164,168]
+  #0 IDENT target=22 name="add1" [151,155]
+  #1 IDENT target=28 name="add2" [161,165]
 fields
 consts
   #0 INT value=1
@@ -41,16 +41,19 @@ functions
       2: BINARY op=ADD span=[120,125]
       3: RETURN span=[113,125]
       4: RETURN_VOID span=[110,127]
-  #2 name="main" [132,136] source=#0 type=#4 params=0 temps=0 locals=#2+1 insts=#10+9
+  #2 name="main" [132,136] source=#0 type=#4 params=0 temps=0 locals=#2+2 insts=#10+11
     locals
-      #0 name="f" [150,151] type=#5 flags=2
+      #0 name="" [0,0] type=#5
+      #1 name="f" [146,147] type=#5 flags=2
     insts
-      0: PUSH_CONST const=#3 span=[154,158]
-      1: LOCAL_STORE local=#0 "f" [150,151] span=[146,158]
-      2: PUSH_CONST const=#4 span=[164,168]
-      3: LOCAL_STORE local=#0 "f" [150,151] span=[160,168]
-      4: LOCAL_LOAD local=#0 "f" [150,151] span=[177,178]
-      5: PUSH_CONST const=#2 span=[179,181]
-      6: CALL_INDIRECT argc=1 span=[177,178]
-      7: RETURN span=[170,182]
-      8: RETURN_VOID span=[143,184]
+      0: PUSH_CONST const=#3 span=[151,155]
+      1: LOCAL_STORE local=#0 "" [0,0] span=[146,155]
+      2: LOCAL_LOAD local=#0 "" [0,0] span=[146,155]
+      3: LOCAL_STORE local=#1 "f" [146,147] span=[146,155]
+      4: PUSH_CONST const=#4 span=[161,165]
+      5: LOCAL_STORE local=#1 "f" [146,147] span=[157,165]
+      6: LOCAL_LOAD local=#1 "f" [146,147] span=[174,175]
+      7: PUSH_CONST const=#2 span=[176,178]
+      8: CALL_INDIRECT argc=1 span=[174,175]
+      9: RETURN span=[167,179]
+      10: RETURN_VOID span=[143,181]

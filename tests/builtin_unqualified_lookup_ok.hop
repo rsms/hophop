@@ -9,7 +9,7 @@ pub fn use_builtin_types(a *MemAllocator, l *Logger, c *Context, s SourceLocatio
 }
 
 fn local_shadow(Logger int) int {
-	var SourceLocation = Logger
+	SourceLocation := Logger
 	return SourceLocation
 }
 

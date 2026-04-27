@@ -8,7 +8,7 @@ fn add2(x i32) i32 {
 }
 
 fn main() i32 {
-	var f = add1
+	f := add1
 	f = add2
 	return f(40)
 }

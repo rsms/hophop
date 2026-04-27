@@ -2,5 +2,5 @@
 import "std/testing" { FailingAllocator }
 
 fn main() {
-	var _ma = FailingAllocator{}
+	_ma := FailingAllocator{}
 }

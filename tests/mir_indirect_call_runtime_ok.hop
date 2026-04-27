@@ -4,6 +4,6 @@ fn twice(x int) int {
 }
 
 fn main() {
-	var f = twice
+	f := twice
 	assert f(21) == 42
 }

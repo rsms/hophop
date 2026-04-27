@@ -100,7 +100,7 @@ fn main() {
 	var keys [&str 2]
 	keys[0] = "a"
 	keys[1] = "zz"
-	var counter = Counter{ value: 7, keys: keys[:] }
+	counter := Counter{ value: 7, keys: keys[:] }
 	assert first(counter) == 7
 	assert first_ref(&counter) == 7
 	assert key_from_preferred_next_key(&counter) == 3

@@ -6,9 +6,9 @@ fn is_one(t coll.Collection.Tag) bool {
 }
 
 fn main() {
-	var c  = coll.Collection{}
-	var v  = coll.Collection.Value{ i: 7 }
-	var it = coll.Collection.Item{ parent: &c, value: v }
+	c := coll.Collection{}
+	v := coll.Collection.Value{ i: 7 }
+	it := coll.Collection.Item{ parent: &c, value: v }
 	assert it.value.i == 7
 	assert is_one(coll.Collection.Tag.One)
 }

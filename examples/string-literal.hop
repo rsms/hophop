@@ -14,7 +14,7 @@ world" == "hello world"
 world" == "hello\nworld"
 
 	// raw strings keep bytes verbatim except that \` encodes a literal backtick
-	var raw = `this
+	raw := `this
     is a "raw" stri\ng literal`
 	assert raw == "this\n    is a \"raw\" stri\\ng literal"
 	assert `\`` == "`"

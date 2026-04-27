@@ -16,7 +16,7 @@ fn main() {
 
 	assert `abc` == "abc"
 
-	var raw = `this
+	raw := `this
     is a "raw" stri\ng literal with a \` backtick`
 	assert raw == "this\n    is a \"raw\" stri\\ng literal with a ` backtick"
 

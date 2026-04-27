@@ -1180,6 +1180,96 @@ static void H2FmtRewriteRedundantVarType(
     }
 }
 
+static int H2FmtHasEarlierLocalBindingNamed(
+    const H2Ast* ast, H2StrView src, int32_t nodeId, uint32_t nameStart, uint32_t nameEnd) {
+    int32_t fnNodeId;
+    int32_t child;
+    if (nameEnd <= nameStart) {
+        return 0;
+    }
+    fnNodeId = H2FmtFindEnclosingFnNode(ast, nodeId);
+    if (fnNodeId < 0) {
+        return 0;
+    }
+    child = H2FmtFirstChild(ast, fnNodeId);
+    while (child >= 0 && ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
+        child = H2FmtNextSibling(ast, child);
+    }
+    while (child >= 0 && ast->nodes[child].kind == H2Ast_PARAM) {
+        if (ast->nodes[child].start < ast->nodes[nodeId].start
+            && H2FmtNodeDeclaresNameRange(ast, src, child, nameStart, nameEnd))
+        {
+            return 1;
+        }
+        child = H2FmtNextSibling(ast, child);
+    }
+    for (uint32_t i = 0; i < ast->len; i++) {
+        const H2AstNode* n = &ast->nodes[i];
+        if (n->kind == H2Ast_SHORT_ASSIGN && n->start >= ast->nodes[fnNodeId].start
+            && n->end <= ast->nodes[fnNodeId].end && n->end <= ast->nodes[nodeId].start)
+        {
+            int32_t nameList = H2FmtFirstChild(ast, (int32_t)i);
+            int32_t nameNode;
+            if (nameList < 0 || ast->nodes[nameList].kind != H2Ast_NAME_LIST) {
+                continue;
+            }
+            nameNode = H2FmtFirstChild(ast, nameList);
+            while (nameNode >= 0) {
+                const H2AstNode* name = &ast->nodes[nameNode];
+                if (name->kind == H2Ast_IDENT
+                    && H2FmtSlicesEqual(src, name->dataStart, name->dataEnd, nameStart, nameEnd))
+                {
+                    return 1;
+                }
+                nameNode = H2FmtNextSibling(ast, nameNode);
+            }
+            continue;
+        }
+        if ((n->kind == H2Ast_VAR || n->kind == H2Ast_CONST)
+            && n->start >= ast->nodes[fnNodeId].start && n->end <= ast->nodes[fnNodeId].end
+            && n->end <= ast->nodes[nodeId].start
+            && H2FmtNodeDeclaresNameRange(ast, src, (int32_t)i, nameStart, nameEnd))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int H2FmtCanEmitShortVarDecl(
+    const H2Ast* ast,
+    H2StrView    src,
+    const char*  kw,
+    uint32_t     nameCount,
+    int32_t      nodeId,
+    int32_t      typeNodeId,
+    int32_t      initNodeId) {
+    int32_t          parentNodeId;
+    const H2AstNode* n;
+    const H2AstNode* init;
+    if (!H2FmtKeywordIsVar(kw) || nameCount != 1u || typeNodeId >= 0 || initNodeId < 0) {
+        return 0;
+    }
+    if (nodeId < 0 || (uint32_t)nodeId >= ast->len || (uint32_t)initNodeId >= ast->len) {
+        return 0;
+    }
+    n = &ast->nodes[nodeId];
+    init = &ast->nodes[initNodeId];
+    switch (init->kind) {
+        case H2Ast_INT:
+        case H2Ast_FLOAT:
+        case H2Ast_STRING:
+        case H2Ast_RUNE:
+        case H2Ast_BOOL:
+        case H2Ast_IDENT:
+        case H2Ast_COMPOUND_LIT: break;
+        default:                 return 0;
+    }
+    parentNodeId = H2FmtFindParentNode(ast, nodeId);
+    return parentNodeId >= 0 && ast->nodes[parentNodeId].kind == H2Ast_BLOCK
+        && !H2FmtHasEarlierLocalBindingNamed(ast, src, nodeId, n->dataStart, n->dataEnd);
+}
+
 static int32_t H2FmtFindEnclosingFnNode(const H2Ast* ast, int32_t nodeId) {
     const H2AstNode* target;
     int32_t          best = -1;
@@ -3445,8 +3535,8 @@ typedef struct {
     uint32_t    kwLen;
     uint8_t     hasType;
     uint8_t     hasInit;
+    uint8_t     shortVar;
     uint8_t     hasTrailingComment;
-    uint8_t     _pad;
 } H2FmtAlignedVarRow;
 
 typedef struct {
@@ -3629,10 +3719,16 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     uint32_t            maxBeforeOpLen = 0;
     H2FmtAlignedVarRow* rows;
     uint32_t*           commentRunMaxLens;
+    int                 firstShortVar = -1;
 
     while (cur >= 0) {
-        H2AstKind curKind = c->ast->nodes[cur].kind;
-        int32_t   next = H2FmtNextSibling(c->ast, cur);
+        H2AstKind        curKind = c->ast->nodes[cur].kind;
+        const H2AstNode* curNode = &c->ast->nodes[cur];
+        const char*      curKw;
+        int32_t          next = H2FmtNextSibling(c->ast, cur);
+        int32_t          typeNode = -1;
+        int32_t          initNode = -1;
+        int              curShortVar;
         if (allowMixedKind) {
             if (curKind != H2Ast_VAR && curKind != H2Ast_CONST) {
                 break;
@@ -3647,6 +3743,17 @@ static int H2FmtEmitAlignedVarOrConstGroup(
             break;
         }
         if (prev >= 0 && !H2FmtCanContinueAlignedGroup(c, prev, cur)) {
+            break;
+        }
+        curKw = allowMixedKind ? (curKind == H2Ast_CONST ? "const" : "var") : kw;
+        H2FmtGetVarLikeTypeAndInit(c->ast, cur, &typeNode, &initNode);
+        H2FmtRewriteVarTypeFromLiteralCast(c->ast, c->src, curKw, 1u, &typeNode, &initNode);
+        H2FmtRewriteRedundantVarType(
+            c->ast, c->src, curKw, 1u, curNode->start, &typeNode, &initNode);
+        curShortVar = H2FmtCanEmitShortVarDecl(c->ast, c->src, curKw, 1u, cur, typeNode, initNode);
+        if (firstShortVar < 0) {
+            firstShortVar = curShortVar;
+        } else if (curShortVar != firstShortVar) {
             break;
         }
         count++;
@@ -3686,9 +3793,13 @@ static int H2FmtEmitAlignedVarOrConstGroup(
             c->ast, c->src, rows[i].kw, 1u, n->start, &typeNode, &initNode);
         rows[i].typeNode = typeNode;
         rows[i].initNode = initNode;
+        rows[i].shortVar = (uint8_t)H2FmtCanEmitShortVarDecl(
+            c->ast, c->src, rows[i].kw, 1u, cur, typeNode, initNode);
         rows[i].hasType = (uint8_t)(typeNode >= 0);
         rows[i].hasInit = (uint8_t)(initNode >= 0);
-        if (rows[i].hasType) {
+        if (rows[i].shortVar) {
+            /* Short declarations are emitted as statement syntax, not var-column rows. */
+        } else if (rows[i].hasType) {
             if (rows[i].nameLen > maxNameLenWithType) {
                 maxNameLenWithType = rows[i].nameLen;
             }
@@ -3706,7 +3817,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     }
 
     for (i = 0; i < count; i++) {
-        if (rows[i].hasInit) {
+        if (!rows[i].shortVar && rows[i].hasInit) {
             uint32_t nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
             uint32_t beforeOpLen =
                 maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
@@ -3727,9 +3838,13 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     for (i = 0; i < count; i++) {
         uint32_t nameColLen = rows[i].hasType ? maxNameLenWithType : maxNameLenNoType;
         uint32_t codeLen =
-            maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
-            + (rows[i].hasType ? rows[i].typeLen : 0u);
-        if (rows[i].hasInit) {
+            rows[i].shortVar
+                ? rows[i].nameLen + 4u
+                : maxKwLen + 1u + nameColLen + (rows[i].hasType ? 1u : 0u)
+                      + (rows[i].hasType ? rows[i].typeLen : 0u);
+        if (rows[i].shortVar) {
+            codeLen += rows[i].initLen;
+        } else if (rows[i].hasInit) {
             uint32_t padBeforeOp = (maxBeforeOpLen + 1u) - codeLen;
             codeLen += padBeforeOp + 1u + 1u + rows[i].initLen;
         }
@@ -3762,6 +3877,25 @@ static int H2FmtEmitAlignedVarOrConstGroup(
         uint32_t         lineLen;
         if (H2FmtEmitLeadingCommentsForNode(c, rows[i].nodeId) != 0) {
             return -1;
+        }
+        if (rows[i].shortVar) {
+            if (H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || H2FmtWriteCStr(c, " := ") != 0
+                || H2FmtEmitExpr(c, rows[i].initNode, 0) != 0)
+            {
+                return -1;
+            }
+            lineLen = rows[i].nameLen + 4u + rows[i].initLen;
+            if (rows[i].hasTrailingComment) {
+                uint32_t padComment = (commentRunMaxLens[i] - lineLen) + 1u;
+                int32_t  nodeId = rows[i].nodeId;
+                if (H2FmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, padComment) != 0) {
+                    return -1;
+                }
+            }
+            if (i + 1u < count && H2FmtNewline(c) != 0) {
+                return -1;
+            }
+            continue;
         }
         if (H2FmtWriteCStr(c, rows[i].kw) != 0
             || H2FmtWriteSpaces(c, (maxKwLen - rows[i].kwLen) + 1u) != 0
@@ -3801,7 +3935,7 @@ static int H2FmtEmitAlignedVarOrConstGroup(
     }
 
     outCarryHint->valid = 0;
-    if (count == 1u && !rows[0].hasType && rows[0].hasInit) {
+    if (count == 1u && !rows[0].shortVar && !rows[0].hasType && rows[0].hasInit) {
         const H2AstNode* n = &c->ast->nodes[rows[0].nodeId];
         outCarryHint->minLhsLen = maxBeforeOpLen;
         outCarryHint->baseNameStart = n->dataStart;
@@ -4354,6 +4488,14 @@ static int H2FmtEmitVarLike(H2FmtCtx* c, int32_t nodeId, const char* kw) {
         }
         H2FmtRewriteVarTypeFromLiteralCast(c->ast, c->src, kw, 1u, &type, &init);
         H2FmtRewriteRedundantVarType(c->ast, c->src, kw, 1u, n->start, &type, &init);
+        if (H2FmtCanEmitShortVarDecl(c->ast, c->src, kw, 1u, nodeId, type, init)) {
+            if (H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0 || H2FmtWriteCStr(c, " := ") != 0
+                || H2FmtEmitExpr(c, init, 0) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
         if (H2FmtWriteCStr(c, kw) != 0 || H2FmtWriteChar(c, ' ') != 0
             || H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0)
         {

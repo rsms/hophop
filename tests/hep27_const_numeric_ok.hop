@@ -20,9 +20,9 @@ fn main() {
 	var as_f32 f32 = ci
 	var as_f64 f64 = cf
 
-	var inferred_int       = 1
-	var inferred_float     = 1.0
-	var inferred_from_rune = 'Z'
+	inferred_int := 1
+	inferred_float := 1.0
+	inferred_from_rune := 'Z'
 
 	takes_int(inferred_int)
 	takes_f64(inferred_float)

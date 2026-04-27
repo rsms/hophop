@@ -11,11 +11,26 @@ fn makeFoo() Foo {
 	return Foo{ x: 456 }
 }
 
+var top = 1
+
 fn main() {
-	var compound        = Foo{ x: 123 }
-	var generic         = Box[i64]{ value: 4 }
+	var x = 1
+	var s = "hi"
+	var compound Foo = Foo{ x: 123 }
+	var generic Box[i64] = Box[i64]{ value: 4 }
 	var fromCall    Foo = makeFoo()
-	var fromIdent       = compound
+	var fromIdent   Foo = compound
 	var keepUntyped Foo = { x: 789 }
 	var keepCast    i32 = 3
+
+	var some_i32 i32 = 4
+	var a = 1
+	var b i32 = some_i32
+	const c = 2
+	var d Foo
+
+	var shadow = 1
+	{
+		var shadow = 2
+	}
 }

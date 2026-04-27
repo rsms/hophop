@@ -2,7 +2,7 @@
 import "platform"
 
 fn record_order(x i32, out *i32) i32 {
-	var y = x
+	y := x
 	defer *out = y
 	defer y += 3
 	return y

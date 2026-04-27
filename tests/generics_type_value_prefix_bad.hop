@@ -3,6 +3,6 @@ struct Vector[T] {
 }
 
 fn main() {
-	var v = Vector[i32]{ x: 1 }
+	v := Vector[i32]{ x: 1 }
 	if typeof(v) == Vector[i32] {}
 }

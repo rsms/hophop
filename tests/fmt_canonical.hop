@@ -114,8 +114,8 @@ fn use_context(x int) int {
 	var view   [int] = arr[0:len(arr)] // comment
 	var second int   = arr[1]          // comment
 
-	var sum        = x
-	var opt        = maybe
+	sum := x
+	opt := maybe
 	var precedence = 3 + 5*4*8 - 6
 
 	defer {

@@ -6,7 +6,7 @@ fn main() {
 	var x, y u32 = 1, 2
 	var re, im = 0.0, 1.0
 	const c, d = 4, 5
-	var found = true
+	found := true
 
 	if !(u == 0.0 && v == 0.0 && w == 0.0) {
 		platform.exit(1)

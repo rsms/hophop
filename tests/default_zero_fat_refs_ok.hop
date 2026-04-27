@@ -11,7 +11,7 @@ struct Foo {
 fn main() {
 	var s  &str
 	var xs &[int]
-	var foo = Foo{}
+	foo := Foo{}
 
 	assert len(s) == 0
 	assert len(xs) == 0

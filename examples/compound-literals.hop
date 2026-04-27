@@ -31,7 +31,7 @@ fn y_of(v &Vec2) i32 {
 
 fn main() {
 	// explicit target type
-	var a = Vec2{ x: 1, y: 2 }
+	a := Vec2{ x: 1, y: 2 }
 
 	// inferred target type from declared type and assignment target
 	var b Vec2 = { x: 3, y: 4 }
@@ -46,11 +46,11 @@ fn main() {
 	var p &Vec2 = &Vec2{ x: 13, y: 14 }
 
 	// nested inference and omitted fields (zero fill)
-	var r      = Rect{ pos: { x: 21, y: 22 }, size: { x: 30 } }
+	r := Rect{ pos: { x: 21, y: 22 }, size: { x: 30 } }
 	var z Vec2 = {}
 
 	// union single-field init
-	var n = Number{ i: 42 }
+	n := Number{ i: 42 }
 
 	assert a.x == 1
 	assert a.y == 2

@@ -1,6 +1,6 @@
 // string literals with built-ins like len, cstr, assert, and formatted assert
 fn main() {
-	var s     = "hello\n"
+	s := "hello\n"
 	var l int = len(s)
 
 	assert l > 0

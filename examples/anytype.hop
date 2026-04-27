@@ -43,8 +43,8 @@ fn first_int(args ...anytype) int {
 }
 
 fn main() {
-	var c = CircleF32{ x: 1.0, y: 2.0, radius: 3.0 }
-	var p = Particle{ x: 4.0, y: 5.0, radius: 6.0 }
+	c := CircleF32{ x: 1.0, y: 2.0, radius: 3.0 }
+	p := Particle{ x: 4.0, y: 5.0, radius: 6.0 }
 
 	assert sum_circle_parts(c) == 6.0
 	assert sum_circle_parts(p) == 15.0

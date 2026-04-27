@@ -56,7 +56,7 @@ fn main() {
 
 	// Receiver-call sugar supplies the first argument; named arguments
 	// still apply to the explicit suffix.
-	var v = Vec2{ x: 7, y: 8 }
+	v := Vec2{ x: 7, y: 8 }
 	assert v.translate_score(dx: 3, dy: 4) == 7834
 
 	// For variadic calls, named arguments apply only to fixed parameters;
