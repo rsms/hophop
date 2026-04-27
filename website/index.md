@@ -86,16 +86,19 @@ Most semicolons are inserted from newlines, so ordinary code is written one stat
 ```hop
 fn main() {
 	// line comment
-	/* outer /* nested */ outer */
+	/* outer
+	   /* nested */
+	   outer */
 	print("comments")
 }
 ```
 
 ### Literals
 
-Literals cover numbers, strings, runes, booleans and `null`. Strings can be interpreted with escapes or raw with backticks.
+Literals include numbers, strings, runes, booleans and `null`, structs and arrays.
 
-Rune literals use single quotes and represent one Unicode scalar value. `null` is only assignable where the type explicitly accepts it, such as optionals and `rawptr`.
+Rune literals use single quotes and represent one Unicode codepoint.
+`null` is only assignable where the type explicitly accepts it, such as optionals and `rawptr`.
 
 ```hop
 n      := 42
@@ -432,9 +435,12 @@ fn divmod(a, b i32) (i32, i32) {
 
 ### Memory management
 
-HopHop manual memory-management language. You control allocations and deallocations with `new` and `del`.
+HopHop is a manual memory-management language.
+You control allocations and deallocations with `new` and `del`.
 
-`new T` allocates memory, returning `*T`. `new [T n]` allocates an array of type `*[T]` (dynamically sized) or `*[T n]`, depending on the receiver type and if `n` can be computed at compile time or not.
+`new T` allocates memory, returning `*T`.
+`new [T n]` allocates an array of type `*[T]` (dynamically sized) or `*[T n]`,
+depending on the receiver type and if `n` can be computed at compile time or not.
 
 
 ```hop
@@ -450,6 +456,17 @@ fn release(p *i32) {
 ```
 
 `new` and `del` uses an allocator defined by `context.allocator` by default, and allows specifying an explicit allocator with `in`, e.g. `v := new [i32 3] in my_allocator`.
+
+Unlike languages like C and Go, in hophop `*T` cannot be `null`. Instead, `?*T` [[optional]](#optional) must be used when something may be `null` (and checked before use.)
+
+```hop
+fn example(never_null *int, may_be_null ?*int) {
+	if may_be_null {
+		// type automatically narrowed in positive branch
+		assert typeof(may_be_null) == *int
+	}
+}
+```
 
 ### Strings
 
