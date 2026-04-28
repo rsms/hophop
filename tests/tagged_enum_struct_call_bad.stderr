@@ -1,0 +1,1 @@
+tests/tagged_enum_struct_call_bad.hop:10:6: error: HOP2006: expression is not callable

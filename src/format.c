@@ -5961,12 +5961,8 @@ static int H2FmtEmitAggregateDecl(H2FmtCtx* c, int32_t nodeId, const char* kw) {
             int32_t scanItem = child;
             while (scanItem >= 0) {
                 int32_t vch = H2FmtFirstChild(c->ast, scanItem);
-                while (vch >= 0) {
-                    if (c->ast->nodes[vch].kind == H2Ast_FIELD) {
-                        enumHasPayload = 1;
-                        break;
-                    }
-                    vch = H2FmtNextSibling(c->ast, vch);
+                if (vch >= 0 && H2FmtIsTypeNodeKind(c->ast->nodes[vch].kind)) {
+                    enumHasPayload = 1;
                 }
                 if (enumHasPayload) {
                     break;
@@ -6001,7 +5997,7 @@ static int H2FmtEmitAggregateDecl(H2FmtCtx* c, int32_t nodeId, const char* kw) {
                 while (child >= 0) {
                     int32_t          next = H2FmtNextSibling(c->ast, child);
                     const H2AstNode* item = &c->ast->nodes[child];
-                    int32_t          payloadFirst = -1;
+                    int32_t          payloadType = -1;
                     int32_t          tagExpr = -1;
                     int32_t          ch = H2FmtFirstChild(c->ast, child);
                     if (prevEmitted >= 0) {
@@ -6019,21 +6015,15 @@ static int H2FmtEmitAggregateDecl(H2FmtCtx* c, int32_t nodeId, const char* kw) {
                     {
                         return -1;
                     }
-                    while (ch >= 0) {
-                        if (c->ast->nodes[ch].kind == H2Ast_FIELD) {
-                            if (payloadFirst < 0) {
-                                payloadFirst = ch;
-                            }
-                        } else if (tagExpr < 0) {
-                            tagExpr = ch;
-                        }
+                    if (ch >= 0 && H2FmtIsTypeNodeKind(c->ast->nodes[ch].kind)) {
+                        payloadType = ch;
                         ch = H2FmtNextSibling(c->ast, ch);
                     }
-                    if (payloadFirst >= 0) {
-                        if (H2FmtWriteChar(c, '{') != 0
-                            || H2FmtEmitAggregateFieldBody(c, payloadFirst) != 0
-                            || H2FmtWriteChar(c, '}') != 0)
-                        {
+                    if (ch >= 0) {
+                        tagExpr = ch;
+                    }
+                    if (payloadType >= 0) {
+                        if (H2FmtWriteChar(c, ' ') != 0 || H2FmtEmitType(c, payloadType) != 0) {
                             return -1;
                         }
                     }

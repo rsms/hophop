@@ -1293,8 +1293,15 @@ int H2TCVariantNarrowPush(
 int H2TCVariantNarrowFind(H2TypeCheckCtx* c, int32_t localIdx, const H2TCVariantNarrow** outNarrow);
 int32_t H2TCEnumDeclFirstVariantNode(H2TypeCheckCtx* c, int32_t enumDeclNode);
 int32_t H2TCEnumVariantTagExprNode(H2TypeCheckCtx* c, int32_t variantNode);
+int32_t H2TCEnumVariantPayloadTypeNode(H2TypeCheckCtx* c, int32_t variantNode);
 int32_t H2TCFindEnumVariantNodeByName(
     H2TypeCheckCtx* c, int32_t enumTypeId, uint32_t variantStart, uint32_t variantEnd);
+int H2TCEnumVariantPayloadType(
+    H2TypeCheckCtx* c,
+    int32_t         enumTypeId,
+    uint32_t        variantStart,
+    uint32_t        variantEnd,
+    int32_t*        outType);
 int H2TCEnumVariantPayloadFieldType(
     H2TypeCheckCtx* c,
     int32_t         enumTypeId,

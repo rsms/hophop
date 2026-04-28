@@ -124,7 +124,7 @@ typedef struct {
     uint32_t            variantNameStart;
     uint32_t            variantNameEnd;
     uint32_t            tagIndex;
-    HOPEvalAggregate* _Nullable payload;
+    H2CTFEValue* _Nullable payload;
 } HOPEvalTaggedEnum;
 
 typedef struct {

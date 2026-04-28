@@ -712,6 +712,7 @@ int ResolveEnumSelectorByFieldExpr(
 int EnumDeclHasPayload(const H2CBackendC* c, int32_t enumNodeId);
 
 int32_t EnumVariantTagExprNode(const H2CBackendC* c, int32_t variantNode);
+int32_t EnumVariantPayloadTypeNode(const H2CBackendC* c, int32_t variantNode);
 
 int FindEnumDeclNodeByCName(const H2CBackendC* c, const char* enumCName, int32_t* outNodeId);
 
@@ -729,6 +730,13 @@ int ResolveEnumVariantPayloadFieldType(
     uint32_t     variantEnd,
     uint32_t     fieldStart,
     uint32_t     fieldEnd,
+    H2TypeRef*   outType);
+
+int ResolveEnumVariantPayloadType(
+    H2CBackendC* c,
+    const char*  enumTypeName,
+    uint32_t     variantStart,
+    uint32_t     variantEnd,
     H2TypeRef*   outType);
 
 int ResolveEnumVariantTypeNameNode(

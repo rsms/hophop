@@ -2,14 +2,13 @@
 
 ## Summary
 
-HEP-20 extends `enum` so each variant may optionally carry a payload, using struct-like field syntax
-without the `struct` keyword.
+HEP-20 extends `enum` so each variant may optionally carry a payload type.
 
 ```hop
 enum Shape u8 {
     Point
-    Circle{ radius f64 }
-    Rectangle{
+    Circle f64
+    Rectangle struct {
         width  f64
         height f64
     }
@@ -42,18 +41,18 @@ Today these require parallel structs + manual tagging, which is verbose and weak
 
 ### 1. Enum declarations
 
-Existing enum declarations are extended so each variant can include an optional payload block.
+Existing enum declarations are extended so each variant can include an optional payload type.
 
 ```ebnf
 EnumDecl            = "enum" Ident Type "{" [ EnumItemList ] "}" .
 EnumItemList        = EnumItem { FieldSep EnumItem } [ FieldSep ] .
 EnumItem            = Ident [ EnumPayload ] [ EnumTagInit ] .
-EnumPayload         = "{" [ StructFieldDeclList ] "}" .
+EnumPayload         = Type .
 EnumTagInit         = "=" Expr .
 ```
 
-`EnumPayload` reuses struct field declaration syntax and formatting rules (including defaults), but
-without a `struct` keyword at variant-site.
+Anonymous struct payloads use normal type syntax: `Variant struct { ... }`. The old
+`Variant{ ... }` declaration form is invalid.
 
 ### 2. Variant patterns in switch cases
 
@@ -105,7 +104,7 @@ fn area(shape &Shape) f64 {
 ### 3. Payload construction
 
 ```hop
-var c = Shape.Circle{ radius: 2.0 }
+var c = Shape.Circle(2.0)
 var r = Shape.Rectangle{ width: 3.0, height: 4.0 }
 var p = Shape.Point
 ```
@@ -115,14 +114,14 @@ var p = Shape.Point
 ### 1. Variant model
 
 - Each enum variant has a discriminant tag of the enum base integer type.
-- A variant may have zero payload fields (tag-only) or one/more payload fields.
-- Payload field names must be unique within a variant.
+- A variant may have no payload (tag-only) or one payload type.
+- Struct payload field names must be unique within that struct payload type.
 - Mixed payload and non-payload variants are allowed in one enum.
 
 ### 2. Tags and zero-initialization
 
 - Existing enum tag rules remain: tags can be implicit or explicit (`= Expr`), including payload
-  variants (`Variant{...} = n` is legal).
+  variants (`Variant PayloadType = n` is legal).
 - `var v Enum` uses normal zero-initialization rules.
 - For enums, zero-initialization is valid only if one variant has tag value `0`; otherwise typed
   zero-initialization of that enum is a compile error.
@@ -130,13 +129,15 @@ var p = Shape.Point
 ### 3. Construction
 
 - Tag-only variant value: `Enum.Variant`.
-- Payload variant value: `Enum.Variant{ field: expr, ... }`.
-- Payload constructor syntax/semantics follow struct/union literal behavior:
+- Struct payload variant value: `Enum.Variant{ field: expr, ... }`.
+- Scalar payload variant value: `Enum.Variant(value)`.
+- Tuple payload variant value: `Enum.Variant(a, b, ...)`.
+- Struct payload constructor syntax/semantics follow struct literal behavior:
   - named-field initialization
   - omitted fields are allowed and follow struct rules (declaration defaults where present,
     otherwise zero-value)
-- If HEP-16 contextual enum literals are enabled, `.Variant{ ... }` is allowed where expected enum
-  type context is clear; otherwise `Enum.Variant{ ... }` is required.
+- If HEP-16 contextual enum literals are enabled, contextual payload constructors may be allowed
+  where expected enum type context is clear; otherwise `Enum.Variant...` is required.
 
 ### 4. Comparison and ordering
 
@@ -149,8 +150,8 @@ var p = Shape.Point
 
 - Variant patterns are valid only in expression-switch (`switch expr`) where `expr` has enum type.
 - `case Enum.V` matches when subject tag equals `V`.
-- `case Enum.V as name` binds `name` to a case-local alias of the switched value viewed as variant
-  `V`.
+- `case Enum.V as name` binds `name` to the payload type of variant `V`; it is invalid for
+  no-payload variants.
 - Multi-pattern cases are supported (`case Enum.A, Enum.B { ... }` and aliases per pattern).
 
 ### 6. Narrowing and aliasing
@@ -204,14 +205,14 @@ fn f(t &Token) {
 Tagged-union layout is part of this proposal contract:
 
 - representation is `struct { tag TagType; payload union { ... } }`
-- payload union members are per-variant structs
+- payload union members are per-variant payload types
 - backend must provide deterministic naming/mapping for these emitted components
 
 ## Diagnostics
 
 Proposed diagnostics:
 
-- `enum_variant_payload_field_duplicate`: duplicate field in enum variant payload
+- `enum_variant_payload_field_duplicate`: duplicate field in an anonymous struct payload
 - `enum_variant_unknown`: unknown enum variant
 - `switch_variant_pattern_non_enum_subject`: variant pattern requires enum switch subject
 - `switch_variant_pattern_bind_conflict`: invalid duplicate alias in same scope
@@ -240,14 +241,15 @@ Migration path for manual tagged-struct patterns:
 
 ### Parser
 
-- Extend enum item parsing for optional payload block between variant name and optional `= Expr`.
+- Extend enum item parsing for optional payload type between variant name and optional `= Expr`.
 - Extend `case` parsing to recognize variant pattern forms plus optional `as` aliasing.
 
 ### Typechecker
 
 - Represent enum variants with optional payload shape metadata.
-- Type-check payload constructors (`Enum.V{...}`).
-- Apply struct-literal omission/default rules to payload constructor fields.
+- Type-check payload constructors (`Enum.V{...}` for struct payloads, `Enum.V(...)` for non-struct
+  payloads).
+- Apply struct-literal omission/default rules to struct payload constructor fields.
 - Reject typed zero-initialization when enum has no tag-0 variant.
 - Implement payload-enum equality as tag+payload and ordering as tag-only.
 - Add switch-case narrowing environment for matched variant.

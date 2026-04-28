@@ -1273,13 +1273,42 @@ int32_t H2TCEnumDeclFirstVariantNode(H2TypeCheckCtx* c, int32_t enumDeclNode) {
 
 int32_t H2TCEnumVariantTagExprNode(H2TypeCheckCtx* c, int32_t variantNode) {
     int32_t child = H2AstFirstChild(c->ast, variantNode);
-    while (child >= 0) {
-        if (c->ast->nodes[child].kind != H2Ast_FIELD) {
-            return child;
-        }
+    if (child >= 0 && H2TCIsTypeNodeKind(c->ast->nodes[child].kind)) {
         child = H2AstNextSibling(c->ast, child);
     }
+    return child;
+}
+
+int32_t H2TCEnumVariantPayloadTypeNode(H2TypeCheckCtx* c, int32_t variantNode) {
+    int32_t child = H2AstFirstChild(c->ast, variantNode);
+    if (child >= 0 && H2TCIsTypeNodeKind(c->ast->nodes[child].kind)) {
+        return child;
+    }
     return -1;
+}
+
+int H2TCEnumVariantPayloadType(
+    H2TypeCheckCtx* c,
+    int32_t         enumTypeId,
+    uint32_t        variantStart,
+    uint32_t        variantEnd,
+    int32_t*        outType) {
+    int32_t variantNode = H2TCFindEnumVariantNodeByName(c, enumTypeId, variantStart, variantEnd);
+    int32_t payloadNode;
+    if (outType != NULL) {
+        *outType = -1;
+    }
+    if (variantNode < 0) {
+        return -1;
+    }
+    payloadNode = H2TCEnumVariantPayloadTypeNode(c, variantNode);
+    if (payloadNode < 0) {
+        return -1;
+    }
+    if (H2TCResolveTypeNode(c, payloadNode, outType) != 0) {
+        return -1;
+    }
+    return 0;
 }
 
 int32_t H2TCFindEnumVariantNodeByName(
@@ -1317,33 +1346,14 @@ int H2TCEnumVariantPayloadFieldType(
     uint32_t        fieldEnd,
     int32_t*        outType) {
     int32_t variantNode = H2TCFindEnumVariantNodeByName(c, enumTypeId, variantStart, variantEnd);
-    int32_t ch;
+    int32_t payloadType;
     if (variantNode < 0) {
         return -1;
     }
-    ch = H2AstFirstChild(c->ast, variantNode);
-    while (ch >= 0) {
-        const H2AstNode* fn = &c->ast->nodes[ch];
-        int32_t          typeNode;
-        int32_t          typeId;
-        if (fn->kind != H2Ast_FIELD) {
-            break;
-        }
-        if (!H2NameEqSlice(c->src, fn->dataStart, fn->dataEnd, fieldStart, fieldEnd)) {
-            ch = H2AstNextSibling(c->ast, ch);
-            continue;
-        }
-        typeNode = H2AstFirstChild(c->ast, ch);
-        if (typeNode < 0) {
-            return -1;
-        }
-        if (H2TCResolveTypeNode(c, typeNode, &typeId) != 0) {
-            return -1;
-        }
-        *outType = typeId;
-        return 0;
+    if (H2TCEnumVariantPayloadType(c, enumTypeId, variantStart, variantEnd, &payloadType) != 0) {
+        return -1;
     }
-    return -1;
+    return H2TCFieldLookup(c, payloadType, fieldStart, fieldEnd, outType, NULL);
 }
 
 int H2TCEnumTypeHasTagZero(H2TypeCheckCtx* c, int32_t enumTypeId) {

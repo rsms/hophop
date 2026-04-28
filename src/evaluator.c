@@ -748,7 +748,7 @@ typedef struct {
     uint32_t            variantNameStart;
     uint32_t            variantNameEnd;
     uint32_t            tagIndex;
-    HOPEvalAggregate* _Nullable payload;
+    H2CTFEValue* _Nullable payload;
 } HOPEvalTaggedEnum;
 
 typedef struct {
@@ -1119,7 +1119,7 @@ static void HOPEvalValueSetTaggedEnum(
     uint32_t            variantNameStart,
     uint32_t            variantNameEnd,
     uint32_t            tagIndex,
-    HOPEvalAggregate* _Nullable payload) {
+    const H2CTFEValue* _Nullable payload) {
     HOPEvalTaggedEnum* tagged;
     if (p == NULL || value == NULL || file == NULL) {
         return;
@@ -1136,7 +1136,15 @@ static void HOPEvalValueSetTaggedEnum(
     tagged->variantNameStart = variantNameStart;
     tagged->variantNameEnd = variantNameEnd;
     tagged->tagIndex = tagIndex;
-    tagged->payload = payload;
+    if (payload != NULL) {
+        tagged->payload = (H2CTFEValue*)H2ArenaAlloc(
+            p->arena, sizeof(H2CTFEValue), (uint32_t)_Alignof(H2CTFEValue));
+        if (tagged->payload == NULL) {
+            HOPEvalValueSetNull(value);
+            return;
+        }
+        *tagged->payload = *payload;
+    }
     value->kind = H2CTFEValue_TYPE;
     value->i64 = 0;
     value->f64 = 0.0;
@@ -2728,6 +2736,11 @@ static int HOPEvalFindEnumVariant(
     return 0;
 }
 
+static int HOPEvalEnumPayloadTypeNodeKind(H2AstKind kind) {
+    return IsFnReturnTypeNodeKind(kind) || kind == H2Ast_TYPE_ANON_STRUCT
+        || kind == H2Ast_TYPE_ANON_UNION;
+}
+
 static int HOPEvalEnumHasPayloadVariants(const H2ParsedFile* enumFile, int32_t enumNode) {
     int32_t child;
     if (enumFile == NULL || enumNode < 0 || (uint32_t)enumNode >= enumFile->ast.len) {
@@ -2738,7 +2751,7 @@ static int HOPEvalEnumHasPayloadVariants(const H2ParsedFile* enumFile, int32_t e
         if (enumFile->ast.nodes[child].kind == H2Ast_FIELD) {
             int32_t valueNode = ASTFirstChild(&enumFile->ast, child);
             if (valueNode >= 0 && (uint32_t)valueNode < enumFile->ast.len
-                && enumFile->ast.nodes[valueNode].kind == H2Ast_FIELD)
+                && HOPEvalEnumPayloadTypeNodeKind(enumFile->ast.nodes[valueNode].kind))
             {
                 return 1;
             }
@@ -3496,7 +3509,7 @@ static int HOPEvalValueSetFieldPath(
             HOPEvalAggregate*      agg = HOPEvalValueAsAggregate(value);
             HOPEvalTaggedEnum*     tagged = HOPEvalValueAsTaggedEnum(value);
             if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
-                agg = tagged->payload;
+                agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload));
             }
             if (agg == NULL) {
                 agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(value));
@@ -3525,7 +3538,7 @@ static int HOPEvalValueSetFieldPath(
         HOPEvalAggregate*  agg = HOPEvalValueAsAggregate(value);
         HOPEvalTaggedEnum* tagged = HOPEvalValueAsTaggedEnum(value);
         if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
-            agg = tagged->payload;
+            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload));
         }
         if (agg == NULL) {
             agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(value));
@@ -3647,11 +3660,13 @@ static int HOPEvalBuildTaggedEnumPayload(
     int32_t             compoundLitNode,
     H2CTFEValue*        outValue,
     int*                outIsConst) {
-    uint32_t          fieldCount = 0;
-    uint32_t          fieldIndex = 0;
-    int32_t           child;
-    HOPEvalAggregate* agg;
-    int32_t           fieldNode;
+    int32_t             payloadTypeNode;
+    const H2ParsedFile* declFile = NULL;
+    int32_t             declNode = -1;
+    H2CTFEValue         aggregateValue;
+    int                 aggregateIsConst = 0;
+    HOPEvalAggregate*   agg;
+    int32_t             fieldNode;
     if (outIsConst != NULL) {
         *outIsConst = 0;
     }
@@ -3660,52 +3675,37 @@ static int HOPEvalBuildTaggedEnumPayload(
     {
         return -1;
     }
-    child = ASTFirstChild(&enumFile->ast, variantNode);
-    while (child >= 0) {
-        if (enumFile->ast.nodes[child].kind == H2Ast_FIELD) {
-            fieldCount++;
-        }
-        child = ASTNextSibling(&enumFile->ast, child);
+    payloadTypeNode = ASTFirstChild(&enumFile->ast, variantNode);
+    if (payloadTypeNode < 0
+        || !HOPEvalEnumPayloadTypeNodeKind(enumFile->ast.nodes[payloadTypeNode].kind))
+    {
+        HOPEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
     }
-    agg = (HOPEvalAggregate*)H2ArenaAlloc(
-        p->arena, sizeof(HOPEvalAggregate), (uint32_t)_Alignof(HOPEvalAggregate));
+    if (enumFile->ast.nodes[payloadTypeNode].kind == H2Ast_TYPE_ANON_STRUCT
+        || enumFile->ast.nodes[payloadTypeNode].kind == H2Ast_TYPE_ANON_UNION)
+    {
+        declFile = enumFile;
+        declNode = payloadTypeNode;
+    } else if (!HOPEvalResolveAggregateTypeNode(p, enumFile, payloadTypeNode, &declFile, &declNode))
+    {
+        *outIsConst = 0;
+        return 0;
+    }
+    if (HOPEvalZeroInitAggregateValue(p, declFile, declNode, &aggregateValue, &aggregateIsConst)
+        != 0)
+    {
+        return -1;
+    }
+    if (!aggregateIsConst) {
+        *outIsConst = 0;
+        return 0;
+    }
+    agg = HOPEvalValueAsAggregate(&aggregateValue);
     if (agg == NULL) {
-        return ErrorSimple("out of memory");
-    }
-    memset(agg, 0, sizeof(*agg));
-    agg->file = enumFile;
-    agg->nodeId = variantNode;
-    agg->fieldLen = fieldCount;
-    if (fieldCount > 0) {
-        agg->fields = (HOPEvalAggregateField*)H2ArenaAlloc(
-            p->arena,
-            sizeof(HOPEvalAggregateField) * fieldCount,
-            (uint32_t)_Alignof(HOPEvalAggregateField));
-        if (agg->fields == NULL) {
-            return ErrorSimple("out of memory");
-        }
-        memset(agg->fields, 0, sizeof(HOPEvalAggregateField) * fieldCount);
-    }
-    child = ASTFirstChild(&enumFile->ast, variantNode);
-    while (child >= 0) {
-        const H2AstNode* variantField = &enumFile->ast.nodes[child];
-        if (variantField->kind == H2Ast_FIELD) {
-            int32_t                fieldTypeNode = ASTFirstChild(&enumFile->ast, child);
-            int                    fieldIsConst = 0;
-            HOPEvalAggregateField* field = &agg->fields[fieldIndex++];
-            field->nameStart = variantField->dataStart;
-            field->nameEnd = variantField->dataEnd;
-            field->typeNode = fieldTypeNode;
-            if (HOPEvalZeroInitTypeNode(p, enumFile, fieldTypeNode, &field->value, &fieldIsConst)
-                != 0)
-            {
-                return -1;
-            }
-            if (!fieldIsConst) {
-                return 0;
-            }
-        }
-        child = ASTNextSibling(&enumFile->ast, child);
+        *outIsConst = 0;
+        return 0;
     }
     fieldNode = -1;
     if (compoundLitNode >= 0 && p->currentFile != NULL
@@ -3742,7 +3742,7 @@ static int HOPEvalBuildTaggedEnumPayload(
         }
         fieldNode = ASTNextSibling(&p->currentFile->ast, fieldNode);
     }
-    HOPEvalValueSetAggregate(outValue, enumFile, variantNode, agg);
+    *outValue = aggregateValue;
     *outIsConst = 1;
     return 0;
 }
@@ -4318,10 +4318,9 @@ static int HOPEvalZeroInitTypeNode(
                         &variantNode,
                         &tagIndex))
                 {
-                    const H2AstNode*  variantField = &enumFile->ast.nodes[variantNode];
-                    H2CTFEValue       payloadValue;
-                    HOPEvalAggregate* payload = NULL;
-                    int               payloadIsConst = 0;
+                    const H2AstNode* variantField = &enumFile->ast.nodes[variantNode];
+                    H2CTFEValue      payloadValue;
+                    int              payloadIsConst = 0;
                     if (HOPEvalBuildTaggedEnumPayload(
                             (HOPEvalProgram*)p,
                             enumFile,
@@ -4336,7 +4335,6 @@ static int HOPEvalZeroInitTypeNode(
                     if (!payloadIsConst) {
                         return 0;
                     }
-                    payload = HOPEvalValueAsAggregate(&payloadValue);
                     HOPEvalValueSetTaggedEnum(
                         (HOPEvalProgram*)p,
                         outValue,
@@ -4345,7 +4343,7 @@ static int HOPEvalZeroInitTypeNode(
                         variantField->dataStart,
                         variantField->dataEnd,
                         tagIndex,
-                        payload);
+                        &payloadValue);
                     *outIsConst = 1;
                     return 0;
                 }
@@ -7274,29 +7272,15 @@ static int HOPEvalTaggedEnumPayloadEqual(
         *outEqual = 1;
         return 0;
     }
-    if (lhs->payload->fieldLen != rhs->payload->fieldLen) {
-        *outEqual = 0;
-        return 0;
-    }
     {
-        uint32_t i;
-        for (i = 0; i < lhs->payload->fieldLen; i++) {
-            int cmp = 0;
-            int handled = 0;
-            if (HOPEvalCompareValues(
-                    p,
-                    &lhs->payload->fields[i].value,
-                    &rhs->payload->fields[i].value,
-                    &cmp,
-                    &handled)
-                != 0)
-            {
-                return -1;
-            }
-            if (!handled || cmp != 0) {
-                *outEqual = 0;
-                return 0;
-            }
+        int cmp = 0;
+        int handled = 0;
+        if (HOPEvalCompareValues(p, lhs->payload, rhs->payload, &cmp, &handled) != 0) {
+            return -1;
+        }
+        if (!handled || cmp != 0) {
+            *outEqual = 0;
+            return 0;
         }
     }
     *outEqual = 1;
@@ -8100,10 +8084,9 @@ static int HOPEvalEvalCompoundLiteral(
                     &variantNode,
                     &tagIndex))
             {
-                const H2AstNode*  variantField = &enumFile->ast.nodes[variantNode];
-                H2CTFEValue       payloadValue;
-                int               payloadIsConst = 0;
-                HOPEvalAggregate* payload = NULL;
+                const H2AstNode* variantField = &enumFile->ast.nodes[variantNode];
+                H2CTFEValue      payloadValue;
+                int              payloadIsConst = 0;
                 if (HOPEvalBuildTaggedEnumPayload(
                         p, enumFile, variantNode, exprNode, &payloadValue, &payloadIsConst)
                     != 0)
@@ -8114,7 +8097,6 @@ static int HOPEvalEvalCompoundLiteral(
                     *outIsConst = 0;
                     return 0;
                 }
-                payload = HOPEvalValueAsAggregate(&payloadValue);
                 HOPEvalValueSetTaggedEnum(
                     p,
                     outValue,
@@ -8123,7 +8105,7 @@ static int HOPEvalEvalCompoundLiteral(
                     variantField->dataStart,
                     variantField->dataEnd,
                     tagIndex,
-                    payload);
+                    &payloadValue);
                 *outIsConst = 1;
                 return 0;
             }
@@ -10464,8 +10446,13 @@ static int HOPEvalMirAggGetField(
     baseValue = HOPEvalValueTargetOrSelf(base);
     tagged = HOPEvalValueAsTaggedEnum(baseValue);
     if (tagged != NULL && tagged->payload != NULL
+        && HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload)) != NULL
         && HOPEvalAggregateGetFieldValue(
-            tagged->payload, p->currentFile->source, nameStart, nameEnd, outValue))
+            HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload)),
+            p->currentFile->source,
+            nameStart,
+            nameEnd,
+            outValue))
     {
         *outIsConst = 1;
         return 0;
@@ -10666,14 +10653,14 @@ static int HOPEvalMirAggSetField(
             dot++;
         }
         if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
-            agg = tagged->payload;
+            agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload));
         }
         if (agg == NULL) {
             value = (H2CTFEValue*)HOPEvalValueTargetOrSelf(inOutBase);
             agg = HOPEvalValueAsAggregate(value);
             tagged = HOPEvalValueAsTaggedEnum(value);
             if (agg == NULL && tagged != NULL && tagged->payload != NULL) {
-                agg = tagged->payload;
+                agg = HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload));
             }
         }
         if (agg != NULL && dot == nameEnd) {
@@ -12963,6 +12950,133 @@ static int HOPEvalResolveIdent(
     return 0;
 }
 
+static int HOPEvalEvalEnumVariantCall(
+    HOPEvalProgram* p, int32_t callNode, H2CTFEValue* outValue, int* outIsConst) {
+    const H2Ast*        ast;
+    const H2AstNode*    call;
+    const H2AstNode*    callee;
+    const H2AstNode*    base;
+    const H2ParsedFile* enumFile = NULL;
+    int32_t             enumNode = -1;
+    int32_t             variantNode = -1;
+    int32_t             payloadTypeNode = -1;
+    uint32_t            tagIndex = 0;
+    int32_t             argNode;
+    H2CTFEValue         payloadValue;
+    int                 payloadIsConst = 0;
+
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
+        return -1;
+    }
+    ast = &p->currentFile->ast;
+    if (callNode < 0 || (uint32_t)callNode >= ast->len) {
+        return 0;
+    }
+    call = &ast->nodes[callNode];
+    if (call->kind != H2Ast_CALL || call->firstChild < 0) {
+        return 0;
+    }
+    callee = &ast->nodes[call->firstChild];
+    if (callee->kind != H2Ast_FIELD_EXPR || callee->firstChild < 0) {
+        return 0;
+    }
+    base = &ast->nodes[callee->firstChild];
+    if (base->kind != H2Ast_IDENT) {
+        return 0;
+    }
+    enumNode = HOPEvalFindNamedEnumDecl(
+        p, p->currentFile, base->dataStart, base->dataEnd, &enumFile);
+    if (enumNode < 0 || enumFile == NULL
+        || !HOPEvalFindEnumVariant(
+            enumFile,
+            enumNode,
+            p->currentFile->source,
+            callee->dataStart,
+            callee->dataEnd,
+            &variantNode,
+            &tagIndex))
+    {
+        return 0;
+    }
+    payloadTypeNode = ASTFirstChild(&enumFile->ast, variantNode);
+    if (payloadTypeNode < 0 || (uint32_t)payloadTypeNode >= enumFile->ast.len
+        || !IsFnReturnTypeNodeKind(enumFile->ast.nodes[payloadTypeNode].kind))
+    {
+        return 0;
+    }
+    argNode = ast->nodes[call->firstChild].nextSibling;
+    if (enumFile->ast.nodes[payloadTypeNode].kind == H2Ast_TYPE_TUPLE) {
+        H2CTFEValue elems[256];
+        uint32_t    elemCount = AstListCount(&enumFile->ast, payloadTypeNode);
+        uint32_t    i;
+        if (elemCount == 0 || elemCount > 256u) {
+            return 0;
+        }
+        for (i = 0; i < elemCount; i++) {
+            int32_t elemTypeNode = AstListItemAt(&enumFile->ast, payloadTypeNode, i);
+            int32_t argExprNode = argNode;
+            int     elemIsConst = 0;
+            if (argExprNode >= 0 && ast->nodes[argExprNode].kind == H2Ast_CALL_ARG) {
+                argExprNode = ast->nodes[argExprNode].firstChild;
+            }
+            if (argExprNode < 0 || elemTypeNode < 0
+                || HOPEvalExecExprWithTypeNode(
+                       p, argExprNode, enumFile, elemTypeNode, &elems[i], &elemIsConst)
+                       != 0)
+            {
+                return argExprNode < 0 || elemTypeNode < 0 ? 0 : -1;
+            }
+            if (!elemIsConst) {
+                *outIsConst = 0;
+                return 1;
+            }
+            argNode = argNode >= 0 ? ast->nodes[argNode].nextSibling : -1;
+        }
+        if (argNode >= 0) {
+            return 0;
+        }
+        if (HOPEvalAllocTupleValue(
+                p, enumFile, payloadTypeNode, elems, elemCount, &payloadValue, &payloadIsConst)
+            != 0)
+        {
+            return -1;
+        }
+    } else {
+        int32_t argExprNode = argNode;
+        if (argExprNode < 0 || (argNode >= 0 && ast->nodes[argNode].nextSibling >= 0)) {
+            return 0;
+        }
+        if (ast->nodes[argExprNode].kind == H2Ast_CALL_ARG) {
+            argExprNode = ast->nodes[argExprNode].firstChild;
+        }
+        if (argExprNode < 0
+            || HOPEvalExecExprWithTypeNode(
+                   p, argExprNode, enumFile, payloadTypeNode, &payloadValue, &payloadIsConst)
+                   != 0)
+        {
+            return argExprNode < 0 ? 0 : -1;
+        }
+    }
+    if (!payloadIsConst) {
+        *outIsConst = 0;
+        return 1;
+    }
+    HOPEvalValueSetTaggedEnum(
+        p,
+        outValue,
+        enumFile,
+        enumNode,
+        enumFile->ast.nodes[variantNode].dataStart,
+        enumFile->ast.nodes[variantNode].dataEnd,
+        tagIndex,
+        &payloadValue);
+    *outIsConst = 1;
+    return 1;
+}
+
 static int HOPEvalResolveCallMirPre(
     void* _Nullable ctx,
     const H2MirProgram* _Nullable program,
@@ -12981,6 +13095,19 @@ static int HOPEvalResolveCallMirPre(
     (void)diag;
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
+    }
+    if (HOPEvalMirResolveCallNode(program, inst, &callNode) && callNode >= 0
+        && p->currentFile != NULL && (uint32_t)callNode < p->currentFile->ast.len)
+    {
+        int enumCallIsConst = 0;
+        int enumCallRc = HOPEvalEvalEnumVariantCall(p, callNode, outValue, &enumCallIsConst);
+        if (enumCallRc < 0) {
+            return -1;
+        }
+        if (enumCallRc > 0) {
+            *outIsConst = enumCallIsConst;
+            return 1;
+        }
     }
     if (!HOPEvalMirResolveCallNode(program, inst, &callNode)
         || !HOPEvalMirCallNodeIsLazyBuiltin(p, callNode))
@@ -13915,8 +14042,13 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
                 return 0;
             }
             if (tagged != NULL && tagged->payload != NULL
+                && HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload)) != NULL
                 && HOPEvalAggregateGetFieldValue(
-                    tagged->payload, p->currentFile->source, n->dataStart, n->dataEnd, outValue))
+                    HOPEvalValueAsAggregate(HOPEvalValueTargetOrSelf(tagged->payload)),
+                    p->currentFile->source,
+                    n->dataStart,
+                    n->dataEnd,
+                    outValue))
             {
                 *outIsConst = 1;
                 return 0;
@@ -14421,6 +14553,15 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
             int32_t          argNode = ast->nodes[calleeNode].nextSibling;
             H2CTFEValue      calleeValue;
             int              calleeIsConst = 0;
+            int              enumCallIsConst = 0;
+            int enumCallRc = HOPEvalEvalEnumVariantCall(p, exprNode, outValue, &enumCallIsConst);
+            if (enumCallRc < 0) {
+                return -1;
+            }
+            if (enumCallRc > 0) {
+                *outIsConst = enumCallIsConst;
+                return 0;
+            }
             if (HOPEvalExecExprCb(p, calleeNode, &calleeValue, &calleeIsConst) != 0) {
                 return -1;
             }

@@ -1,0 +1,42 @@
+// Verifies tagged enum payload type syntax and constructors.
+struct Segment {
+	start i32
+	end   i32
+}
+
+enum Item u8 {
+	Nothing
+	Length i32
+	Point (int, int)
+	Line Segment
+	Span struct {
+		lo i32
+		hi i32
+	}
+}
+
+fn measure(item Item) i32 {
+	switch item {
+		case Item.Nothing     { return 0 }
+		case Item.Length as n { return n }
+		case Item.Point as p  {
+			var x, y = p
+			return (x + y) as i32
+		}
+		case Item.Line as line { return line.start + line.end }
+		case Item.Span         { return item.hi - item.lo }
+	}
+}
+
+fn main() {
+	var a Item = Item.Length(3)
+	var b Item = Item.Point(3, 12)
+	var c Item = Item.Line{ start: 2, end: 5 }
+	var d Item = Item.Span{ lo: 2, hi: 9 }
+
+	assert measure(Item.Nothing) == 0
+	assert measure(a) == 3
+	assert measure(b) == 15
+	assert measure(c) == 7
+	assert measure(d) == 7
+}

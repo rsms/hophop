@@ -1,0 +1,4 @@
+tests/tagged_enum_old_payload_syntax_bad.hop:3:8: error: HOP1004: unexpected token
+    3 |     Int{
+      |        ^
+tests/tagged_enum_old_payload_syntax_bad.hop:3:8: note: expected token IDENT

@@ -911,7 +911,11 @@
 {"id":"check:tests/tagged_enum_switch_narrow_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/tagged_enum_switch_narrow_ok.hop","no_import":true}
 {"id":"check:tests/tagged_enum_compare_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/tagged_enum_compare_ok.hop","no_import":true}
 {"id":"check:tests/tagged_enum_subject_alias_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/tagged_enum_subject_alias_ok.hop","no_import":true}
+{"id":"check:tests/tagged_enum_payload_syntax_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/tagged_enum_payload_syntax_ok.hop","no_import":true}
 {"id":"check:tests/tagged_enum_field_outside_narrow_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/tagged_enum_field_outside_narrow_bad.hop","expect_stderr":"tests/tagged_enum_field_outside_narrow_bad.stderr","no_import":true}
+{"id":"check:tests/tagged_enum_old_payload_syntax_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/tagged_enum_old_payload_syntax_bad.hop","expect_stderr":"tests/tagged_enum_old_payload_syntax_bad.stderr","no_import":true}
+{"id":"check:tests/tagged_enum_scalar_compound_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/tagged_enum_scalar_compound_bad.hop","expect_stderr":"tests/tagged_enum_scalar_compound_bad.stderr","no_import":true}
+{"id":"check:tests/tagged_enum_struct_call_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/tagged_enum_struct_call_bad.hop","expect_stderr":"tests/tagged_enum_struct_call_bad.stderr","no_import":true}
 {"id":"check:tests/switch_nonexhaustive_bool_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/switch_nonexhaustive_bool_bad.hop","expect_stderr":"tests/switch_nonexhaustive_bool_bad.stderr","no_import":true}
 {"id":"check:tests/switch_nonexhaustive_enum_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/switch_nonexhaustive_enum_bad.hop","expect_stderr":"tests/switch_nonexhaustive_enum_bad.stderr","no_import":true}
 {"id":"check:tests/switch_nonexhaustive_enum_multi_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/switch_nonexhaustive_enum_multi_bad.hop","expect_stderr":"tests/switch_nonexhaustive_enum_multi_bad.stderr","no_import":true}
@@ -919,6 +923,7 @@
 {"id":"integration.runtime.tagged_enum_switch_narrow_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_switch_narrow_ok.hop","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.tagged_enum_compare_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_compare_ok.hop","expect_exit":0,"eval_expect":"pass"}
 {"id":"integration.runtime.tagged_enum_subject_alias_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_subject_alias_ok.hop","expect_exit":0,"eval_expect":"pass"}
+{"id":"integration.runtime.tagged_enum_payload_syntax_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/tagged_enum_payload_syntax_ok.hop","expect_exit":0}
 {"id":"check:tests/variadic_basic_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/variadic_basic_ok.hop","no_import":true}
 {"id":"integration.runtime.variadic_basic_ok.compile_and_run","suite":"integration.runtime","kind":"compile_and_run","input":"tests/variadic_basic_ok.hop","expect_exit":0,"eval_expect":"pass"}
 {"id":"check:tests/variadic_spread_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/variadic_spread_ok.hop","no_import":true}

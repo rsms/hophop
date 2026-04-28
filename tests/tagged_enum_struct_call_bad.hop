@@ -1,0 +1,11 @@
+// Verifies struct payload variants reject call construction.
+enum Item u8 {
+	Line struct {
+		start i32
+		end   i32
+	}
+}
+
+fn main() {
+	_ = Item.Line(1, 2)
+}

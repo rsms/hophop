@@ -3226,10 +3226,25 @@ int InferCompoundLiteralType(
         return -1;
     }
     if (ownerMap != NULL && ownerMap->kind == H2Ast_ENUM) {
-        int32_t enumNodeId = -1;
+        int32_t     enumNodeId = -1;
+        H2TypeRef   payloadType;
+        const char* payloadOwner;
         if (!isEnumVariantLiteral || FindEnumDeclNodeByCName(c, ownerType, &enumNodeId) != 0
             || !EnumDeclHasPayload(c, enumNodeId))
         {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        if (ResolveEnumVariantPayloadType(
+                c, ownerType, enumVariantStart, enumVariantEnd, &payloadType)
+                != 0
+            || !payloadType.valid)
+        {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        payloadOwner = CanonicalFieldOwnerType(c, payloadType.baseName);
+        if (payloadOwner == NULL) {
             TypeRefSetInvalid(outType);
             return -1;
         }
@@ -3615,6 +3630,26 @@ int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2Typ
     int32_t          callee = AstFirstChild(&c->ast, nodeId);
     const H2AstNode* cn = NodeAt(c, callee);
     (void)n;
+    if (cn != NULL && cn->kind == H2Ast_FIELD_EXPR) {
+        const H2NameMap* enumMap = NULL;
+        uint32_t         variantStart = 0;
+        uint32_t         variantEnd = 0;
+        H2TypeRef        payloadType;
+        int              variantRc = ResolveEnumSelectorByFieldExpr(
+            c, callee, &enumMap, NULL, NULL, &variantStart, &variantEnd);
+        if (variantRc < 0) {
+            TypeRefSetInvalid(outType);
+            return -1;
+        }
+        if (variantRc == 1 && enumMap != NULL
+            && ResolveEnumVariantPayloadType(
+                   c, enumMap->cName, variantStart, variantEnd, &payloadType)
+                   == 0)
+        {
+            TypeRefSetScalar(outType, enumMap->cName);
+            return 0;
+        }
+    }
     if (cn != NULL && cn->kind == H2Ast_IDENT) {
         if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "len")) {
             int32_t          argNode = AstNextSibling(&c->ast, callee);
@@ -8776,7 +8811,9 @@ int EmitEnumVariantCompoundLiteral(
     uint32_t         variantStart,
     uint32_t         variantEnd,
     const H2TypeRef* valueType) {
-    int32_t fieldNode = firstField;
+    H2TypeRef        payloadType;
+    const char*      payloadOwner;
+    const H2NameMap* payloadMap;
     if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, valueType) != 0
         || BufAppendCStr(&c->out, "){ .tag = ") != 0 || BufAppendCStr(&c->out, enumTypeName) != 0
         || BufAppendCStr(&c->out, "__") != 0
@@ -8784,41 +8821,108 @@ int EmitEnumVariantCompoundLiteral(
     {
         return -1;
     }
-    while (fieldNode >= 0) {
-        const H2AstNode* field = NodeAt(c, fieldNode);
-        int32_t          exprNode;
-        H2TypeRef        fieldType;
-        if (field == NULL || field->kind != H2Ast_COMPOUND_FIELD) {
+    if (ResolveEnumVariantPayloadType(c, enumTypeName, variantStart, variantEnd, &payloadType) != 0
+        || !payloadType.valid)
+    {
+        return -1;
+    }
+    payloadOwner = CanonicalFieldOwnerType(c, payloadType.baseName);
+    if (payloadOwner == NULL) {
+        return -1;
+    }
+    payloadMap = FindNameByCName(c, payloadOwner);
+    if (BufAppendCStr(&c->out, ", .payload.") != 0
+        || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0
+        || BufAppendCStr(&c->out, " = ") != 0)
+    {
+        return -1;
+    }
+    if (payloadMap != NULL && payloadMap->kind == H2Ast_STRUCT
+        && StructHasFieldDefaults(c, payloadOwner))
+    {
+        if (EmitCompoundLiteralOrderedStruct(c, firstField, payloadOwner, &payloadType) != 0) {
             return -1;
         }
-        exprNode = AstFirstChild(&c->ast, fieldNode);
-        if (exprNode < 0 && (field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
-            return -1;
-        }
-        if (ResolveEnumVariantPayloadFieldType(
-                c,
-                enumTypeName,
-                variantStart,
-                variantEnd,
-                field->dataStart,
-                field->dataEnd,
-                &fieldType)
-            != 0)
-        {
-            return -1;
-        }
-        if (BufAppendCStr(&c->out, ", .payload.") != 0
-            || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0
-            || BufAppendChar(&c->out, '.') != 0
-            || BufAppendSlice(&c->out, c->unit->source, field->dataStart, field->dataEnd) != 0
-            || BufAppendCStr(&c->out, " = ") != 0
-            || EmitCompoundFieldValueCoerced(c, field, exprNode, &fieldType) != 0)
-        {
-            return -1;
-        }
-        fieldNode = AstNextSibling(&c->ast, fieldNode);
+    } else if (EmitCompoundLiteralDesignated(c, firstField, payloadOwner, &payloadType) != 0) {
+        return -1;
     }
     (void)nodeId;
+    return BufAppendCStr(&c->out, "})");
+}
+
+static int EmitEnumVariantCallLiteral(
+    H2CBackendC*     c,
+    int32_t          nodeId,
+    const H2NameMap* enumMap,
+    uint32_t         variantStart,
+    uint32_t         variantEnd,
+    const H2TypeRef* valueType) {
+    H2TypeRef             payloadType;
+    const H2AnonTypeInfo* tupleInfo = NULL;
+    int32_t               callee = AstFirstChild(&c->ast, nodeId);
+    int32_t               arg = AstNextSibling(&c->ast, callee);
+    uint32_t              i;
+    if (enumMap == NULL || enumMap->cName == NULL) {
+        return -1;
+    }
+    if (ResolveEnumVariantPayloadType(c, enumMap->cName, variantStart, variantEnd, &payloadType)
+            != 0
+        || !payloadType.valid)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, valueType) != 0
+        || BufAppendCStr(&c->out, "){ .tag = ") != 0 || BufAppendCStr(&c->out, enumMap->cName) != 0
+        || BufAppendCStr(&c->out, "__") != 0
+        || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0
+        || BufAppendCStr(&c->out, ", .payload.") != 0
+        || BufAppendSlice(&c->out, c->unit->source, variantStart, variantEnd) != 0
+        || BufAppendCStr(&c->out, " = ") != 0)
+    {
+        return -1;
+    }
+    if (TypeRefTupleInfo(c, &payloadType, &tupleInfo) && tupleInfo != NULL) {
+        if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, &payloadType) != 0
+            || BufAppendCStr(&c->out, "){") != 0)
+        {
+            return -1;
+        }
+        for (i = 0; i < tupleInfo->fieldCount; i++) {
+            const H2FieldInfo* f = &c->fieldInfos[tupleInfo->fieldStart + i];
+            int32_t            argExpr;
+            if (arg < 0) {
+                return -1;
+            }
+            argExpr = UnwrapCallArgExprNode(c, arg);
+            if (argExpr < 0) {
+                return -1;
+            }
+            if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (BufAppendChar(&c->out, '.') != 0 || BufAppendCStr(&c->out, f->fieldName) != 0
+                || BufAppendCStr(&c->out, " = ") != 0 || EmitExprCoerced(c, argExpr, &f->type) != 0)
+            {
+                return -1;
+            }
+            arg = AstNextSibling(&c->ast, arg);
+        }
+        if (arg >= 0) {
+            return -1;
+        }
+        if (BufAppendChar(&c->out, '}') != 0 || BufAppendChar(&c->out, ')') != 0) {
+            return -1;
+        }
+    } else {
+        int32_t argExpr;
+        if (arg < 0 || AstNextSibling(&c->ast, arg) >= 0) {
+            return -1;
+        }
+        argExpr = UnwrapCallArgExprNode(c, arg);
+        if (argExpr < 0 || EmitExprCoerced(c, argExpr, &payloadType) != 0) {
+            return -1;
+        }
+    }
     return BufAppendCStr(&c->out, "})");
 }
 
@@ -10165,6 +10269,11 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         return 0;
     }
     if (callee != NULL && callee->kind == H2Ast_FIELD_EXPR) {
+        const H2NameMap* enumMap = NULL;
+        uint32_t         variantStart = 0;
+        uint32_t         variantEnd = 0;
+        int              variantRc = ResolveEnumSelectorByFieldExpr(
+            c, child, &enumMap, NULL, NULL, &variantStart, &variantEnd);
         int32_t            recvNode = AstFirstChild(&c->ast, child);
         H2TypeRef          recvType;
         H2TypeRef          ownerType;
@@ -10172,6 +10281,15 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         uint32_t           fieldPathLen = 0;
         const H2FieldInfo* field = NULL;
         int                hasField = 0;
+        if (variantRc < 0) {
+            return -1;
+        }
+        if (variantRc == 1 && enumMap != NULL) {
+            H2TypeRef valueType;
+            TypeRefSetScalar(&valueType, enumMap->cName);
+            return EmitEnumVariantCallLiteral(
+                c, nodeId, enumMap, variantStart, variantEnd, &valueType);
+        }
         if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "format")) {
             int rc = TryEmitFormatTemplateCall(c, nodeId, child, 1, recvNode, "builtin__format");
             if (rc <= 0) {
@@ -12909,8 +13027,20 @@ int EmitSwitchStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             if (sw->flags == 1) {
                 int a;
                 for (a = 0; a < aliasCount; a++) {
-                    char* aliasName;
+                    char*     aliasName;
+                    H2TypeRef aliasType;
                     if (!haveSubjectType) {
+                        PopScope(c);
+                        return -1;
+                    }
+                    if (ResolveEnumVariantPayloadType(
+                            c,
+                            aliasEnumTypeNames[a],
+                            aliasVariantStarts[a],
+                            aliasVariantEnds[a],
+                            &aliasType)
+                        != 0)
+                    {
                         PopScope(c);
                         return -1;
                     }
@@ -12928,20 +13058,16 @@ int EmitSwitchStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
                         || BufAppendCStr(&c->out, aliasName) != 0
                         || BufAppendCStr(&c->out, " = ") != 0
                         || BufAppendCStr(&c->out, switchSubjectTemp) != 0
+                        || BufAppendCStr(&c->out, ".payload.") != 0
+                        || BufAppendSlice(
+                               &c->out, c->unit->source, aliasVariantStarts[a], aliasVariantEnds[a])
+                               != 0
                         || BufAppendCStr(&c->out, ";\n") != 0)
                     {
                         PopScope(c);
                         return -1;
                     }
-                    if (AddLocal(c, aliasName, subjectType) != 0
-                        || AddVariantNarrow(
-                               c,
-                               (int32_t)c->localLen - 1,
-                               aliasEnumTypeNames[a],
-                               aliasVariantStarts[a],
-                               aliasVariantEnds[a])
-                               != 0)
-                    {
+                    if (AddLocal(c, aliasName, aliasType) != 0) {
                         PopScope(c);
                         return -1;
                     }

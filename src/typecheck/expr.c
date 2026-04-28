@@ -759,7 +759,24 @@ int H2TCTypeCompoundLit(H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType,
         return -1;
     }
     if (isEnumVariantLiteral) {
+        int32_t payloadType = -1;
+        int32_t payloadBaseType = -1;
         if (!H2TCIsNamedDeclKind(c, targetAggregateType, H2Ast_ENUM)) {
+            return H2TCFailNode(c, nodeId, H2Diag_COMPOUND_TYPE_REQUIRED);
+        }
+        if (H2TCEnumVariantPayloadType(
+                c, targetAggregateType, enumVariantStart, enumVariantEnd, &payloadType)
+            != 0)
+        {
+            return H2TCFailNode(c, nodeId, H2Diag_COMPOUND_TYPE_REQUIRED);
+        }
+        payloadBaseType = H2TCResolveAliasBaseType(c, payloadType);
+        if (payloadBaseType < 0 || (uint32_t)payloadBaseType >= c->typeLen
+            || !(
+                (c->types[payloadBaseType].kind == H2TCType_ANON_STRUCT)
+                || (c->types[payloadBaseType].kind == H2TCType_NAMED
+                    && H2TCIsNamedDeclKind(c, payloadBaseType, H2Ast_STRUCT))))
+        {
             return H2TCFailNode(c, nodeId, H2Diag_COMPOUND_TYPE_REQUIRED);
         }
         isUnion = 0;
@@ -1818,6 +1835,75 @@ static int H2TCResolveCopySeqInfo(H2TypeCheckCtx* c, int32_t typeId, H2TCCopySeq
     return 1;
 }
 
+static int H2TCTypeEnumVariantCall(
+    H2TypeCheckCtx* c, int32_t nodeId, int32_t calleeNode, int32_t* outType) {
+    int32_t         enumType = -1;
+    uint32_t        variantStart = 0;
+    uint32_t        variantEnd = 0;
+    int             variantRc;
+    int32_t         payloadType = -1;
+    int32_t         payloadBase = -1;
+    H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
+    uint32_t        argCount = 0;
+    uint32_t        i;
+
+    variantRc = H2TCDecodeVariantPatternExpr(c, calleeNode, &enumType, &variantStart, &variantEnd);
+    if (variantRc <= 0) {
+        return variantRc;
+    }
+    if (H2TCEnumVariantPayloadType(c, enumType, variantStart, variantEnd, &payloadType) != 0) {
+        return H2TCFailNode(c, nodeId, H2Diag_NOT_CALLABLE);
+    }
+    payloadBase = H2TCResolveAliasBaseType(c, payloadType);
+    if (payloadBase < 0 || (uint32_t)payloadBase >= c->typeLen) {
+        return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
+    }
+    if ((c->types[payloadBase].kind == H2TCType_ANON_STRUCT)
+        || (c->types[payloadBase].kind == H2TCType_NAMED
+            && H2TCIsNamedDeclKind(c, payloadBase, H2Ast_STRUCT)))
+    {
+        return H2TCFailNode(c, nodeId, H2Diag_NOT_CALLABLE);
+    }
+    if (H2TCCollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, NULL, &argCount) != 0) {
+        return -1;
+    }
+    for (i = 0; i < argCount; i++) {
+        if (callArgs[i].spread || callArgs[i].explicitNameEnd > callArgs[i].explicitNameStart) {
+            return H2TCFailNode(c, callArgs[i].argNode, H2Diag_ARITY_MISMATCH);
+        }
+    }
+    if (c->types[payloadBase].kind == H2TCType_TUPLE) {
+        if (argCount != c->types[payloadBase].fieldCount) {
+            return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
+        }
+        for (i = 0; i < argCount; i++) {
+            int32_t argType;
+            int32_t elemType = c->funcParamTypes[c->types[payloadBase].fieldStart + i];
+            if (H2TCTypeExprExpected(c, callArgs[i].exprNode, elemType, &argType) != 0) {
+                return -1;
+            }
+            if (!H2TCCanAssign(c, elemType, argType)) {
+                return H2TCFailTypeMismatchDetail(
+                    c, callArgs[i].exprNode, callArgs[i].exprNode, argType, elemType);
+            }
+        }
+    } else {
+        int32_t argType;
+        if (argCount != 1u) {
+            return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
+        }
+        if (H2TCTypeExprExpected(c, callArgs[0].exprNode, payloadType, &argType) != 0) {
+            return -1;
+        }
+        if (!H2TCCanAssign(c, payloadType, argType)) {
+            return H2TCFailTypeMismatchDetail(
+                c, callArgs[0].exprNode, callArgs[0].exprNode, argType, payloadType);
+        }
+    }
+    *outType = enumType;
+    return 1;
+}
+
 int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType) {
     int32_t calleeNode = H2AstFirstChild(c->ast, nodeId);
     int32_t calleeType;
@@ -1827,6 +1913,12 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
     }
     if (c->currentFunctionIsCompareHook) {
         return H2TCFailNode(c, nodeId, H2Diag_COMPARISON_HOOK_IMPURE);
+    }
+    if (c->ast->nodes[calleeNode].kind == H2Ast_FIELD_EXPR) {
+        int variantCallRc = H2TCTypeEnumVariantCall(c, nodeId, calleeNode, outType);
+        if (variantCallRc != 0) {
+            return variantCallRc < 0 ? -1 : 0;
+        }
     }
     if (c->ast->nodes[calleeNode].kind == H2Ast_IDENT) {
         const H2AstNode*   callee = &c->ast->nodes[calleeNode];

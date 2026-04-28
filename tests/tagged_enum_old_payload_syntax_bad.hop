@@ -1,0 +1,8 @@
+// Verifies old inline enum payload declaration syntax is rejected.
+enum Token u8 {
+    Int{
+        value i32
+    }
+}
+
+fn main() {}

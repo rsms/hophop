@@ -1,0 +1,8 @@
+// Verifies scalar payload variants reject compound construction.
+enum Item u8 {
+	Length i32
+}
+
+fn main() {
+	_ = Item.Length{ value: 3 }
+}

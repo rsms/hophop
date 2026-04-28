@@ -5237,11 +5237,9 @@ int EnumDeclHasPayload(const H2CBackendC* c, int32_t enumNodeId) {
     }
     while (child >= 0) {
         int32_t payload = AstFirstChild(&c->ast, child);
-        while (payload >= 0) {
-            if (NodeAt(c, payload) != NULL && NodeAt(c, payload)->kind == H2Ast_FIELD) {
-                return 1;
-            }
-            payload = AstNextSibling(&c->ast, payload);
+        if (payload >= 0 && NodeAt(c, payload) != NULL && IsTypeNodeKind(NodeAt(c, payload)->kind))
+        {
+            return 1;
         }
         child = AstNextSibling(&c->ast, child);
     }
@@ -5250,12 +5248,16 @@ int EnumDeclHasPayload(const H2CBackendC* c, int32_t enumNodeId) {
 
 int32_t EnumVariantTagExprNode(const H2CBackendC* c, int32_t variantNode) {
     int32_t child = AstFirstChild(&c->ast, variantNode);
-    while (child >= 0) {
-        const H2AstNode* n = NodeAt(c, child);
-        if (n != NULL && n->kind != H2Ast_FIELD) {
-            return child;
-        }
+    if (child >= 0 && NodeAt(c, child) != NULL && IsTypeNodeKind(NodeAt(c, child)->kind)) {
         child = AstNextSibling(&c->ast, child);
+    }
+    return child;
+}
+
+int32_t EnumVariantPayloadTypeNode(const H2CBackendC* c, int32_t variantNode) {
+    int32_t child = AstFirstChild(&c->ast, variantNode);
+    if (child >= 0 && NodeAt(c, child) != NULL && IsTypeNodeKind(NodeAt(c, child)->kind)) {
+        return child;
     }
     return -1;
 }
@@ -5324,34 +5326,72 @@ int ResolveEnumVariantPayloadFieldType(
     uint32_t     fieldStart,
     uint32_t     fieldEnd,
     H2TypeRef*   outType) {
-    int32_t enumNodeId;
-    int32_t variantNode;
-    int32_t payload = -1;
+    H2TypeRef   payloadType;
+    const char* payloadOwner;
+    int32_t     enumNodeId;
+    int32_t     variantNode;
+    int32_t     payloadTypeNode = -1;
     if (FindEnumDeclNodeByCName(c, enumTypeName, &enumNodeId) != 0) {
         return -1;
     }
     if (FindEnumVariantNodeBySlice(c, enumNodeId, variantStart, variantEnd, &variantNode) != 0) {
         return -1;
     }
-    payload = AstFirstChild(&c->ast, variantNode);
-    while (payload >= 0) {
-        const H2AstNode* f = NodeAt(c, payload);
-        int32_t          typeNode;
-        if (f == NULL || f->kind != H2Ast_FIELD) {
-            break;
-        }
-        if (!SliceSpanEq(c->unit->source, f->dataStart, f->dataEnd, fieldStart, fieldEnd)) {
-            payload = AstNextSibling(&c->ast, payload);
-            continue;
-        }
-        typeNode = AstFirstChild(&c->ast, payload);
-        if (typeNode < 0 || ParseTypeRef(c, typeNode, outType) != 0) {
+    payloadTypeNode = EnumVariantPayloadTypeNode(c, variantNode);
+    if (payloadTypeNode < 0 || ParseTypeRef(c, payloadTypeNode, &payloadType) != 0
+        || !payloadType.valid)
+    {
+        return -1;
+    }
+    CanonicalizeTypeRefBaseName(c, &payloadType);
+    payloadOwner = CanonicalFieldOwnerType(c, payloadType.baseName);
+    if (payloadOwner == NULL) {
+        return -1;
+    }
+    {
+        const H2FieldInfo* fieldPath[64];
+        const H2FieldInfo* field = NULL;
+        uint32_t           fieldPathLen = 0;
+        if (ResolveFieldPathBySlice(
+                c,
+                payloadOwner,
+                fieldStart,
+                fieldEnd,
+                fieldPath,
+                (uint32_t)(sizeof(fieldPath) / sizeof(fieldPath[0])),
+                &fieldPathLen,
+                &field)
+                != 0
+            || field == NULL)
+        {
             return -1;
         }
-        CanonicalizeTypeRefBaseName(c, outType);
+        *outType = field->type;
         return 0;
     }
-    return -1;
+}
+
+int ResolveEnumVariantPayloadType(
+    H2CBackendC* c,
+    const char*  enumTypeName,
+    uint32_t     variantStart,
+    uint32_t     variantEnd,
+    H2TypeRef*   outType) {
+    int32_t enumNodeId;
+    int32_t variantNode;
+    int32_t payloadTypeNode;
+    if (FindEnumDeclNodeByCName(c, enumTypeName, &enumNodeId) != 0) {
+        return -1;
+    }
+    if (FindEnumVariantNodeBySlice(c, enumNodeId, variantStart, variantEnd, &variantNode) != 0) {
+        return -1;
+    }
+    payloadTypeNode = EnumVariantPayloadTypeNode(c, variantNode);
+    if (payloadTypeNode < 0 || ParseTypeRef(c, payloadTypeNode, outType) != 0 || !outType->valid) {
+        return -1;
+    }
+    CanonicalizeTypeRefBaseName(c, outType);
+    return 0;
 }
 
 /* Returns 1 on success, 0 if node is not enum.variant syntax, -1 on error. */

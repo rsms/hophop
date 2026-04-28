@@ -228,7 +228,7 @@ static int HOPEvalMirAdaptValue(
         case H2CTFEValue_TYPE:
             tagged = HOPEvalValueAsTaggedEnum(value);
             if (tagged != NULL && tagged->payload != NULL) {
-                return HOPEvalMirAdaptAggregateValue(c, tagged->payload, depth + 1u);
+                return HOPEvalMirAdaptValue(c, tagged->payload, depth + 1u);
             }
             return 1;
 

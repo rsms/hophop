@@ -1296,7 +1296,16 @@ int H2TCTypeSwitchStmt(
                         singleVariantLabel = 0;
                     }
                     if (aliasNode >= 0) {
+                        int32_t aliasType = -1;
                         if (variantRc != 1 || subjectEnumType < 0) {
+                            c->localLen = savedLocalLen;
+                            c->variantNarrowLen = savedVariantNarrowLen;
+                            return H2TCFailNode(c, aliasNode, H2Diag_TYPE_MISMATCH);
+                        }
+                        if (H2TCEnumVariantPayloadType(
+                                c, subjectEnumType, labelVariantStart, labelVariantEnd, &aliasType)
+                            != 0)
+                        {
                             c->localLen = savedLocalLen;
                             c->variantNarrowLen = savedVariantNarrowLen;
                             return H2TCFailNode(c, aliasNode, H2Diag_TYPE_MISMATCH);
@@ -1305,7 +1314,7 @@ int H2TCTypeSwitchStmt(
                                 c,
                                 c->ast->nodes[aliasNode].dataStart,
                                 c->ast->nodes[aliasNode].dataEnd,
-                                subjectType,
+                                aliasType,
                                 0,
                                 -1)
                             != 0)
@@ -1315,18 +1324,6 @@ int H2TCTypeSwitchStmt(
                             return -1;
                         }
                         H2TCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
-                        if (H2TCVariantNarrowPush(
-                                c,
-                                (int32_t)c->localLen - 1,
-                                subjectEnumType,
-                                labelVariantStart,
-                                labelVariantEnd)
-                            != 0)
-                        {
-                            c->localLen = savedLocalLen;
-                            c->variantNarrowLen = savedVariantNarrowLen;
-                            return -1;
-                        }
                     }
                 } else {
                     int32_t condType;

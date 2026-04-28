@@ -132,8 +132,7 @@ StructFieldDecl = ( FieldDecl | EmbeddedFieldDecl ) [ FieldDefault ] .
 FieldDecl       = Ident { "," Ident } Type .
 EmbeddedFieldDecl = TypeName .
 FieldDefault    = "=" Expr .
-EnumItem        = Ident [ EnumPayload ] [ "=" Expr ] .
-EnumPayload     = "{" [ FieldDeclList ] "}" .
+EnumItem        = Ident [ Type ] [ "=" Expr ] .
 
 FnDeclOrDef     = "fn" FnName [ TypeParamList ] "(" [ ParamList ] ")" [ FnResultClause ]
                 [ Block ] .
@@ -314,10 +313,11 @@ fn f() {
 - [DECL-ENUM-002][Stable] Enum values are selected as `Enum.Item` or `pkg.Enum.Item`.
 - [DECL-ENUM-003][Stable] Enum base type in `enum Name BaseType { ... }` MUST be an integer type.
 - [DECL-ENUM-004][Stable] There are no implicit conversions between enum types and integer types; explicit `as` casts are required.
-- [DECL-ENUM-005][Stable] Enum variants may define payload fields using struct-field syntax inside `{ ... }` on the variant.
-- [DECL-ENUM-006][Stable] Variant explicit tags are allowed for both payload and non-payload variants: `Variant = n` and `Variant{ ... } = n`.
-- [DECL-ENUM-007][Stable] Payload variant constructors use compound-literal syntax `Enum.Variant{ ... }`.
-- [DECL-ENUM-008][Stable] In payload constructors, omitted payload fields are initialized using the same rules as struct literals.
+- [DECL-ENUM-005][Stable] Enum variants may define a payload by writing a type after the variant name.
+- [DECL-ENUM-006][Stable] Anonymous struct payloads are written with the explicit `struct` keyword: `Variant struct { ... }`; the old `Variant{ ... }` declaration form is invalid.
+- [DECL-ENUM-007][Stable] Variant explicit tags are allowed for both payload and non-payload variants: `Variant = n` and `Variant PayloadType = n`.
+- [DECL-ENUM-008][Stable] Payload variant constructors use `Enum.Variant{ ... }` for struct payloads and `Enum.Variant(...)` for non-struct payloads.
+- [DECL-ENUM-009][Stable] In struct payload constructors, omitted payload fields are initialized using the same rules as struct literals.
 
 ### 4.3 Namespace model
 - [DECL-NS-001][Stable] Type names and value names are distinct lookup spaces.
@@ -543,8 +543,9 @@ fn f() {
   - union literals may initialize at most one field explicitly; with zero explicit fields the union is zero-initialized.
 - [EXPR-COMPOUND-007][Stable] Explicit initializers take precedence over defaults for the same direct field.
 - [EXPR-COMPOUND-008][Stable] Default-suppression matching is by direct field name; dotted subfield initializer paths and promoted-field initializer paths do not suppress defaults of containing direct fields. These explicit initializers are applied over the containing default value.
-- [EXPR-COMPOUND-009][Stable] Tagged-enum payload construction is via explicit variant type in the literal type position: `Enum.Variant{ ... }`.
-- [EXPR-COMPOUND-010][Stable] `Enum.Variant{ ... }` type-checks against payload fields of that exact variant only.
+- [EXPR-COMPOUND-009][Stable] Tagged-enum struct payload construction is via explicit variant type in the literal type position: `Enum.Variant{ ... }`.
+- [EXPR-COMPOUND-010][Stable] `Enum.Variant{ ... }` type-checks against struct payload fields of that exact variant only.
+- [EXPR-CALL-010][Stable] Tagged-enum non-struct payload construction uses call syntax: `Enum.Variant(value)` for scalar payloads and `Enum.Variant(a, b)` for tuple payloads.
 
 ### 6.5 Array literals
 - [EXPR-ARRAY-LIT-001][Provisional] `[expr, ...]` forms an array literal expression. Elements may be separated by commas, semicolons, or inserted semicolons, and a trailing separator is allowed.
@@ -591,7 +592,7 @@ fn f() {
 - [STMT-SWITCH-006][Stable] Duplicate case labels are not required to be diagnosed statically.
 - [STMT-SWITCH-007][Stable] Expression-switch semantics are defined as if subject expression is evaluated once before case-label matching.
 - [STMT-SWITCH-008][Stable] For finite-domain subjects (`bool`, `enum`), switches MUST be exhaustive unless a `default` clause is present.
-- [STMT-SWITCH-009][Stable] Case pattern `Enum.Variant as name` introduces `name` in case-body scope and narrows it to that variant.
+- [STMT-SWITCH-009][Stable] Case pattern `Enum.Variant as name` introduces `name` in case-body scope with the variant payload type; it is invalid for no-payload variants.
 - [STMT-SWITCH-010][Stable] Subject-identifier narrowing for enum payload field access is switch-only: within a single-variant case body, the subject identifier is narrowed to that variant.
 - [STMT-SWITCH-011][Stable] Payload field selection requires a narrowed value (subject identifier narrowed by switch case, or `as` alias).
 - [STMT-CTRL-001][Stable] `break` valid inside `for`/`switch`; `continue` only inside `for`.

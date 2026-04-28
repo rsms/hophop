@@ -341,6 +341,25 @@ static int H2PIsTypeStart(H2TokenKind kind) {
     }
 }
 
+static int H2PTokenGapHasNewline(H2Parser* p, const H2Token* before, const H2Token* after) {
+    uint32_t i;
+    if (p == NULL || before == NULL || after == NULL || before->end > after->start
+        || after->start > p->src.len)
+    {
+        return 0;
+    }
+    for (i = before->end; i < after->start; i++) {
+        if (p->src.ptr[i] == '\n') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int H2PEnumPayloadTypeStart(H2TokenKind kind) {
+    return kind != H2Tok_LBRACE && H2PIsTypeStart(kind);
+}
+
 static int H2PCloneSubtree(H2Parser* p, int32_t nodeId, int32_t* out) {
     const H2AstNode* src;
     int32_t          clone;
@@ -3105,113 +3124,6 @@ static int H2PParseStmt(H2Parser* p, int32_t* out) {
     }
 }
 
-static int H2PParseFieldList(H2Parser* p, int32_t agg) {
-    while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
-        const H2Token* names[256];
-        uint32_t       nameCount = 0;
-        const H2Token* embeddedTypeName = NULL;
-        int32_t        type = -1;
-        int32_t        defaultExpr = -1;
-        uint32_t       i;
-        int            isEmbedded = 0;
-        if (H2PAt(p, H2Tok_SEMICOLON) || H2PAt(p, H2Tok_COMMA)) {
-            p->pos++;
-            continue;
-        }
-        if (H2PAnonymousFieldLookahead(p, &embeddedTypeName)
-            && !(
-                p->pos + 2u < p->tokLen && p->tok[p->pos].kind == H2Tok_IDENT
-                && p->tok[p->pos + 1u].kind == H2Tok_COMMA
-                && p->tok[p->pos + 2u].kind == H2Tok_IDENT))
-        {
-            if (H2PParseTypeName(p, &type) != 0) {
-                return -1;
-            }
-            isEmbedded = 1;
-            nameCount = 1;
-        } else {
-            if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
-                return -1;
-            }
-            nameCount++;
-            while (H2PMatch(p, H2Tok_COMMA)) {
-                if (!H2PAt(p, H2Tok_IDENT)) {
-                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
-                }
-                if (nameCount >= (uint32_t)(sizeof(names) / sizeof(names[0]))) {
-                    return H2PFail(p, H2Diag_ARENA_OOM);
-                }
-                if (H2PExpectDeclName(p, &names[nameCount], 0) != 0) {
-                    return -1;
-                }
-                nameCount++;
-            }
-            if (H2PParseType(p, &type) != 0) {
-                return -1;
-            }
-        }
-        if (H2PMatch(p, H2Tok_ASSIGN)) {
-            if (!isEmbedded && nameCount > 1) {
-                const H2Token* eq = H2PPrev(p);
-                H2PSetDiag(p->diag, H2Diag_UNEXPECTED_TOKEN, eq->start, eq->end);
-                return -1;
-            }
-            if (H2PParseExpr(p, 1, &defaultExpr) != 0) {
-                return -1;
-            }
-        }
-        for (i = 0; i < nameCount; i++) {
-            int32_t field;
-            int32_t fieldType;
-            if (isEmbedded) {
-                fieldType = type;
-                if (i != 0) {
-                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
-                }
-            } else if (i == 0) {
-                fieldType = type;
-            } else if (H2PCloneSubtree(p, type, &fieldType) != 0) {
-                return -1;
-            }
-            field = H2PNewNode(
-                p,
-                H2Ast_FIELD,
-                isEmbedded ? p->nodes[fieldType].start : names[i]->start,
-                p->nodes[fieldType].end);
-            if (field < 0) {
-                return -1;
-            }
-            if (isEmbedded) {
-                p->nodes[field].dataStart = embeddedTypeName->start;
-                p->nodes[field].dataEnd = embeddedTypeName->end;
-                p->nodes[field].flags |= H2AstFlag_FIELD_EMBEDDED;
-            } else {
-                p->nodes[field].dataStart = names[i]->start;
-                p->nodes[field].dataEnd = names[i]->end;
-            }
-            if (H2PAddChild(p, field, fieldType) != 0) {
-                return -1;
-            }
-            if (i == 0 && defaultExpr >= 0) {
-                p->nodes[field].end = p->nodes[defaultExpr].end;
-                if (H2PAddChild(p, field, defaultExpr) != 0) {
-                    return -1;
-                }
-            }
-            if (H2PAddChild(p, agg, field) != 0) {
-                return -1;
-            }
-        }
-        if (H2PMatch(p, H2Tok_SEMICOLON) || H2PMatch(p, H2Tok_COMMA)) {
-            continue;
-        }
-        if (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
-            return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
-        }
-    }
-    return 0;
-}
-
 static int H2PParseAggregateMemberList(H2Parser* p, int32_t agg) {
     while (!H2PAt(p, H2Tok_RBRACE) && !H2PAt(p, H2Tok_EOF)) {
         if (H2PAt(p, H2Tok_SEMICOLON) || H2PAt(p, H2Tok_COMMA)) {
@@ -3413,14 +3325,17 @@ static int H2PParseAggregateDecl(H2Parser* p, int32_t* out) {
             }
             p->nodes[item].dataStart = itemName->start;
             p->nodes[item].dataEnd = itemName->end;
-            if (H2PMatch(p, H2Tok_LBRACE)) {
-                if (H2PParseFieldList(p, item) != 0) {
+            if (!H2PTokenGapHasNewline(p, itemName, H2PPeek(p))
+                && H2PEnumPayloadTypeStart(H2PPeek(p)->kind))
+            {
+                int32_t payloadType;
+                if (H2PParseType(p, &payloadType) != 0) {
                     return -1;
                 }
-                if (H2PExpect(p, H2Tok_RBRACE, H2Diag_UNEXPECTED_TOKEN, &rb) != 0) {
+                if (H2PAddChild(p, item, payloadType) != 0) {
                     return -1;
                 }
-                p->nodes[item].end = rb->end;
+                p->nodes[item].end = p->nodes[payloadType].end;
             }
             if (H2PMatch(p, H2Tok_ASSIGN)) {
                 int32_t vexpr;

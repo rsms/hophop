@@ -1878,7 +1878,21 @@ static int ResolvePackageEnumVariantConstValue(
         int64_t          value = nextValue;
         int32_t          child = variant->firstChild;
         if (variant->kind == H2Ast_FIELD) {
-            while (child >= 0 && ast->nodes[child].kind == H2Ast_FIELD) {
+            if (child >= 0
+                && (ast->nodes[child].kind == H2Ast_TYPE_NAME
+                    || ast->nodes[child].kind == H2Ast_TYPE_PTR
+                    || ast->nodes[child].kind == H2Ast_TYPE_REF
+                    || ast->nodes[child].kind == H2Ast_TYPE_MUTREF
+                    || ast->nodes[child].kind == H2Ast_TYPE_ARRAY
+                    || ast->nodes[child].kind == H2Ast_TYPE_VARRAY
+                    || ast->nodes[child].kind == H2Ast_TYPE_SLICE
+                    || ast->nodes[child].kind == H2Ast_TYPE_MUTSLICE
+                    || ast->nodes[child].kind == H2Ast_TYPE_OPTIONAL
+                    || ast->nodes[child].kind == H2Ast_TYPE_FN
+                    || ast->nodes[child].kind == H2Ast_TYPE_TUPLE
+                    || ast->nodes[child].kind == H2Ast_TYPE_ANON_STRUCT
+                    || ast->nodes[child].kind == H2Ast_TYPE_ANON_UNION))
+            {
                 child = ast->nodes[child].nextSibling;
             }
             if (child >= 0

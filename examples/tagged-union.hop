@@ -5,15 +5,15 @@
 // - comparisons (== uses tag+payload, ordering uses tag)
 enum Event u8 {
 	Idle = 0
-	Click{
+	Click struct {
 		x i32
 		y i32
 	}
-	Key{
+	Key struct {
 		code   i32
 		repeat bool
 	} = 8
-	Resize{
+	Resize struct {
 		width  i32
 		height i32
 	}

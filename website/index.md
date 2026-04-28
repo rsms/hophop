@@ -348,14 +348,14 @@ union Word {
 
 Enums have an integer base type, and enum items are scoped under the enum type. Plain enum values are selected as `Name.Item`.
 
-Variants may carry payload fields. Payload constructors use compound-literal syntax, and switches can narrow payload variants for field access.
+Variants may carry payload types. Struct payload constructors use compound-literal syntax, and switches can narrow payload variants for field access.
 
 ```hop
 enum Result i32 {
-    Ok{
+    Ok struct {
         value i32
     }
-    Err{
+    Err struct {
         code i32
     }
 }

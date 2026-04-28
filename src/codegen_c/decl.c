@@ -514,6 +514,24 @@ int EmitEnumDecl(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
         }
     }
 
+    if (hasPayload) {
+        int32_t scan = child;
+        while (scan >= 0) {
+            int32_t payloadTypeNode = EnumVariantPayloadTypeNode(c, scan);
+            if (payloadTypeNode >= 0) {
+                H2TypeRef payloadType;
+                if (ParseTypeRef(c, payloadTypeNode, &payloadType) != 0 || !payloadType.valid) {
+                    return -1;
+                }
+                CanonicalizeTypeRefBaseName(c, &payloadType);
+                if (EnsureAnonTypeVisible(c, &payloadType, depth) != 0) {
+                    return -1;
+                }
+            }
+            scan = AstNextSibling(&c->ast, scan);
+        }
+    }
+
     if (!hasPayload) {
         EmitIndent(c, depth);
         if (BufAppendCStr(&c->out, "typedef enum ") != 0 || BufAppendCStr(&c->out, map->cName) != 0
@@ -624,38 +642,14 @@ int EmitEnumDecl(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
     }
     while (child >= 0) {
         const H2AstNode* item = NodeAt(c, child);
-        int32_t          payload = AstFirstChild(&c->ast, child);
-        if (item != NULL && item->kind == H2Ast_FIELD && payload >= 0 && NodeAt(c, payload) != NULL
-            && NodeAt(c, payload)->kind == H2Ast_FIELD)
-        {
-            EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, "struct {\n") != 0) {
+        int32_t          payload = EnumVariantPayloadTypeNode(c, child);
+        if (item != NULL && item->kind == H2Ast_FIELD && payload >= 0) {
+            char* fieldName = DupSlice(c, c->unit->source, item->dataStart, item->dataEnd);
+            if (fieldName == NULL) {
                 return -1;
             }
-            while (payload >= 0) {
-                const H2AstNode* pf = NodeAt(c, payload);
-                int32_t          typeNode;
-                char*            fieldName;
-                if (pf == NULL || pf->kind != H2Ast_FIELD) {
-                    break;
-                }
-                typeNode = AstFirstChild(&c->ast, payload);
-                fieldName = DupSlice(c, c->unit->source, pf->dataStart, pf->dataEnd);
-                if (fieldName == NULL) {
-                    return -1;
-                }
-                EmitIndent(c, depth + 2u);
-                if (EmitTypeWithName(c, typeNode, fieldName) != 0
-                    || BufAppendCStr(&c->out, ";\n") != 0)
-                {
-                    return -1;
-                }
-                payload = AstNextSibling(&c->ast, payload);
-            }
             EmitIndent(c, depth + 1u);
-            if (BufAppendCStr(&c->out, "} ") != 0
-                || BufAppendSlice(&c->out, c->unit->source, item->dataStart, item->dataEnd) != 0
-                || BufAppendCStr(&c->out, ";\n") != 0)
+            if (EmitTypeWithName(c, payload, fieldName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
             {
                 return -1;
             }
