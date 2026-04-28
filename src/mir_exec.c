@@ -1823,14 +1823,11 @@ static void H2CTFESetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
+
     diag->start = start;
+
     diag->end = end;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
 }
 
 static void H2CTFEValueInvalid(H2CTFEValue* v) {

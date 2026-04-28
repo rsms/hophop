@@ -197,18 +197,9 @@ static void WasmSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start,
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
 }
 
 static bool WasmSliceEqLiteral(const char* src, uint32_t start, uint32_t end, const char* lit) {

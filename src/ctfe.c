@@ -84,14 +84,7 @@ int H2CTFEEvalExprEx(
     }
     if (arena == NULL || ast == NULL || outValue == NULL || outIsConst == NULL) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
             diag->phase = H2DiagPhase_CONSTEVAL;
         }
         return -1;

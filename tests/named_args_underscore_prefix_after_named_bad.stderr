@@ -1,1 +1,1 @@
-tests/named_args_underscore_prefix_after_named_bad.hop:7:24: error: HOP2100: call argument must be named after parameter 'c' is reached
+tests/named_args_underscore_prefix_after_named_bad.hop:2:12: error: HOP2116: anonymous parameter '_z' cannot follow named parameter 'y'

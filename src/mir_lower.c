@@ -8,14 +8,9 @@ static void H2MirLowerSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uin
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
 }
 
 static int H2MirLowerParseIntLiteral(H2StrView src, uint32_t start, uint32_t end, int64_t* out) {
@@ -542,14 +537,7 @@ int H2MirLowerAppendExprAsFunction(
         || outSupported == NULL)
     {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -565,14 +553,7 @@ int H2MirLowerAppendExprAsFunction(
     sourceRef.src = src;
     if (H2MirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
         if (diag != NULL) {
-            diag->code = H2Diag_ARENA_OOM;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_ARENA_OOM);
         }
         return -1;
     }
@@ -593,28 +574,18 @@ int H2MirLowerAppendExprAsFunction(
         typeRef.aux = 0;
         if (H2MirProgramBuilderAddType(builder, &typeRef, &function.typeRef) != 0) {
             if (diag != NULL) {
-                diag->code = H2Diag_ARENA_OOM;
-                diag->type = H2DiagTypeOfCode(diag->code);
+                H2DiagReset(diag, H2Diag_ARENA_OOM);
+
                 diag->start = typeNode->start;
+
                 diag->end = typeNode->end;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-                diag->argText = NULL;
-                diag->argTextLen = 0;
             }
             return -1;
         }
     }
     if (H2MirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         if (diag != NULL) {
-            diag->code = H2Diag_ARENA_OOM;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_ARENA_OOM);
         }
         return -1;
     }
@@ -625,14 +596,7 @@ int H2MirLowerAppendExprAsFunction(
     }
     if (H2MirProgramBuilderEndFunction(builder) != 0) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -655,14 +619,7 @@ int H2MirLowerExprAsFunction(
     }
     if (arena == NULL || ast == NULL || outProgram == NULL || outSupported == NULL) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }

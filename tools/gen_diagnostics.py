@@ -177,8 +177,8 @@ def _validate_entry(
         fail(f"{where}: id must be in range HOP{lo}-HOP{hi} for category '{category}'")
 
     printf_fmt, arg_count = to_printf_fmt(message)
-    if arg_count > 1:
-        fail(f"{where}: currently supports at most one '{{s}}' placeholder")
+    if arg_count > 2:
+        fail(f"{where}: currently supports at most two '{{s}}' placeholders")
 
     return {
         "id": diag_id,

@@ -6,18 +6,9 @@ static void H2PSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, 
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
     diag->phase = H2DiagPhase_PARSE;
     diag->groupId = 0;
     diag->isPrimary = 1;
@@ -42,18 +33,11 @@ static void H2PSetDiagWithArg(
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
     diag->phase = H2DiagPhase_PARSE;
     diag->groupId = 0;
     diag->isPrimary = 1;

@@ -174,6 +174,8 @@ typedef struct {
     uint8_t endMapped;
     uint8_t argStartMapped;
     uint8_t argEndMapped;
+    uint8_t arg2StartMapped;
+    uint8_t arg2EndMapped;
 } H2RemapDiagStatus;
 
 typedef enum {

@@ -628,6 +628,12 @@ static const H2DiagInfo g_hopDiagInfo[H2Diag__COUNT] = {
                                                  NULL,
                                                  H2DiagType_ERROR,
                                                  0 },
+    [H2Diag_PARAM_ANON_AFTER_NAMED] = { "HOP2116",
+                                        "anonymous parameter '%s' cannot follow named parameter "
+                                        "'%s'",
+                                        NULL,
+                                        H2DiagType_ERROR,
+                                        2 },
     [H2Diag_CODEGEN_INTERNAL] = { "HOP3001", "internal codegen error", NULL, H2DiagType_ERROR, 0 },
     [H2Diag_WASM_BACKEND_UNSUPPORTED_MIR] = { "HOP3002",
                                               "Wasm backend does not support this MIR",

@@ -1,9 +1,9 @@
-// Verifies unlabeled fixed arguments are rejected after named suffix arguments begin.
-fn f(a, _b, c, _d int) int {
-	return a + _b + c + _d
+// Verifies underscore-prefixed parameters are rejected after a named parameter.
+fn f(x, y, _z int) int {
+	return x + y + _z
 }
 
 fn main() {
-	var x = f(1, 2, c: 3, 4)
+	var x = f(1, y: 2, _z: 3)
 	_ = x
 }

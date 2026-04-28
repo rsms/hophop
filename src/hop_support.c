@@ -455,12 +455,16 @@ static char* _Nullable DiagDupFormatMessage(
     uint32_t    spanEnd = diag->end;
     uint32_t    argStart = diag->argStart;
     uint32_t    argEnd = diag->argEnd;
+    uint32_t    arg2Start = diag->arg2Start;
+    uint32_t    arg2End = diag->arg2End;
     char*       arg = NULL;
+    char*       arg2 = NULL;
     char*       out = NULL;
     int         need;
 
     DiagClampSpan(source, &spanStart, &spanEnd);
     DiagClampSpan(source, &argStart, &argEnd);
+    DiagClampSpan(source, &arg2Start, &arg2End);
 
     if (useIdentifierWording && diag->code == H2Diag_UNKNOWN_SYMBOL && source != NULL
         && spanEnd > spanStart)
@@ -482,7 +486,7 @@ static char* _Nullable DiagDupFormatMessage(
     if (argCount == 0) {
         return H2CDupCStr(fmt);
     }
-    if (argCount != 1) {
+    if (argCount > 2) {
         return H2CDupCStr(fmt);
     }
     if (diag->argText != NULL && diag->argTextLen > 0) {
@@ -495,14 +499,32 @@ static char* _Nullable DiagDupFormatMessage(
     if (arg == NULL) {
         return H2CDupCStr(fmt);
     }
-    need = snprintf(NULL, 0, fmt, arg);
+    if (argCount == 2) {
+        if (diag->arg2Text != NULL && diag->arg2TextLen > 0) {
+            arg2 = H2CDupSlice(diag->arg2Text, 0, diag->arg2TextLen);
+        } else if (source != NULL && arg2End > arg2Start) {
+            arg2 = H2CDupSlice(source, arg2Start, arg2End);
+        } else {
+            arg2 = H2CDupCStr("");
+        }
+        if (arg2 == NULL) {
+            free(arg);
+            return H2CDupCStr(fmt);
+        }
+    }
+    need = argCount == 2 ? snprintf(NULL, 0, fmt, arg, arg2) : snprintf(NULL, 0, fmt, arg);
     if (need >= 0) {
         out = (char*)malloc((size_t)need + 1u);
         if (out != NULL) {
-            snprintf(out, (size_t)need + 1u, fmt, arg);
+            if (argCount == 2) {
+                snprintf(out, (size_t)need + 1u, fmt, arg, arg2);
+            } else {
+                snprintf(out, (size_t)need + 1u, fmt, arg);
+            }
         }
     }
     free(arg);
+    free(arg2);
     return out;
 }
 
@@ -1046,6 +1068,8 @@ void RemapCombinedDiag(
     int      endMapped;
     int      argStartMapped = 0;
     int      argEndMapped = 0;
+    int      arg2StartMapped = 0;
+    int      arg2EndMapped = 0;
     *diagOut = *diagIn;
     if (outFileIndex != NULL) {
         *outFileIndex = 0;
@@ -1055,6 +1079,8 @@ void RemapCombinedDiag(
         outStatus->endMapped = 0;
         outStatus->argStartMapped = 0;
         outStatus->argEndMapped = 0;
+        outStatus->arg2StartMapped = 0;
+        outStatus->arg2EndMapped = 0;
     }
     if (map == NULL || map->len == 0) {
         return;
@@ -1108,6 +1134,23 @@ void RemapCombinedDiag(
                     &diagOut->argStart,
                     &diagOut->argEnd);
             }
+        }
+    }
+    if (diagIn->arg2End > diagIn->arg2Start) {
+        uint32_t arg2FileIndex = 0;
+        arg2StartMapped = RemapCombinedOffset(
+            map, diagIn->arg2Start, &diagOut->arg2Start, &arg2FileIndex, NULL, NULL);
+        arg2EndMapped = RemapCombinedOffset(
+            map, diagIn->arg2End, &diagOut->arg2End, &arg2FileIndex, NULL, NULL);
+        if (outStatus != NULL) {
+            outStatus->arg2StartMapped = arg2StartMapped ? 1u : 0u;
+            outStatus->arg2EndMapped = arg2EndMapped ? 1u : 0u;
+        }
+        if (!arg2StartMapped) {
+            diagOut->arg2Start = diagIn->arg2Start;
+        }
+        if (!arg2EndMapped) {
+            diagOut->arg2End = diagIn->arg2End;
         }
     }
     if (source != NULL && diagOut->code == H2Diag_UNKNOWN_SYMBOL && diagOut->end > diagOut->start) {

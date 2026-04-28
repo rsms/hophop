@@ -6420,18 +6420,7 @@ int H2Format(
     }
     if (H2FmtRewriteAst(&ast, src, options) != 0) {
         if (diag != NULL) {
-            diag->code = H2Diag_ARENA_OOM;
-            diag->type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
-            diag->relatedStart = 0;
-            diag->relatedEnd = 0;
-            diag->detail = NULL;
-            diag->hintOverride = NULL;
+            H2DiagReset(diag, H2Diag_ARENA_OOM);
         }
         return -1;
     }
@@ -6454,18 +6443,7 @@ int H2Format(
             arena, c.commentLen * (uint32_t)sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
         if (c.commentUsed == NULL) {
             if (diag != NULL) {
-                diag->code = H2Diag_ARENA_OOM;
-                diag->type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
-                diag->start = 0;
-                diag->end = 0;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-                diag->argText = NULL;
-                diag->argTextLen = 0;
-                diag->relatedStart = 0;
-                diag->relatedEnd = 0;
-                diag->detail = NULL;
-                diag->hintOverride = NULL;
+                H2DiagReset(diag, H2Diag_ARENA_OOM);
             }
             return -1;
         }
@@ -6474,36 +6452,14 @@ int H2Format(
 
     if (H2FmtEmitFile(&c) != 0) {
         if (diag != NULL && diag->code == H2Diag_NONE) {
-            diag->code = H2Diag_ARENA_OOM;
-            diag->type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
-            diag->relatedStart = 0;
-            diag->relatedEnd = 0;
-            diag->detail = NULL;
-            diag->hintOverride = NULL;
+            H2DiagReset(diag, H2Diag_ARENA_OOM);
         }
         return -1;
     }
 
     if (H2FmtBufAppendChar(&c.out, '\0') != 0) {
         if (diag != NULL) {
-            diag->code = H2Diag_ARENA_OOM;
-            diag->type = H2DiagTypeOfCode(H2Diag_ARENA_OOM);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
-            diag->relatedStart = 0;
-            diag->relatedEnd = 0;
-            diag->detail = NULL;
-            diag->hintOverride = NULL;
+            H2DiagReset(diag, H2Diag_ARENA_OOM);
         }
         return -1;
     }

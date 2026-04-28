@@ -8,18 +8,9 @@ void H2TCSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
     diag->phase = H2DiagPhase_TYPECHECK;
     diag->groupId = 0;
     diag->isPrimary = 1;
@@ -44,18 +35,11 @@ void H2TCSetDiagWithArg(
     if (diag == NULL) {
         return;
     }
-    diag->code = code;
-    diag->type = H2DiagTypeOfCode(code);
+    H2DiagReset(diag, code);
     diag->start = start;
     diag->end = end;
     diag->argStart = argStart;
     diag->argEnd = argEnd;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
     diag->phase = H2DiagPhase_TYPECHECK;
     diag->groupId = 0;
     diag->isPrimary = 1;
@@ -68,6 +52,23 @@ void H2TCSetDiagWithArg(
     diag->fixItsLen = 0;
     diag->expectations = NULL;
     diag->expectationsLen = 0;
+}
+
+void H2TCSetDiagWith2Args(
+    H2Diag*    diag,
+    H2DiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    uint32_t   argStart,
+    uint32_t   argEnd,
+    uint32_t   arg2Start,
+    uint32_t   arg2End) {
+    H2TCSetDiagWithArg(diag, code, start, end, argStart, argEnd);
+    if (diag == NULL) {
+        return;
+    }
+    diag->arg2Start = arg2Start;
+    diag->arg2End = arg2End;
 }
 
 int H2TCFailSpan(H2TypeCheckCtx* c, H2DiagCode code, uint32_t start, uint32_t end) {

@@ -9499,14 +9499,7 @@ static int HOPEvalMirMakeAggregate(
     }
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -9785,14 +9778,7 @@ static int HOPEvalMirZeroInitLocal(
         || typeRef->astNode >= p->currentFile->ast.len)
     {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -9903,14 +9889,7 @@ static int HOPEvalMirCoerceValueForType(
         || typeRef->astNode == UINT32_MAX || typeRef->astNode >= p->currentFile->ast.len)
     {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -10860,14 +10839,7 @@ static int HOPEvalMirEnterFunction(
         || c->savedFileLen >= H2_EVAL_CALL_MAX_DEPTH)
     {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }
@@ -10875,14 +10847,7 @@ static int HOPEvalMirEnterFunction(
         uint32_t evalFnIndex;
         if (c->mirToEval == NULL || functionIndex >= c->mirToEvalLen) {
             if (diag != NULL) {
-                diag->code = H2Diag_UNEXPECTED_TOKEN;
-                diag->type = H2DiagTypeOfCode(diag->code);
-                diag->start = 0;
-                diag->end = 0;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-                diag->argText = NULL;
-                diag->argTextLen = 0;
+                H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
             }
             return -1;
         }
@@ -10891,14 +10856,7 @@ static int HOPEvalMirEnterFunction(
             pushed = 0;
         } else if (evalFnIndex >= c->p->funcLen || c->p->callDepth >= H2_EVAL_CALL_MAX_DEPTH) {
             if (diag != NULL) {
-                diag->code = H2Diag_UNEXPECTED_TOKEN;
-                diag->type = H2DiagTypeOfCode(diag->code);
-                diag->start = 0;
-                diag->end = 0;
-                diag->argStart = 0;
-                diag->argEnd = 0;
-                diag->argText = NULL;
-                diag->argTextLen = 0;
+                H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
             }
             return -1;
         } else {
@@ -10951,14 +10909,7 @@ static int HOPEvalMirBindFrame(
     HOPEvalMirExecCtx* c = (HOPEvalMirExecCtx*)ctx;
     if (c == NULL || c->mirFrameDepth >= H2_EVAL_CALL_MAX_DEPTH) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }

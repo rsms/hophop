@@ -25,6 +25,10 @@ static int H2TCFailUnaryOpTypeMismatch(
         c->diag->argEnd = c->ast->nodes[exprNode].end;
         c->diag->argText = NULL;
         c->diag->argTextLen = 0;
+        c->diag->arg2Start = 0;
+        c->diag->arg2End = 0;
+        c->diag->arg2Text = NULL;
+        c->diag->arg2TextLen = 0;
     }
     return rc;
 }

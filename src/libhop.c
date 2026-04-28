@@ -22,22 +22,35 @@ static void H2DiagResetExtras(H2Diag* diag) {
     diag->expectationsLen = 0;
 }
 
-static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
+void H2DiagReset(H2Diag* _Nullable diag, H2DiagCode code) {
     if (diag == NULL) {
         return;
     }
     diag->code = code;
     diag->type = H2DiagTypeOfCode(code);
-    diag->start = start;
-    diag->end = end;
+    diag->start = 0;
+    diag->end = 0;
     diag->argStart = 0;
     diag->argEnd = 0;
     diag->argText = NULL;
     diag->argTextLen = 0;
+    diag->arg2Start = 0;
+    diag->arg2End = 0;
+    diag->arg2Text = NULL;
+    diag->arg2TextLen = 0;
     diag->relatedStart = 0;
     diag->relatedEnd = 0;
     diag->detail = NULL;
     diag->hintOverride = NULL;
+}
+
+static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
+    if (diag == NULL) {
+        return;
+    }
+    H2DiagReset(diag, code);
+    diag->start = start;
+    diag->end = end;
     H2DiagResetExtras(diag);
 }
 
@@ -45,18 +58,7 @@ void H2DiagClear(H2Diag* _Nullable diag) {
     if (diag == NULL) {
         return;
     }
-    diag->code = H2Diag_NONE;
-    diag->type = H2DiagType_ERROR;
-    diag->start = 0;
-    diag->end = 0;
-    diag->argStart = 0;
-    diag->argEnd = 0;
-    diag->argText = NULL;
-    diag->argTextLen = 0;
-    diag->relatedStart = 0;
-    diag->relatedEnd = 0;
-    diag->detail = NULL;
-    diag->hintOverride = NULL;
+    H2DiagReset(diag, H2Diag_NONE);
     H2DiagResetExtras(diag);
 }
 

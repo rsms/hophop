@@ -663,6 +663,15 @@ void H2TCSetDiagWithArg(
     uint32_t   end,
     uint32_t   argStart,
     uint32_t   argEnd);
+void H2TCSetDiagWith2Args(
+    H2Diag*    diag,
+    H2DiagCode code,
+    uint32_t   start,
+    uint32_t   end,
+    uint32_t   argStart,
+    uint32_t   argEnd,
+    uint32_t   arg2Start,
+    uint32_t   arg2End);
 int H2TCFailSpan(H2TypeCheckCtx* c, H2DiagCode code, uint32_t start, uint32_t end);
 int H2TCFailDuplicateDefinition(
     H2TypeCheckCtx* c,

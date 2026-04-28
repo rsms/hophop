@@ -201,6 +201,10 @@ typedef struct {
     uint32_t   argEnd;
     const char* _Nullable argText;
     uint32_t argTextLen;
+    uint32_t arg2Start;
+    uint32_t arg2End;
+    const char* _Nullable arg2Text;
+    uint32_t arg2TextLen;
     uint32_t relatedStart;
     uint32_t relatedEnd;
     const char* _Nullable detail;
@@ -226,6 +230,7 @@ typedef struct {
     const char* _Nullable filePath;
 } H2TypeCheckOptions;
 
+void        H2DiagReset(H2Diag* _Nullable diag, H2DiagCode code);
 void        H2DiagClear(H2Diag* _Nullable diag);
 const char* H2DiagId(H2DiagCode code);
 const char* H2DiagMessage(H2DiagCode code);

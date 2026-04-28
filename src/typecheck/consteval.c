@@ -337,14 +337,7 @@ int H2TCMirConstBindFrame(
     H2TCConstEvalCtx* evalCtx = (H2TCConstEvalCtx*)ctx;
     if (evalCtx == NULL || evalCtx->mirFrameDepth >= H2TC_CONST_CALL_MAX_DEPTH) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(diag->code);
-            diag->start = 0;
-            diag->end = 0;
-            diag->argStart = 0;
-            diag->argEnd = 0;
-            diag->argText = NULL;
-            diag->argTextLen = 0;
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }

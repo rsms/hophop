@@ -504,8 +504,7 @@ int H2MirDumpProgram(
     }
     if (program == NULL || w == NULL || w->write == NULL) {
         if (diag != NULL) {
-            diag->code = H2Diag_UNEXPECTED_TOKEN;
-            diag->type = H2DiagTypeOfCode(H2Diag_UNEXPECTED_TOKEN);
+            H2DiagReset(diag, H2Diag_UNEXPECTED_TOKEN);
         }
         return -1;
     }

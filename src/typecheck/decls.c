@@ -633,6 +633,9 @@ int H2TCReadFunctionSig(
     int      hasBody = 0;
     int32_t  savedParamTypes[H2TC_MAX_CALL_ARGS];
     uint8_t  savedParamFlags[H2TC_MAX_CALL_ARGS];
+    uint32_t namedSuffixStart = 0;
+    uint32_t namedSuffixEnd = 0;
+    int      hasNamedSuffix = 0;
 
     while (child >= 0) {
         const H2AstNode* n = &c->ast->nodes[child];
@@ -643,6 +646,27 @@ int H2TCReadFunctionSig(
         if (n->kind == H2Ast_PARAM) {
             int32_t typeNode = H2AstFirstChild(c->ast, child);
             int32_t typeId;
+            int     isAnonName = n->dataEnd > n->dataStart && c->src.ptr[n->dataStart] == '_';
+            if (paramCount > 0) {
+                if (isAnonName) {
+                    if (hasNamedSuffix) {
+                        H2TCSetDiagWith2Args(
+                            c->diag,
+                            H2Diag_PARAM_ANON_AFTER_NAMED,
+                            n->dataStart,
+                            n->dataEnd,
+                            n->dataStart,
+                            n->dataEnd,
+                            namedSuffixStart,
+                            namedSuffixEnd);
+                        return -1;
+                    }
+                } else if (!hasNamedSuffix) {
+                    hasNamedSuffix = 1;
+                    namedSuffixStart = n->dataStart;
+                    namedSuffixEnd = n->dataEnd;
+                }
+            }
             if (paramCount >= c->scratchParamCap) {
                 return H2TCFailNode(c, child, H2Diag_ARENA_OOM);
             }
