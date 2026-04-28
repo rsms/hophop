@@ -247,7 +247,7 @@ Operation semantics:
 Allocation is provided by `MemAllocator` via `new`, with the platform setting
 `context.mem` before `hop_main`.
 
-Concrete default platform implementation used by `hop compile`:
+Concrete default platform implementation used by `hop build`:
 - `lib/platform/cli-libc/platform.c`
 
 `hop run` defaults to the evaluator host (`cli-eval`) unless `--platform` is provided.

@@ -28,7 +28,7 @@ H2_API_BEGIN
 static int WriteOutput(const char* _Nullable outFilename, const char* data, uint32_t len) {
     FILE*  out;
     size_t nwritten;
-    if (outFilename == NULL) {
+    if (outFilename == NULL || StrEq(outFilename, "-")) {
         if (len == 0) {
             return 0;
         }
@@ -64,9 +64,9 @@ static int ErrorCBackendDisabled(void) {
     return ErrorSimple("this hop build was compiled without the C backend");
 }
 
-int GeneratePackage(
-    const char* entryPath,
-    const char* backendName,
+int GeneratePackageInput(
+    const H2PackageInput* input,
+    const char*           backendName,
     const char* _Nullable outFilename,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
@@ -97,8 +97,8 @@ int GeneratePackage(
         effectivePlatformTarget = H2_WASM_MIN_PLATFORM_TARGET;
     }
 
-    if (LoadAndCheckPackage(
-            entryPath, effectivePlatformTarget, archTarget, testingBuild, &loader, &entryPkg)
+    if (LoadAndCheckPackageInput(
+            input, effectivePlatformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
     {
         return -1;
@@ -240,6 +240,21 @@ int GeneratePackage(
     FreeLoader(&loader);
     H2ArenaDispose(&mirArena);
     return 0;
+}
+
+int GeneratePackage(
+    const char* entryPath,
+    const char* backendName,
+    const char* _Nullable outFilename,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
+    const char* _Nullable cacheDirArg) {
+    H2PackageInput input = { 0 };
+    input.paths = &entryPath;
+    input.pathLen = 1;
+    return GeneratePackageInput(
+        &input, backendName, outFilename, platformTarget, archTarget, testingBuild, cacheDirArg);
 }
 
 static int RunCommand(const char* const* argv) {
@@ -1657,9 +1672,9 @@ static int IsPlaybitPlatformTarget(const char* _Nullable platformTarget) {
 /* Embedded cli-libc platform source — compiled alongside the generated HopHop
  * package. Provides runtime platform functions via libc and defines main()
  * which calls hop_main(). */
-int CompileProgram(
-    const char* entryPath,
-    const char* outExe,
+int CompileProgramInput(
+    const H2PackageInput* input,
+    const char*           outExe,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild,
@@ -1692,7 +1707,8 @@ int CompileProgram(
         return ErrorCBackendDisabled();
     }
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+    if (LoadAndCheckPackageInput(
+            input, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
     {
         goto end;
@@ -1710,8 +1726,8 @@ int CompileProgram(
     }
     if (LoaderUsesWasmImportDirective(&loader)) {
         ErrorSimple(
-            "native C compilation does not support @wasm_import; use `hop genpkg:c` or a Wasm "
-            "toolchain");
+            "native C compilation does not support @wasm_import; use `hop build --output-format "
+            "c` or a Wasm toolchain");
         goto end;
     }
     if (ResolveLibDir(&libDir) != 0) {
@@ -1821,6 +1837,20 @@ end:
         FreeLoader(&loader);
     }
     return rc;
+}
+
+int CompileProgram(
+    const char* entryPath,
+    const char* outExe,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
+    const char* _Nullable cacheDirArg) {
+    H2PackageInput input = { 0 };
+    input.paths = &entryPath;
+    input.pathLen = 1;
+    return CompileProgramInput(
+        &input, outExe, platformTarget, archTarget, testingBuild, cacheDirArg);
 }
 
 static int RunProgramC(

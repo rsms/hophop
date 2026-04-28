@@ -1,2 +1,0 @@
-usage:
-    hop ast [--diag-format <text|jsonl>] <srcfile>

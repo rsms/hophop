@@ -296,8 +296,8 @@ The C backend does not support GC in v1.
 
 That means any use of plain `new` must be rejected by:
 
-- `genpkg:c`
-- `compile`
+- `hop build --output-format c`
+- `hop build`
 - other C-backend flows
 
 Recommended diagnostic shape:

@@ -291,8 +291,8 @@ In particular:
 
 - building for `cli-eval` with any `@wasm_import` or `@c_import` is an error
 - `@wasm_import` is valid only when the selected backend/toolchain path is producing Wasm output
-- `hop genpkg:c` is allowed to emit C for `@wasm_import` even when no downstream target triple is
-  known yet
+- `hop build --output-format c` is allowed to emit C for `@wasm_import` even when no downstream
+  target triple is known yet
 - when `hop` uses the C backend and the final target is known not to be Wasm, `@wasm_import` is a
   build-time error
 

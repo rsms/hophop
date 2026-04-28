@@ -5,7 +5,7 @@ This document describes the MIR (Mid-level Intermediate Representation) implemen
 For inspection from the CLI, use:
 
 ```sh
-_build/macos-aarch64-debug/hop mir <package-dir|file.hop>
+_build/macos-aarch64-debug/hop build --output-format mir <package-dir|file.hop>
 ```
 
 ## What MIR is

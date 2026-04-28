@@ -97,9 +97,9 @@ Package commands accept `--arch <name>`:
 
 ```text
 hop check [--platform <target>] [--arch <name>] <pkgdir|srcfile>
-hop mir [--platform <target>] [--arch <name>] <pkgdir|srcfile>
-hop genpkg:c [--platform <target>] [--arch <name>] <pkgdir|srcfile>
-hop compile [--platform <target>] [--arch <name>] <pkgdir|srcfile>
+hop build --output-format mir [--platform <target>] [--arch <name>] <pkgdir|srcfile>
+hop build --output-format c [--platform <target>] [--arch <name>] <pkgdir|srcfile>
+hop build [--platform <target>] [--arch <name>] <pkgdir|srcfile>
 hop run [--platform <target>] [--arch <name>] <pkgdir|srcfile>
 ```
 

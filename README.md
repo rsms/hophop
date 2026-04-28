@@ -62,13 +62,13 @@ $ _build/macos-aarch64-debug/hop check examples/hello.hop
 Transpile to C:
 
 ```sh
-$ _build/macos-aarch64-debug/hop genpkg:c examples/hello.hop hello.h
+$ _build/macos-aarch64-debug/hop build --output-format c examples/hello.hop -o hello.h
 ```
 
 Compile and run through the C11 backend: (will use a C compiler in PATH)
 
 ```sh
-$ _build/macos-aarch64-debug/hop compile examples/hello.hop -o hello
+$ _build/macos-aarch64-debug/hop build examples/hello.hop -o hello
 ./hello
 ```
 
@@ -86,16 +86,22 @@ Platform targets:
 - `wasm-min`: small Wasm host ABI used by tests and smoke runs.
 - `playbit`: Wasm target for Playbit.
 
-`genpkg` options:
+`build` output formats:
 
-- `genpkg:c` emits C11 text.
-- `genpkg:wasm` emits a Wasm binary module.
-- `genpkg` chooses a backend from the selected platform.
+- `executable` builds a usable program and is the default. For `cli-libc` this is a native
+  executable; for `wasm-min` and `playbit` this is a Wasm module.
+- `c` emits C11 text.
+- `mir`, `tokens`, and `ast` emit compiler debug text.
+
+For single source-file builds, executable, `mir`, `tokens`, and `ast` default output paths are
+derived from the source filename, for example `hello`, `hello.mir`, `hello.tokens`, and
+`hello.ast`. `--output-format c` defaults to stdout. Use `-o -` or `--output -` to write any build
+output to stdout explicitly.
 
 Examples:
 
 ```sh
-_build/macos-aarch64-debug/hop mir examples/hello.hop
-_build/macos-aarch64-debug/hop genpkg:wasm --platform wasm-min examples/hello.hop hello.wasm
+_build/macos-aarch64-debug/hop build --output-format mir examples/hello.hop
+_build/macos-aarch64-debug/hop build --platform wasm-min examples/hello.hop -o hello.wasm
 _build/macos-aarch64-debug/hop run --platform wasm-min examples/hello.hop
 ```

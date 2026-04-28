@@ -2893,7 +2893,16 @@ void StdoutWrite(void* ctx, const char* data, uint32_t len) {
     fwrite(data, 1u, (size_t)len, stdout);
 }
 
-int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
+void FileWrite(void* ctx, const char* data, uint32_t len) {
+    FILE* out = (FILE*)ctx;
+    if (len == 0) {
+        return;
+    }
+    fwrite(data, 1u, (size_t)len, out);
+}
+
+int DumpTokens(void* outFile, const char* filename, const char* source, uint32_t sourceLen) {
+    FILE*         out = (FILE*)outFile;
     void*         arenaMem;
     uint64_t      arenaCap64;
     size_t        arenaCap;
@@ -2924,22 +2933,23 @@ int DumpTokens(const char* filename, const char* source, uint32_t sourceLen) {
 
     for (i = 0; i < stream.len; i++) {
         const H2Token* t = &stream.v[i];
-        printf("%s %u %u ", H2TokenKindName(t->kind), t->start, t->end);
+        fprintf(out, "%s %u %u ", H2TokenKindName(t->kind), t->start, t->end);
         if (t->kind == H2Tok_EOF) {
-            printf("<eof>");
+            fputs("<eof>", out);
         } else if (t->kind == H2Tok_SEMICOLON && t->start == t->end) {
-            printf("<auto>");
+            fputs("<auto>", out);
         } else {
-            PrintEscaped(stdout, source, t->start, t->end);
+            PrintEscaped(out, source, t->start, t->end);
         }
-        fputc('\n', stdout);
+        fputc('\n', out);
     }
 
     free(arenaMem);
     return 0;
 }
 
-int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
+int DumpAST(void* outFile, const char* filename, const char* source, uint32_t sourceLen) {
+    FILE*    out = (FILE*)outFile;
     void*    arenaMem;
     uint64_t arenaCap64;
     size_t   arenaCap;
@@ -2968,8 +2978,8 @@ int DumpAST(const char* filename, const char* source, uint32_t sourceLen) {
         return diagStatus;
     }
 
-    writer.ctx = NULL;
-    writer.write = StdoutWrite;
+    writer.ctx = out;
+    writer.write = FileWrite;
     if (H2AstDump(&ast, (H2StrView){ source, sourceLen }, &writer, &diag) != 0) {
         int diagStatus = PrintHOPDiag(filename, source, &diag, 0);
         free(arenaMem);

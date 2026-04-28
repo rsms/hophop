@@ -3395,6 +3395,101 @@ static int LoadSingleFilePackage(
     return 0;
 }
 
+static int LoadExplicitFilePackage(
+    H2PackageLoader* loader, const char* const* filePaths, uint32_t fileLen, H2Package** outPkg) {
+    char**     canonicalPaths = NULL;
+    char*      dirPath = NULL;
+    H2Package* pkg;
+    uint32_t   i;
+
+    if (filePaths == NULL || fileLen == 0) {
+        return ErrorSimple("internal error: missing source files");
+    }
+    canonicalPaths = (char**)calloc((size_t)fileLen, sizeof(char*));
+    if (canonicalPaths == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    for (i = 0; i < fileLen; i++) {
+        struct stat st;
+        char*       fileDir;
+        canonicalPaths[i] = CanonicalizePath(filePaths[i]);
+        if (canonicalPaths[i] == NULL) {
+            FreeStringList(canonicalPaths, fileLen);
+            return ErrorSimple("failed to resolve source file %s", filePaths[i]);
+        }
+        if (stat(canonicalPaths[i], &st) != 0 || !S_ISREG(st.st_mode)
+            || !HasSuffix(canonicalPaths[i], ".hop"))
+        {
+            FreeStringList(canonicalPaths, fileLen);
+            return ErrorSimple("expected .hop source file: %s", filePaths[i]);
+        }
+        fileDir = DirNameDup(canonicalPaths[i]);
+        if (fileDir == NULL) {
+            FreeStringList(canonicalPaths, fileLen);
+            return ErrorSimple("out of memory");
+        }
+        if (dirPath == NULL) {
+            dirPath = fileDir;
+        } else if (!StrEq(dirPath, fileDir)) {
+            free(fileDir);
+            FreeStringList(canonicalPaths, fileLen);
+            free(dirPath);
+            return ErrorSimple("source files must be in the same directory");
+        } else {
+            free(fileDir);
+        }
+    }
+    qsort(canonicalPaths, (size_t)fileLen, sizeof(char*), CompareStringPtrs);
+
+    if (AddPackageSlot(loader, dirPath, &pkg) != 0) {
+        FreeStringList(canonicalPaths, fileLen);
+        free(dirPath);
+        return ErrorSimple("out of memory");
+    }
+    free(dirPath);
+    pkg->loadState = 1;
+
+    for (i = 0; i < fileLen; i++) {
+        char*    source = NULL;
+        uint32_t sourceLen = 0;
+        H2Ast    ast;
+        void*    arenaMem = NULL;
+        if (ReadFile(canonicalPaths[i], &source, &sourceLen) != 0) {
+            FreeStringList(canonicalPaths, fileLen);
+            return -1;
+        }
+        if (ParseSourceEx(canonicalPaths[i], source, sourceLen, &ast, &arenaMem, NULL, 1) != 0) {
+            free(source);
+            FreeStringList(canonicalPaths, fileLen);
+            return -1;
+        }
+        if (AddPackageFile(pkg, canonicalPaths[i], source, sourceLen, ast, arenaMem) != 0) {
+            free(source);
+            free(arenaMem);
+            FreeStringList(canonicalPaths, fileLen);
+            return ErrorSimple("out of memory");
+        }
+    }
+    FreeStringList(canonicalPaths, fileLen);
+
+    for (i = 0; i < pkg->fileLen; i++) {
+        if (ProcessParsedFile(pkg, i) != 0) {
+            return -1;
+        }
+    }
+    if (ValidatePackageForeignDirectives(pkg, loader->platformTarget) != 0) {
+        return -1;
+    }
+    if (ValidatePubFnDefinitions(pkg) != 0) {
+        return -1;
+    }
+    if (ResolvePackageImportsAndSelectors(loader, pkg) != 0) {
+        return -1;
+    }
+    *outPkg = pkg;
+    return 0;
+}
+
 static const char* _Nullable FindIdentReplacement(
     const H2IdentMap* _Nullable maps,
     uint32_t    mapLen,
@@ -5696,6 +5791,89 @@ int LoadAndCheckPackage(
     }
 
     free(canonical);
+    *outLoader = loader;
+    *outEntryPkg = entryPkg;
+    return 0;
+}
+
+int LoadAndCheckPackageInput(
+    const H2PackageInput* input,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int              testingBuild,
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg) {
+    char*           canonical = NULL;
+    char*           pkgDir = NULL;
+    char*           rootDir = NULL;
+    H2PackageLoader loader;
+    H2Package*      entryPkg = NULL;
+    uint32_t        i;
+
+    if (input == NULL || input->paths == NULL || input->pathLen == 0) {
+        return ErrorSimple("internal error: missing package input");
+    }
+    if (input->pathLen == 1) {
+        return LoadAndCheckPackage(
+            input->paths[0], platformTarget, archTarget, testingBuild, outLoader, outEntryPkg);
+    }
+
+    memset(outLoader, 0, sizeof(*outLoader));
+    *outEntryPkg = NULL;
+    canonical = CanonicalizePath(input->paths[0]);
+    if (canonical == NULL) {
+        return ErrorSimple("failed to resolve source file %s", input->paths[0]);
+    }
+    pkgDir = DirNameDup(canonical);
+    free(canonical);
+    if (pkgDir == NULL) {
+        return ErrorSimple("out of memory");
+    }
+    rootDir = DirNameDup(pkgDir);
+    if (rootDir == NULL) {
+        free(pkgDir);
+        return ErrorSimple("out of memory");
+    }
+
+    memset(&loader, 0, sizeof(loader));
+    loader.rootDir = rootDir;
+    loader.platformTarget = H2CDupCStr(
+        (platformTarget != NULL && platformTarget[0] != '\0')
+            ? platformTarget
+            : H2_DEFAULT_PLATFORM_TARGET);
+    loader.archTarget = H2CDupCStr(
+        (archTarget != NULL && archTarget[0] != '\0') ? archTarget : H2_DEFAULT_ARCH_TARGET);
+    loader.testingBuild = testingBuild;
+    if (loader.platformTarget == NULL || loader.archTarget == NULL) {
+        free(pkgDir);
+        FreeLoader(&loader);
+        return ErrorSimple("out of memory");
+    }
+
+    if (LoadExplicitFilePackage(&loader, input->paths, input->pathLen, &entryPkg) != 0) {
+        free(pkgDir);
+        FreeLoader(&loader);
+        return -1;
+    }
+    free(pkgDir);
+    if (entryPkg == NULL || entryPkg->dirPath == NULL) {
+        FreeLoader(&loader);
+        return ErrorSimple("internal error: failed to load entry package");
+    }
+
+    if (LoadSelectedPlatformTargetPackage(&loader, entryPkg->dirPath, NULL) != 0) {
+        FreeLoader(&loader);
+        return -1;
+    }
+
+    for (i = 0; i < loader.packageLen; i++) {
+        int suppressUnusedWarnings = (&loader.packages[i] != entryPkg);
+        if (CheckLoadedPackage(&loader, &loader.packages[i], suppressUnusedWarnings) != 0) {
+            FreeLoader(&loader);
+            return -1;
+        }
+    }
+
     *outLoader = loader;
     *outEntryPkg = entryPkg;
     return 0;

@@ -554,25 +554,47 @@ def sanitize_name(name: str) -> str:
 
 def hop_args(ctx: RunContext, mode: str, input_path: str) -> List[str]:
     if mode in ("", "_"):
-        return [str(ctx.hop), "lex", input_path]
+        return [str(ctx.hop), "build", "--output-format", "tokens", "-o-", input_path]
+    if mode in ("ast", "mir"):
+        return [str(ctx.hop), "build", "--output-format", mode, "-o-", input_path]
     return [str(ctx.hop), mode, input_path]
 
 
 def mode_uses_platform_flag(mode: str) -> bool:
-    return mode in ("run", "compile", "check", "mir") or mode.startswith("genpkg")
+    return mode in ("run", "build", "check")
 
 
 def hop_case_args(ctx: RunContext, case: Dict[str, Any]) -> List[str]:
     args = [str(ctx.hop)]
     mode = str(case.get("mode", ""))
+    default_platform: Optional[str] = None
     if mode in ("", "_"):
-        mode = "lex"
-    if mode:
+        args.extend(["build", "--output-format", "tokens", "-o-"])
+        mode = "build"
+    elif mode in ("ast", "mir"):
+        args.extend(["build", "--output-format", mode, "-o-"])
+        mode = "build"
+    elif mode == "compile":
+        args.append("build")
+        mode = "build"
+    elif mode == "genpkg:wasm":
+        args.extend(["build", "--output-format", "executable"])
+        default_platform = "wasm-min"
+        mode = "build"
+    elif mode == "genpkg" and case.get("platform") in ("wasm-min", "playbit"):
+        args.extend(["build", "--output-format", "executable"])
+        mode = "build"
+    elif mode == "genpkg" or mode == "genpkg:c":
+        args.extend(["build", "--output-format", "c"])
+        mode = "build"
+    else:
         args.append(mode)
     if bool(case.get("no_import", False)):
         args.append("--no-import")
     if case.get("platform") is not None and mode_uses_platform_flag(mode):
         args.extend(["--platform", str(case["platform"])])
+    elif default_platform is not None and mode_uses_platform_flag(mode):
+        args.extend(["--platform", default_platform])
     if case.get("arch") is not None and mode_uses_platform_flag(mode):
         args.extend(["--arch", str(case["arch"])])
     if bool(case.get("testing", False)) and mode_uses_platform_flag(mode):
@@ -616,10 +638,10 @@ def maybe_check_codegen_sidecar(ctx: RunContext, case: Dict[str, Any]) -> tuple[
     if not expected_path.exists():
         return ok()
 
-    cp = run_cmd([str(ctx.hop), "genpkg:c", input_path])
+    cp = run_cmd([str(ctx.hop), "build", "--output-format", "c", input_path])
     if cp.returncode != 0:
         return fail(
-            "sidecar codegen check failed to run genpkg:c:\n"
+            "sidecar codegen check failed to run build --output-format=c:\n"
             f"stderr:\n{cp.stderr}"
         )
 
@@ -814,14 +836,17 @@ def kind_hop_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
 def compile_case_args(
     ctx: RunContext, case: Dict[str, Any], input_path: str, output_path: Path
 ) -> List[str]:
-    args = [str(ctx.hop), "compile"]
+    args = [str(ctx.hop), "build"]
     if case.get("platform") is not None:
         args.extend(["--platform", str(case["platform"])])
     if case.get("arch") is not None:
         args.extend(["--arch", str(case["arch"])])
     if bool(case.get("testing", False)):
         args.append("--testing")
-    args.extend([input_path, "-o", str(output_path)])
+    args.append(input_path)
+    for extra_input in case.get("extra_build_inputs", []):
+        args.append(str(extra_input))
+    args.extend(["-o", str(output_path)])
     return args
 
 
@@ -1046,7 +1071,15 @@ def kind_hop_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
 
 
 def genpkg_case_args(ctx: RunContext, case: Dict[str, Any], mode: str) -> List[str]:
-    args = [str(ctx.hop), mode]
+    platform = case.get("platform")
+    if mode == "genpkg:wasm":
+        args = [str(ctx.hop), "build", "--output-format", "executable"]
+        if platform is None:
+            args.extend(["--platform", "wasm-min"])
+    elif mode == "genpkg" and platform in ("wasm-min", "playbit"):
+        args = [str(ctx.hop), "build", "--output-format", "executable"]
+    else:
+        args = [str(ctx.hop), "build", "--output-format", "c"]
     if case.get("platform") is not None:
         args.extend(["--platform", str(case["platform"])])
     if case.get("arch") is not None:
@@ -1061,6 +1094,43 @@ def run_genpkg_mode(ctx: RunContext, case: Dict[str, Any], mode: str) -> subproc
     return run_cmd(genpkg_case_args(ctx, case, mode))
 
 
+def prepare_hop_cli_work_dir(case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
+    setup_dirs = case.get("setup_dirs", [])
+    if not isinstance(setup_dirs, list):
+        return fail("setup_dirs must be a list")
+    for item in setup_dirs:
+        rel = Path(str(item))
+        if rel.is_absolute() or ".." in rel.parts:
+            return fail(f"invalid setup_dirs path: {item!r}")
+        (work_dir / rel).mkdir(parents=True, exist_ok=True)
+
+    setup_files = case.get("setup_files", [])
+    if not isinstance(setup_files, list):
+        return fail("setup_files must be a list")
+    for item in setup_files:
+        if not isinstance(item, dict):
+            return fail("setup_files entries must be objects")
+        path = item.get("path")
+        content = item.get("content")
+        if not isinstance(path, str) or not isinstance(content, str):
+            return fail("setup_files entries must have string path and content")
+        rel = Path(path)
+        if rel.is_absolute() or ".." in rel.parts:
+            return fail(f"invalid setup_files path: {path!r}")
+        out_path = work_dir / rel
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content)
+
+    return ok()
+
+
+def hop_cli_case_path(work_dir: Path, path: str) -> Path:
+    expanded = Path(expand_expected_placeholders(path))
+    if expanded.is_absolute():
+        return expanded
+    return work_dir / expanded
+
+
 def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple[bool, str]:
     args_field = case.get("args")
     if not isinstance(args_field, list):
@@ -1071,6 +1141,10 @@ def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
     if isinstance(argv0_basename, str) and argv0_basename:
         argv0 = work_dir / argv0_basename
         os.symlink(ctx.hop, argv0)
+
+    setup_ok, setup_detail = prepare_hop_cli_work_dir(case, work_dir)
+    if not setup_ok:
+        return fail(setup_detail)
 
     try:
         env = case_env(case)
@@ -1119,6 +1193,38 @@ def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
                 )
             )
             return fail(f"stderr mismatch:\n{diff}")
+
+    expect_files = case.get("expect_files", [])
+    if not isinstance(expect_files, list):
+        return fail("expect_files must be a list")
+    for item in expect_files:
+        path = hop_cli_case_path(work_dir, str(item))
+        if not path.is_file():
+            return fail(f"expected file was not created: {path}")
+
+    expect_no_files = case.get("expect_no_files", [])
+    if not isinstance(expect_no_files, list):
+        return fail("expect_no_files must be a list")
+    for item in expect_no_files:
+        path = hop_cli_case_path(work_dir, str(item))
+        if path.exists():
+            return fail(f"unexpected file exists: {path}")
+
+    expect_file_contains = case.get("expect_file_contains", [])
+    if not isinstance(expect_file_contains, list):
+        return fail("expect_file_contains must be a list")
+    for item in expect_file_contains:
+        if not isinstance(item, dict):
+            return fail("expect_file_contains entries must be objects")
+        path_field = item.get("path")
+        text_field = item.get("text")
+        if not isinstance(path_field, str) or not isinstance(text_field, str):
+            return fail("expect_file_contains entries must have string path and text")
+        path = hop_cli_case_path(work_dir, path_field)
+        if not path.is_file():
+            return fail(f"expected file was not created: {path}")
+        if text_field not in path.read_text():
+            return fail(f"file {path} missing expected text {text_field!r}")
     return ok()
 
 
@@ -1342,7 +1448,7 @@ def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path
     output_path = work_dir / "out.wasm"
     mode = str(case.get("mode", "genpkg:wasm"))
     args = genpkg_case_args(ctx, case, mode)
-    args.append(str(output_path))
+    args.extend(["-o", str(output_path)])
     cp = run_cmd(args)
     stderr = strip_warning_diagnostics(cp.stderr)
     if cp.returncode != 0:
@@ -1576,6 +1682,8 @@ def expand_execution_cases(fixtures: List[TestCase]) -> List[ExecutionCase]:
 def mode_uses_c_backend(mode: Any, platform: Any) -> bool:
     if not isinstance(mode, str):
         return False
+    if mode == "build":
+        return platform not in ("wasm-min", "playbit")
     if mode == "genpkg":
         return platform not in ("wasm-min", "playbit")
     return mode == "genpkg:c"

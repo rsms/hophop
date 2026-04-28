@@ -9205,8 +9205,9 @@ int BuildPackageMirProgram(
     return H2MirValidateProgram(outProgram, diag);
 }
 
-int DumpMIR(
-    const char* entryPath,
+int DumpMIRInput(
+    const H2PackageInput* input,
+    void*                 out,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild) {
@@ -9223,7 +9224,8 @@ int DumpMIR(
     H2ArenaInit(&arena, arenaStorage, sizeof(arenaStorage));
     H2ArenaSetAllocator(&arena, NULL, CodegenArenaGrow, CodegenArenaFree);
 
-    if (LoadAndCheckPackage(entryPath, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
+    if (LoadAndCheckPackageInput(
+            input, platformTarget, archTarget, testingBuild, &loader, &entryPkg)
         != 0)
     {
         H2ArenaDispose(&arena);
@@ -9252,8 +9254,8 @@ int DumpMIR(
         fallbackSrc.len = entryPkg->files[0].sourceLen;
     }
 
-    writer.ctx = NULL;
-    writer.write = StdoutWrite;
+    writer.ctx = out;
+    writer.write = FileWrite;
     if (H2MirDumpProgram(&program, fallbackSrc, &writer, &diag) != 0) {
         FreeLoader(&loader);
         H2ArenaDispose(&arena);
@@ -9263,6 +9265,17 @@ int DumpMIR(
     FreeLoader(&loader);
     H2ArenaDispose(&arena);
     return 0;
+}
+
+int DumpMIR(
+    const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild) {
+    H2PackageInput input = { 0 };
+    input.paths = &entryPath;
+    input.pathLen = 1;
+    return DumpMIRInput(&input, stdout, platformTarget, archTarget, testingBuild);
 }
 
 H2_API_END

@@ -1,1 +1,1 @@
-error: native C compilation does not support @wasm_import; use `hop genpkg:c` or a Wasm toolchain
+error: native C compilation does not support @wasm_import; use `hop build --output-format c` or a Wasm toolchain

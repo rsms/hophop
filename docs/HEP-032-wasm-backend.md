@@ -128,13 +128,12 @@ must fail with a dedicated diagnostic.
 The backend is exposed as:
 
 ```sh
-hop genpkg:wasm <dir|file.hop> [out.wasm]
+hop build --platform wasm-min <dir|file.hop> -o out.wasm
 ```
 
 Notes:
 
-- `compile` and `run` stay out of scope until a concrete Wasm execution target exists.
-- `genpkg:wasm` emits a Wasm binary module.
+- `build --platform wasm-min` emits a Wasm binary module.
 - A debug-only text form such as WAT may be added later, but is not required by this HEP.
 
 Because the current codegen interface is C-oriented (`emit` returns one text buffer),
@@ -153,8 +152,8 @@ Recommended structure:
 - a small handwritten Wasm binary writer
 - a Wasm-specific lowering pass from `HOPMirProgram`
 - a later optional lower CFG/SSA IR for optimization before final Wasm emission
-- use the existing `hop mir <package-dir|file.hop>` text dump as the primary development/debugging
-  surface for backend-facing MIR
+- use `hop build --output-format mir <package-dir|file.hop>` as the primary
+  development/debugging surface for backend-facing MIR
 
 Rationale:
 
@@ -171,7 +170,7 @@ implementation remain compatible with the freestanding `libhop` constraints.
 The repository now has a MIR inspection command:
 
 ```sh
-hop mir <package-dir|file.hop>
+hop build --output-format mir <package-dir|file.hop>
 ```
 
 This prints the current backend-facing `HOPMirProgram` in a deterministic text format.
@@ -188,8 +187,9 @@ What it is useful for:
 
 Development guidance:
 
-- when adding or debugging Wasm lowering, first inspect `hop mir` output for the same fixture
-- when adding new MIR rewrites for Wasm readiness, prefer adding or updating `hop mir` golden tests
+- when adding or debugging Wasm lowering, first inspect `build --output-format mir` output for the
+  same fixture
+- when adding new MIR rewrites for Wasm readiness, prefer adding or updating MIR golden tests
 - use Wasm-level golden tests only after the MIR shape is already understood and stable enough
 
 ## Wasm target model
@@ -265,8 +265,8 @@ Expected unsupported areas at first:
 
 Unsupported MIR must fail fast with a clear Wasm-backend diagnostic.
 
-`hop mir` is the intended way to inspect whether those requirements are actually met for a given
-fixture or package during backend bring-up.
+`hop build --output-format mir` is the intended way to inspect whether those requirements are
+actually met for a given fixture or package during backend bring-up.
 
 ## Lower IR and optimization
 
@@ -413,7 +413,8 @@ Examples of acceptable optional use:
 - validate emitted modules with external tools in developer workflows
 - compare emitted WAT or binary structure during bring-up
 - experiment with post-pass optimization outside the core compiler
-- compare emitted Wasm against `hop mir` output while debugging lowering mismatches
+- compare emitted Wasm against `hop build --output-format mir` output while debugging lowering
+  mismatches
 
 Examples of non-goals for v1:
 
@@ -427,13 +428,14 @@ Examples of non-goals for v1:
 
 - extend `HOPCodegenBackend` output handling so a backend can emit binary bytes, not only C text
 - register backend name `wasm`
-- add CLI support for `genpkg:wasm`
+- add CLI support for Wasm output through `hop build`
 
 ### Phase 2: MIR package formation for Wasm
 
 - add or extend package-level MIR lowering so codegen gets one validated `HOPMirProgram`
 - ensure Wasm-targeted lowering can reject unresolved dynamic operations before emission
-- keep `hop mir` output useful and stable enough to debug that package-level MIR formation
+- keep `build --output-format mir` output useful and stable enough to debug that package-level MIR
+  formation
 
 ### Phase 3: Wasm emitter
 
@@ -473,12 +475,12 @@ Examples of non-goals for v1:
 Add tests in layers:
 
 1. Backend formation:
-   - `genpkg:wasm` succeeds for simple pure functions and `main`
+   - `hop build --platform wasm-min` succeeds for simple pure functions and `main`
    - unresolved dynamic MIR fails with the expected diagnostic
-   - corresponding `hop mir` output clearly shows the unresolved operations that block Wasm codegen
+   - corresponding MIR output clearly shows the unresolved operations that block Wasm codegen
 2. Structural output:
    - emitted module contains expected sections, exports, and deterministic data layout
-   - `hop mir` goldens exist for representative backend-facing MIR programs used by Wasm tests
+   - MIR goldens exist for representative backend-facing MIR programs used by Wasm tests
 3. Execution smoke tests:
    - optional `wasm-min` runner can execute tiny programs and observe exit status or exported results
 4. Quality regression tests:

@@ -1,0 +1,3 @@
+fn main() {
+	assert (add(20, b: 22) == 42)
+}

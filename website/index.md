@@ -38,10 +38,10 @@ Hello, world!
 こんにちは世界！
 ```
 
-Compile a wasm-compatible package to wasm:
+Build a wasm-compatible package to wasm:
 
 ```sh
-$ hop genpkg:wasm --platform wasm-min app.hop app.wasm
+$ hop build --platform wasm-min app.hop -o app.wasm
 ```
 
 ## Language guide

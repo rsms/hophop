@@ -1,0 +1,18 @@
+Build a program
+Usage: hop build [-o output] [options] [<package>]
+       hop build [-o output] [options] <source-file> ...
+Options:
+    -o, --output <file>        Write output here (`-` for stdout)
+    --platform <platform>      Target platform
+    --arch <name>              Target architecture
+    --output-format <format>   Output format (one of: executable, c, mir, tokens, ast)
+    --cache-dir <dir>          Use this cache directory instead of the default
+    --diag-format <fmt>        Diagnostics output format (one of: text, jsonl)
+    -h, --help                 Show help and exit
+<package>
+    If no package or <source-file> is specified, the current directory is
+    assumed to contain the package to build.
+<platform>
+    One of: cli-libc (default), cli-eval, wasm-min, playbit
+<format>
+    executable builds a usable program and is the default.

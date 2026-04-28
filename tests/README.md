@@ -16,7 +16,7 @@ Required fields for every entry:
 Common optional fields:
 
 - `input` (string): `.hop` file or package path
-- `mode` (string): `hop` mode (`_`, `ast`, `check`, `genpkg`, `genpkg:c`)
+- `mode` (string): `hop` mode (`_`, `ast`, `check`, `build`)
 - `no_import` (bool, default `false`): for `mode:"check"`, run `hop check --no-import`
 - `platform` (string): pass `--platform` for package commands
 - `arch` (string): pass `--arch` for package commands
@@ -43,9 +43,9 @@ Common optional fields:
 - `compile_cache_reuse`
 - `compile_and_run`
 - `hop_run`
-- `genpkg_text_check`
-- `genpkg_compile`
-- `genpkg_wasm_check`
+- `genpkg_text_check` (legacy test kind; runs `hop build --output-format c`)
+- `genpkg_compile` (legacy test kind; runs `hop build --output-format c`)
+- `genpkg_wasm_check` (legacy test kind; runs `hop build --platform ... -o out.wasm`)
 - `libhop_freestanding`
 - `builtin_h_freestanding`
 - `arena_grow_test`
@@ -142,14 +142,15 @@ For any manifest entry with `input` ending in `.hop`, the runner automatically c
 
 Example: `tests/foo.hop` + `tests/foo.expected.c`
 
-When present, the runner executes `hop genpkg:c` and diffs actual output against
+When present, the runner executes `hop build --output-format c` and diffs actual output against
 `foo.expected.c`.
 
 Use `tools/test.py run --update` to rewrite `.expected.c` files from current output.
 
 ### `genpkg_wasm_check`
 
-Runs `hop genpkg:wasm <input> <temp-output>` and validates the emitted Wasm file structurally.
+Runs `hop build --output-format executable --platform <wasm-platform> <input> -o <temp-output>`
+and validates the emitted Wasm file structurally.
 
 Optional:
 

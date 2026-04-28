@@ -1,1 +1,0 @@
-error: platform target wasm-min is run-only; use `hop run --platform wasm-min`

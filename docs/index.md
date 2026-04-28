@@ -20,10 +20,14 @@ Common CLI flow:
 
 ```sh
 _build/macos-aarch64-debug/hop check <dir|file.hop>
-_build/macos-aarch64-debug/hop genpkg:c <dir|file.hop> [out.h]
-_build/macos-aarch64-debug/hop compile [--cache-dir <dir>] <dir|file.hop> [-o <exe>]
+_build/macos-aarch64-debug/hop build --output-format c <dir|file.hop> [-o out.c|-]
+_build/macos-aarch64-debug/hop build --output-format mir <dir|file.hop> [-o out.mir|-]
+_build/macos-aarch64-debug/hop build [--cache-dir <dir>] <dir|file.hop> [-o <exe>|-]
 _build/macos-aarch64-debug/hop run [--cache-dir <dir>] <dir|file.hop>
 ```
+
+For single source-file builds, the default executable/debug-text output path is derived from the
+source filename. C output defaults to stdout.
 
 `hop run` defaults to `--platform cli-eval`. Other platform-aware commands still default to
 `cli-libc` when `--platform` is omitted.

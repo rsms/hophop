@@ -180,7 +180,7 @@ Returns `0`.
 
 ## Generated C header integration
 
-The preamble emitted by `genpkg:c` / `compile` includes the opcode enum and a weak
+The preamble emitted by `hop build --output-format c` / `hop build` includes the opcode enum and a weak
 `extern` declaration of `hop_platform_call`. This means any translation unit that includes
 the generated header can call platform operations; the linker resolves the definition from
 whichever platform `.c` is compiled alongside.
@@ -290,7 +290,7 @@ The `gpa` package is implemented as a thin HopHop wrapper that calls `platform.a
 
 ## `hop` CLI changes
 
-`hop compile` and `hop run` now:
+`hop build` and `hop run` now:
 
 1. Generate the HopHop package as a C header (unchanged).
 2. Write a C wrapper that defines `hop_main()` calling the package entry point (was `main()`).

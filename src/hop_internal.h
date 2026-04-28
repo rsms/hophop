@@ -146,6 +146,11 @@ typedef struct {
 } H2ForeignLinkageBuilder;
 
 typedef struct {
+    const char* const* _Nullable paths;
+    uint32_t pathLen;
+} H2PackageInput;
+
+typedef struct {
     const H2Package* pkg;
     uint32_t         pkgIndex;
     char*            key;
@@ -294,9 +299,10 @@ int  ReadFile(const char* filename, char** outData, uint32_t* outLen);
 int  ListTopLevelHOPFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* outLen);
 int  WriteFileAtomic(const char* filename, const char* data, uint32_t len);
 int  RunFmtCommand(int argc, const char* const* argv);
-int  DumpTokens(const char* filename, const char* source, uint32_t sourceLen);
-int  DumpAST(const char* filename, const char* source, uint32_t sourceLen);
+int  DumpTokens(void* out, const char* filename, const char* source, uint32_t sourceLen);
+int  DumpAST(void* out, const char* filename, const char* source, uint32_t sourceLen);
 void StdoutWrite(void* ctx, const char* data, uint32_t len);
+void FileWrite(void* ctx, const char* data, uint32_t len);
 int  IsFnReturnTypeNodeKind(H2AstKind kind);
 
 const H2ImportRef* _Nullable FindImportByAliasSlice(
@@ -310,6 +316,13 @@ int  LoadPackageForFmt(
     H2Package**      outEntryPkg);
 int LoadAndCheckPackage(
     const char* entryPath,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int              testingBuild,
+    H2PackageLoader* outLoader,
+    H2Package**      outEntryPkg);
+int LoadAndCheckPackageInput(
+    const H2PackageInput* input,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int              testingBuild,
@@ -363,6 +376,12 @@ int DumpMIR(
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild);
+int DumpMIRInput(
+    const H2PackageInput* input,
+    void*                 out,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild);
 
 int GeneratePackage(
     const char* entryPath,
@@ -372,9 +391,24 @@ int GeneratePackage(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg);
+int GeneratePackageInput(
+    const H2PackageInput* input,
+    const char*           backendName,
+    const char* _Nullable outFilename,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
+    const char* _Nullable cacheDirArg);
 int CompileProgram(
     const char* entryPath,
     const char* outExe,
+    const char* _Nullable platformTarget,
+    const char* _Nullable archTarget,
+    int testingBuild,
+    const char* _Nullable cacheDirArg);
+int CompileProgramInput(
+    const H2PackageInput* input,
+    const char*           outExe,
     const char* _Nullable platformTarget,
     const char* _Nullable archTarget,
     int testingBuild,

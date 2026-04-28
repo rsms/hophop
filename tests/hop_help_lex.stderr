@@ -1,2 +1,0 @@
-usage:
-    hop lex [--diag-format <text|jsonl>] <srcfile>
