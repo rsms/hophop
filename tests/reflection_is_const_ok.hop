@@ -1,5 +1,5 @@
 // Verifies reflection can distinguish const-evaluable arguments.
-import "reflect"
+import "builtin"
 
 fn expect_const(x anytype) {
 	const {
@@ -13,22 +13,11 @@ fn expect_non_const(x anytype) {
 	}
 }
 
-fn expect_pkg_const(x anytype) {
-	const {
-		assert reflect.is_const(x)
-	}
-}
-
-fn expect_pkg_non_const(x anytype) {
-	const {
-		assert !reflect.is_const(x)
-	}
-}
-
 fn main() {
 	var s &str = "hello"
 	expect_const("hello")
 	expect_non_const(s)
-	expect_pkg_const("world")
-	expect_pkg_non_const(s)
+
+	var k builtin.TypeKind = kind(ptr(i32))
+	assert k as u8 == 6
 }

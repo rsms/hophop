@@ -1,1 +1,2 @@
-tests/reflect_span_removed_bad.hop:4:13: error: HOP0000: unknown imported symbol
+error: failed to resolve package path {{ROOT}}/reflect
+tests/reflect_span_removed_bad.hop:2:1: error: HOP0000: failed to resolve import reflect

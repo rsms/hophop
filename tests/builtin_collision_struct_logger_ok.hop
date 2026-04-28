@@ -1,0 +1,17 @@
+// Verifies a package type shadows an unqualified builtin type name.
+import "builtin"
+
+struct Logger {
+	value int
+}
+
+fn use_local(l Logger) int {
+	return l.value
+}
+
+fn main() {
+	local := Logger{ value: 7 }
+	var builtin_logger *builtin.Logger = (null as rawptr) as *builtin.Logger
+	assert use_local(local) == 7
+	_ = builtin_logger
+}

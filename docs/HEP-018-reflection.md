@@ -10,24 +10,23 @@ Current status in `Reference-hop` (phase 1 building blocks):
 - type names are valid value expressions of type `type`
 - `typeof(expr)` exists and returns a `type` value
 - `type` values support `==` / `!=`
-- builtin `kind(t)` / `t.kind()` exists (returns `reflect.Kind`, fallback `u8` if unavailable)
+- builtin `kind(t)` / `t.kind()` exists (returns builtin `TypeKind`, fallback `u8` if builtin packages are unavailable)
 - builtin `base(t)` / `t.base()` exists for alias type values
 - builtin `is_alias(t)` / `t.is_alias()` exists (returns `bool`)
-- builtin `is_const(x)` / `reflect.is_const(x)` exists for call-site constness checks
+- builtin `is_const(x)` exists for call-site constness checks
 - builtin `type_name(t)` / `t.type_name()` exists (returns `&str`)
 - `typeof(TypeName)` currently evaluates to `type` (metatype of type-values)
-- `reflect.Kind` enum package surface exists; `fields()` is not implemented yet
+- `TypeKind` enum builtin surface exists; `fields()` is not implemented yet
 
 It introduces:
 
-- `import "reflect"`
 - a built-in `typeof(...)` form
 - type reflection operations such as `.kind()`, `.base()`, `.fields()`
 
 Example sketch:
 
 ```hop
-import "reflect"
+import "builtin"
 
 type MyInt int
 struct Foo { x, y int }
@@ -38,10 +37,10 @@ fn main() {
     assert typeof(i32) == __hop_primtype
     assert typeof(MyInt) == int
 
-    assert i32.kind() == reflect.Kind.Primitive
-    assert MyInt.kind() == reflect.Kind.Alias
+    assert i32.kind() == builtin.TypeKind.Primitive
+    assert MyInt.kind() == builtin.TypeKind.Alias
     assert MyInt.base() == int
-    assert Foo.kind() == reflect.Kind.Struct
+    assert Foo.kind() == builtin.TypeKind.Struct
     assert Foo.fields().len() == 2
 }
 ```
@@ -79,14 +78,14 @@ introducing runtime-only host probing.
 
 ## Proposed model
 
-### 1. Reflection package
+### 1. Reflection builtins
 
-`reflect` provides reflection primitives and metadata types.
+The builtin surface provides reflection primitives and metadata types.
 
 Draft API:
 
 ```hop
-pub enum Kind u8 {
+pub enum TypeKind u8 {
     Invalid
     Primitive
     Alias
@@ -122,11 +121,11 @@ Draft forms:
 
 Operations on type values:
 
-- `T.kind() -> reflect.Kind`
+- `T.kind() -> TypeKind`
 - `T.base() -> __hop_primtype` (valid for alias types; otherwise compile-time error)
 - `T.type_name() -> &str`
-- `T.fields() -> [reflect.Field]` (valid for `struct`/`union`; otherwise compile-time error)
-- `is_const(x) -> bool` and `reflect.is_const(x) -> bool`
+- `T.fields() -> [Field]` (valid for `struct`/`union`; otherwise compile-time error)
+- `is_const(x) -> bool`
 - `ptr(T) -> __hop_primtype`
 - `slice(T) -> __hop_primtype`
 - `array(T, N) -> __hop_primtype`
@@ -157,11 +156,11 @@ HEP-17 makes `main` context target-specific (`platform/<target>.Context`).
 Reflection provides a way to inspect context shape:
 
 ```hop
-import "reflect"
+import "builtin"
 
 fn main() {
     const k = typeof(context).kind()
-    assert k == reflect.Kind.Struct
+    assert k == builtin.TypeKind.Struct
 }
 ```
 
@@ -183,7 +182,7 @@ This does not add conditional imports; package selection remains a build-time co
 1. Add internal metatype representation (`__hop_primtype`) in typechecker.
 2. Parse/typecheck `typeof(...)` as a built-in expression form.
 3. Add compile-time evaluation path for kind/base/fields.
-4. Add `reflect` package surface.
+4. Add reflection builtin surface.
 5. Add tests for:
    - primitive/alias/struct kind detection
    - alias base extraction

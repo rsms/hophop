@@ -784,11 +784,11 @@ static int H2MirStmtLowerNameIsCompilerDiagBuiltin(
 static int H2MirStmtLowerNameIsLazyTypeBuiltin(
     const H2MirStmtLower* c, uint32_t start, uint32_t end) {
     return H2MirStmtLowerNameEqLiteral(c, start, end, "typeof")
-        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "kind", "reflect")
-        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "base", "reflect")
-        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_alias", "reflect")
-        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "is_const", "reflect")
-        || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(c, start, end, "type_name", "reflect")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "kind")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "base")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "is_alias")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "is_const")
+        || H2MirStmtLowerNameEqLiteral(c, start, end, "type_name")
         || H2MirStmtLowerNameEqLiteral(c, start, end, "ptr")
         || H2MirStmtLowerNameEqLiteral(c, start, end, "slice")
         || H2MirStmtLowerNameEqLiteral(c, start, end, "array");
@@ -826,21 +826,6 @@ static int H2MirStmtLowerCallUsesLazyBuiltin(const H2MirStmtLower* c, int32_t ca
     if (H2MirStmtLowerNameEqLiteral(
             c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "builtin")
         && H2MirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "source_location_of"))
-    {
-        return 1;
-    }
-    if (H2MirStmtLowerNameEqLiteral(
-            c, c->ast->nodes[recvNode].dataStart, c->ast->nodes[recvNode].dataEnd, "reflect")
-        && (H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
-                c, callee->dataStart, callee->dataEnd, "kind", "reflect")
-            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
-                c, callee->dataStart, callee->dataEnd, "base", "reflect")
-            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
-                c, callee->dataStart, callee->dataEnd, "is_alias", "reflect")
-            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
-                c, callee->dataStart, callee->dataEnd, "is_const", "reflect")
-            || H2MirStmtLowerNameEqLiteralOrPkgBuiltin(
-                c, callee->dataStart, callee->dataEnd, "type_name", "reflect")))
     {
         return 1;
     }

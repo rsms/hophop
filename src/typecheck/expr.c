@@ -1958,7 +1958,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
                 }
                 nextArgNode = H2AstNextSibling(c->ast, argNode);
                 if (nextArgNode < 0 && argType == c->typeType) {
-                    kindType = H2TCFindReflectKindType(c);
+                    kindType = H2TCFindTypeKindType(c);
                     if (kindType >= 0) {
                         *outType = kindType;
                         return 0;
@@ -2467,12 +2467,43 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = c->typeVoid;
             return 0;
         }
-        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")) {
-            int32_t msgArgNode = H2AstNextSibling(c->ast, calleeNode);
-            int32_t msgArgType;
-            int32_t nextArgNode;
-            int32_t logType;
-            int32_t wantStrType;
+        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")
+            && H2TCFindFunctionIndex(c, callee->dataStart, callee->dataEnd) < 0)
+        {
+            H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
+            uint32_t        argCount = 0;
+            int32_t         resolvedFn = -1;
+            int32_t         mutRefTempArgNode = -1;
+            int             status;
+            int32_t         msgArgNode = H2AstNextSibling(c->ast, calleeNode);
+            int32_t         msgArgType;
+            int32_t         nextArgNode;
+            int32_t         logType;
+            int32_t         wantStrType;
+            if (H2TCCollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, NULL, &argCount)
+                != 0)
+            {
+                return -1;
+            }
+            status = H2TCResolveCallByName(
+                c,
+                callee->dataStart,
+                callee->dataEnd,
+                callArgs,
+                argCount,
+                0,
+                0,
+                &resolvedFn,
+                &mutRefTempArgNode);
+            if (status < 0) {
+                return -1;
+            }
+            if (status == 0 && resolvedFn >= 0 && (uint32_t)resolvedFn < c->funcLen
+                && H2TCFunctionNameEq(c, (uint32_t)resolvedFn, callee->dataStart, callee->dataEnd))
+            {
+                *outType = c->funcs[(uint32_t)resolvedFn].returnType;
+                return 0;
+            }
             if (msgArgNode < 0) {
                 return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
             }
@@ -2581,24 +2612,6 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
                     return H2TCTypeCompilerDiagCall(c, nodeId, callee, diagOp, outType);
                 }
             }
-            if (H2NameEqLiteral(c->src, recv->dataStart, recv->dataEnd, "reflect")
-                && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "is_const"))
-            {
-                int32_t argNode = H2AstNextSibling(c->ast, calleeNode);
-                int32_t nextArgNode = argNode >= 0 ? H2AstNextSibling(c->ast, argNode) : -1;
-                int32_t ignoredType;
-                if (argNode < 0 || nextArgNode >= 0) {
-                    return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
-                }
-                if (H2TCTypeExpr(c, argNode, &ignoredType) != 0) {
-                    return -1;
-                }
-                if (c->typeBool < 0) {
-                    return H2TCFailNode(c, nodeId, H2Diag_UNKNOWN_TYPE);
-                }
-                *outType = c->typeBool;
-                return 0;
-            }
         }
         if (recvNode < 0) {
             return H2TCFailNode(c, nodeId, H2Diag_NOT_CALLABLE);
@@ -2611,7 +2624,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             int32_t kindType;
             int32_t u8Type;
             if (nextArgNode < 0 && recvType == c->typeType) {
-                kindType = H2TCFindReflectKindType(c);
+                kindType = H2TCFindTypeKindType(c);
                 if (kindType >= 0) {
                     *outType = kindType;
                     return 0;
@@ -2755,10 +2768,42 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = c->typeVoid;
             return 0;
         }
-        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")) {
-            int32_t nextArgNode = H2AstNextSibling(c->ast, calleeNode);
-            int32_t logType;
-            int32_t wantStrType = H2TCGetStrRefType(c, callee->start, callee->end);
+        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")
+            && H2TCFindFunctionIndex(c, callee->dataStart, callee->dataEnd) < 0)
+        {
+            H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
+            uint32_t        argCount = 0;
+            int32_t         resolvedFn = -1;
+            int32_t         mutRefTempArgNode = -1;
+            int             status;
+            int32_t         nextArgNode = H2AstNextSibling(c->ast, calleeNode);
+            int32_t         logType;
+            int32_t         wantStrType = H2TCGetStrRefType(c, callee->start, callee->end);
+            if (H2TCCollectCallArgInfo(
+                    c, nodeId, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
+                != 0)
+            {
+                return -1;
+            }
+            status = H2TCResolveCallByName(
+                c,
+                callee->dataStart,
+                callee->dataEnd,
+                callArgs,
+                argCount,
+                1,
+                0,
+                &resolvedFn,
+                &mutRefTempArgNode);
+            if (status < 0) {
+                return -1;
+            }
+            if (status == 0 && resolvedFn >= 0 && (uint32_t)resolvedFn < c->funcLen
+                && H2TCFunctionNameEq(c, (uint32_t)resolvedFn, callee->dataStart, callee->dataEnd))
+            {
+                *outType = c->funcs[(uint32_t)resolvedFn].returnType;
+                return 0;
+            }
             if (wantStrType < 0) {
                 return H2TCFailNode(c, calleeNode, H2Diag_UNKNOWN_TYPE);
             }

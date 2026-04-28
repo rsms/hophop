@@ -1,0 +1,10 @@
+// Verifies a package const may reuse a builtin type name in value space.
+import "builtin"
+
+const MemAllocator = 1
+
+fn main() {
+	var mem *builtin.MemAllocator = (null as rawptr) as *builtin.MemAllocator
+	assert MemAllocator == 1
+	_ = mem
+}

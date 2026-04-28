@@ -1386,9 +1386,7 @@ int PackageHasPlatformImport(const H2Package* _Nullable pkg) {
 
 static int ShouldSkipPackageMirImportPath(const char* _Nullable path) {
     return IsPlatformImportPath(path)
-        || (path != NULL
-            && (StrEq(path, "builtin") || StrEq(path, "reflect")
-                || strncmp(path, "builtin/", 8u) == 0 || strncmp(path, "reflect/", 8u) == 0));
+        || (path != NULL && (StrEq(path, "builtin") || strncmp(path, "builtin/", 8u) == 0));
 }
 
 static const H2Package* _Nullable EffectiveMirImportTargetPackage(

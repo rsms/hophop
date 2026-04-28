@@ -1863,22 +1863,9 @@ static int PackageHasExport(const H2Package* pkg, const char* name) {
     return 0;
 }
 
-static int ReflectPackageHasIntrinsicExportSlice(
-    const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
-    if (pkg == NULL || pkg->name == NULL || !StrEq(pkg->name, "reflect")) {
-        return 0;
-    }
-    return SliceEqCStr(src, start, end, "kind") || SliceEqCStr(src, start, end, "base")
-        || SliceEqCStr(src, start, end, "is_alias") || SliceEqCStr(src, start, end, "is_const")
-        || SliceEqCStr(src, start, end, "type_name");
-}
-
 static int PackageHasExportSlice(
     const H2Package* pkg, const char* src, uint32_t start, uint32_t end) {
     uint32_t i;
-    if (ReflectPackageHasIntrinsicExportSlice(pkg, src, start, end)) {
-        return 1;
-    }
     for (i = 0; i < pkg->pubDeclLen; i++) {
         size_t nameLen = strlen(pkg->pubDecls[i].name);
         if (nameLen == (size_t)(end - start)
@@ -2285,231 +2272,6 @@ static int PackageHasAnyDeclName(const H2Package* pkg, const char* name) {
     return 0;
 }
 
-static void PackageDiagOffsetToLineCol(
-    const char* source, uint32_t offset, uint32_t* outLine, uint32_t* outCol) {
-    uint32_t line = 1;
-    uint32_t col = 1;
-    uint32_t i;
-    if (source == NULL) {
-        *outLine = offset;
-        *outCol = offset;
-        return;
-    }
-    for (i = 0; source[i] != '\0' && i < offset; i++) {
-        if (source[i] == '\n') {
-            line++;
-            col = 1;
-        } else {
-            col++;
-        }
-    }
-    *outLine = line;
-    *outCol = col;
-}
-
-static int FindSymbolDeclNameSpan(
-    const H2Package* pkg, const H2SymbolDecl* decl, uint32_t* outStart, uint32_t* outEnd) {
-    const H2ParsedFile* file;
-    const H2AstNode*    n;
-    if (outStart != NULL) {
-        *outStart = 0;
-    }
-    if (outEnd != NULL) {
-        *outEnd = 0;
-    }
-    if (pkg == NULL || decl == NULL || decl->fileIndex >= pkg->fileLen || decl->nodeId < 0) {
-        return 0;
-    }
-    file = &pkg->files[decl->fileIndex];
-    if ((uint32_t)decl->nodeId >= file->ast.len) {
-        return 0;
-    }
-    n = &file->ast.nodes[decl->nodeId];
-    if ((n->kind == H2Ast_VAR || n->kind == H2Ast_CONST) && n->firstChild >= 0
-        && (uint32_t)n->firstChild < file->ast.len
-        && file->ast.nodes[n->firstChild].kind == H2Ast_NAME_LIST)
-    {
-        int32_t child = file->ast.nodes[n->firstChild].firstChild;
-        while (child >= 0) {
-            const H2AstNode* nameNode;
-            if ((uint32_t)child >= file->ast.len) {
-                break;
-            }
-            nameNode = &file->ast.nodes[child];
-            if (strlen(decl->name) == (size_t)(nameNode->dataEnd - nameNode->dataStart)
-                && memcmp(
-                       decl->name,
-                       file->source + nameNode->dataStart,
-                       (size_t)(nameNode->dataEnd - nameNode->dataStart))
-                       == 0)
-            {
-                if (outStart != NULL) {
-                    *outStart = nameNode->dataStart;
-                }
-                if (outEnd != NULL) {
-                    *outEnd = nameNode->dataEnd;
-                }
-                return 1;
-            }
-            child = nameNode->nextSibling;
-        }
-    }
-    if (n->dataEnd > n->dataStart) {
-        if (outStart != NULL) {
-            *outStart = n->dataStart;
-        }
-        if (outEnd != NULL) {
-            *outEnd = n->dataEnd;
-        }
-        return 1;
-    }
-    return 0;
-}
-
-static int ErrorDuplicateBuiltinDecl(
-    const H2Package*    pkg,
-    const H2SymbolDecl* decl,
-    const H2Package*    builtinPkg,
-    const H2SymbolDecl* builtinDecl) {
-    const H2ParsedFile* file;
-    const H2ParsedFile* builtinFile = NULL;
-    uint32_t            start = 0;
-    uint32_t            end = 0;
-    uint32_t            line = 0;
-    uint32_t            col = 0;
-    if (pkg == NULL || decl == NULL || decl->fileIndex >= pkg->fileLen) {
-        return ErrorSimple("internal error: invalid declaration");
-    }
-    file = &pkg->files[decl->fileIndex];
-    if (!FindSymbolDeclNameSpan(pkg, decl, &start, &end)) {
-        if (decl->nodeId >= 0 && (uint32_t)decl->nodeId < file->ast.len) {
-            start = file->ast.nodes[decl->nodeId].start;
-            end = file->ast.nodes[decl->nodeId].end;
-        }
-    }
-    PackageDiagOffsetToLineCol(file->source, start, &line, &col);
-    fprintf(
-        stderr,
-        "%s:%u:%u: error: HOP2001: duplicate definition '%s'\n",
-        DisplayPath(file->path),
-        line,
-        col,
-        decl->name);
-    if (builtinPkg != NULL && builtinDecl != NULL && builtinDecl->fileIndex < builtinPkg->fileLen) {
-        uint32_t otherStart = 0;
-        uint32_t otherEnd = 0;
-        uint32_t otherLine = 0;
-        uint32_t otherCol = 0;
-        builtinFile = &builtinPkg->files[builtinDecl->fileIndex];
-        if (FindSymbolDeclNameSpan(builtinPkg, builtinDecl, &otherStart, &otherEnd)) {
-            PackageDiagOffsetToLineCol(builtinFile->source, otherStart, &otherLine, &otherCol);
-            fprintf(
-                stderr,
-                "%s:%u:%u: hint: HOP2001: other declaration of '%s'\n",
-                DisplayPath(builtinFile->path),
-                otherLine,
-                otherCol,
-                decl->name);
-            (void)otherEnd;
-        }
-    }
-    (void)end;
-    return -1;
-}
-
-static const H2SymbolDecl* _Nullable FindBuiltinPubDeclByName(
-    const H2Package* builtinPkg, const char* name) {
-    uint32_t i;
-    if (builtinPkg == NULL || name == NULL) {
-        return NULL;
-    }
-    for (i = 0; i < builtinPkg->pubDeclLen; i++) {
-        if (StrEq(builtinPkg->pubDecls[i].name, name)) {
-            return &builtinPkg->pubDecls[i];
-        }
-    }
-    return NULL;
-}
-
-static const H2SymbolDecl* _Nullable FindBuiltinNonFunctionPubDeclByName(
-    const H2Package* builtinPkg, const char* name) {
-    uint32_t i;
-    if (builtinPkg == NULL || name == NULL) {
-        return NULL;
-    }
-    for (i = 0; i < builtinPkg->pubDeclLen; i++) {
-        if (builtinPkg->pubDecls[i].kind != H2Ast_FN && StrEq(builtinPkg->pubDecls[i].name, name)) {
-            return &builtinPkg->pubDecls[i];
-        }
-    }
-    return NULL;
-}
-
-static int ValidateBuiltinNameConflictsForDecls(
-    const H2Package*    pkg,
-    const H2Package*    builtinPkg,
-    const H2SymbolDecl* decls,
-    uint32_t            declLen) {
-    uint32_t i;
-    for (i = 0; i < declLen; i++) {
-        const H2SymbolDecl* decl = &decls[i];
-        const H2SymbolDecl* builtinDecl;
-        if (decl->kind == H2Ast_FN) {
-            builtinDecl = FindBuiltinNonFunctionPubDeclByName(builtinPkg, decl->name);
-        } else {
-            builtinDecl = FindBuiltinPubDeclByName(builtinPkg, decl->name);
-        }
-        if (builtinDecl != NULL) {
-            return ErrorDuplicateBuiltinDecl(pkg, decl, builtinPkg, builtinDecl);
-        }
-    }
-    return 0;
-}
-
-static int ValidateBuiltinNameConflicts(H2Package* pkg) {
-    int              builtinImportIndex;
-    const H2Package* builtinPkg;
-    uint32_t         i;
-    if (IsBuiltinPackage(pkg)) {
-        return 0;
-    }
-    builtinImportIndex = FindImportIndexByPath(pkg, "builtin");
-    if (builtinImportIndex < 0) {
-        return 0;
-    }
-    builtinPkg = pkg->imports[(uint32_t)builtinImportIndex].target;
-    if (builtinPkg == NULL) {
-        return ErrorSimple("internal error: unresolved builtin import");
-    }
-    if (ValidateBuiltinNameConflictsForDecls(pkg, builtinPkg, pkg->decls, pkg->declLen) != 0
-        || ValidateBuiltinNameConflictsForDecls(pkg, builtinPkg, pkg->pubDecls, pkg->pubDeclLen)
-               != 0)
-    {
-        return -1;
-    }
-    for (i = 0; i < pkg->importLen; i++) {
-        const H2ImportRef* imp = &pkg->imports[i];
-        if (imp->bindName != NULL && FindBuiltinPubDeclByName(builtinPkg, imp->bindName) != NULL) {
-            const H2ParsedFile* file = &pkg->files[imp->fileIndex];
-            return Errorf(
-                file->path, file->source, imp->start, imp->end, "import binding conflict");
-        }
-    }
-    for (i = 0; i < pkg->importSymbolLen; i++) {
-        const H2ImportSymbolRef* sym = &pkg->importSymbols[i];
-        const H2SymbolDecl*      builtinDecl = FindBuiltinPubDeclByName(builtinPkg, sym->localName);
-        if (builtinDecl == NULL) {
-            continue;
-        }
-        if (!(sym->isFunction && builtinDecl->kind == H2Ast_FN)) {
-            const H2ParsedFile* file = &pkg->files[sym->fileIndex];
-            return Errorf(
-                file->path, file->source, sym->start, sym->end, "import binding conflict");
-        }
-    }
-    return 0;
-}
-
 static int ValidateImportBindingConflicts(H2Package* pkg) {
     uint32_t i;
     for (i = 0; i < pkg->importLen; i++) {
@@ -2803,10 +2565,9 @@ static char* _Nullable ResolveLibImportDirInRoot(const char* rootDir, const char
 }
 
 static int IsLibImportPath(const char* importPath) {
-    return StrEq(importPath, "builtin") || StrEq(importPath, "reflect") || StrEq(importPath, "mem")
-        || StrEq(importPath, "platform") || StrEq(importPath, "compiler")
-        || StrEq(importPath, "playbit") || StrEq(importPath, "str") || StrEq(importPath, "testing")
-        || strncmp(importPath, "builtin/", 8u) == 0 || strncmp(importPath, "reflect/", 8u) == 0
+    return StrEq(importPath, "builtin") || StrEq(importPath, "mem") || StrEq(importPath, "platform")
+        || StrEq(importPath, "compiler") || StrEq(importPath, "playbit") || StrEq(importPath, "str")
+        || StrEq(importPath, "testing") || strncmp(importPath, "builtin/", 8u) == 0
         || strncmp(importPath, "mem/", 4u) == 0 || strncmp(importPath, "compiler/", 9u) == 0
         || strncmp(importPath, "playbit/", 8u) == 0 || strncmp(importPath, "std/", 4u) == 0
         || strncmp(importPath, "platform/", 9u) == 0 || strncmp(importPath, "str/", 4u) == 0;
@@ -3047,16 +2808,6 @@ static int IsBuiltinPackage(const H2Package* pkg) {
     return StrEq(base, "builtin");
 }
 
-static int IsReflectPackage(const H2Package* pkg) {
-    const char* base;
-    if (pkg == NULL || pkg->dirPath == NULL) {
-        return 0;
-    }
-    base = strrchr(pkg->dirPath, '/');
-    base = base != NULL ? base + 1 : pkg->dirPath;
-    return StrEq(base, "reflect");
-}
-
 static int EnsureImplicitBuiltinImport(H2Package* pkg) {
     char*    alias = NULL;
     char*    importPath = NULL;
@@ -3069,31 +2820,6 @@ static int EnsureImplicitBuiltinImport(H2Package* pkg) {
     }
     alias = MakeUniqueImportAlias(pkg, "builtin");
     importPath = H2CDupCStr("builtin");
-    if (alias == NULL || importPath == NULL) {
-        free(alias);
-        free(importPath);
-        return ErrorSimple("out of memory");
-    }
-    if (AddImportRef(pkg, alias, NULL, importPath, 0, 0, 0, &importIndex) != 0) {
-        free(alias);
-        free(importPath);
-        return ErrorSimple("out of memory");
-    }
-    return 0;
-}
-
-static int EnsureImplicitReflectImport(H2Package* pkg) {
-    char*    alias = NULL;
-    char*    importPath = NULL;
-    uint32_t importIndex = 0;
-    if (IsBuiltinPackage(pkg) || IsReflectPackage(pkg)) {
-        return 0;
-    }
-    if (FindImportIndexByPath(pkg, "reflect") >= 0) {
-        return 0;
-    }
-    alias = MakeUniqueImportAlias(pkg, "reflect");
-    importPath = H2CDupCStr("reflect");
     if (alias == NULL || importPath == NULL) {
         free(alias);
         free(importPath);
@@ -3185,9 +2911,6 @@ static int ResolvePackageImportsAndSelectors(H2PackageLoader* loader, H2Package*
     if (EnsureImplicitBuiltinImport(pkg) != 0) {
         return -1;
     }
-    if (EnsureImplicitReflectImport(pkg) != 0) {
-        return -1;
-    }
     for (i = 0; i < pkg->importLen; i++) {
         char* resolvedDir;
         if (loader->selectedPlatformPkg != NULL
@@ -3242,9 +2965,6 @@ static int ResolvePackageImportsAndSelectors(H2PackageLoader* loader, H2Package*
         return -1;
     }
     if (ValidateImportBindingConflicts(pkg) != 0) {
-        return -1;
-    }
-    if (ValidateBuiltinNameConflicts(pkg) != 0) {
         return -1;
     }
     if (ValidatePackageSelectors(pkg) != 0) {

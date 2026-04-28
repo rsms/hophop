@@ -1,0 +1,12 @@
+// Verifies a package function may shadow an exact builtin function identity.
+var called bool
+
+fn print(message &str) {
+	_ = message
+	called = true
+}
+
+fn main() {
+	print("local print")
+	assert called
+}

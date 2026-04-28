@@ -1959,9 +1959,13 @@ int TypeRefIsTypeValue(const H2TypeRef* t) {
         && StrEq(t->baseName, "__hop_type");
 }
 
-const char* _Nullable FindReflectKindTypeName(const H2CBackendC* c) {
+const char* _Nullable FindTypeKindTypeName(const H2CBackendC* c) {
     uint32_t         i;
-    const H2NameMap* direct = FindNameByCString(c, "reflect__Kind");
+    const H2NameMap* direct = FindNameByCString(c, "builtin__TypeKind");
+    if (direct != NULL && direct->kind == H2Ast_ENUM) {
+        return direct->cName;
+    }
+    direct = FindNameByCString(c, "TypeKind");
     if (direct != NULL && direct->kind == H2Ast_ENUM) {
         return direct->cName;
     }
@@ -1970,7 +1974,7 @@ const char* _Nullable FindReflectKindTypeName(const H2CBackendC* c) {
         if (map->kind != H2Ast_ENUM || map->name == NULL) {
             continue;
         }
-        if (StrHasPrefix(map->name, "reflect") && StrHasSuffix(map->name, "__Kind")) {
+        if (StrHasSuffix(map->name, "__TypeKind")) {
             return map->cName;
         }
     }

@@ -1,0 +1,12 @@
+import "builtin"
+
+// Verifies a named import may reuse a builtin type name.
+import "mem" { ArenaAllocator as Logger }
+
+fn main() {
+	var logger         Logger
+	var builtin_logger *builtin.Logger = (null as rawptr) as *builtin.Logger
+	logger.block_size = 1
+	assert logger.block_size == 1
+	_ = builtin_logger
+}

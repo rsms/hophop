@@ -1,0 +1,61 @@
+// Core declarations for reflection built-ins.
+//
+// Intrinsic behavior/signature details are defined by the compiler.
+pub enum TypeKind u8 {
+	Invalid   = 0
+	Primitive = 1
+	Alias     = 2
+	Struct    = 3
+	Union     = 4
+	Enum      = 5
+	Pointer   = 6
+	Reference = 7
+	Slice     = 8
+	Array     = 9
+	Optional  = 10
+	Function  = 11
+	Tuple     = 12
+}
+
+fn typeof(x anytype) type {
+	x
+	return type
+}
+
+fn kind(T type) TypeKind {
+	T
+	return TypeKind.Invalid
+}
+
+fn base(T type) type {
+	return T
+}
+
+fn is_alias(T type) bool {
+	return T != T
+}
+
+fn is_const(x anytype) bool {
+	x
+	return false
+}
+
+fn type_name(T type) &str {
+	T
+	return ""
+}
+
+fn ptr(T type) type {
+	return T
+}
+
+fn slice(T type) type {
+	return T
+}
+
+fn array(T type, N uint) type {
+	if N == 0 {
+		return T
+	}
+	return T
+}

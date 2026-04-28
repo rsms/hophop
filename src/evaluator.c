@@ -76,12 +76,9 @@ static int HOPEvalNameIsCompilerDiagBuiltin(
 }
 
 static int HOPEvalNameIsLazyTypeBuiltin(const char* _Nullable src, uint32_t start, uint32_t end) {
-    return SliceEqCStr(src, start, end, "typeof")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "kind", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "base", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_alias", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "is_const", "reflect")
-        || HOPEvalNameEqLiteralOrPkgBuiltin(src, start, end, "type_name", "reflect")
+    return SliceEqCStr(src, start, end, "typeof") || SliceEqCStr(src, start, end, "kind")
+        || SliceEqCStr(src, start, end, "base") || SliceEqCStr(src, start, end, "is_alias")
+        || SliceEqCStr(src, start, end, "is_const") || SliceEqCStr(src, start, end, "type_name")
         || SliceEqCStr(src, start, end, "ptr") || SliceEqCStr(src, start, end, "slice")
         || SliceEqCStr(src, start, end, "array");
 }
@@ -10729,6 +10726,41 @@ static int HOPEvalMirHostCall(
         return -1;
     }
     if (hostId == HOP_EVAL_MIR_HOST_PRINT && argCount == 1u) {
+        const H2Package* currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
+        int32_t          localPrintFn = -1;
+        int              localPrintScore = -1;
+        uint32_t         i;
+        if (currentPkg != NULL) {
+            for (i = 0; i < p->funcLen; i++) {
+                const HOPEvalFunction* fn = &p->funcs[i];
+                int                    score = 0;
+                if (fn->pkg != currentPkg || fn->isBuiltinPackageFn || fn->paramCount != argCount
+                    || !SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "print"))
+                {
+                    continue;
+                }
+                if (HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score)
+                    && score > localPrintScore)
+                {
+                    localPrintFn = (int32_t)i;
+                    localPrintScore = score;
+                }
+            }
+        }
+        if (localPrintFn >= 0) {
+            int didReturn = 0;
+            if (HOPEvalInvokeFunction(
+                    p, localPrintFn, args, argCount, p->currentContext, outValue, &didReturn)
+                != 0)
+            {
+                return -1;
+            }
+            if (!didReturn) {
+                HOPEvalValueSetNull(outValue);
+            }
+            *outIsConst = 1;
+            return 0;
+        }
         const H2CTFEValue* message = HOPEvalValueTargetOrSelf(&args[0]);
         if (message == NULL || message->kind != H2CTFEValue_STRING) {
             *outIsConst = 0;
@@ -10994,35 +11026,6 @@ static int HOPEvalMirCallNodeIsLazyBuiltin(HOPEvalProgram* p, int32_t callNode) 
             callee->dataEnd,
             "source_location_of",
             "builtin");
-    }
-    if (SliceEqCStr(
-            p->currentFile->source,
-            ast->nodes[recvNode].dataStart,
-            ast->nodes[recvNode].dataEnd,
-            "reflect"))
-    {
-        return HOPEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source, callee->dataStart, callee->dataEnd, "kind", "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source, callee->dataStart, callee->dataEnd, "base", "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source,
-                   callee->dataStart,
-                   callee->dataEnd,
-                   "is_alias",
-                   "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source,
-                   callee->dataStart,
-                   callee->dataEnd,
-                   "is_const",
-                   "reflect")
-            || HOPEvalNameEqLiteralOrPkgBuiltin(
-                   p->currentFile->source,
-                   callee->dataStart,
-                   callee->dataEnd,
-                   "type_name",
-                   "reflect");
     }
     if (!SliceEqCStr(
             p->currentFile->source,
@@ -13210,16 +13213,11 @@ static int HOPEvalResolveCallMir(
         return -1;
     }
 
-    isReflectKind = HOPEvalNameEqLiteralOrPkgBuiltin(
-        p->currentFile->source, nameStart, nameEnd, "kind", "reflect");
-    isReflectIsAlias = HOPEvalNameEqLiteralOrPkgBuiltin(
-        p->currentFile->source, nameStart, nameEnd, "is_alias", "reflect");
-    isReflectIsConst = HOPEvalNameEqLiteralOrPkgBuiltin(
-        p->currentFile->source, nameStart, nameEnd, "is_const", "reflect");
-    isReflectTypeName = HOPEvalNameEqLiteralOrPkgBuiltin(
-        p->currentFile->source, nameStart, nameEnd, "type_name", "reflect");
-    isReflectBase = HOPEvalNameEqLiteralOrPkgBuiltin(
-        p->currentFile->source, nameStart, nameEnd, "base", "reflect");
+    isReflectKind = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "kind");
+    isReflectIsAlias = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "is_alias");
+    isReflectIsConst = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "is_const");
+    isReflectTypeName = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "type_name");
+    isReflectBase = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "base");
     isTypeOf = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof");
 
     if (argCount == 1 && isReflectKind) {
@@ -13438,17 +13436,23 @@ static int HOPEvalResolveCallMir(
         }
     }
     if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "print")) {
-        if (args[0].kind == H2CTFEValue_STRING) {
-            if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
-                if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
-                    return ErrorSimple("failed to write print output");
-                }
-            }
-            fputc('\n', stdout);
-            fflush(stdout);
-            HOPEvalValueSetNull(outValue);
-            *outIsConst = 1;
+        const H2Package* currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
+        int32_t          localFnIndex =
+            currentPkg != NULL
+                ? HOPEvalResolveFunctionBySlice(
+                      p, currentPkg, p->currentFile, nameStart, nameEnd, args, argCount)
+                : -1;
+        if (localFnIndex == -2) {
+            H2CTFEExecSetReason(
+                p->currentExecCtx,
+                nameStart,
+                nameEnd,
+                "call target is ambiguous in evaluator backend");
+            *outIsConst = 0;
             return 0;
+        }
+        if (localFnIndex >= 0 && !p->funcs[(uint32_t)localFnIndex].isBuiltinPackageFn) {
+            fnIndex = localFnIndex;
         }
     }
     if ((argCount == 1 || argCount == 2)
@@ -13589,6 +13593,21 @@ static int HOPEvalResolveCallMir(
         return 0;
     }
     fn = &p->funcs[fnIndex];
+    if (fn->isBuiltinPackageFn && argCount == 1
+        && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "print")
+        && args[0].kind == H2CTFEValue_STRING)
+    {
+        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
+            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
+                return ErrorSimple("failed to write print output");
+            }
+        }
+        fputc('\n', stdout);
+        fflush(stdout);
+        HOPEvalValueSetNull(outValue);
+        *outIsConst = 1;
+        return 0;
+    }
     {
         const H2CTFEValue* invokeArgs = args;
         uint32_t           invokeArgCount = argCount;

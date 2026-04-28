@@ -1659,9 +1659,13 @@ int32_t H2TCFindNamedTypeBySuffix(H2TypeCheckCtx* c, const char* suffix) {
     return -1;
 }
 
-int32_t H2TCFindReflectKindType(H2TypeCheckCtx* c) {
+int32_t H2TCFindTypeKindType(H2TypeCheckCtx* c) {
     uint32_t i;
-    int32_t  direct = H2TCFindNamedTypeByLiteral(c, "reflect__Kind");
+    int32_t  direct = H2TCFindNamedTypeByLiteral(c, "builtin__TypeKind");
+    if (direct >= 0) {
+        return direct;
+    }
+    direct = H2TCFindNamedTypeByLiteral(c, "TypeKind");
     if (direct >= 0) {
         return direct;
     }
@@ -1670,9 +1674,7 @@ int32_t H2TCFindReflectKindType(H2TypeCheckCtx* c) {
         if (t->kind != H2TCType_NAMED) {
             continue;
         }
-        if (!H2NameHasPrefix(c->src, t->nameStart, t->nameEnd, "reflect")
-            || !H2NameHasSuffix(c->src, t->nameStart, t->nameEnd, "__Kind"))
-        {
+        if (!H2NameHasSuffix(c->src, t->nameStart, t->nameEnd, "__TypeKind")) {
             continue;
         }
         if (t->declNode >= 0 && (uint32_t)t->declNode < c->ast->len

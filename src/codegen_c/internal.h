@@ -462,7 +462,7 @@ int ResolveReflectedTypeValueExprTypeRef(H2CBackendC* c, int32_t exprNode, H2Typ
 
 int TypeRefIsTypeValue(const H2TypeRef* t);
 
-const char* _Nullable FindReflectKindTypeName(const H2CBackendC* c);
+const char* _Nullable FindTypeKindTypeName(const H2CBackendC* c);
 
 const char* TypeRefDisplayBaseName(const H2CBackendC* c, const char* baseName);
 

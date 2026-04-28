@@ -1,0 +1,10 @@
+// Verifies a package var may reuse a builtin type name in value space.
+import "builtin"
+
+var MemAllocator int = 1
+
+fn main() {
+	var mem *builtin.MemAllocator = (null as rawptr) as *builtin.MemAllocator
+	assert MemAllocator == 1
+	_ = mem
+}

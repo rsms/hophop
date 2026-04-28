@@ -84,6 +84,22 @@ typedef enum {
 
 typedef __hop_u32 __hop_LogFlags;
 
+typedef enum {
+    __hop_TypeKind_Invalid = 0,
+    __hop_TypeKind_Primitive = 1,
+    __hop_TypeKind_Alias = 2,
+    __hop_TypeKind_Struct = 3,
+    __hop_TypeKind_Union = 4,
+    __hop_TypeKind_Enum = 5,
+    __hop_TypeKind_Pointer = 6,
+    __hop_TypeKind_Reference = 7,
+    __hop_TypeKind_Slice = 8,
+    __hop_TypeKind_Array = 9,
+    __hop_TypeKind_Optional = 10,
+    __hop_TypeKind_Function = 11,
+    __hop_TypeKind_Tuple = 12,
+} __hop_TypeKind;
+
 typedef __hop_u32 __hop_rune;
 
 struct __hop_str {

@@ -522,6 +522,24 @@ static int HOPEvalMirRewriteBuiltinHostCallForFile(
     if (H2MirCallArgCountFromTok(ins->tok) == 1u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "print"))
     {
+        const H2Package* currentPkg = HOPEvalFindPackageByFile(c->p, file);
+        uint32_t         i;
+        if (currentPkg != NULL) {
+            for (i = 0; i < c->p->funcLen; i++) {
+                const HOPEvalFunction* fn = &c->p->funcs[i];
+                if (fn->pkg == currentPkg && !fn->isBuiltinPackageFn && fn->paramCount == 1u
+                    && SliceEqSlice(
+                        file->source,
+                        symbol->nameStart,
+                        symbol->nameEnd,
+                        fn->file->source,
+                        fn->nameStart,
+                        fn->nameEnd))
+                {
+                    return 0;
+                }
+            }
+        }
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
         host.kind = H2MirHost_GENERIC;

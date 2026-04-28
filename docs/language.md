@@ -324,7 +324,7 @@ fn f() {
 - [DECL-NS-002][Stable] Function overload sets live in value-name space.
 - [DECL-NS-003][Stable] Import bindings (`as` aliases and named imports) MUST NOT collide with any top-level declaration name in the importing package.
 - [DECL-NS-004][Stable] Duplicate top-level names are invalid within a namespace, except function overloading and declaration/definition pairing allowed by [DECL-FN-001].
-- [DECL-NS-005][Stable] User package top-level declarations and import bindings MUST NOT collide with public `builtin` package names. Function declarations collide with public builtin functions by the same function identity rules as ordinary overloaded functions.
+- [DECL-NS-005][Stable] Public `builtin` package declarations are in an outer global scope. User package top-level declarations and import bindings MAY reuse public `builtin` names. Unqualified lookup checks local scopes, package/import bindings, then `builtin` declarations. Function overload sets with `builtin` names merge by name; an exact user/package function identity shadows the matching builtin function identity. Primitive builtin type spellings (`bool`, `str`, `rawptr`, `type`, numeric type names, `const_int`, `const_float`, and `rune`) are not shadowable.
 
 ## 5. Type System
 
@@ -337,7 +337,7 @@ fn f() {
   - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
 - [TYPE-BUILTIN-004][Stable] `MemAllocator` is a source-level type provided by builtin library declarations (for example `builtin.MemAllocator` and unqualified builtin lookup), not a language builtin type.
-- [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type provided by builtin declarations and modeled as `type rune u32`.
+- [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type modeled as `type rune u32`, and its unqualified spelling is a primitive builtin type spelling for lookup purposes.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
 - [TYPE-CONSTR-003][Stable] Function type return type defaults to no-value when omitted.
@@ -695,7 +695,7 @@ fn f() {
 - [BI-TYPEOF-004][Provisional] For type-name operands, `typeof(T)` is `type` (because type names are value expressions whose type is `type`).
 
 ### 9.11 `kind(...)` and `base(...)`
-- [BI-REFLECT-001][Provisional] `kind(t)` and `t.kind()` require one `type` operand and return `reflect.Kind` (fallback `u8` when `reflect.Kind` is unavailable).
+- [BI-REFLECT-001][Provisional] `kind(t)` and `t.kind()` require one `type` operand and return builtin `TypeKind` (fallback `u8` when builtin packages are unavailable).
 - [BI-REFLECT-002][Provisional] `base(t)` and `t.base()` require one `type` operand and return `type`.
 - [BI-REFLECT-003][Provisional] `base(...)` is valid only for alias type values; non-alias operands are a type error.
 - [BI-REFLECT-004][Provisional] `is_alias(t)` and `t.is_alias()` require one `type` operand and return `bool`.
@@ -703,7 +703,7 @@ fn f() {
 - [BI-REFLECT-006][Provisional] `ptr(t)` requires one `type` operand and returns `type` representing `*t`.
 - [BI-REFLECT-007][Provisional] `slice(t)` requires one `type` operand and returns `type` representing `[t]`.
 - [BI-REFLECT-008][Provisional] `array(t, n)` requires `type` + integer operands and returns `type` representing `[t n]`; `n` must be const-evaluable and in `0..UINT32_MAX` when materialized.
-- [BI-REFLECT-009][Provisional] `is_const(x)` and `reflect.is_const(x)` return a const-evaluable `bool` indicating whether the call-site operand is const-evaluable. They are intended for `const { ... }` validation and specialization.
+- [BI-REFLECT-009][Provisional] `is_const(x)` returns a const-evaluable `bool` indicating whether the call-site operand is const-evaluable. It is intended for `const { ... }` validation and specialization.
 - [BI-SOURCELOC-001][Provisional] `source_location_of(x)` and `builtin.source_location_of(x)` return `builtin.SourceLocation` for operand `x`.
 
 ### 9.12 `compiler.error*` / `compiler.warn*`
@@ -749,7 +749,7 @@ fn f() {
 - [PKG-IMPORT-010][Stable] Primary resolution base is loader root:
   - directory package mode: parent directory of entry package directory
   - single-file package mode: directory containing the entry `.hop` file
-- [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `reflect`, `compiler`, `mem`, `platform`, `testing`, `std/*`, `platform/*`), resolver order is:
+- [PKG-IMPORT-011][Stable] For recognized library import paths (`builtin`, `compiler`, `mem`, `platform`, `testing`, `std/*`, `platform/*`), resolver order is:
   1. try `<loader_root>/<importPath>` first
   2. if that path is not an existing directory, search `<ancestor>/lib/<importPath>` from importing package directory upward to filesystem root and select the nearest match
   3. if still unresolved, search `<ancestor>/lib/<importPath>` from `dirname(executable_path)` upward to filesystem root and select the nearest match

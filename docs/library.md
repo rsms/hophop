@@ -300,13 +300,13 @@ This keeps a stable portable base (`platform.Context`) while allowing target ext
 `__hop_FileSystem` is planned as a built-in type initially; future work may define
 global host types in `prelude.hop` instead.
 
-## Reflection Package (Draft)
+## Reflection Builtins (Draft)
 
-`reflect` is proposed in HEP-18 as a compile-time reflection API.
+Reflection helpers are provided by the implicit builtin surface.
 
 Planned surface (draft):
 
-- `reflect.Kind` enum for type categories (`Primitive`, `Alias`, `Struct`, etc.)
+- `TypeKind` enum for type categories (`Primitive`, `Alias`, `Struct`, etc.)
 - Type reflection operations via `typeof` and type-value methods:
   - `.kind()`
   - `.base()` (for aliases)
@@ -317,12 +317,11 @@ Planned surface (draft):
   - `array(T, N)`
 - Call-site constness reflection:
   - `is_const(x)`
-  - `reflect.is_const(x)`
 
 Sketch examples:
 
 ```hop
-import "reflect"
+import "builtin"
 
 type MyInt int
 struct Foo { x, y int }
@@ -330,10 +329,10 @@ struct Foo { x, y int }
 fn main() {
     var x i32
     assert typeof(x) == i32
-    assert i32.kind() == reflect.Kind.Primitive
-    assert MyInt.kind() == reflect.Kind.Alias
+    assert i32.kind() == builtin.TypeKind.Primitive
+    assert MyInt.kind() == builtin.TypeKind.Alias
     assert MyInt.base() == int
-    assert Foo.kind() == reflect.Kind.Struct
+    assert Foo.kind() == builtin.TypeKind.Struct
     assert Foo.fields().len() == 2
 }
 ```

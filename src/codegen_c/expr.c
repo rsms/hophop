@@ -938,6 +938,62 @@ int CollectCallArgInfo(
     return 0;
 }
 
+static int FnSigIsBuiltinQualifiedSlice(
+    const H2CBackendC* c, const H2FnSig* sig, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t nameLen;
+    uint32_t candLen;
+    if (sig == NULL || sig->hopName == NULL || nameEnd <= nameStart) {
+        return 0;
+    }
+    nameLen = nameEnd - nameStart;
+    candLen = (uint32_t)StrLen(sig->hopName);
+    if (candLen != 9u + nameLen) {
+        return 0;
+    }
+    if (memcmp(sig->hopName, "builtin__", 9u) != 0) {
+        return 0;
+    }
+    return memcmp(sig->hopName + 9u, c->unit->source + nameStart, nameLen) == 0;
+}
+
+static int FnSigIdentityEq(const H2FnSig* a, const H2FnSig* b) {
+    uint32_t p;
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    if (a->paramLen != b->paramLen || a->isVariadic != b->isVariadic
+        || a->hasContext != b->hasContext || !TypeRefEqual(&a->returnType, &b->returnType))
+    {
+        return 0;
+    }
+    if (a->hasContext && !TypeRefEqual(&a->contextType, &b->contextType)) {
+        return 0;
+    }
+    for (p = 0; p < a->paramLen; p++) {
+        uint8_t aFlags = a->paramFlags != NULL ? a->paramFlags[p] : 0u;
+        uint8_t bFlags = b->paramFlags != NULL ? b->paramFlags[p] : 0u;
+        if (!TypeRefEqual(&a->paramTypes[p], &b->paramTypes[p]) || aFlags != bFlags) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int HasUnqualifiedFnSigIdentity(
+    const H2CBackendC* c, const H2FnSig* builtinSig, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        if (!SliceEqName(c->unit->source, nameStart, nameEnd, sig->hopName)) {
+            continue;
+        }
+        if (FnSigIdentityEq(sig, builtinSig)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void GatherCallCandidatesBySlice(
     const H2CBackendC* c,
     uint32_t           nameStart,
@@ -1003,26 +1059,17 @@ void GatherCallCandidatesBySlice(
     }
     for (i = 0; i < c->fnSigLen && candidateLen < H2CCG_MAX_CALL_CANDIDATES; i++) {
         const H2FnSig* sig = &c->fnSigs[i];
-        uint32_t       nameLen;
-        uint32_t       candLen;
-        if (nameEnd <= nameStart || sig->hopName == NULL) {
+        if (!FnSigIsBuiltinQualifiedSlice(c, sig, nameStart, nameEnd)) {
             continue;
         }
-        nameLen = nameEnd - nameStart;
-        candLen = (uint32_t)StrLen(sig->hopName);
-        if (candLen != 9u + nameLen) {
+        if (HasUnqualifiedFnSigIdentity(c, sig, nameStart, nameEnd)) {
             continue;
         }
-        if (memcmp(sig->hopName, "builtin__", 9u) != 0) {
-            continue;
+        if ((sig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0) {
+            hasTemplateInstance = 1;
         }
-        if (memcmp(sig->hopName + 9u, c->unit->source + nameStart, nameLen) == 0) {
-            if ((sig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0) {
-                hasTemplateInstance = 1;
-            }
-            candidates[candidateLen++] = sig;
-            nameFound = 1;
-        }
+        candidates[candidateLen++] = sig;
+        nameFound = 1;
     }
     if (hasTemplateInstance) {
         uint32_t out = 0;
@@ -3685,7 +3732,7 @@ int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2Typ
                     return -1;
                 }
                 if (argType.valid && TypeRefIsTypeValue(&argType)) {
-                    kindTypeName = FindReflectKindTypeName(c);
+                    kindTypeName = FindTypeKindTypeName(c);
                     TypeRefSetScalar(outType, kindTypeName != NULL ? kindTypeName : "__hop_u8");
                     return 0;
                 }
@@ -3894,7 +3941,7 @@ int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2Typ
             if (SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "kind")) {
                 int32_t nextArgNode = AstNextSibling(&c->ast, callee);
                 if (nextArgNode < 0 && TypeRefIsTypeValue(&recvType)) {
-                    const char* kindTypeName = FindReflectKindTypeName(c);
+                    const char* kindTypeName = FindTypeKindTypeName(c);
                     TypeRefSetScalar(outType, kindTypeName != NULL ? kindTypeName : "__hop_u8");
                     return 0;
                 }

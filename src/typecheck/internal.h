@@ -762,7 +762,7 @@ int32_t H2TCFindNamedTypeByLiteral(H2TypeCheckCtx* c, const char* name);
 int32_t H2TCFindBuiltinQualifiedNamedType(H2TypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t H2TCFindBuiltinNamedTypeBySuffix(H2TypeCheckCtx* c, const char* suffix);
 int32_t H2TCFindNamedTypeBySuffix(H2TypeCheckCtx* c, const char* suffix);
-int32_t H2TCFindReflectKindType(H2TypeCheckCtx* c);
+int32_t H2TCFindTypeKindType(H2TypeCheckCtx* c);
 int     H2TCNameEqLiteralOrPkgBuiltin(
     H2TypeCheckCtx* c, uint32_t start, uint32_t end, const char* name, const char* pkgPrefix);
 H2TCCompilerDiagOp H2TCCompilerDiagOpFromName(H2TypeCheckCtx* c, uint32_t start, uint32_t end);

@@ -3768,6 +3768,82 @@ int H2TCResolveComparisonHook(
     return ambiguous ? 3 : 0;
 }
 
+static int H2TCFunctionIsBuiltinQualifiedSlice(
+    H2TypeCheckCtx* c, const H2TCFunction* fn, uint32_t start, uint32_t end) {
+    uint32_t nameLen;
+    uint32_t candLen;
+    if (end <= start || end > c->src.len || fn->nameEnd <= fn->nameStart) {
+        return 0;
+    }
+    nameLen = end - start;
+    candLen = fn->nameEnd - fn->nameStart;
+    if (candLen != 9u + nameLen) {
+        return 0;
+    }
+    if (memcmp(c->src.ptr + fn->nameStart, "builtin__", 9u) != 0) {
+        return 0;
+    }
+    return memcmp(c->src.ptr + fn->nameStart + 9u, c->src.ptr + start, nameLen) == 0;
+}
+
+static int H2TCFunctionIdentityEq(H2TypeCheckCtx* c, const H2TCFunction* a, const H2TCFunction* b) {
+    uint32_t p;
+    if (a->paramCount != b->paramCount
+        || ((a->flags & H2TCFunctionFlag_VARIADIC) != (b->flags & H2TCFunctionFlag_VARIADIC)))
+    {
+        return 0;
+    }
+    if (a->returnType < 0 || b->returnType < 0) {
+        if (a->returnType != b->returnType) {
+            return 0;
+        }
+    } else if (
+        !H2TCCanAssign(c, a->returnType, b->returnType)
+        || !H2TCCanAssign(c, b->returnType, a->returnType))
+    {
+        return 0;
+    }
+    if ((a->contextType < 0) != (b->contextType < 0)) {
+        return 0;
+    }
+    if (a->contextType >= 0
+        && (!H2TCCanAssign(c, a->contextType, b->contextType)
+            || !H2TCCanAssign(c, b->contextType, a->contextType)))
+    {
+        return 0;
+    }
+    for (p = 0; p < a->paramCount; p++) {
+        uint32_t aIndex = a->paramTypeStart + p;
+        uint32_t bIndex = b->paramTypeStart + p;
+        if (!H2TCCanAssign(c, c->funcParamTypes[aIndex], c->funcParamTypes[bIndex])
+            || !H2TCCanAssign(c, c->funcParamTypes[bIndex], c->funcParamTypes[aIndex]))
+        {
+            return 0;
+        }
+        if ((c->funcParamFlags[aIndex] & H2TCFuncParamFlag_CONST)
+            != (c->funcParamFlags[bIndex] & H2TCFuncParamFlag_CONST))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int H2TCHasUnqualifiedFunctionIdentity(
+    H2TypeCheckCtx* c, const H2TCFunction* builtinFn, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    for (i = 0; i < c->funcLen; i++) {
+        const H2TCFunction* fn = &c->funcs[i];
+        if (!H2NameEqSlice(c->src, fn->nameStart, fn->nameEnd, nameStart, nameEnd)) {
+            continue;
+        }
+        if (H2TCFunctionIdentityEq(c, fn, builtinFn)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void H2TCGatherCallCandidates(
     H2TypeCheckCtx* c,
     uint32_t        nameStart,
@@ -3786,23 +3862,14 @@ void H2TCGatherCallCandidates(
     }
     for (i = 0; i < c->funcLen && count < H2TC_MAX_CALL_CANDIDATES; i++) {
         const H2TCFunction* fn = &c->funcs[i];
-        uint32_t            nameLen;
-        uint32_t            candLen;
-        if (nameEnd <= nameStart || nameEnd > c->src.len || fn->nameEnd <= fn->nameStart) {
+        if (!H2TCFunctionIsBuiltinQualifiedSlice(c, fn, nameStart, nameEnd)) {
             continue;
         }
-        nameLen = nameEnd - nameStart;
-        candLen = fn->nameEnd - fn->nameStart;
-        if (candLen != 9u + nameLen) {
+        if (H2TCHasUnqualifiedFunctionIdentity(c, fn, nameStart, nameEnd)) {
             continue;
         }
-        if (memcmp(c->src.ptr + fn->nameStart, "builtin__", 9u) != 0) {
-            continue;
-        }
-        if (memcmp(c->src.ptr + fn->nameStart + 9u, c->src.ptr + nameStart, nameLen) == 0) {
-            outCandidates[count++] = (int32_t)i;
-            *outNameFound = 1;
-        }
+        outCandidates[count++] = (int32_t)i;
+        *outNameFound = 1;
     }
     *outCandidateCount = count;
 }

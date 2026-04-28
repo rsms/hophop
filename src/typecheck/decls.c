@@ -786,24 +786,6 @@ static int H2TCFunctionIdentityMatchesScratch(
     return 1;
 }
 
-static int H2TCFunctionNameIsBuiltinQualifiedSlice(
-    H2TypeCheckCtx* c, const H2TCFunction* f, uint32_t start, uint32_t end) {
-    uint32_t nameLen;
-    uint32_t candLen;
-    if (end <= start || end > c->src.len || f->nameEnd <= f->nameStart) {
-        return 0;
-    }
-    nameLen = end - start;
-    candLen = f->nameEnd - f->nameStart;
-    if (candLen != 9u + nameLen) {
-        return 0;
-    }
-    if (memcmp(c->src.ptr + f->nameStart, "builtin__", 9u) != 0) {
-        return 0;
-    }
-    return memcmp(c->src.ptr + f->nameStart + 9u, c->src.ptr + start, nameLen) == 0;
-}
-
 int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
     const H2AstNode* n = &c->ast->nodes[nodeId];
     int32_t          returnType = -1;
@@ -924,22 +906,6 @@ int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
                 f->defNode = nodeId;
             }
             return 0;
-        }
-    }
-
-    {
-        uint32_t i;
-        for (i = 0; i < c->funcLen; i++) {
-            H2TCFunction* f = &c->funcs[i];
-            if (!H2TCFunctionNameIsBuiltinQualifiedSlice(c, f, n->dataStart, n->dataEnd)) {
-                continue;
-            }
-            if (H2TCFunctionIdentityMatchesScratch(
-                    c, f, paramCount, returnType, contextType, isVariadic))
-            {
-                return H2TCFailDuplicateDefinition(
-                    c, n->dataStart, n->dataEnd, f->nameStart, f->nameEnd);
-            }
         }
     }
 
