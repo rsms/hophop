@@ -1,0 +1,11 @@
+// Verifies value-returning calls can be explicitly discarded.
+fn make_thing() *i32 {
+	return (null as rawptr) as *i32
+}
+
+fn log_thing() {}
+
+fn main() {
+	_ = make_thing()
+	log_thing()
+}

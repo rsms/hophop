@@ -4,5 +4,5 @@ fn id_unused(x int) int {
 }
 
 fn main() {
-	id_unused(1)
+	_ = id_unused(1)
 }

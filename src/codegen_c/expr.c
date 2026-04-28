@@ -4363,6 +4363,12 @@ int InferExprType_CALL_ARG(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H
     return InferExprType(c, inner, outType);
 }
 
+static int ExprIsHoleIdent(H2CBackendC* c, int32_t nodeId) {
+    const H2AstNode* n = NodeAt(c, nodeId);
+    return n != NULL && n->kind == H2Ast_IDENT
+        && SliceIsHoleName(c->unit->source, n->dataStart, n->dataEnd);
+}
+
 int InferExprType_BINARY(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType) {
     int32_t     lhsNode = AstFirstChild(&c->ast, nodeId);
     int32_t     rhsNode = lhsNode >= 0 ? AstNextSibling(&c->ast, lhsNode) : -1;
@@ -4374,6 +4380,9 @@ int InferExprType_BINARY(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2T
     TypeRefSetInvalid(outType);
     if (lhsNode < 0 || rhsNode < 0) {
         return 0;
+    }
+    if (op == H2Tok_ASSIGN && ExprIsHoleIdent(c, lhsNode)) {
+        return InferExprType(c, rhsNode, outType);
     }
     if (InferExprType(c, lhsNode, &lhsType) != 0 || InferExprType(c, rhsNode, &rhsType) != 0) {
         return -1;
@@ -9463,6 +9472,9 @@ int EmitExpr_BINARY(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         H2TypeRef lhsType;
         if (lhs < 0 || rhs < 0) {
             return -1;
+        }
+        if (ExprIsHoleIdent(c, lhs)) {
+            return EmitExpr(c, rhs);
         }
         if (InferExprType(c, lhs, &lhsType) != 0 || !lhsType.valid) {
             goto emit_raw_binary;

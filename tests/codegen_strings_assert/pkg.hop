@@ -6,7 +6,7 @@ fn Main(x i32) i32 {
 	var b &str = "hello"
 	var n int  = len(a)
 
-	cstr(b)
+	_ = cstr(b)
 	assert x >= 0
 	assert x > 1, "x=%d", x
 	assert n > 0

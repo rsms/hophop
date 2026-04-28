@@ -26,8 +26,8 @@ fn run() {
 	assert rw[0] == 87
 	assert rw[1] == 79
 
-	cstr(lit_ro)
-	lit_rw.cstr()
+	_ = cstr(lit_ro)
+	_ = lit_rw.cstr()
 
 	var joined *str = concat(lit_ro, lit_rw)
 	assert len(joined) == 10

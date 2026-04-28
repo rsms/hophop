@@ -555,6 +555,7 @@ fn f() {
 
 ## 7. Statements and Control Flow
 
+- [STMT-EXPR-001][Stable] A function call used as a bare expression statement must return `void`. A non-`void` call result must be used or explicitly discarded with `_ = call(...)`.
 - [STMT-IF-001][Stable] `if` condition MUST be bool or optional.
 - [STMT-IF-002][Provisional] In const-evaluated statement contexts and template-instance function bodies, if-condition expressions that are const-evaluable booleans specialize branch checking: only the taken branch is required to typecheck.
 - [STMT-FOR-001][Stable] `for` forms: infinite block, condition form, C-style `init; cond; post`, and `for ... in` forms.

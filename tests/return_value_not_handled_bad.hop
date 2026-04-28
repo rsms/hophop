@@ -1,0 +1,8 @@
+// Verifies bare value-returning calls must be used or explicitly discarded.
+fn make_thing() *i32 {
+	return (null as rawptr) as *i32
+}
+
+fn main() {
+	make_thing()
+}

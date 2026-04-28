@@ -6,6 +6,6 @@ fn main() {
 	assert l > 0
 	assert l > 1, "len=%d", l
 
-	cstr(s)
+	_ = cstr(s)
 	assert l == 6
 }

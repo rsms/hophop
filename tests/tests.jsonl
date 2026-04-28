@@ -263,6 +263,8 @@
 {"id":"check:tests/array_type_const_fn_call_if_else_if_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_if_else_if_ok.hop","no_import":true}
 {"id":"check:tests/array_type_const_fn_call_block_stmt_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_block_stmt_ok.hop","no_import":true}
 {"id":"check:tests/array_type_const_fn_call_expr_stmt_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_expr_stmt_ok.hop","no_import":true}
+{"id":"check:tests/return_value_not_handled_bad.hop","suite":"spec.lex_parse_check","kind":"hop_fail_stderr","mode":"check","input":"tests/return_value_not_handled_bad.hop","expect_stderr":"tests/return_value_not_handled_bad.stderr","no_import":true}
+{"id":"check:tests/return_value_discard_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/return_value_discard_ok.hop","no_import":true}
 {"id":"check:tests/array_type_const_fn_call_var_stmt_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_var_stmt_ok.hop","no_import":true}
 {"id":"check:tests/array_type_const_fn_call_for_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_for_ok.hop","no_import":true}
 {"id":"check:tests/array_type_const_fn_call_for_cond_ok.hop","suite":"spec.lex_parse_check","kind":"hop_ok","mode":"check","input":"tests/array_type_const_fn_call_for_cond_ok.hop","no_import":true}

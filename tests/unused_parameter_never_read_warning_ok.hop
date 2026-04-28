@@ -5,5 +5,5 @@ fn id_write_only(x int) int {
 }
 
 fn main() {
-	id_write_only(1)
+	_ = id_write_only(1)
 }

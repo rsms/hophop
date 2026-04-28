@@ -1,0 +1,5 @@
+tests/return_value_not_handled_bad.hop:7:2: error: HOP2117: return value of type *i32 not handled
+    7 | 	make_thing()
+      | 	^~~~~~~~~~~~
+tests/return_value_not_handled_bad.hop:7:2: fix-it: insert _ = 
+tests/return_value_not_handled_bad.hop:7:2: hint: HOP2117: insert '_ = ' to discard return value

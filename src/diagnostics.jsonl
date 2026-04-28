@@ -138,6 +138,7 @@
 {"id": "HOP2114", "name": "ARRAY_LITERAL_READONLY_CONST_REQUIRED", "category": "semantic", "message": "array literal bound to readonly storage requires const-evaluable elements"}
 {"id": "HOP2115", "name": "ARRAY_LITERAL_MUT_REF_FORBIDDEN", "category": "semantic", "message": "array literal cannot bind to mutable reference or pointer storage"}
 {"id": "HOP2116", "name": "PARAM_ANON_AFTER_NAMED", "category": "semantic", "message": "anonymous parameter '{s}' cannot follow named parameter '{s}'"}
+{"id": "HOP2117", "name": "RETURN_VALUE_NOT_HANDLED", "category": "semantic", "message": "return value of type {s} not handled", "hint": "insert '_ = ' to discard return value"}
 {"id": "HOP3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "HOP3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "HOP3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

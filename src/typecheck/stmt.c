@@ -1498,6 +1498,75 @@ int H2TCExprIsBlankIdent(H2TypeCheckCtx* c, int32_t exprNode) {
     return n->kind == H2Ast_IDENT && H2NameEqLiteral(c->src, n->dataStart, n->dataEnd, "_");
 }
 
+static int H2TCExprIsBlankAssign(H2TypeCheckCtx* c, int32_t exprNode) {
+    int32_t          lhsNode;
+    const H2AstNode* n;
+    if (exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind != H2Ast_BINARY || (H2TokenKind)n->op != H2Tok_ASSIGN) {
+        return 0;
+    }
+    lhsNode = H2AstFirstChild(c->ast, exprNode);
+    return H2TCExprIsBlankIdent(c, lhsNode);
+}
+
+static int H2TCExprStmtIsLocalDiscardDecl(H2TypeCheckCtx* c, int32_t stmtNode, int32_t exprNode) {
+    const H2AstNode* stmt;
+    const H2AstNode* expr;
+    if (stmtNode < 0 || exprNode < 0 || (uint32_t)stmtNode >= c->ast->len
+        || (uint32_t)exprNode >= c->ast->len)
+    {
+        return 0;
+    }
+    stmt = &c->ast->nodes[stmtNode];
+    expr = &c->ast->nodes[exprNode];
+    if (stmt->start >= expr->start || stmt->start >= c->src.len) {
+        return 0;
+    }
+    if (stmt->start + 3u <= c->src.len
+        && H2NameEqLiteral(c->src, stmt->start, stmt->start + 3u, "var"))
+    {
+        return 1;
+    }
+    if (stmt->start + 5u <= c->src.len
+        && H2NameEqLiteral(c->src, stmt->start, stmt->start + 5u, "const"))
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static int H2TCFailReturnValueNotHandled(H2TypeCheckCtx* c, int32_t callNode, int32_t typeId) {
+    const H2AstNode* call;
+    char             typeBuf[H2TC_DIAG_TEXT_CAP];
+    H2TCTextBuf      typeText;
+    char*            argText;
+    uint32_t         argLen = 0;
+    if (callNode < 0 || (uint32_t)callNode >= c->ast->len) {
+        return H2TCFailNode(c, callNode, H2Diag_RETURN_VALUE_NOT_HANDLED);
+    }
+    call = &c->ast->nodes[callNode];
+    H2TCSetDiag(c->diag, H2Diag_RETURN_VALUE_NOT_HANDLED, call->start, call->end);
+    if (c->diag == NULL) {
+        return -1;
+    }
+    H2TCTextBufInit(&typeText, typeBuf, (uint32_t)sizeof(typeBuf));
+    H2TCFormatTypeRec(c, typeId, &typeText, 0);
+    argText = H2TCAllocDiagText(c, typeBuf);
+    if (argText != NULL) {
+        while (argText[argLen] != '\0') {
+            argLen++;
+        }
+        c->diag->argText = argText;
+        c->diag->argTextLen = argLen;
+    }
+    (void)H2DiagAddFixIt(
+        c->arena, c->diag, H2DiagFixItKind_INSERT, call->start, call->start, "_ = ");
+    return -1;
+}
+
 int H2TCTypeMultiAssignStmt(H2TypeCheckCtx* c, int32_t nodeId) {
     int32_t  lhsList = H2AstFirstChild(c->ast, nodeId);
     int32_t  rhsList = lhsList >= 0 ? H2AstNextSibling(c->ast, lhsList) : -1;
@@ -1743,7 +1812,17 @@ int H2TCTypeStmt(
             if (expr < 0) {
                 return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_EXPR);
             }
-            return H2TCTypeExpr(c, expr, &t);
+            if (H2TCTypeExpr(c, expr, &t) != 0) {
+                return -1;
+            }
+            if ((c->ast->nodes[expr].kind == H2Ast_CALL
+                 || c->ast->nodes[expr].kind == H2Ast_CALL_WITH_CONTEXT)
+                && t != c->typeVoid && !H2TCExprIsBlankAssign(c, expr)
+                && !H2TCExprStmtIsLocalDiscardDecl(c, nodeId, expr))
+            {
+                return H2TCFailReturnValueNotHandled(c, expr, t);
+            }
+            return 0;
         }
         case H2Ast_RETURN: {
             int32_t expr = H2AstFirstChild(c->ast, nodeId);

@@ -312,6 +312,6 @@ pub fn format_str(fmt &str, args ...anytype) *str {
 	var n     int  = fmt_write_impl(empty, fmt, args...)
 	var out   *str = new str{ len: n }
 	var cap   int  = n + 1
-	fmt_write_impl_cap(out, cap, fmt, args...)
+	_ = fmt_write_impl_cap(out, cap, fmt, args...)
 	return out
 }
