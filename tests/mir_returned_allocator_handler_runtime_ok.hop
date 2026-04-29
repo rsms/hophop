@@ -1,23 +1,23 @@
 // Verifies evaluator runtime can indirectly call a handler field on a returned allocator value.
-struct MyMemAllocator {
+struct MyAllocator {
 	calls int
 	slot  i32
 }
 
-fn handler(ma *MemAllocator, addr rawptr, align, curSize int, newSize *int, flags u32, srcLoc SourceLocation) rawptr {
-	self := ma.data as *MyMemAllocator
+fn handler(ma *Allocator, addr rawptr, align, curSize int, newSize *int, flags u32, srcLoc SourceLocation) rawptr {
+	self := ma.data as *MyAllocator
 	p := &self.slot
 	self.calls += 1
 	return p as rawptr
 }
 
-fn allocator(self *MyMemAllocator) MemAllocator {
+fn allocator(self *MyAllocator) Allocator {
 	h := handler
 	return { handler: h, data: self as rawptr }
 }
 
 fn main() {
-	ma := MyMemAllocator{}
+	ma := MyAllocator{}
 	out := ma.allocator()
 
 	addr := null as rawptr

@@ -1,12 +1,12 @@
-// Verifies new nonvss implicit initialization defaults is accepted.
+// Verifies alloc nonvss implicit initialization defaults is accepted.
 struct S {
 	a i32 = 7
 	b i32 = a + 2
 }
 
 fn main() {
-	var p *S = new S
-	var q *S = new S{}
+	var p *S = alloc S
+	var q *S = alloc S{}
 
 	assert p.a == 7
 	assert p.b == 9

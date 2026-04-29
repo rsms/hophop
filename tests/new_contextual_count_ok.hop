@@ -1,7 +1,7 @@
-// Verifies new contextual count is accepted.
+// Verifies alloc contextual count is accepted.
 fn allocs(n uint) {
-	var a *[i32 4] = new [i32 4]
-	var b *[i32]   = new [i32 n]
+	var a *[i32 4] = alloc [i32 4]
+	var b *[i32]   = alloc [i32 n]
 
 	a[0] = 11
 	b[0] = a[0]

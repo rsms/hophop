@@ -7,13 +7,13 @@ pub struct ArenaBlock {
 }
 
 pub struct ArenaAllocator {
-	MemAllocator
-	mem        *MemAllocator
+	Allocator
+	mem        *Allocator
 	head       *ArenaBlock
 	block_size int
 }
 
-pub fn init(self *ArenaAllocator, source *MemAllocator, block_size int) {
+pub fn init(self *ArenaAllocator, source *Allocator, block_size int) {
 	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
 	self.mem = source
 	self.head = none
@@ -23,7 +23,7 @@ pub fn init(self *ArenaAllocator, source *MemAllocator, block_size int) {
 	}
 }
 
-fn free_block_chain(source *MemAllocator, block *ArenaBlock) {
+fn free_block_chain(source *Allocator, block *ArenaBlock) {
 	var none *ArenaBlock = (null as rawptr) as *ArenaBlock
 	if block == none {
 		return
@@ -38,13 +38,13 @@ fn free_block_chain(source *MemAllocator, block *ArenaBlock) {
 	var newSizeInOut        = &zero
 	srcLoc := SourceLocation{}
 	_ = source.handler(source, addr, align, curSize, newSizeInOut, flags, srcLoc)
-	del block
+	dealloc block
 	free_block_chain(source, block: next)
 }
 
 pub fn free_all(self *ArenaAllocator) {
-	var none  *ArenaBlock   = (null as rawptr) as *ArenaBlock
-	var noMem *MemAllocator = (null as rawptr) as *MemAllocator
+	var none  *ArenaBlock = (null as rawptr) as *ArenaBlock
+	var noMem *Allocator  = (null as rawptr) as *Allocator
 	if self.mem == noMem {
 		self.head = none
 		return

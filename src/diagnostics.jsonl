@@ -69,7 +69,7 @@
 {"id": "HOP2045", "name": "FIELD_DEFAULT_FORWARD_REF", "category": "semantic", "message": "field default references later field '{s}'"}
 {"id": "HOP2046", "name": "FIELD_DEFAULT_TYPE_MISMATCH", "category": "semantic", "message": "default expression type mismatch for field '{s}'"}
 {"id": "HOP2047", "name": "FIELD_DEFAULT_ON_EMBEDDED", "category": "semantic", "message": "embedded field cannot have default initializer"}
-{"id": "HOP2048", "name": "NEW_VARSIZE_INIT_REQUIRED", "category": "semantic", "message": "new on variable-size type requires initializer (use new T{...})"}
+{"id": "HOP2048", "name": "ALLOC_VARSIZE_INIT_REQUIRED", "category": "semantic", "message": "alloc on variable-size type requires initializer (use alloc T{...})"}
 {"id": "HOP2049", "name": "INVALID_COMPARISON_HOOK_SIGNATURE", "category": "semantic", "message": "invalid comparison hook signature"}
 {"id": "HOP2050", "name": "TYPE_NOT_COMPARABLE", "category": "semantic", "message": "type is not comparable"}
 {"id": "HOP2051", "name": "TYPE_NOT_ORDERED", "category": "semantic", "message": "type is not ordered"}

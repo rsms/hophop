@@ -70,7 +70,7 @@ Add built-in type name:
 
 - `rawptr`
 
-No new expression syntax is added.
+No additional expression syntax is added.
 
 ## Semantic rules
 

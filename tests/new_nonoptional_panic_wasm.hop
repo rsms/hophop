@@ -1,8 +1,8 @@
-// Verifies Wasm new non-optional panics on allocation failure.
+// Verifies Wasm alloc non-optional panics on allocation failure.
 import "testing" { FailingAllocator }
 
 fn main() {
 	ma := FailingAllocator{}
 	context.allocator = ma
-	var _p *i32 = new i32
+	var _p *i32 = alloc i32
 }

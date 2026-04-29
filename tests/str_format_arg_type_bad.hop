@@ -1,5 +1,5 @@
 // Verifies string format argument type is rejected.
 fn main() {
 	var s *str = format("x={f}", 1 as i64)
-	del s
+	dealloc s
 }

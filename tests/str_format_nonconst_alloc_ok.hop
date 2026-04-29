@@ -6,7 +6,7 @@ fn example(fmt &str) {
 	assert s[9] == '1'
 	assert s[16] == '6'
 	print(s)
-	del s
+	dealloc s
 }
 
 fn main() {

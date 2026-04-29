@@ -66,22 +66,22 @@ type rune u32
 
 Rune literals (`'a'`, `'\n'`, `'本'`) produce `rune` values.
 
-### `__hop_MemAllocator`
+### `__hop_Allocator`
 
-`__hop_MemAllocator` is the low-level allocator capability used by `new`.
+`__hop_Allocator` is the low-level allocator capability used by `alloc`.
 The allocator callback uses signed size and alignment values:
 
 ```hop
-struct MemAllocator {
-    impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
+struct Allocator {
+    impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
 }
 ```
 
-MemAllocator implementations must zero newly allocated bytes:
+Allocator implementations must zero newly allocated bytes:
 - fresh allocations are fully zeroed
 - resized allocations must zero bytes in `[oldSize, newSize)`
 
-For normal code, use `MemAllocator` (a nominal alias of `__hop_MemAllocator`).
+For normal code, use `Allocator` (a nominal alias of `__hop_Allocator`).
 
 ## Built-In Functions
 
@@ -124,27 +124,27 @@ fn copy(dst *[anytype], src &[anytype]) int
   - `copy(*str, &[u8])` requires an explicit cast of `src` to `&str`.
 
 
-### `new`
+### `alloc`
 
 ```hop
-new T
-new [T N]
-new T context alloc
-new [T N] context alloc
+alloc T
+alloc [T N]
+alloc T in allocator
+alloc [T N] in allocator
 ```
 
-`new` allocates memory from a memory allocator.
+`alloc` allocates memory from a memory allocator.
 
-- `alloc` must be convertible to `*MemAllocator` and must be non-null with a valid `impl`.
-- Contextual forms (`new T`, `new [T N]`) use allocator capability `mem` from effective context.
-- Effective context `mem` must be assignable to `*MemAllocator` and must be non-null with a valid `impl`.
+- Explicit allocator expressions must be convertible to `*Allocator` and must be non-null with a valid `handler`.
+- Contextual forms (`alloc T`, `alloc [T N]`) use `context.allocator`.
+- Effective context `allocator` must be assignable to `*Allocator` and must be non-null with a valid `handler`.
 - `T` is the allocated element type.
 - If `N` is provided, storage for a sequence of `T` is allocated.
 - If `N` is a positive compile-time constant, result type is a fixed-size array pointer (`*[T N]`).
 - Otherwise, result type is a runtime-length sequence pointer (`*[T]`).
 - `T` cannot be a variable-size-by-value type.
 - Negative compile-time `N` is rejected.
-- `new` can still be assigned to optional pointer forms (`?*...`) via regular assignability.
+- `alloc` can still be assigned to optional pointer forms (`?*...`) via regular assignability.
 - Panic-on-failure vs nullable behavior is determined by assignment target and lowering rules.
 - On success, newly allocated bytes are zero-initialized.
 
@@ -167,7 +167,7 @@ fn fmt(format str, ...args) *str
 
 `fmt` builds a newly allocated string using `context.mem`.
 
-- Returns `*str`; caller owns the allocation and should `free(...)` it.
+- Returns `*str`; caller owns the allocation and should `dealloc(...)` it.
 - Placeholders in v1:
   - `{i}` integer decimal
   - `{r}` reflective rendering
@@ -191,8 +191,8 @@ Behavior:
 
 - `format` and `format_str` are available without an explicit import.
 - The API and implementation are part of the implicit `builtin` package.
-- `format` returns a newly allocated `*str` for const-evaluable format strings; caller owns it and should `del` it.
-- `format_str(format &str, ...)` returns a newly allocated `*str` for non-const format strings; caller owns it and should `del` it.
+- `format` returns a newly allocated `*str` for const-evaluable format strings; caller owns it and should `dealloc` it.
+- `format_str(format &str, ...)` returns a newly allocated `*str` for non-const format strings; caller owns it and should `dealloc` it.
 - Supported placeholders are `{}`, `{i}`, `{f}`, `{s}` with escapes `{{` and `}}`.
 - Placeholder count must match argument count.
 - Placeholder compatibility: `{}` accepts integer, float, and string values; `{i}` integer, `{f}` float, `{s}` values assignable to `&str`.
@@ -244,8 +244,8 @@ Operation semantics:
 - `console_log`: write a platform log message.
 - `panic`: stop execution after reporting a fatal error message.
 
-Allocation is provided by `MemAllocator` via `new`, with the platform setting
-`context.mem` before `hop_main`.
+Allocation is provided by `Allocator` via `alloc`, with the platform setting
+`context.allocator` before `hop_main`.
 
 Concrete default platform implementation used by `hop build`:
 - `lib/platform/cli-libc/platform.c`
@@ -277,7 +277,7 @@ Planned additions to platform library surface:
 
 ```hop
 pub struct Context {
-    mem     *MemAllocator
+    mem     *Allocator
     console i32
     stdin   ?i32
     fs      ?__hop_FileSystem

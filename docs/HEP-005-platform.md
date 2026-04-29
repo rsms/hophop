@@ -164,7 +164,7 @@ Returns the allocated address cast to `uint64_t`, or `0` on failure.
 | `d` | Alignment in bytes |
 | `e` | Flags (reserved, pass `0`) |
 
-Returns the new address (may differ from `a`), or `0` on failure.
+Returns the alloc address (may differ from `a`), or `0` on failure.
 
 ### `H2PlatformOp_MEM_FREE` (5)
 
@@ -267,15 +267,15 @@ int64_t hop_platform_call(uint64_t op,
 ## `hophop/builtin/gpa`
 
 The general-purpose allocator package (`hophop/builtin/gpa`) wraps `H2PlatformOp_MEM_ALLOC`,
-`H2PlatformOp_MEM_RESIZE`, and `H2PlatformOp_MEM_FREE` to provide a `MemAllocator`-compatible
+`H2PlatformOp_MEM_RESIZE`, and `H2PlatformOp_MEM_FREE` to provide a `Allocator`-compatible
 interface. Application code that needs dynamic allocation imports `hophop/builtin/gpa`:
 
 ```hop
 import "hophop/builtin/gpa"
 
 fn example(n uint) {
-    var ma mut&MemAllocator = gpa.allocator()
-    var buf *[u8 n] = new(ma, u8, n)
+    var ma mut&Allocator = gpa.allocator()
+    var buf *[u8 n] = alloc(ma, u8, n)
     // ...
 }
 ```
@@ -284,7 +284,7 @@ The `gpa` package is implemented as a thin HopHop wrapper that calls `platform.a
 `platform.resize` / `platform.free`.
 
 > **Deferred:** `hophop/builtin/gpa` implementation is a follow-up to this HEP. For now the
-> `MemAllocator` type and `new` builtin remain as they are.
+> `Allocator` type and `alloc` builtin remain as they are.
 
 ---
 
@@ -338,7 +338,7 @@ backed by a platform registry directory.
 
 1. Should `hop_thread` be mandatory or optional (weak symbol)?
 2. Should `H2PlatformOp_CONSOLE_LOG` pass an `hop_strhdr*` instead of a raw C string?
-3. Should `hophop/builtin/gpa` be auto-imported for packages that use `new` without an explicit
-   `MemAllocator`?
+3. Should `hophop/builtin/gpa` be auto-imported for packages that use `alloc` without an explicit
+   `Allocator`?
 4. Interaction with WASM: `hop_platform_call` maps naturally to a host import table; what
    is the right WASM calling convention for the opcode args?

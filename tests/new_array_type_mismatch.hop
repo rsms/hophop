@@ -1,5 +1,5 @@
-// Verifies new array type mismatch.
-fn foo(ma *MemAllocator) {
-	var many *i32 = new [i32 8]
+// Verifies alloc array type mismatch.
+fn foo(ma *Allocator) {
+	var many *i32 = alloc [i32 8]
 	_ = many
 }

@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=11 consts=2 sources=1 funcs=1 locals=2 fields=0 types=3 hosts=0 symbols=0
 sources
-  #0 len=131
+  #0 len=135
 types
   #0 astNode=3 source=#0 flags=1
   #1 astNode=6 source=#0 flags=262145
@@ -14,19 +14,19 @@ consts
   #0 INT value=4
   #1 INT value=4
 functions
-  #0 name="main" [51,55] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+11
+  #0 name="main" [53,57] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+11
     locals
-      #0 name="n" [65,66] type=#0 flags=2
-      #1 name="xs" [84,86] type=#1 flags=2
+      #0 name="n" [67,68] type=#0 flags=2
+      #1 name="xs" [86,88] type=#1 flags=2
     insts
-      0: PUSH_CONST const=#0 span=[77,78]
-      1: LOCAL_STORE local=#0 "n" [65,66] span=[61,78]
-      2: LOCAL_LOAD local=#0 "n" [65,66] span=[105,106]
-      3: ALLOC_NEW tok=64 aux=9 span=[96,107]
-      4: LOCAL_STORE local=#1 "xs" [84,86] span=[80,107]
-      5: LOCAL_LOAD local=#1 "xs" [84,86] span=[120,122]
-      6: SEQ_LEN span=[116,119]
-      7: PUSH_CONST const=#1 span=[127,128]
-      8: BINARY op=EQ span=[116,128]
-      9: ASSERT span=[109,128]
-      10: RETURN_VOID span=[58,130]
+      0: PUSH_CONST const=#0 span=[79,80]
+      1: LOCAL_STORE local=#0 "n" [67,68] span=[63,80]
+      2: LOCAL_LOAD local=#0 "n" [67,68] span=[109,110]
+      3: ALLOC_NEW tok=64 aux=9 span=[98,111]
+      4: LOCAL_STORE local=#1 "xs" [86,88] span=[82,111]
+      5: LOCAL_LOAD local=#1 "xs" [86,88] span=[124,126]
+      6: SEQ_LEN span=[120,123]
+      7: PUSH_CONST const=#1 span=[131,132]
+      8: BINARY op=EQ span=[120,132]
+      9: ASSERT span=[113,132]
+      10: RETURN_VOID span=[60,134]

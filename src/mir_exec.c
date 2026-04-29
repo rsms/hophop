@@ -1705,7 +1705,7 @@ static int H2MirRunLoop(
                 int         allocIsConst = 0;
                 if (run->env.allocNew == NULL) {
                     H2MirSetReason(
-                        run, ins, "new expression is not supported during const evaluation");
+                        run, ins, "alloc expression is not supported during const evaluation");
                     return 0;
                 }
                 allocRc = run->env.allocNew(
@@ -1715,7 +1715,7 @@ static int H2MirRunLoop(
                 }
                 if (allocRc == 0 || !allocIsConst) {
                     H2MirSetReason(
-                        run, ins, "new expression is not supported during const evaluation");
+                        run, ins, "alloc expression is not supported during const evaluation");
                     return 0;
                 }
                 if (H2CTFEPush(run, &out) != 0) {

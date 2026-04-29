@@ -1,5 +1,5 @@
 // Verifies string format invalid placeholder is rejected.
 fn main() {
 	var s *str = format("x={x}", 1 as i64)
-	del s
+	dealloc s
 }

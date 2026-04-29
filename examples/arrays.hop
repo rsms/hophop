@@ -67,9 +67,9 @@ fn main() {
 	assert ro_lit[1] == 101
 	assert ro_fixed_lit[2] == 22
 
-	var heap_fixed           = new [1, 2, 3]
-	var heap_slice  *[int]   = new [4, 5, 6]
-	var heap_padded *[int 5] = new [7, 8]
+	var heap_fixed           = alloc [1, 2, 3]
+	var heap_slice  *[int]   = alloc [4, 5, 6]
+	var heap_padded *[int 5] = alloc [7, 8]
 	assert len(heap_fixed) == 3
 	assert heap_fixed[2] == 3
 	assert len(heap_slice) == 3

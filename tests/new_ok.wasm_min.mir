@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=5 consts=0 sources=1 funcs=1 locals=2 fields=0 types=4 hosts=0 symbols=0
 sources
-  #0 len=101
+  #0 len=107
 types
   #0 astNode=3 source=#0 flags=2049
   #1 astNode=8 source=#0 flags=131073
@@ -13,13 +13,13 @@ symbols
 fields
 consts
 functions
-  #0 name="main" [32,36] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+5
+  #0 name="main" [34,38] source=#0 type=#4294967295 params=0 temps=0 locals=#0+2 insts=#0+5
     locals
-      #0 name="_p" [46,48] type=#0 flags=2
-      #1 name="_q" [73,75] type=#1 flags=2
+      #0 name="_p" [48,50] type=#0 flags=2
+      #1 name="_q" [77,79] type=#1 flags=2
     insts
-      0: ALLOC_NEW aux=5 span=[60,67]
-      1: LOCAL_STORE local=#0 "_p" [46,48] span=[42,67]
-      2: ALLOC_NEW tok=64 aux=12 span=[87,98]
-      3: LOCAL_STORE local=#1 "_q" [73,75] span=[69,98]
-      4: RETURN_VOID span=[39,100]
+      0: ALLOC_NEW aux=5 span=[62,71]
+      1: LOCAL_STORE local=#0 "_p" [48,50] span=[44,71]
+      2: ALLOC_NEW tok=64 aux=12 span=[91,104]
+      3: LOCAL_STORE local=#1 "_q" [77,79] span=[73,104]
+      4: RETURN_VOID span=[41,106]

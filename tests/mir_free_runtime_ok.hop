@@ -1,6 +1,6 @@
-// Verifies MIR runtime behavior for free.
+// Verifies MIR runtime behavior for dealloc.
 fn main() {
 	var s *str = concat("a", "b")
 	assert len(s) == 2
-	del s
+	dealloc s
 }

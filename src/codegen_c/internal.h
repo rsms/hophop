@@ -777,7 +777,7 @@ void SetPreferredAllocatorPtrType(H2TypeRef* outType);
 
 int IsTypeNodeKind(H2AstKind kind);
 
-int DecodeNewExprNodes(
+int DecodeAllocExprNodes(
     H2CBackendC* c,
     int32_t      nodeId,
     int32_t*     outTypeNode,
@@ -932,7 +932,7 @@ int InferExprType_CALL_WITH_CONTEXT(
 
 int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType);
 
-int InferExprType_NEW(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType);
+int InferExprType_ALLOC(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType);
 
 int InferExprType_UNARY(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType);
 
@@ -966,7 +966,7 @@ int InferExprType_CALL_ARG(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H
 
 int InferExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType);
 
-int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType);
+int InferAllocExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType);
 
 const char* UnaryOpString(H2TokenKind op);
 
@@ -1175,7 +1175,7 @@ int EmitExpr_CALL_WITH_CONTEXT(H2CBackendC* c, int32_t nodeId, const H2AstNode* 
 
 int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n);
 
-int EmitExpr_NEW(H2CBackendC* c, int32_t nodeId, const H2AstNode* n);
+int EmitExpr_ALLOC(H2CBackendC* c, int32_t nodeId, const H2AstNode* n);
 
 int EmitExpr_INDEX(H2CBackendC* c, int32_t nodeId, const H2AstNode* n);
 

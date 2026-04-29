@@ -1,9 +1,0 @@
-// Verifies new struct type syntax is unchanged.
-fn main() {
-	var p *struct {
-		x int
-	} = new struct {
-		x int
-	}
-	_ = p
-}

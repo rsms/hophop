@@ -2,7 +2,7 @@ mir
   dynamic_resolution=no
   insts=11 consts=2 sources=1 funcs=1 locals=1 fields=0 types=2 hosts=0 symbols=0
 sources
-  #0 len=106
+  #0 len=110
 types
   #0 astNode=3 source=#0 flags=2049
   #1 astNode=6 source=#0 flags=1
@@ -13,18 +13,18 @@ consts
   #0 INT value=7
   #1 INT value=7
 functions
-  #0 name="main" [49,53] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+11
+  #0 name="main" [51,55] source=#0 type=#4294967295 params=0 temps=0 locals=#0+1 insts=#0+11
     locals
-      #0 name="p" [63,64] type=#0 flags=2
+      #0 name="p" [65,66] type=#0 flags=2
     insts
-      0: ALLOC_NEW aux=5 span=[72,79]
-      1: LOCAL_STORE local=#0 "p" [63,64] span=[59,79]
-      2: PUSH_CONST const=#0 span=[86,87]
-      3: LOCAL_LOAD local=#0 "p" [63,64] span=[82,83]
-      4: DEREF_STORE span=[81,87]
-      5: LOCAL_LOAD local=#0 "p" [63,64] span=[97,98]
-      6: DEREF_LOAD span=[96,98]
-      7: PUSH_CONST const=#1 span=[102,103]
-      8: BINARY op=EQ span=[96,103]
-      9: ASSERT span=[89,103]
-      10: RETURN_VOID span=[56,105]
+      0: ALLOC_NEW aux=5 span=[74,83]
+      1: LOCAL_STORE local=#0 "p" [65,66] span=[61,83]
+      2: PUSH_CONST const=#0 span=[90,91]
+      3: LOCAL_LOAD local=#0 "p" [65,66] span=[86,87]
+      4: DEREF_STORE span=[85,91]
+      5: LOCAL_LOAD local=#0 "p" [65,66] span=[101,102]
+      6: DEREF_LOAD span=[100,102]
+      7: PUSH_CONST const=#1 span=[106,107]
+      8: BINARY op=EQ span=[100,107]
+      9: ASSERT span=[93,107]
+      10: RETURN_VOID span=[58,109]

@@ -5,10 +5,10 @@
 HEP-14 adds inline anonymous aggregate type syntax:
 
 ```hop
-{ mem MemAllocator; fs ReadFS }              // anonymous struct (`struct` keyword omitted)
-struct { mem MemAllocator; fs ReadFS }       // equivalent anonymous struct
+{ mem Allocator; fs ReadFS }              // anonymous struct (`struct` keyword omitted)
+struct { mem Allocator; fs ReadFS }       // equivalent anonymous struct
 union { i int; f f64 }                       // anonymous union
-&{ mem MemAllocator; fs ReadFS }
+&{ mem Allocator; fs ReadFS }
 ```
 
 The goal is to express one-off structural shapes without introducing named top-level declarations.
@@ -60,7 +60,7 @@ fn f_union(value union { i int; f f64 })
 Context + compound-literal interaction:
 
 ```hop
-fn run() context { mem mut&__hop_MemAllocator, console u64 } {
+fn run() context { mem mut&__hop_Allocator, console u64 } {
     var p { x, y int } = { x: 1, y: 2 }
     _ = p
 }

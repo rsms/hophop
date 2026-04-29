@@ -2,8 +2,8 @@
 fn example(message &str) {
 	var saved = context.allocator
 	context.allocator = context.temp_allocator
-	var p *i32 = new i32
-	del p
+	var p *i32 = alloc i32
+	dealloc p
 	context.allocator = saved
 	print(message)
 }

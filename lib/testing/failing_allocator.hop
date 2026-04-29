@@ -1,7 +1,7 @@
-pub fn failing_alloc_impl(_self *MemAllocator, _addr rawptr, _align, _curSize int, _newSizeInOut *int, _flags u32, _srcLoc SourceLocation) rawptr {
+pub fn failing_alloc_impl(_self *Allocator, _addr rawptr, _align, _curSize int, _newSizeInOut *int, _flags u32, _srcLoc SourceLocation) rawptr {
 	return null as rawptr
 }
 
 pub struct FailingAllocator {
-	MemAllocator = { handler: failing_alloc_impl }
+	Allocator = { handler: failing_alloc_impl }
 }

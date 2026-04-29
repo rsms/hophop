@@ -19,7 +19,7 @@ enum {
     HOP_EVAL_MIR_HOST_INVALID = H2MirHostTarget_INVALID,
     HOP_EVAL_MIR_HOST_PRINT = H2MirHostTarget_PRINT,
     HOP_EVAL_MIR_HOST_PLATFORM_EXIT = H2MirHostTarget_PLATFORM_EXIT,
-    HOP_EVAL_MIR_HOST_FREE = H2MirHostTarget_FREE,
+    HOP_EVAL_MIR_HOST_DEALLOC = H2MirHostTarget_DEALLOC,
     HOP_EVAL_MIR_HOST_CONCAT = H2MirHostTarget_CONCAT,
     HOP_EVAL_MIR_HOST_COPY = H2MirHostTarget_COPY,
     HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = H2MirHostTarget_PLATFORM_CONSOLE_LOG,
@@ -3273,10 +3273,10 @@ static int H2EvalInitRootAllocatorValue(
     if (p == NULL || state == NULL || outValue == NULL) {
         return -1;
     }
-    if (!H2EvalFindBuiltinStructDecl(p, "MemAllocator", &memFile, &memNode) || memFile == NULL
+    if (!H2EvalFindBuiltinStructDecl(p, "Allocator", &memFile, &memNode) || memFile == NULL
         || memNode < 0)
     {
-        return ErrorSimple("failed to resolve builtin MemAllocator for evaluator runtime");
+        return ErrorSimple("failed to resolve builtin Allocator for evaluator runtime");
     }
     if (HOPEvalZeroInitAggregateValue(p, memFile, memNode, &aggregateValue, &isConst) != 0) {
         return -1;
@@ -4793,7 +4793,7 @@ static int HOPEvalResolveAliasCastTargetNode(
     return 0;
 }
 
-static int HOPEvalDecodeNewExprNodes(
+static int HOPEvalDecodeAllocExprNodes(
     const H2ParsedFile* file,
     int32_t             nodeId,
     int32_t*            outTypeNode,
@@ -4821,12 +4821,12 @@ static int HOPEvalDecodeNewExprNodes(
         return 0;
     }
     n = &file->ast.nodes[nodeId];
-    if (n->kind != H2Ast_NEW) {
+    if (n->kind != H2Ast_ALLOC) {
         return 0;
     }
-    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
+    hasCount = (n->flags & H2AstFlag_ALLOC_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_ALLOC_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0;
     if (outTypeNode == NULL || outCountNode == NULL || outInitNode == NULL || outAllocNode == NULL)
     {
         return 0;
@@ -4936,7 +4936,7 @@ static int HOPEvalExpectedNewResultIsOptional(
     return typeFile->ast.nodes[typeNode].kind == H2Ast_TYPE_OPTIONAL;
 }
 
-static int HOPEvalEvalNewExpr(
+static int HOPEvalEvalAllocExpr(
     HOPEvalProgram* p,
     int32_t         exprNode,
     const H2ParsedFile* _Nullable expectedTypeFile,
@@ -4955,8 +4955,8 @@ static int HOPEvalEvalNewExpr(
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (p->currentFile->ast.nodes[exprNode].kind == H2Ast_NEW
-        && (p->currentFile->ast.nodes[exprNode].flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    if (p->currentFile->ast.nodes[exprNode].kind == H2Ast_ALLOC
+        && (p->currentFile->ast.nodes[exprNode].flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0)
     {
         int32_t     litNode = p->currentFile->ast.nodes[exprNode].firstChild;
         H2CTFEValue arrayValue;
@@ -4975,7 +4975,7 @@ static int HOPEvalEvalNewExpr(
         }
         return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst);
     }
-    if (!HOPEvalDecodeNewExprNodes(
+    if (!HOPEvalDecodeAllocExprNodes(
             p->currentFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
@@ -8619,8 +8619,8 @@ static int HOPEvalExecExprWithTypeNode(
     if (ast->nodes[exprNode].kind == H2Ast_ARRAY_LIT) {
         return HOPEvalEvalArrayLiteral(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     }
-    if (ast->nodes[exprNode].kind == H2Ast_NEW) {
-        return HOPEvalEvalNewExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
+    if (ast->nodes[exprNode].kind == H2Ast_ALLOC) {
+        return HOPEvalEvalAllocExpr(p, exprNode, typeFile, typeNode, outValue, outIsConst);
     }
     if (ast->nodes[exprNode].kind == H2Ast_CALL && typeFile != NULL && typeNode >= 0) {
         const H2ParsedFile* savedExprFile = p->expectedCallExprFile;
@@ -10801,7 +10801,7 @@ static int HOPEvalMirHostCall(
         *outIsConst = 0;
         return 0;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_FREE && (argCount == 1u || argCount == 2u)) {
+    if (hostId == HOP_EVAL_MIR_HOST_DEALLOC && (argCount == 1u || argCount == 2u)) {
         HOPEvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
@@ -11490,8 +11490,8 @@ static int HOPEvalMirAllocNew(
     }
     newFile = p->currentFile;
     if (exprNode >= 0 && (uint32_t)exprNode < newFile->ast.len
-        && newFile->ast.nodes[exprNode].kind == H2Ast_NEW
-        && (newFile->ast.nodes[exprNode].flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+        && newFile->ast.nodes[exprNode].kind == H2Ast_ALLOC
+        && (newFile->ast.nodes[exprNode].flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0)
     {
         const H2ParsedFile* expectedTypeFile = NULL;
         int32_t             expectedTypeNode = -1;
@@ -11514,7 +11514,8 @@ static int HOPEvalMirAllocNew(
         }
         return HOPEvalAllocReferencedValue(p, &arrayValue, outValue, outIsConst) == 0 ? 1 : -1;
     }
-    if (!HOPEvalDecodeNewExprNodes(newFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
+    if (!HOPEvalDecodeAllocExprNodes(
+            newFile, exprNode, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
     }
@@ -13456,7 +13457,7 @@ static int HOPEvalResolveCallMir(
         }
     }
     if ((argCount == 1 || argCount == 2)
-        && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "free"))
+        && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "dealloc"))
     {
         HOPEvalValueSetNull(outValue);
         *outIsConst = 1;
@@ -13724,8 +13725,8 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
         return HOPEvalEvalArrayLiteral(p, exprNode, p->currentFile, -1, outValue, outIsConst);
     }
 
-    if (n->kind == H2Ast_NEW) {
-        return HOPEvalEvalNewExpr(p, exprNode, NULL, -1, outValue, outIsConst);
+    if (n->kind == H2Ast_ALLOC) {
+        return HOPEvalEvalAllocExpr(p, exprNode, NULL, -1, outValue, outIsConst);
     }
 
     if (n->kind == H2Ast_CALL_WITH_CONTEXT) {
@@ -15007,7 +15008,7 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
                     p->currentFile->source,
                     ast->nodes[calleeNode].dataStart,
                     ast->nodes[calleeNode].dataEnd,
-                    "free");
+                    "dealloc");
             {
                 const char* savedReason =
                     p->currentExecCtx != NULL ? p->currentExecCtx->nonConstReason : NULL;

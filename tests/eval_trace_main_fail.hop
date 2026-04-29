@@ -3,5 +3,5 @@ import "testing" { FailingAllocator }
 
 fn main() {
 	context.allocator = FailingAllocator{}
-	new i32
+	alloc i32
 }

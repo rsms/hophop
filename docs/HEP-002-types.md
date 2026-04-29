@@ -8,7 +8,7 @@ HEP-2 introduces:
 - pointer, reference, and slice type forms
 - mutability via `mut` (read-only by default for refs/slices)
 - slice expressions with compile-time/runtime bounds checks
-- `new` allocation forms with explicit allocator argument
+- `alloc` allocation forms with explicit allocator argument
 
 For now, this is intentionally C-like:
 
@@ -212,35 +212,35 @@ Ordering/comparison for arrays/slices/pointers is deferred to a separate HEP.
 Future with `?` nullability:
 
 - non-null reference fields in by-value aggregates must be initialized before use
-- pointer-allocated values (`new`) may start with null fields and require programmer initialization
+- pointer-allocated values (`alloc`) may start with null fields and require programmer initialization
 
 Static analysis for definite initialization can be added later.
 
 ---
 
-## Allocation API (`new`)
+## Allocation API (`alloc`)
 
 Logical signatures (current):
 
 ```hop
-fn new(ma mut&MemAllocator, type T) *T
-fn new(ma mut&MemAllocator, type T, N uint) *[T N] // logical dependent return shape
+fn alloc(ma mut&Allocator, type T) *T
+fn alloc(ma mut&Allocator, type T, N uint) *[T N] // logical dependent return shape
 ```
 
 Logical signatures (future with `?`):
 
 ```hop
-fn new(ma mut&MemAllocator, type T) ?*T
-fn new(ma mut&MemAllocator, type T, N uint) ?*[T N]
+fn alloc(ma mut&Allocator, type T) ?*T
+fn alloc(ma mut&Allocator, type T, N uint) ?*[T N]
 
 // non-null forms that panic on allocation failure
-fn new(ma mut&MemAllocator, type T) *T
-fn new(ma mut&MemAllocator, type T, N uint) *[T N]
+fn alloc(ma mut&Allocator, type T) *T
+fn alloc(ma mut&Allocator, type T, N uint) *[T N]
 ```
 
 Ownership:
 
-- caller owns result and must free when done.
+- caller owns result and must dealloc when done.
 
 ---
 
@@ -381,7 +381,7 @@ Readonly-to-mutable conversions are not implicit.
 ```hop
 var v1 i32
 var v2 [i32 3]
-var p1 *[i32] = new(ma, i32, 3)
+var p1 *[i32] = alloc(ma, i32, 3)
 
 var r1 &i32 = &v1
 *r1 = 2 // error: r1 is read-only

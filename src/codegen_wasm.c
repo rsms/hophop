@@ -330,7 +330,7 @@ static bool WasmLocalNameEq(
 }
 
 static bool     WasmTypeRefIsSourceLocation(const H2MirProgram* program, uint32_t typeRefIndex);
-static uint32_t WasmFindMemAllocatorTypeRef(const H2MirProgram* program);
+static uint32_t WasmFindAllocatorTypeRef(const H2MirProgram* program);
 
 static bool WasmLocalIsSourceLocation(
     const H2MirProgram* program, const H2MirFunction* fn, const H2MirLocal* local) {
@@ -761,7 +761,9 @@ static bool WasmProgramHasAllocNullPanic(
             {
                 continue;
             }
-            if ((allocInst->tok & H2AstFlag_NEW_HAS_ALLOC) == 0u && !usesRootAllocator) {
+            if ((allocInst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) == 0u
+                && !usesRootAllocator)
+            {
                 continue;
             }
             typeRef = program->locals[fn->localStart + nextInst->aux].typeRef;
@@ -790,7 +792,8 @@ static bool WasmProgramHasInvalidAllocatorPanic(
         for (pc = 0; pc < fn->instLen; pc++) {
             const H2MirInst* inst = &program->insts[fn->instStart + pc];
             if (inst->op == H2MirOp_ALLOC_NEW
-                && ((inst->tok & H2AstFlag_NEW_HAS_ALLOC) != 0u || usesRootAllocator))
+                && ((inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u
+                    || usesRootAllocator))
             {
                 return true;
             }
@@ -812,7 +815,7 @@ static bool WasmProgramNeedsFunctionTable(const H2MirProgram* program) {
     for (i = 0; i < program->instLen; i++) {
         if (program->insts[i].op == H2MirOp_CALL_INDIRECT
             || (program->insts[i].op == H2MirOp_ALLOC_NEW
-                && (program->insts[i].tok & H2AstFlag_NEW_HAS_ALLOC) != 0u))
+                && (program->insts[i].tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u))
         {
             return true;
         }
@@ -2168,7 +2171,7 @@ static int WasmPrepareFunctionState(
         for (tempPc = 0; tempPc < fn->instLen; tempPc++) {
             const H2MirInst* inst = &program->insts[fn->instStart + tempPc];
             if (inst->op == H2MirOp_ALLOC_NEW
-                && ((inst->tok & H2AstFlag_NEW_HAS_ALLOC) != 0u
+                && ((inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u
                     || WasmProgramNeedsRootAllocator(program, NULL)))
             {
                 state->frameSize = WasmAlign4(state->frameSize);
@@ -2650,7 +2653,7 @@ static bool WasmFieldNameEq(
 }
 
 static bool WasmFieldIsEmbeddedAllocator(const H2MirProgram* program, const H2MirField* fieldRef) {
-    return WasmFieldNameEq(program, fieldRef, "MemAllocator");
+    return WasmFieldNameEq(program, fieldRef, "Allocator");
 }
 
 static uint32_t WasmAggregateFieldCount(const H2MirProgram* program, uint32_t typeRefIndex) {
@@ -2693,7 +2696,7 @@ static bool WasmTypeRefIsSourceLocation(const H2MirProgram* program, uint32_t ty
         && WasmAggregateHasNamedField(program, typeRefIndex, "end_column");
 }
 
-static bool WasmTypeRefIsMemAllocator(const H2MirProgram* program, uint32_t typeRefIndex) {
+static bool WasmTypeRefIsAllocator(const H2MirProgram* program, uint32_t typeRefIndex) {
     return program != NULL && typeRefIndex < program->typeLen
         && H2MirTypeRefIsAggregate(&program->types[typeRefIndex])
         && WasmAggregateFieldCount(program, typeRefIndex) == 2u
@@ -2701,13 +2704,13 @@ static bool WasmTypeRefIsMemAllocator(const H2MirProgram* program, uint32_t type
         && WasmAggregateHasNamedField(program, typeRefIndex, "data");
 }
 
-static uint32_t WasmFindMemAllocatorTypeRef(const H2MirProgram* program) {
+static uint32_t WasmFindAllocatorTypeRef(const H2MirProgram* program) {
     uint32_t i;
     if (program == NULL) {
         return UINT32_MAX;
     }
     for (i = 0; i < program->typeLen; i++) {
-        if (WasmTypeRefIsMemAllocator(program, i)) {
+        if (WasmTypeRefIsAllocator(program, i)) {
             return i;
         }
     }
@@ -5691,15 +5694,15 @@ static int WasmEmitFunctionRange(
                      || inst->aux == H2MirContextField_TEMP_ALLOCATOR)
                     && strings != NULL && strings->rootAllocatorOffset != UINT32_MAX)
                 {
-                    uint32_t memAllocatorTypeRef = WasmFindMemAllocatorTypeRef(program);
+                    uint32_t allocatorTypeRef = WasmFindAllocatorTypeRef(program);
                     if (WasmAppendByte(body, 0x41u) != 0
                         || WasmAppendSLEB32(body, (int32_t)strings->rootAllocatorOffset) != 0
                         || WasmStackPushEx(
                                state,
-                               memAllocatorTypeRef < program->typeLen
+                               allocatorTypeRef < program->typeLen
                                    ? HOPWasmType_AGG_REF
                                    : HOPWasmType_OPAQUE_PTR,
-                               memAllocatorTypeRef)
+                               allocatorTypeRef)
                                != 0)
                     {
                         return -1;
@@ -5718,14 +5721,14 @@ static int WasmEmitFunctionRange(
                 uint32_t         allocTypeRef = UINT32_MAX;
                 uint32_t         allocSize = 0u;
                 uint8_t          allocArgType = HOPWasmType_VOID;
-                bool             hasAllocArg = (inst->tok & H2AstFlag_NEW_HAS_ALLOC) != 0u;
-                bool             useContextAllocator =
+                bool hasAllocArg = (inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u;
+                bool useContextAllocator =
                     !hasAllocArg && strings != NULL && strings->rootAllocatorOffset != UINT32_MAX;
                 bool useAllocator = hasAllocArg || useContextAllocator;
                 bool useFixedCountAlloc = false;
                 bool isOptional = false;
                 if (imports == NULL || !imports->needsHeapGlobal
-                    || (inst->tok & H2AstFlag_NEW_HAS_INIT) != 0 || pc + 1u >= fn->instLen)
+                    || (inst->tok & H2AstFlag_ALLOC_HAS_INIT) != 0 || pc + 1u >= fn->instLen)
                 {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
@@ -5745,7 +5748,7 @@ static int WasmEmitFunctionRange(
                 allocType = state->localKinds[localIndex];
                 allocTypeRef = state->localTypeRefs[localIndex];
                 useFixedCountAlloc =
-                    (inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u && allocTypeRef < program->typeLen
+                    (inst->tok & H2AstFlag_ALLOC_HAS_COUNT) != 0u && allocTypeRef < program->typeLen
                     && (H2MirTypeRefIsFixedArray(&program->types[allocTypeRef])
                         || H2MirTypeRefIsFixedArrayView(&program->types[allocTypeRef]));
                 isOptional = allocTypeRef < program->typeLen
@@ -5776,7 +5779,7 @@ static int WasmEmitFunctionRange(
                 if (WasmTypeKindIsSlice(allocType)) {
                     uint32_t elemSize = WasmTypeElementSize(program, allocType, allocTypeRef);
                     uint8_t  countType = 0;
-                    if ((inst->tok & H2AstFlag_NEW_HAS_COUNT) == 0u || elemSize == 0u
+                    if ((inst->tok & H2AstFlag_ALLOC_HAS_COUNT) == 0u || elemSize == 0u
                         || WasmStackPop(state, &countType) != 0
                         || WasmRequireI32Value(
                                countType,
@@ -5939,7 +5942,7 @@ static int WasmEmitFunctionRange(
                     }
                     break;
                 }
-                if ((inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u && !useFixedCountAlloc) {
+                if ((inst->tok & H2AstFlag_ALLOC_HAS_COUNT) != 0u && !useFixedCountAlloc) {
                     uint8_t countType = 0;
                     if (WasmStackPop(state, &countType) != 0
                         || WasmRequireI32Value(

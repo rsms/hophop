@@ -1,6 +1,6 @@
-// Verifies the Wasm backend accepts new slice.
+// Verifies the Wasm backend accepts alloc slice.
 fn main() {
 	var n  uint   = 4
-	var xs *[i32] = new [i32 n]
+	var xs *[i32] = alloc [i32 n]
 	assert len(xs) == 4
 }

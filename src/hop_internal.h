@@ -71,7 +71,7 @@ typedef struct {
 typedef struct H2Package {
     char*      dirPath;
     char*      name;
-    int        loadState; /* 0=new, 1=loading, 2=loaded */
+    int        loadState; /* 0=alloc, 1=loading, 2=loaded */
     int        checked;
     H2Features features; /* accumulated from all parsed files */
 

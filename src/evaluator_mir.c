@@ -586,13 +586,13 @@ static int HOPEvalMirRewriteBuiltinHostCallForFile(
         return 1;
     }
     if ((H2MirCallArgCountFromTok(ins->tok) == 1u || H2MirCallArgCountFromTok(ins->tok) == 2u)
-        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "free"))
+        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "dealloc"))
     {
         host.nameStart = symbol->nameStart;
         host.nameEnd = symbol->nameEnd;
         host.kind = H2MirHost_GENERIC;
         host.flags = 0;
-        host.target = HOP_EVAL_MIR_HOST_FREE;
+        host.target = HOP_EVAL_MIR_HOST_DEALLOC;
         if (H2MirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
             return -1;
         }

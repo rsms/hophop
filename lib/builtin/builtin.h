@@ -56,7 +56,7 @@ typedef struct {
 
 typedef struct __hop_str            __hop_str;
 typedef struct __hop_SourceLocation __hop_SourceLocation;
-typedef struct __hop_MemAllocator   __hop_MemAllocator;
+typedef struct __hop_Allocator      __hop_Allocator;
 typedef struct __hop_Logger         __hop_Logger;
 typedef struct __hop_Context        __hop_Context;
 
@@ -115,9 +115,9 @@ struct __hop_SourceLocation {
     __hop_int end_column;
 };
 
-struct __hop_MemAllocator {
+struct __hop_Allocator {
     void* (*handler)(
-        __hop_MemAllocator*  arg0,
+        __hop_Allocator*     arg0,
         void*                arg1,
         __hop_int            arg2,
         __hop_int            arg3,
@@ -135,13 +135,13 @@ struct __hop_Logger {
 };
 
 struct __hop_Context {
-    __hop_MemAllocator allocator;
-    __hop_MemAllocator temp_allocator;
-    __hop_Logger       logger;
-    void*              user1;
-    void*              user2;
-    void*              _reserved;
-    __hop_u64          deadline;
+    __hop_Allocator allocator;
+    __hop_Allocator temp_allocator;
+    __hop_Logger    logger;
+    void*           user1;
+    void*           user2;
+    void*           _reserved;
+    __hop_u64       deadline;
 };
 // END generated code
 
@@ -278,7 +278,7 @@ static inline __hop_SourceLocation __hop_source_location(const char* file, __hop
     return (__hop_SourceLocation){ 0 };
 }
 
-static inline void* __hop_new(__hop_MemAllocator* ma, __hop_int size, __hop_int align) {
+static inline void* __hop_alloc(__hop_Allocator* ma, __hop_int size, __hop_int align) {
     __hop_int newSize = size;
 
     if __hop_unlikely (size < 0 || align <= 0 || (align & (align - 1)) != 0) {
@@ -292,7 +292,7 @@ static inline void* __hop_new(__hop_MemAllocator* ma, __hop_int size, __hop_int 
     return ma->handler(ma, NULL, align, 0, &newSize, 0, __hop_source_location(__FILE__, __LINE__));
 }
 
-static inline void __hop_free(__hop_MemAllocator* ma, void* p, __hop_int curSize, __hop_int align) {
+static inline void __hop_dealloc(__hop_Allocator* ma, void* p, __hop_int curSize, __hop_int align) {
     __hop_int newSize = 0;
     if (p == NULL || ma == NULL || ma->handler == NULL) {
         return;
@@ -301,22 +301,22 @@ static inline void __hop_free(__hop_MemAllocator* ma, void* p, __hop_int curSize
         ma, p, align, curSize, &newSize, 0, __hop_source_location(__FILE__, __LINE__));
 }
 
-static inline void* __hop_new_array(
-    __hop_MemAllocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
+static inline void* __hop_alloc_array(
+    __hop_Allocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
     if __hop_unlikely (elemSize < 0 || count < 0) {
         __hop_panic(__hop_strlitp("negative size"), "", 0);
     }
-    return __hop_new(ma, elemSize * count, elemAlign);
+    return __hop_alloc(ma, elemSize * count, elemAlign);
 }
 
-static inline __hop_slice_ro __hop_new_array_slice_ro(
-    __hop_MemAllocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
-    void* p = __hop_new_array(ma, elemSize, elemAlign, count);
+static inline __hop_slice_ro __hop_alloc_array_slice_ro(
+    __hop_Allocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
+    void* p = __hop_alloc_array(ma, elemSize, elemAlign, count);
     return (__hop_slice_ro){ .ptr = p, .len = p != NULL ? count : 0 };
 }
 
-static inline __hop_slice_mut __hop_new_array_slice_mut(
-    __hop_MemAllocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
-    void* p = __hop_new_array(ma, elemSize, elemAlign, count);
+static inline __hop_slice_mut __hop_alloc_array_slice_mut(
+    __hop_Allocator* ma, __hop_int elemSize, __hop_int elemAlign, __hop_int count) {
+    void* p = __hop_alloc_array(ma, elemSize, elemAlign, count);
     return (__hop_slice_mut){ .ptr = p, .len = p != NULL ? count : 0 };
 }

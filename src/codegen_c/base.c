@@ -2219,8 +2219,8 @@ const char* _Nullable ResolveTypeName(H2CBackendC* c, uint32_t start, uint32_t e
 void NormalizeCoreRuntimeTypeName(H2TypeRef* outType) {
     if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__str")) {
         outType->baseName = "__hop_str";
-    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__MemAllocator")) {
-        outType->baseName = "__hop_MemAllocator";
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Allocator")) {
+        outType->baseName = "__hop_Allocator";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Logger")) {
         outType->baseName = "__hop_Logger";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Context")) {
@@ -3682,8 +3682,8 @@ const char* _Nullable CanonicalFieldOwnerType(
     if (canonical == NULL) {
         return NULL;
     }
-    if (StrEq(canonical, "__hop_MemAllocator")) {
-        return "builtin__MemAllocator";
+    if (StrEq(canonical, "__hop_Allocator")) {
+        return "builtin__Allocator";
     }
     if (StrEq(canonical, "__hop_Logger")) {
         return "builtin__Logger";
@@ -3972,9 +3972,9 @@ static int FnSigIsNoContextAbiCallback(
         return 0;
     }
     if (paramLen == 7
-        && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__MemAllocator")
-            || TypeRefIsNamedPtr(&paramTypes[0], "__hop_MemAllocator")
-            || TypeRefIsNamedPtr(&paramTypes[0], "MemAllocator")))
+        && (TypeRefIsNamedPtr(&paramTypes[0], "builtin__Allocator")
+            || TypeRefIsNamedPtr(&paramTypes[0], "__hop_Allocator")
+            || TypeRefIsNamedPtr(&paramTypes[0], "Allocator")))
     {
         return 1;
     }
@@ -3994,7 +3994,7 @@ static int NodeSubtreeNeedsAmbientContext(H2CBackendC* c, int32_t nodeId) {
     if (n == NULL) {
         return 0;
     }
-    if (n->kind == H2Ast_NEW || n->kind == H2Ast_DEL || n->kind == H2Ast_CALL
+    if (n->kind == H2Ast_ALLOC || n->kind == H2Ast_DEALLOC || n->kind == H2Ast_CALL
         || n->kind == H2Ast_CALL_WITH_CONTEXT)
     {
         return 1;
@@ -5902,7 +5902,7 @@ int EmitCompoundLiteralOrderedStruct(
     H2CBackendC* c, int32_t firstField, const char* ownerType, const H2TypeRef* valueType);
 int EmitEffectiveContextFieldValue(
     H2CBackendC* c, const char* fieldName, const H2TypeRef* requiredType);
-int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType);
+int InferAllocExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType);
 int EmitExprCoerced(H2CBackendC* c, int32_t exprNode, const H2TypeRef* _Nullable dstType);
 int EmitCompoundFieldValueCoerced(
     H2CBackendC* c, const H2AstNode* field, int32_t exprNode, const H2TypeRef* _Nullable dstType);
@@ -5912,7 +5912,7 @@ int TypeRefAssignableCost(
     H2CBackendC* c, const H2TypeRef* dst, const H2TypeRef* src, uint8_t* outCost);
 
 void SetPreferredAllocatorPtrType(H2TypeRef* outType) {
-    TypeRefSetScalar(outType, "builtin__MemAllocator");
+    TypeRefSetScalar(outType, "builtin__Allocator");
     outType->ptrDepth = 1;
 }
 

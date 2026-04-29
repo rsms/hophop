@@ -1,8 +1,8 @@
-// Verifies new non-optional panics.
+// Verifies alloc non-optional panics.
 import "testing" { FailingAllocator }
 
 fn main() {
 	ma := FailingAllocator{}
 	context.allocator = ma
-	var _p *i32 = new i32
+	var _p *i32 = alloc i32
 }

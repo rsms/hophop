@@ -1,2 +1,2 @@
-error: failed to resolve package path {{ROOT}}/std/testing
+error: failed to resolve package path /Users/rsms/src/hophop.alloc/std/testing
 tests/import_std_testing_bad.hop:2:1: error: HOP0000: failed to resolve import std/testing

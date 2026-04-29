@@ -201,7 +201,7 @@ static const char* H2MirHostTargetName(H2MirHostTarget target) {
         case H2MirHostTarget_INVALID:              return "INVALID";
         case H2MirHostTarget_PRINT:                return "PRINT";
         case H2MirHostTarget_PLATFORM_EXIT:        return "PLATFORM_EXIT";
-        case H2MirHostTarget_FREE:                 return "FREE";
+        case H2MirHostTarget_DEALLOC:              return "DEALLOC";
         case H2MirHostTarget_CONCAT:               return "CONCAT";
         case H2MirHostTarget_COPY:                 return "COPY";
         case H2MirHostTarget_PLATFORM_CONSOLE_LOG: return "PLATFORM_CONSOLE_LOG";

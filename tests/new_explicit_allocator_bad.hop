@@ -1,4 +1,4 @@
-// Verifies explicit new allocator must be a MemAllocator value or pointer.
+// Verifies explicit alloc allocator must be a Allocator value or pointer.
 fn main() {
-	var _p *i32 = new i32 in 1
+	var _p *i32 = alloc i32 in 1
 }

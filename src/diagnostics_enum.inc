@@ -72,8 +72,8 @@ H2Diag_NONE = 0, H2Diag_UNEXPECTED_CHAR, /* HOP1001: unexpected character */
     H2Diag_FIELD_DEFAULT_TYPE_MISMATCH, /* HOP2046: default expression type mismatch for field '{s}'
                                          */
     H2Diag_FIELD_DEFAULT_ON_EMBEDDED, /* HOP2047: embedded field cannot have default initializer */
-    H2Diag_NEW_VARSIZE_INIT_REQUIRED, /* HOP2048: new on variable-size type requires initializer
-                                         (use new T{...}) */
+    H2Diag_ALLOC_VARSIZE_INIT_REQUIRED, /* HOP2048: alloc on variable-size type requires initializer
+                                           (use alloc T{...}) */
     H2Diag_INVALID_COMPARISON_HOOK_SIGNATURE, /* HOP2049: invalid comparison hook signature */
     H2Diag_TYPE_NOT_COMPARABLE,               /* HOP2050: type is not comparable */
     H2Diag_TYPE_NOT_ORDERED,                  /* HOP2051: type is not ordered */

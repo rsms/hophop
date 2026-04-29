@@ -2,7 +2,7 @@
 import "testing" { FailingAllocator }
 
 fn leaf() {
-	new i32
+	alloc i32
 }
 
 fn middle() {

@@ -312,7 +312,7 @@ int EmitDynamicActivePackTypeTag(H2CBackendC* c, int32_t idxNode) {
     return 0;
 }
 
-int DecodeNewExprNodes(
+int DecodeAllocExprNodes(
     H2CBackendC* c,
     int32_t      nodeId,
     int32_t*     outTypeNode,
@@ -325,12 +325,12 @@ int DecodeNewExprNodes(
     int              hasCount;
     int              hasInit;
     int              hasAlloc;
-    if (n == NULL || n->kind != H2Ast_NEW) {
+    if (n == NULL || n->kind != H2Ast_ALLOC) {
         return -1;
     }
-    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
+    hasCount = (n->flags & H2AstFlag_ALLOC_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_ALLOC_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0;
 
     typeNode = AstFirstChild(&c->ast, nodeId);
     if (typeNode < 0) {
@@ -3998,7 +3998,7 @@ int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2Typ
                 && recvType.ptrDepth == 0 && recvType.containerPtrDepth == 0
                 && recvType.baseName != NULL
                 && SliceEq(c->unit->source, cn->dataStart, cn->dataEnd, "impl")
-                && StrEq(recvType.baseName, "__hop_MemAllocator"))
+                && StrEq(recvType.baseName, "__hop_Allocator"))
             {
                 TypeRefSetScalar(outType, "__hop_uint");
                 return 0;
@@ -4147,9 +4147,9 @@ int InferExprType_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2Typ
     return 0;
 }
 
-int InferExprType_NEW(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType) {
+int InferExprType_ALLOC(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType) {
     (void)n;
-    return InferNewExprType(c, nodeId, outType);
+    return InferAllocExprType(c, nodeId, outType);
 }
 
 int InferExprType_UNARY(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType) {
@@ -4547,7 +4547,7 @@ int InferExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
         case H2Ast_ARRAY_LIT:         return InferArrayLiteralType(c, nodeId, NULL, outType);
         case H2Ast_CALL_WITH_CONTEXT: return InferExprType_CALL_WITH_CONTEXT(c, nodeId, n, outType);
         case H2Ast_CALL:              return InferExprType_CALL(c, nodeId, n, outType);
-        case H2Ast_NEW:               return InferExprType_NEW(c, nodeId, n, outType);
+        case H2Ast_ALLOC:             return InferExprType_ALLOC(c, nodeId, n, outType);
         case H2Ast_UNARY:             return InferExprType_UNARY(c, nodeId, n, outType);
         case H2Ast_FIELD_EXPR:        return InferExprType_FIELD_EXPR(c, nodeId, n, outType);
         case H2Ast_INDEX:             return InferExprType_INDEX(c, nodeId, n, outType);
@@ -4568,7 +4568,7 @@ int InferExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
     }
 }
 
-int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
+int InferAllocExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
     int32_t  typeNode = -1;
     int32_t  countNode = -1;
     int32_t  initNode = -1;
@@ -4578,7 +4578,8 @@ int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
     uint32_t arrayLen;
 
     TypeRefSetInvalid(outType);
-    if (NodeAt(c, nodeId) != NULL && (NodeAt(c, nodeId)->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    if (NodeAt(c, nodeId) != NULL
+        && (NodeAt(c, nodeId)->flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0)
     {
         int32_t litNode = AstFirstChild(&c->ast, nodeId);
         if (InferArrayLiteralType(c, litNode, NULL, outType) != 0 || !outType->valid) {
@@ -4588,7 +4589,7 @@ int InferNewExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
         outType->containerPtrDepth++;
         return 0;
     }
-    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countNode, &initNode, &allocNode) != 0) {
+    if (DecodeAllocExprNodes(c, nodeId, &typeNode, &countNode, &initNode, &allocNode) != 0) {
         return 0;
     }
     (void)initNode;
@@ -6513,7 +6514,7 @@ int EmitConcatCallExpr(H2CBackendC* c, int32_t calleeNode) {
         || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " + hop_concat_lenB_") != 0
         || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, "; hop_concat_out_") != 0
         || BufAppendU32(&c->out, tempId) != 0
-        || BufAppendCStr(&c->out, " = (__hop_str*)__hop_new((__hop_MemAllocator*)(") != 0
+        || BufAppendCStr(&c->out, " = (__hop_str*)__hop_alloc((__hop_Allocator*)(") != 0
         || EmitNewAllocArgExpr(c, -1) != 0
         || BufAppendCStr(&c->out, "), (__hop_int)sizeof(__hop_str) + hop_concat_outLen_") != 0
         || BufAppendU32(&c->out, tempId) != 0
@@ -6777,7 +6778,7 @@ int EmitFmtBuilderInitStmt(H2CBackendC* c, const char* builderName, int32_t allo
         || BufAppendCStr(&c->out, builderName) != 0
         || BufAppendCStr(&c->out, ";\n    __hop_fmt_builder_init(&") != 0
         || BufAppendCStr(&c->out, builderName) != 0
-        || BufAppendCStr(&c->out, ", (__hop_MemAllocator*)(") != 0
+        || BufAppendCStr(&c->out, ", (__hop_Allocator*)(") != 0
         || EmitNewAllocArgExpr(c, allocArgNode) != 0 || BufAppendCStr(&c->out, "));\n") != 0)
     {
         return -1;
@@ -7245,7 +7246,7 @@ int EmitFreeCallExpr(H2CBackendC* c, int32_t allocArgNode, int32_t valueNode) {
     if (InferExprType(c, valueNode, &valueType) != 0 || !valueType.valid) {
         return -1;
     }
-    if (BufAppendCStr(&c->out, "__hop_free((__hop_MemAllocator*)(") != 0
+    if (BufAppendCStr(&c->out, "__hop_dealloc((__hop_Allocator*)(") != 0
         || EmitNewAllocArgExpr(c, allocArgNode) != 0 || BufAppendCStr(&c->out, "), ") != 0)
     {
         return -1;
@@ -7331,7 +7332,8 @@ int EmitNewExpr(
     int              dstIsRuntimeArrayMut = 0;
     int              isVarSizeStr = 0;
 
-    if (NodeAt(c, nodeId) != NULL && (NodeAt(c, nodeId)->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0)
+    if (NodeAt(c, nodeId) != NULL
+        && (NodeAt(c, nodeId)->flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0)
     {
         int32_t          litNode = AstFirstChild(&c->ast, nodeId);
         int32_t          allocNode = litNode >= 0 ? AstNextSibling(&c->ast, litNode) : -1;
@@ -7381,7 +7383,7 @@ int EmitNewExpr(
             || EmitElementTypeName(c, &elemType, 0) != 0
             || BufAppendCStr(&c->out, "* __hop_p = (") != 0
             || EmitElementTypeName(c, &elemType, 0) != 0
-            || BufAppendCStr(&c->out, "*)__hop_new_array((__hop_MemAllocator*)(") != 0
+            || BufAppendCStr(&c->out, "*)__hop_alloc_array((__hop_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocNode) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitElementTypeName(c, &elemType, 0) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -7438,7 +7440,7 @@ int EmitNewExpr(
         return BufAppendCStr(&c->out, ";\n}))");
     }
 
-    if (DecodeNewExprNodes(c, nodeId, &typeNode, &countArg, &initArg, &allocArg) != 0) {
+    if (DecodeAllocExprNodes(c, nodeId, &typeNode, &countArg, &initArg, &allocArg) != 0) {
         return -1;
     }
     if (ParseTypeRef(c, typeNode, &elemType) != 0 || !elemType.valid) {
@@ -7483,7 +7485,7 @@ int EmitNewExpr(
             {
                 return -1;
             }
-            if (BufAppendCStr(&c->out, "__hop_new_array((__hop_MemAllocator*)(") != 0
+            if (BufAppendCStr(&c->out, "__hop_alloc_array((__hop_Allocator*)(") != 0
                 || EmitNewAllocArgExpr(c, allocArg) != 0
                 || BufAppendCStr(&c->out, "), sizeof(") != 0
                 || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -7503,8 +7505,8 @@ int EmitNewExpr(
 
         if (BufAppendCStr(
                 &c->out,
-                dstIsRuntimeArrayMut ? "__hop_new_array_slice_mut((__hop_MemAllocator*)("
-                                     : "__hop_new_array_slice_ro((__hop_MemAllocator*)(")
+                dstIsRuntimeArrayMut ? "__hop_alloc_array_slice_mut((__hop_Allocator*)("
+                                     : "__hop_alloc_array_slice_ro((__hop_Allocator*)(")
                 != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
@@ -7527,7 +7529,7 @@ int EmitNewExpr(
         if (requireNonNull && BufAppendCStr(&c->out, "__hop_unwrap((const void*)(") != 0) {
             return -1;
         }
-        if (BufAppendCStr(&c->out, "__hop_new_array((__hop_MemAllocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__hop_alloc_array((__hop_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -7554,7 +7556,7 @@ int EmitNewExpr(
                 return -1;
             }
         }
-        if (BufAppendCStr(&c->out, "__hop_new((__hop_MemAllocator*)(") != 0
+        if (BufAppendCStr(&c->out, "__hop_alloc((__hop_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -7693,7 +7695,7 @@ int EmitNewExpr(
         if (BufAppendCStr(&c->out, "    __hop_p = (") != 0
             || (isVarSizeStr ? BufAppendCStr(&c->out, varSizeBaseName)
                              : EmitTypeNameWithDepth(c, &elemType))
-            || BufAppendCStr(&c->out, "*)__hop_new((__hop_MemAllocator*)(") != 0
+            || BufAppendCStr(&c->out, "*)__hop_alloc((__hop_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0
             || BufAppendCStr(&c->out, "), __hop_size, _Alignof(") != 0
             || (isVarSizeStr ? BufAppendCStr(&c->out, varSizeBaseName)
@@ -7828,7 +7830,7 @@ int EmitNewExpr(
     } else {
         if (BufAppendCStr(&c->out, "    __hop_p = (") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
-            || BufAppendCStr(&c->out, "*)__hop_new((__hop_MemAllocator*)(") != 0
+            || BufAppendCStr(&c->out, "*)__hop_alloc((__hop_Allocator*)(") != 0
             || EmitNewAllocArgExpr(c, allocArg) != 0 || BufAppendCStr(&c->out, "), sizeof(") != 0
             || EmitTypeNameWithDepth(c, &elemType) != 0
             || BufAppendCStr(&c->out, "), _Alignof(") != 0
@@ -7882,7 +7884,7 @@ int EmitExprCoerced(H2CBackendC* c, int32_t exprNode, const H2TypeRef* _Nullable
     {
         return EmitDynamicActivePackIndexCoerced(c, idxNode, dstType);
     }
-    if (expr != NULL && expr->kind == H2Ast_NEW) {
+    if (expr != NULL && expr->kind == H2Ast_ALLOC) {
         int requireNonNull = TypeRefIsPointerLike(dstType) && !dstType->isOptional;
         return EmitNewExpr(c, exprNode, dstType, requireNonNull);
     }
@@ -10262,7 +10264,7 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         return EmitConcatCallExpr(c, child);
     }
     if (callee != NULL && callee->kind == H2Ast_IDENT
-        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "free"))
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "dealloc"))
     {
         int32_t arg1 = AstNextSibling(&c->ast, child);
         int32_t arg2 = arg1 >= 0 ? AstNextSibling(&c->ast, arg1) : -1;
@@ -10453,7 +10455,7 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
                 }
                 return 0;
             }
-            if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "free")) {
+            if (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "dealloc")) {
                 int32_t valueNode = AstNextSibling(&c->ast, child);
                 int32_t extra = valueNode >= 0 ? AstNextSibling(&c->ast, valueNode) : -1;
                 if (recvNode < 0 || valueNode < 0 || extra >= 0) {
@@ -10901,7 +10903,7 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     }
 }
 
-int EmitExpr_NEW(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
+int EmitExpr_ALLOC(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     (void)n;
     return EmitNewExpr(c, nodeId, NULL, 0);
 }
@@ -11367,7 +11369,7 @@ int EmitExpr(H2CBackendC* c, int32_t nodeId) {
         case H2Ast_BINARY:            rc = EmitExpr_BINARY(c, nodeId, n); break;
         case H2Ast_CALL_WITH_CONTEXT: rc = EmitExpr_CALL_WITH_CONTEXT(c, nodeId, n); break;
         case H2Ast_CALL:              rc = EmitExpr_CALL(c, nodeId, n); break;
-        case H2Ast_NEW:               rc = EmitExpr_NEW(c, nodeId, n); break;
+        case H2Ast_ALLOC:             rc = EmitExpr_ALLOC(c, nodeId, n); break;
         case H2Ast_INDEX:             rc = EmitExpr_INDEX(c, nodeId, n); break;
         case H2Ast_FIELD_EXPR:        rc = EmitExpr_FIELD_EXPR(c, nodeId, n); break;
         case H2Ast_CAST:              rc = EmitExpr_CAST(c, nodeId, n); break;
@@ -13598,10 +13600,10 @@ int EmitStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             }
             return 0;
         }
-        case H2Ast_DEL: {
+        case H2Ast_DEALLOC: {
             int32_t expr = AstFirstChild(&c->ast, nodeId);
             int32_t allocArg = -1;
-            if ((n->flags & H2AstFlag_DEL_HAS_ALLOC) != 0) {
+            if ((n->flags & H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR) != 0) {
                 int32_t scan = expr;
                 while (scan >= 0) {
                     int32_t next = AstNextSibling(&c->ast, scan);

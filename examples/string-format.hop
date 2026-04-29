@@ -4,10 +4,10 @@ fn main() {
 	// Placeholder support: {}, {s}, {i}, {f}. Escape braces with {{ and }}.
 	var out *str = format(SHOWCASE_FORMAT, "Ada", 42, 0.625)
 	assert len(out) == len("user=Ada, score=42, ratio=0.625, braces={ok}")
-	del out
+	dealloc out
 
 	var s *str = "values = {}, {}".format(123, 456)
 	print(s)
 	assert len(s) == len("values = 123, 456")
-	del s
+	dealloc s
 }

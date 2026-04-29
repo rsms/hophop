@@ -24,8 +24,8 @@ Conventions:
 | Selector-call sugar and precedence | Core | `check:tests/typefunc_selector_autoref_ok.hop`, `check:tests/typefunc_selector_autoref_temp_bad.hop`, `check:tests/typefunc_field_precedence_bad.hop` |
 | Statement typing (`if/for/switch/assert/defer`) | Core | `check:tests/switch_ok.hop`, `check:tests/switch_bad_*.hop`, `check:tests/assert_ok.hop`, `integration.examples.defer.compile_only`, `integration.examples.control_flow.compile_only` |
 | Context declaration/call overlays | Core | `checkpkg:tests/context_ok.hop`, `checkpkg:tests/context_temp_mem_ok.hop`, `check:tests/context_missing_field_bad.hop`, `integration.examples.context.compile_only` |
-| Built-ins `len/cstr/panic/sizeof/print/concat/free` | Core | `check:tests/print_ok.hop`, `check:tests/panic_ok.hop`, `checkpkg:tests/str_concat_free_ok.hop`, `integration.runtime.print_ok.compile_and_run`, `integration.runtime.str_slice_conversion_ok.compile_only` |
-| Built-in `new` | Core | `checkpkg:tests/new_ok.hop`, `checkpkg:tests/new_selector_ok.hop`, `checkpkg:tests/new_contextual_count_ok.hop`, `checkpkg:tests/new_vss_init_ok.hop`, plus `new_bad_*` failures |
+| Built-ins `len/cstr/panic/sizeof/print/concat/dealloc` | Core | `check:tests/print_ok.hop`, `check:tests/panic_ok.hop`, `checkpkg:tests/str_concat_free_ok.hop`, `integration.runtime.print_ok.compile_and_run`, `integration.runtime.str_slice_conversion_ok.compile_only` |
+| Built-in `alloc` | Core | `checkpkg:tests/new_ok.hop`, `checkpkg:tests/new_selector_ok.hop`, `checkpkg:tests/new_contextual_count_ok.hop`, `checkpkg:tests/new_vss_init_ok.hop`, plus `new_bad_*` failures |
 | Variable-size structs | Core | `check:tests/vss_ok.hop`, `check:tests/vss_nested_ok.hop`, `integration.codegen.vss*.genpkg_c_compile` |
 | Imports/path/alias/named symbols | Core | `checkpkg:tests/import_*`, `checkpkg:tests/enum_member_import_*`, `checkpkg:tests/platform_import_*` |
 | Exports/public API closure | Core | `checkpkg:tests/pkg_ok/app`, `checkpkg:tests/var_infer_transitive_type_ok/c`, `checkpkg:tests/typefunc_import_*` |
@@ -36,7 +36,7 @@ Conventions:
 | Rule family | Profile | Primary evidence tests |
 |---|---|---|
 | `REF-IMPL-002` optional unwrap lowering | Ref | `integration.codegen.new_ok.unwrap_lowering`, `integration.runtime.new_nonoptional_panic.compile_and_run` |
-| `REF-IMPL-003` `new` destination-sensitive unwrap | Ref | `integration.codegen.new_optional.no_unwrap_lowering`, `integration.codegen.new_selector_optional.no_unwrap_lowering` |
+| `REF-IMPL-003` `alloc` destination-sensitive unwrap | Ref | `integration.codegen.new_optional.no_unwrap_lowering`, `integration.codegen.new_selector_optional.no_unwrap_lowering` |
 | `REF-IMPL-001` switch lowering form | Ref | indirect via codegen suites; no dedicated syntax-shape golden in current manifest |
 | `REF-IMPL-004` runtime bounds-check emission limits | Ref | negative slice checks currently exercised as type/static failures (`slice_bad_*`) |
 | `PKG-IMPORT-009` feature import warning behavior | Ref | `check:tests/feature_optional_no_import.hop` (acceptance), warning text not normatively asserted |

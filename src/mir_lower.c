@@ -400,8 +400,8 @@ static int H2MirLowerRewriteHostInst(
         hostTarget = H2MirHostTarget_COPY;
     } else if (in->end == in->start + 6u && memcmp(src.ptr + in->start, "concat", 6) == 0) {
         hostTarget = H2MirHostTarget_CONCAT;
-    } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "free", 4) == 0) {
-        hostTarget = H2MirHostTarget_FREE;
+    } else if (in->end == in->start + 7u && memcmp(src.ptr + in->start, "dealloc", 7) == 0) {
+        hostTarget = H2MirHostTarget_DEALLOC;
     } else {
         return 0;
     }

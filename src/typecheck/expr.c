@@ -33,7 +33,7 @@ static int H2TCFailUnaryOpTypeMismatch(
     return rc;
 }
 
-int H2TCValidateMemAllocatorArg(H2TypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType) {
+int H2TCValidateAllocatorArg(H2TypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType) {
     const H2AstNode* n;
     int32_t          allocType;
     int32_t          allocRefType;
@@ -261,10 +261,10 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     }
     n = &c->ast->nodes[nodeId];
 
-    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
-    if ((n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+    hasCount = (n->flags & H2AstFlag_ALLOC_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_ALLOC_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0;
+    if ((n->flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0) {
         int32_t litNode = H2AstFirstChild(c->ast, nodeId);
         int32_t expected = c->activeExpectedNewType;
         int32_t expectedBase = expected >= 0 ? H2TCResolveAliasBaseType(c, expected) : -1;
@@ -342,13 +342,13 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
     }
 
-    allocBaseType = H2TCFindMemAllocatorType(c);
+    allocBaseType = H2TCFindAllocatorType(c);
     if (allocBaseType < 0) {
         return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
     }
 
     if (allocArgNode >= 0) {
-        if (H2TCValidateMemAllocatorArg(c, allocArgNode, allocBaseType) != 0) {
+        if (H2TCValidateAllocatorArg(c, allocArgNode, allocBaseType) != 0) {
             return -1;
         }
     } else {
@@ -368,7 +368,7 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         return H2TCFailVarSizeByValue(c, typeNode, elemType, "array element position");
     }
     if (countArgNode < 0 && H2TCTypeContainsVarSizeByValue(c, elemType) && initArgNode < 0) {
-        return H2TCFailNode(c, nodeId, H2Diag_NEW_VARSIZE_INIT_REQUIRED);
+        return H2TCFailNode(c, nodeId, H2Diag_ALLOC_VARSIZE_INIT_REQUIRED);
     }
 
     if (initArgNode >= 0) {
@@ -936,7 +936,7 @@ int H2TCTypeExprExpected(
     if (n->kind == H2Ast_ARRAY_LIT) {
         return H2TCTypeArrayLit(c, nodeId, expectedType, outType);
     }
-    if (n->kind == H2Ast_NEW && (n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+    if (n->kind == H2Ast_ALLOC && (n->flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0) {
         int32_t savedExpectedNewType = c->activeExpectedNewType;
         int     rc;
         c->activeExpectedNewType = expectedType;
@@ -1528,7 +1528,7 @@ int H2TCTypeExpr_CALL_WITH_CONTEXT(
     return 0;
 }
 
-int H2TCTypeExpr_NEW(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType) {
+int H2TCTypeExpr_ALLOC(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType) {
     (void)n;
     if (c->currentFunctionIsCompareHook) {
         return H2TCFailNode(c, nodeId, H2Diag_COMPARISON_HOOK_IMPURE);
@@ -2220,7 +2220,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             int32_t wantStrType;
             int32_t strPtrType;
             int32_t ctxMemType;
-            int32_t allocBaseType = H2TCFindMemAllocatorType(c);
+            int32_t allocBaseType = H2TCFindAllocatorType(c);
             if (aNode < 0 || bNode < 0 || nextNode >= 0) {
                 return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
             }
@@ -2391,7 +2391,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = intType;
             return 0;
         }
-        if (0 && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
+        if (0 && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "dealloc")) {
             int32_t arg1Node = H2AstNextSibling(c->ast, calleeNode);
             int32_t arg2Node = arg1Node >= 0 ? H2AstNextSibling(c->ast, arg1Node) : -1;
             int32_t arg3Node = arg2Node >= 0 ? H2AstNextSibling(c->ast, arg2Node) : -1;
@@ -2400,7 +2400,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             int32_t valueType;
             int32_t allocType;
             int32_t ctxMemType;
-            int32_t allocBaseType = H2TCFindMemAllocatorType(c);
+            int32_t allocBaseType = H2TCFindAllocatorType(c);
             int32_t allocParamType =
                 allocBaseType < 0
                     ? -1
@@ -2724,7 +2724,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = u8RefType;
             return 0;
         }
-        if (0 && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "free")) {
+        if (0 && H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "dealloc")) {
             int32_t valueArgNode = H2AstNextSibling(c->ast, calleeNode);
             int32_t nextArgNode = valueArgNode >= 0 ? H2AstNextSibling(c->ast, valueArgNode) : -1;
             int32_t allocBaseType;
@@ -2733,7 +2733,7 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             if (valueArgNode < 0 || nextArgNode >= 0) {
                 return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
             }
-            allocBaseType = H2TCFindMemAllocatorType(c);
+            allocBaseType = H2TCFindAllocatorType(c);
             if (allocBaseType < 0) {
                 return H2TCFailNode(c, recvNode, H2Diag_TYPE_MISMATCH);
             }
@@ -3800,7 +3800,7 @@ int H2TCTypeExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case H2Ast_COMPOUND_LIT:      return H2TCTypeExpr_COMPOUND_LIT(c, nodeId, n, outType);
         case H2Ast_ARRAY_LIT:         return H2TCTypeArrayLit(c, nodeId, -1, outType);
         case H2Ast_CALL_WITH_CONTEXT: return H2TCTypeExpr_CALL_WITH_CONTEXT(c, nodeId, n, outType);
-        case H2Ast_NEW:               return H2TCTypeExpr_NEW(c, nodeId, n, outType);
+        case H2Ast_ALLOC:             return H2TCTypeExpr_ALLOC(c, nodeId, n, outType);
         case H2Ast_CALL:              return H2TCTypeExpr_CALL(c, nodeId, n, outType);
         case H2Ast_CALL_ARG:          {
             int32_t inner = H2AstFirstChild(c->ast, nodeId);

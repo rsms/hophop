@@ -1,6 +1,6 @@
 pub struct Context {
-	allocator      MemAllocator
-	temp_allocator MemAllocator
+	allocator      Allocator
+	temp_allocator Allocator
 	logger         Logger
 	user1          rawptr
 	user2          rawptr

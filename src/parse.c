@@ -1223,7 +1223,7 @@ static int H2PParseArrayLiteral(H2Parser* p, int32_t* out) {
     return 0;
 }
 
-static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
+static int H2PParseAllocExpr(H2Parser* p, int32_t* out) {
     const H2Token* kw = H2PPrev(p);
     const H2Token* rb;
     int32_t        n;
@@ -1232,7 +1232,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
     int32_t        initNode = -1;
     int32_t        allocNode = -1;
 
-    n = H2PNewNode(p, H2Ast_NEW, kw->start, kw->end);
+    n = H2PNewNode(p, H2Ast_ALLOC, kw->start, kw->end);
     if (n < 0) {
         return -1;
     }
@@ -1251,7 +1251,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
             parsedCount = 1;
         }
         if (parsedCount) {
-            p->nodes[n].flags |= H2AstFlag_NEW_HAS_COUNT;
+            p->nodes[n].flags |= H2AstFlag_ALLOC_HAS_COUNT;
             p->nodes[n].end = rb->end;
         } else {
             p->pos = savedPos - 1u;
@@ -1262,7 +1262,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
             if (H2PParseArrayLiteral(p, &initNode) != 0) {
                 return -1;
             }
-            p->nodes[n].flags |= H2AstFlag_NEW_HAS_ARRAY_LIT;
+            p->nodes[n].flags |= H2AstFlag_ALLOC_HAS_ARRAY_LIT;
             p->nodes[n].end = p->nodes[initNode].end;
             typeNode = -1;
             countNode = -1;
@@ -1276,7 +1276,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
             if (H2PParseCompoundLiteralTail(p, -1, &initNode) != 0) {
                 return -1;
             }
-            p->nodes[n].flags |= H2AstFlag_NEW_HAS_INIT;
+            p->nodes[n].flags |= H2AstFlag_ALLOC_HAS_INIT;
             p->nodes[n].end = p->nodes[initNode].end;
         }
     }
@@ -1285,7 +1285,7 @@ static int H2PParseNewExpr(H2Parser* p, int32_t* out) {
         if (H2PParseExpr(p, 1, &allocNode) != 0) {
             return -1;
         }
-        p->nodes[n].flags |= H2AstFlag_NEW_HAS_ALLOC;
+        p->nodes[n].flags |= H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR;
         p->nodes[n].end = p->nodes[allocNode].end;
     }
 
@@ -1552,8 +1552,8 @@ static int H2PParsePrimary(H2Parser* p, int32_t* out) {
         return 0;
     }
 
-    if (H2PMatch(p, H2Tok_NEW)) {
-        return H2PParseNewExpr(p, out);
+    if (H2PMatch(p, H2Tok_ALLOC)) {
+        return H2PParseAllocExpr(p, out);
     }
 
     return H2PFail(p, H2Diag_EXPECTED_EXPR);
@@ -3007,10 +3007,10 @@ static int H2PParseStmt(H2Parser* p, int32_t* out) {
             }
             *out = n;
             return 0;
-        case H2Tok_DEL:
+        case H2Tok_DEALLOC:
             kw = H2PPeek(p);
             p->pos++;
-            n = H2PNewNode(p, H2Ast_DEL, kw->start, kw->end);
+            n = H2PNewNode(p, H2Ast_DEALLOC, kw->start, kw->end);
             if (n < 0) {
                 return -1;
             }
@@ -3033,7 +3033,7 @@ static int H2PParseStmt(H2Parser* p, int32_t* out) {
                 if (H2PAddChild(p, n, expr) != 0) {
                     return -1;
                 }
-                p->nodes[n].flags |= H2AstFlag_DEL_HAS_ALLOC;
+                p->nodes[n].flags |= H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR;
                 p->nodes[n].end = p->nodes[expr].end;
             }
             {
@@ -3722,7 +3722,7 @@ const char* H2AstKindName(H2AstKind kind) {
         case H2Ast_CONTINUE:          return "CONTINUE";
         case H2Ast_DEFER:             return "DEFER";
         case H2Ast_ASSERT:            return "ASSERT";
-        case H2Ast_DEL:               return "DEL";
+        case H2Ast_DEALLOC:           return "DEALLOC";
         case H2Ast_EXPR_STMT:         return "EXPR_STMT";
         case H2Ast_MULTI_ASSIGN:      return "MULTI_ASSIGN";
         case H2Ast_SHORT_ASSIGN:      return "SHORT_ASSIGN";
@@ -3750,7 +3750,7 @@ const char* H2AstKindName(H2AstKind kind) {
         case H2Ast_FIELD_EXPR:        return "FIELD_EXPR";
         case H2Ast_CAST:              return "CAST";
         case H2Ast_SIZEOF:            return "SIZEOF";
-        case H2Ast_NEW:               return "NEW";
+        case H2Ast_ALLOC:             return "ALLOC";
         case H2Ast_NULL:              return "NULL";
         case H2Ast_UNWRAP:            return "UNWRAP";
     }

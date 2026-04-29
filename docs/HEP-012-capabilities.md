@@ -12,12 +12,12 @@ Example:
 ```hop
 
 struct AppContext {
-    mem     mut&__hop_MemAllocator
+    mem     mut&__hop_Allocator
     console u64
 }
 
 fn alloc() *i32 context AppContext {
-    return new(i32)
+    return alloc(i32)
 }
 
 fn say(msg str) context AppContext {
@@ -203,8 +203,8 @@ Built-ins may require context fields.
 Example policy:
 
 - `print(...)` requires `console` in context.
-- `new(T)` requires `mem` in context and desugars to allocation via `context.mem`.
-- explicit forms such as `new(mem, T)` remain valid.
+- `alloc(T)` requires `mem` in context and desugars to allocation via `context.mem`.
+- explicit forms such as `alloc(mem, T)` remain valid.
 
 ### 7. Entrypoint behavior
 
@@ -253,7 +253,7 @@ HEP-12 can stay strict while keeping code readable. Options:
 
 ```hop
 struct SaveContext {
-    mem mut&__hop_MemAllocator
+    mem mut&__hop_Allocator
     fs  WriteFS
 }
 
@@ -267,7 +267,7 @@ fn save(config mut&Config, filename str) ?error context SaveContext {
 Requires HEP-14.
 
 ```hop
-fn show_error(msg str) context { mem mut&__hop_MemAllocator, gui GUI } {
+fn show_error(msg str) context { mem mut&__hop_Allocator, gui GUI } {
     _ = msg
 }
 ```

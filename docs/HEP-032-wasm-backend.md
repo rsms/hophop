@@ -66,19 +66,19 @@ string byte indexing, local fixed-array element addressing, frame-backed local a
 frame-backed fixed-array local copy, aggregate field address/load/store, scalar-field aggregate
 compound literals and typed local assignment, nested aggregate field initialization by fixed-size
 payload copy, same-program aggregate and fixed-array helper returns through an internal hidden
-out-pointer ABI, fixed-size zero-init `new` for scalar pointers, aggregate pointers, and fixed-array
-pointers through an internal Wasm heap cursor, dynamic-count zero-init `new [T n]` for the current
+out-pointer ABI, fixed-size zero-init `alloc` for scalar pointers, aggregate pointers, and fixed-array
+pointers through an internal Wasm heap cursor, dynamic-count zero-init `alloc [T n]` for the current
 typed integer slice-pointer subset plus fixed-layout aggregate slice elements, and slice/view
 creation over the current fixed-array and pointer-backed linear-memory bring-up path. `wasm-min`
-now also supports explicit allocator-form `new` for root/null allocator bring-up shapes
+now also supports explicit allocator-form `alloc` for root/null allocator bring-up shapes
 (`context.mem`, `temp_mem`, and local aliases that flow through those values) with null optional
 results and unwrap-on-null panic for non-optional results. Narrow custom allocator impl dispatch
 also works for allocator values layered on `context.mem` through top-level `Allocator.impl`
 functions and the allocator callback signature. Fixed-size aggregate heap init now works for direct
-field initializers and non-VSS default-init paths (`new T{...}`, `new T{}`, and plain `new T`
+field initializers and non-VSS default-init paths (`alloc T{...}`, `alloc T{}`, and plain `alloc T`
 where omitted direct fields use defaults). VSS-backed heap init and `str`-object heap init now
 work for the current direct-field subset under `wasm-min`, including inline `name.len`
-initialization, zeroed VSS tails, and plain `new str{ len: n }`. Top-level function values now
+initialization, zeroed VSS tails, and plain `alloc str{ len: n }`. Top-level function values now
 also work through Wasm tables for the current supported subset, including local aliases,
 function-typed params and returns, and aggregate field calls that lower to `CALL_INDIRECT`,
 while the existing allocator callback path continues to use the same table machinery. Exported
@@ -189,7 +189,7 @@ Development guidance:
 
 - when adding or debugging Wasm lowering, first inspect `build --output-format mir` output for the
   same fixture
-- when adding new MIR rewrites for Wasm readiness, prefer adding or updating MIR golden tests
+- when adding alloc MIR rewrites for Wasm readiness, prefer adding or updating MIR golden tests
 - use Wasm-level golden tests only after the MIR shape is already understood and stable enough
 
 ## Wasm target model

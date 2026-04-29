@@ -2122,15 +2122,15 @@ int H2TCTypeStmt(
             }
             return 0;
         }
-        case H2Ast_DEL: {
+        case H2Ast_DEALLOC: {
             int32_t expr = H2AstFirstChild(c->ast, nodeId);
             int32_t allocArgNode = -1;
-            int32_t allocType = H2TCFindMemAllocatorType(c);
+            int32_t allocType = H2TCFindAllocatorType(c);
             int32_t ctxAllocType = -1;
             if (allocType < 0) {
                 return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
             }
-            if ((n->flags & H2AstFlag_DEL_HAS_ALLOC) != 0) {
+            if ((n->flags & H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR) != 0) {
                 int32_t scan = expr;
                 while (scan >= 0) {
                     int32_t next = H2AstNextSibling(c->ast, scan);
@@ -2140,9 +2140,7 @@ int H2TCTypeStmt(
                     }
                     scan = next;
                 }
-                if (allocArgNode < 0
-                    || H2TCValidateMemAllocatorArg(c, allocArgNode, allocType) != 0)
-                {
+                if (allocArgNode < 0 || H2TCValidateAllocatorArg(c, allocArgNode, allocType) != 0) {
                     return -1;
                 }
             } else {
@@ -2522,15 +2520,15 @@ int H2TCBuildCheckedContext(
             c.typeRune = namedRuneType;
         }
     }
-    c.typeMemAllocator = H2TCFindNamedTypeByLiteral(&c, "builtin__MemAllocator");
-    if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = H2TCFindBuiltinNamedTypeBySuffix(&c, "__MemAllocator");
+    c.typeAllocator = H2TCFindNamedTypeByLiteral(&c, "builtin__Allocator");
+    if (c.typeAllocator < 0) {
+        c.typeAllocator = H2TCFindBuiltinNamedTypeBySuffix(&c, "__Allocator");
     }
-    if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = H2TCFindNamedTypeByLiteral(&c, "MemAllocator");
+    if (c.typeAllocator < 0) {
+        c.typeAllocator = H2TCFindNamedTypeByLiteral(&c, "Allocator");
     }
-    if (c.typeMemAllocator < 0) {
-        c.typeMemAllocator = H2TCFindNamedTypeBySuffix(&c, "__MemAllocator");
+    if (c.typeAllocator < 0) {
+        c.typeAllocator = H2TCFindNamedTypeBySuffix(&c, "__Allocator");
     }
     if (H2TCResolveAllTypeAliases(&c) != 0) {
         return -1;

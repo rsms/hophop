@@ -1159,8 +1159,8 @@ int H2NameHasSuffix(H2StrView src, uint32_t start, uint32_t end, const char* suf
     return memcmp(src.ptr + end - suffixLen, suffix, suffixLen) == 0;
 }
 
-int32_t H2TCFindMemAllocatorType(H2TypeCheckCtx* c) {
-    return c->typeMemAllocator;
+int32_t H2TCFindAllocatorType(H2TypeCheckCtx* c) {
+    return c->typeAllocator;
 }
 
 int32_t H2TCGetStrRefType(H2TypeCheckCtx* c, uint32_t start, uint32_t end) {
@@ -1217,7 +1217,7 @@ int H2TCEnsureInitialized(H2TypeCheckCtx* c) {
     c->typeStr = -1;
     c->typeType = -1;
     c->typeRune = -1;
-    c->typeMemAllocator = -1;
+    c->typeAllocator = -1;
     c->typeUsize = -1;
     c->typeRawptr = -1;
     c->typeSourceLocation = -1;

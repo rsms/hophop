@@ -1,30 +1,30 @@
-// Verifies evaluator runtime can use a returned allocator value with both explicit and ambient new.
-struct MyMemAllocator {
+// Verifies evaluator runtime can use a returned allocator value with both explicit and ambient alloc.
+struct MyAllocator {
 	calls int
 	slot  i32
 }
 
-fn handler(ma *MemAllocator, addr rawptr, align, curSize int, newSize *int, flags u32, srcLoc SourceLocation) rawptr {
-	self := ma.data as *MyMemAllocator
+fn handler(ma *Allocator, addr rawptr, align, curSize int, newSize *int, flags u32, srcLoc SourceLocation) rawptr {
+	self := ma.data as *MyAllocator
 	p := &self.slot
 	self.calls += 1
 	return p as rawptr
 }
 
-fn allocator(self *MyMemAllocator) MemAllocator {
+fn allocator(self *MyAllocator) Allocator {
 	h := handler
 	return { handler: h, data: self as rawptr }
 }
 
 fn main() {
-	ma := MyMemAllocator{}
+	ma := MyAllocator{}
 	out := ma.allocator()
 
-	explicit := new i32 in out
+	explicit := alloc i32 in out
 
 	saved := context.allocator
 	context.allocator = out
-	ambient := new i32
+	ambient := alloc i32
 	context.allocator = saved
 	assert explicit != ambient || ma.calls == 2
 	assert ma.calls == 2

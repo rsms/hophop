@@ -7,5 +7,5 @@ fn main() {
 	assert copy(s[2:], "XY") == 2
 	assert s[2] == 'X' as u8
 	assert s[3] == 'Y' as u8
-	del s
+	dealloc s
 }

@@ -1,6 +1,6 @@
 // Verifies the AST for const function type.
-struct MemAllocator {
-	impl fn(*MemAllocator, rawptr, int, int, *int, u32) rawptr
+struct Allocator {
+	impl fn(*Allocator, rawptr, int, int, *int, u32) rawptr
 }
 
 fn takes(cb fn(const i32, const &str, const ...i32) bool) fn(const i32) i32 {

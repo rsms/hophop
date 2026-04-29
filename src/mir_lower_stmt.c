@@ -1520,7 +1520,7 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
         }
         return H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, expr->start, expr->end, NULL);
     }
-    if (expr->kind == H2Ast_NEW) {
+    if (expr->kind == H2Ast_ALLOC) {
         return H2MirStmtLowerAppendInst(
             c,
             H2MirOp_ALLOC_NEW,
@@ -2675,7 +2675,7 @@ static int H2MirStmtLowerExprStmt(H2MirStmtLower* c, int32_t stmtNode) {
         c, exprNode, c->ast->nodes[stmtNode].start, c->ast->nodes[stmtNode].end);
 }
 
-static int H2MirStmtLowerDel(H2MirStmtLower* c, int32_t stmtNode) {
+static int H2MirStmtLowerDealloc(H2MirStmtLower* c, int32_t stmtNode) {
     const H2AstNode* s;
     int32_t          exprNode;
     int32_t          allocNode = -1;
@@ -2684,7 +2684,7 @@ static int H2MirStmtLowerDel(H2MirStmtLower* c, int32_t stmtNode) {
     }
     s = &c->ast->nodes[stmtNode];
     exprNode = s->firstChild;
-    if ((s->flags & H2AstFlag_DEL_HAS_ALLOC) != 0u) {
+    if ((s->flags & H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u) {
         int32_t scan = exprNode;
         while (scan >= 0) {
             int32_t next = c->ast->nodes[scan].nextSibling;
@@ -3903,7 +3903,7 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
             return 0;
         }
         case H2Ast_EXPR_STMT: return H2MirStmtLowerExprStmt(c, stmtNode);
-        case H2Ast_DEL:       return H2MirStmtLowerDel(c, stmtNode);
+        case H2Ast_DEALLOC:   return H2MirStmtLowerDealloc(c, stmtNode);
         case H2Ast_CONST_BLOCK:
             /* Consteval blocks are compile-time-only and do not execute at runtime. */
             return 0;

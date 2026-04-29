@@ -3419,7 +3419,7 @@ static int CollectExprImportRewritesNode(
         case H2Ast_INDEX:
         case H2Ast_CAST:
         case H2Ast_SIZEOF:
-        case H2Ast_NEW:
+        case H2Ast_ALLOC:
         case H2Ast_UNWRAP:
         case H2Ast_CALL_ARG:
             child = ASTFirstChild(&file->ast, nodeId);
@@ -4076,7 +4076,7 @@ static int CollectStmtImportRewritesNode(
         }
         case H2Ast_RETURN:
         case H2Ast_ASSERT:
-        case H2Ast_DEL:
+        case H2Ast_DEALLOC:
         case H2Ast_EXPR_STMT: {
             child = ASTFirstChild(&file->ast, nodeId);
             while (child >= 0) {

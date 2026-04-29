@@ -1,7 +1,7 @@
 fn concat(a, b &str) *str {
 	var lenA int  = len(a)
 	var lenB int  = len(b)
-	var out  *str = new str{ len: lenA + lenB }
+	var out  *str = alloc str{ len: lenA + lenB }
 
 	_ = copy(out, a)
 	_ = copy(out[lenA:], b)

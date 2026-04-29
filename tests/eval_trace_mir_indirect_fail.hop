@@ -2,7 +2,7 @@
 import "testing" { FailingAllocator }
 
 fn fail_now() {
-	new i32
+	alloc i32
 }
 
 fn main() {

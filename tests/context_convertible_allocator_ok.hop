@@ -1,7 +1,7 @@
 // Verifies ambient allocator field is accepted.
 fn a() {
-	var p *i32 = new i32
-	del p
+	var p *i32 = alloc i32
+	dealloc p
 }
 
 fn main() {

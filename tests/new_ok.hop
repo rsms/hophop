@@ -1,5 +1,5 @@
-// Verifies new is accepted.
+// Verifies alloc is accepted.
 fn main() {
-	var _p *i32     = new i32
-	var _q *[i32 4] = new [i32 4]
+	var _p *i32     = alloc i32
+	var _q *[i32 4] = alloc [i32 4]
 }

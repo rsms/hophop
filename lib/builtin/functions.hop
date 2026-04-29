@@ -1,7 +1,7 @@
 // Core declarations for language built-ins.
 //
 // Intrinsic behavior/signature details are defined by the compiler.
-// See docs/library.md for the full call forms, especially for `new` and `sizeof`.
+// See docs/library.md for the full call forms, especially for `alloc` and `sizeof`.
 fn len(x &str) int {
 	return x.len()
 }

@@ -1,6 +1,6 @@
 // Verifies ambient context is accepted.
-fn alloc() *i32 {
-	return new i32
+fn make_ptr() *i32 {
+	return alloc i32
 }
 
 fn log_msg(msg &str) {
@@ -8,8 +8,8 @@ fn log_msg(msg &str) {
 }
 
 fn caller() {
-	var p *i32 = alloc()
-	del p
+	var p *i32 = make_ptr()
+	dealloc p
 
 	{
 		context.logger.prefix = "inner"

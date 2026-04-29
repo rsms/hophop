@@ -1,0 +1,9 @@
+// Verifies alloc struct type syntax is unchanged.
+fn main() {
+	var p *struct {
+		x int
+	} = alloc struct {
+		x int
+	}
+	_ = p
+}

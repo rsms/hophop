@@ -296,7 +296,7 @@ typedef struct {
     int32_t typeStr;
     int32_t typeType;
     int32_t typeRune;
-    int32_t typeMemAllocator;
+    int32_t typeAllocator;
     int32_t typeUsize;
     int32_t typeRawptr;
     int32_t typeSourceLocation;
@@ -741,7 +741,7 @@ int H2NameEqSlice(H2StrView src, uint32_t aStart, uint32_t aEnd, uint32_t bStart
 int H2NameEqLiteral(H2StrView src, uint32_t start, uint32_t end, const char* lit);
 int H2NameHasPrefix(H2StrView src, uint32_t start, uint32_t end, const char* prefix);
 int H2NameHasSuffix(H2StrView src, uint32_t start, uint32_t end, const char* suffix);
-int32_t  H2TCFindMemAllocatorType(H2TypeCheckCtx* c);
+int32_t  H2TCFindAllocatorType(H2TypeCheckCtx* c);
 int32_t  H2TCGetStrRefType(H2TypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  H2TCGetStrPtrType(H2TypeCheckCtx* c, uint32_t start, uint32_t end);
 int32_t  H2TCAddType(H2TypeCheckCtx* c, const H2TCType* t, uint32_t errStart, uint32_t errEnd);
@@ -1115,7 +1115,7 @@ int     H2TCEmbedDistanceToType(
     H2TypeCheckCtx* c, int32_t srcType, int32_t dstType, uint32_t* outDistance);
 int H2TCIsTypeDerivedFromEmbedded(H2TypeCheckCtx* c, int32_t srcType, int32_t dstType);
 int H2TCCanAssign(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType);
-int H2TCValidateMemAllocatorArg(H2TypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType);
+int H2TCValidateAllocatorArg(H2TypeCheckCtx* c, int32_t nodeId, int32_t allocBaseType);
 int H2TCCoerceForBinary(H2TypeCheckCtx* c, int32_t leftType, int32_t rightType, int32_t* outType);
 int H2TCConversionCost(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType, uint8_t* outCost);
 int H2TCCostVectorCompare(const uint8_t* a, const uint8_t* b, uint32_t len);
@@ -1373,7 +1373,7 @@ int  H2TCTypeExpr_COMPOUND_LIT(
     H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType);
 int H2TCTypeExpr_CALL_WITH_CONTEXT(
     H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType);
-int H2TCTypeExpr_NEW(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType);
+int H2TCTypeExpr_ALLOC(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType);
 int H2TCTypeSourceLocationOfCall(
     H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* callee, int32_t* outType);
 int H2TCTypeCompilerDiagCall(

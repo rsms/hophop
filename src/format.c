@@ -1614,7 +1614,7 @@ static int H2FmtIsStmtNodeKind(H2AstKind kind) {
         case H2Ast_CONTINUE:
         case H2Ast_DEFER:
         case H2Ast_ASSERT:
-        case H2Ast_DEL:
+        case H2Ast_DEALLOC:
         case H2Ast_MULTI_ASSIGN:
         case H2Ast_SHORT_ASSIGN:
         case H2Ast_EXPR_STMT:    return 1;
@@ -2733,27 +2733,27 @@ static int H2FmtEmitExprCore(H2FmtCtx* c, int32_t nodeId) {
                 }
             }
             return H2FmtWriteChar(c, ')');
-        case H2Ast_NEW: {
+        case H2Ast_ALLOC: {
             int32_t type = H2FmtFirstChild(c->ast, nodeId);
             int32_t next = type >= 0 ? H2FmtNextSibling(c->ast, type) : -1;
             int32_t count = -1;
             int32_t init = -1;
             int32_t alloc = -1;
-            if ((n->flags & H2AstFlag_NEW_HAS_COUNT) != 0) {
+            if ((n->flags & H2AstFlag_ALLOC_HAS_COUNT) != 0) {
                 count = next;
                 next = count >= 0 ? H2FmtNextSibling(c->ast, count) : -1;
             }
-            if ((n->flags & H2AstFlag_NEW_HAS_INIT) != 0) {
+            if ((n->flags & H2AstFlag_ALLOC_HAS_INIT) != 0) {
                 init = next;
                 next = init >= 0 ? H2FmtNextSibling(c->ast, init) : -1;
             }
-            if ((n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0) {
+            if ((n->flags & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0) {
                 alloc = next;
             }
-            if (H2FmtWriteCStr(c, "new ") != 0) {
+            if (H2FmtWriteCStr(c, "alloc ") != 0) {
                 return -1;
             }
-            if ((n->flags & H2AstFlag_NEW_HAS_ARRAY_LIT) != 0) {
+            if ((n->flags & H2AstFlag_ALLOC_HAS_ARRAY_LIT) != 0) {
                 if (type >= 0 && H2FmtEmitExpr(c, type, 0) != 0) {
                     return -1;
                 }
@@ -4917,12 +4917,12 @@ static int H2FmtEmitStmtInline(H2FmtCtx* c, int32_t nodeId) {
                 ch = next;
             }
             return 0;
-        case H2Ast_DEL:
+        case H2Ast_DEALLOC:
             ch = H2FmtFirstChild(c->ast, nodeId);
-            if (H2FmtWriteCStr(c, "del ") != 0) {
+            if (H2FmtWriteCStr(c, "dealloc ") != 0) {
                 return -1;
             }
-            if ((n->flags & H2AstFlag_DEL_HAS_ALLOC) != 0) {
+            if ((n->flags & H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR) != 0) {
                 int32_t scan = ch;
                 while (scan >= 0) {
                     int32_t next = H2FmtNextSibling(c->ast, scan);

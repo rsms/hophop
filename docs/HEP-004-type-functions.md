@@ -34,7 +34,7 @@ Non-goal:
 
 ### Selector call sugar
 
-No new expression syntax is required. Existing selector+call syntax gains new meaning when selector resolution does not produce a field:
+No additional expression syntax is required. Existing selector+call syntax gains new meaning when selector resolution does not produce a field:
 
 ```hop
 expr.name(args...)
@@ -132,7 +132,7 @@ Built-in functions participate in selector-call sugar when the call shape matche
 
 At minimum:
 - `x.len()` => `len(x)`
-- `ma.new(T[, N])` => `new(ma, T[, N])`
+- `ma.alloc(T[, N])` => `alloc(T[, N]) in ma`
 - `s.cstr()` => `cstr(s)`
 - `msg.print()` => `print(msg)`
 - `msg.panic()` => `panic(msg)`

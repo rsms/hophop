@@ -1,7 +1,7 @@
-// Verifies new bad type argument value.
+// Verifies alloc bad type argument value.
 fn main() i32 {
-	var ma MemAllocator
+	var ma Allocator
 	var t  i32
-	var p  *i32 = new t
+	var p  *i32 = alloc t
 	return p as i32
 }

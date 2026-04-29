@@ -273,12 +273,12 @@ static const H2DiagInfo g_hopDiagInfo[H2Diag__COUNT] = {
                                            NULL,
                                            H2DiagType_ERROR,
                                            0 },
-    [H2Diag_NEW_VARSIZE_INIT_REQUIRED] = { "HOP2048",
-                                           "new on variable-size type requires initializer (use "
-                                           "new T{...})",
-                                           NULL,
-                                           H2DiagType_ERROR,
-                                           0 },
+    [H2Diag_ALLOC_VARSIZE_INIT_REQUIRED] = { "HOP2048",
+                                             "alloc on variable-size type requires initializer "
+                                             "(use alloc T{...})",
+                                             NULL,
+                                             H2DiagType_ERROR,
+                                             0 },
     [H2Diag_INVALID_COMPARISON_HOOK_SIGNATURE] = { "HOP2049",
                                                    "invalid comparison hook signature",
                                                    NULL,

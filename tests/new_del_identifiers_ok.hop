@@ -1,0 +1,7 @@
+// Verifies retired allocation keywords are ordinary identifiers.
+fn main() {
+	var new  int = 1
+	var del  int = 2
+	var free int = 3
+	assert new + del + free == 6
+}

@@ -1,7 +1,7 @@
-// Verifies new bad arity.
+// Verifies alloc bad arity.
 
 fn main() i32 {
-    var ma MemAllocator
-    var p *i32 = new(&ma, i32, 1, 2)
+    var ma Allocator
+    var p *i32 = alloc(&ma, i32, 1, 2)
     return p as i32
 }

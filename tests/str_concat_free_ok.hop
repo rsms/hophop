@@ -1,12 +1,12 @@
-// Verifies string concatenation del is accepted.
+// Verifies string concatenation dealloc is accepted.
 fn caller() {
 	var r &str = "abc"
 	var s *str = concat(r, r)
 	assert len(s) == 6
-	del s
+	dealloc s
 
-	var arr *[u8 4] = new [u8 4]
-	del arr
+	var arr *[u8 4] = alloc [u8 4]
+	dealloc arr
 }
 
 fn main() {

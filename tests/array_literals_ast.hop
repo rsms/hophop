@@ -9,7 +9,7 @@ fn main() {
 		1
 		2, 3
 	]
-	var g         = new [1, 2, 3]
+	var g         = alloc [1, 2, 3]
 	_ = a
 	_ = b
 	_ = c

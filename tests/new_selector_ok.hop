@@ -1,7 +1,7 @@
-// Verifies new selector is accepted.
+// Verifies alloc selector is accepted.
 fn main() {
-	var p *i32     = new i32
-	var q *[i32 4] = new [i32 4]
+	var p *i32     = alloc i32
+	var q *[i32 4] = alloc [i32 4]
 
 	*p = 7
 	q[0] = *p

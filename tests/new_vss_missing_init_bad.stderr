@@ -1,1 +1,1 @@
-tests/new_vss_missing_init_bad.hop:12:23: error: HOP2048: new on variable-size type requires initializer (use new T{...})
+tests/new_vss_missing_init_bad.hop:12:23: error: HOP2048: alloc on variable-size type requires initializer (use alloc T{...})

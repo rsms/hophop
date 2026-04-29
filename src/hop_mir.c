@@ -1709,7 +1709,7 @@ static const H2ParsedFile* _Nullable FindLoaderFileByMirSource(
     return NULL;
 }
 
-static int DecodeNewExprNodes(
+static int DecodeAllocExprNodes(
     const H2ParsedFile* file,
     int32_t             nodeId,
     int32_t*            outTypeNode,
@@ -1737,12 +1737,12 @@ static int DecodeNewExprNodes(
         return 0;
     }
     n = &file->ast.nodes[nodeId];
-    if (n->kind != H2Ast_NEW) {
+    if (n->kind != H2Ast_ALLOC) {
         return 0;
     }
-    hasCount = (n->flags & H2AstFlag_NEW_HAS_COUNT) != 0;
-    hasInit = (n->flags & H2AstFlag_NEW_HAS_INIT) != 0;
-    hasAlloc = (n->flags & H2AstFlag_NEW_HAS_ALLOC) != 0;
+    hasCount = (n->flags & H2AstFlag_ALLOC_HAS_COUNT) != 0;
+    hasInit = (n->flags & H2AstFlag_ALLOC_HAS_INIT) != 0;
+    hasAlloc = (n->flags & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0;
     if (outTypeNode == NULL || outCountNode == NULL || outInitNode == NULL || outAllocNode == NULL)
     {
         return 0;
@@ -1978,7 +1978,7 @@ static int ResolveMirAllocNewPointeeTypeRef(
     }
     if (loader == NULL || arena == NULL || program == NULL || file == NULL || allocInst == NULL
         || outTypeRef == NULL
-        || !DecodeNewExprNodes(
+        || !DecodeAllocExprNodes(
             file, (int32_t)allocInst->aux, &typeNode, &countNode, &initNode, &allocNode)
         || typeNode < 0)
     {
@@ -2727,7 +2727,7 @@ static int LowerMirVarSizeAllocNewSizeExpr(
     }
     if (program == NULL || mutableProgram == NULL || fn == NULL || file == NULL || allocInst == NULL
         || arena == NULL || outInsts == NULL || outLen == NULL || pointeeTypeRef >= program->typeLen
-        || !DecodeNewExprNodes(
+        || !DecodeAllocExprNodes(
             file, (int32_t)allocInst->aux, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
@@ -2904,7 +2904,7 @@ static int CountMirVarSizeAllocNewSizeExpr(
     }
     if (program == NULL || file == NULL || allocInst == NULL || outCount == NULL
         || pointeeTypeRef >= program->typeLen
-        || !DecodeNewExprNodes(
+        || !DecodeAllocExprNodes(
             file, (int32_t)allocInst->aux, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
@@ -3908,17 +3908,17 @@ static int LowerMirAllocNewPostInitInsts(
     {
         return 0;
     }
-    if (!DecodeNewExprNodes(
+    if (!DecodeAllocExprNodes(
             newFile, (int32_t)allocInst->aux, &typeNode, &countNode, &initNode, &allocNode))
     {
         return 0;
     }
     astNode = &newFile->ast.nodes[allocInst->aux];
     fieldSourceRef = FindMirSourceRefByText(program, newFile->source, newFile->sourceLen);
-    if (astNode->kind != H2Ast_NEW || fieldSourceRef == UINT32_MAX) {
+    if (astNode->kind != H2Ast_ALLOC || fieldSourceRef == UINT32_MAX) {
         return 0;
     }
-    if ((astNode->flags & H2AstFlag_NEW_HAS_INIT) != 0u) {
+    if ((astNode->flags & H2AstFlag_ALLOC_HAS_INIT) != 0u) {
         const H2AstNode* initLit;
         int32_t          child;
         if (initNode < 0 || (uint32_t)initNode >= newFile->ast.len) {
@@ -4591,7 +4591,7 @@ static int RewriteMirAllocNewInitExprs(
             const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
             insts[instOutLen] = *srcInst;
             if (clearInit != NULL && clearInit[pc] && insts[instOutLen].op == H2MirOp_ALLOC_NEW) {
-                insts[instOutLen].tok &= (uint16_t)~H2AstFlag_NEW_HAS_INIT;
+                insts[instOutLen].tok &= (uint16_t)~H2AstFlag_ALLOC_HAS_INIT;
             }
             if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
@@ -4682,7 +4682,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 int32_t          countNode = -1;
                 int32_t          initNode = -1;
                 int32_t          allocNode = -1;
-                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) == 0u
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_ALLOC_HAS_COUNT) == 0u
                     || pc + 1u >= fn->instLen || ownerFile->source == NULL)
                 {
                     continue;
@@ -4698,7 +4698,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 {
                     continue;
                 }
-                if (!DecodeNewExprNodes(
+                if (!DecodeAllocExprNodes(
                         ownerFile, (int32_t)inst->aux, &typeNode, &countNode, &initNode, &allocNode)
                     || countNode < 0)
                 {
@@ -4757,7 +4757,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 int32_t          countNode = -1;
                 int32_t          initNode = -1;
                 int32_t          allocNode = -1;
-                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) == 0u
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_ALLOC_HAS_COUNT) == 0u
                     || pc + 1u >= fn->instLen || ownerFile->source == NULL)
                 {
                     continue;
@@ -4773,7 +4773,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 {
                     continue;
                 }
-                if (!DecodeNewExprNodes(
+                if (!DecodeAllocExprNodes(
                         ownerFile, (int32_t)inst->aux, &typeNode, &countNode, &initNode, &allocNode)
                     || countNode < 0
                     || !CountMirAllocNewCountExprInsts(ownerFile, countNode, &insertCounts[pc]))
@@ -4797,7 +4797,7 @@ static int RewriteMirDynamicSliceAllocCounts(
                 int32_t  initNode = -1;
                 int32_t  allocNode = -1;
                 uint32_t emittedLen = 0u;
-                if (!DecodeNewExprNodes(
+                if (!DecodeAllocExprNodes(
                         ownerFile,
                         (int32_t)srcInst->aux,
                         &typeNode,
@@ -4866,7 +4866,7 @@ static int RewriteMirVarSizeAllocCounts(
             uint32_t         countInstLen = 0u;
             uint32_t         tempCap;
             H2MirInst*       tempInsts = NULL;
-            if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u
+            if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_ALLOC_HAS_COUNT) != 0u
                 || nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
             {
                 continue;
@@ -4951,7 +4951,7 @@ static int RewriteMirVarSizeAllocCounts(
                 uint32_t         pointeeTypeRef = UINT32_MAX;
                 uint32_t         tempCap;
                 H2MirInst*       tempInsts = NULL;
-                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_COUNT) != 0u
+                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_ALLOC_HAS_COUNT) != 0u
                     || nextInst->op != H2MirOp_LOCAL_STORE || nextInst->aux >= fn->localCount)
                 {
                     continue;
@@ -5046,7 +5046,7 @@ static int RewriteMirVarSizeAllocCounts(
             }
             insts[instOutLen] = *srcInst;
             if (setCount != NULL && setCount[pc] != 0u) {
-                insts[instOutLen].tok |= H2AstFlag_NEW_HAS_COUNT;
+                insts[instOutLen].tok |= H2AstFlag_ALLOC_HAS_COUNT;
             }
             if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
                 && srcInst->aux < fn->instLen)
@@ -5090,10 +5090,12 @@ static int RewriteMirAllocNewAllocExprs(
             int32_t          countNode = -1;
             int32_t          initNode = -1;
             int32_t          allocNode = -1;
-            if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_ALLOC) == 0u) {
+            if (inst->op != H2MirOp_ALLOC_NEW
+                || (inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) == 0u)
+            {
                 continue;
             }
-            if (!DecodeNewExprNodes(
+            if (!DecodeAllocExprNodes(
                     ownerFile, (int32_t)inst->aux, &typeNode, &countNode, &initNode, &allocNode)
                 || allocNode < 0
                 || !CountMirAllocNewAllocExprInsts(ownerFile, allocNode, &allocInstLen))
@@ -5147,10 +5149,12 @@ static int RewriteMirAllocNewAllocExprs(
                 int32_t          countNode = -1;
                 int32_t          initNode = -1;
                 int32_t          allocNode = -1;
-                if (inst->op != H2MirOp_ALLOC_NEW || (inst->tok & H2AstFlag_NEW_HAS_ALLOC) == 0u) {
+                if (inst->op != H2MirOp_ALLOC_NEW
+                    || (inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) == 0u)
+                {
                     continue;
                 }
-                if (!DecodeNewExprNodes(
+                if (!DecodeAllocExprNodes(
                         ownerFile, (int32_t)inst->aux, &typeNode, &countNode, &initNode, &allocNode)
                     || allocNode < 0
                     || !CountMirAllocNewAllocExprInsts(ownerFile, allocNode, &insertCounts[pc]))
@@ -5174,7 +5178,7 @@ static int RewriteMirAllocNewAllocExprs(
                 int32_t  initNode = -1;
                 int32_t  allocNode = -1;
                 uint32_t emittedLen = 0u;
-                if (!DecodeNewExprNodes(
+                if (!DecodeAllocExprNodes(
                         ownerFile,
                         (int32_t)srcInst->aux,
                         &typeNode,
@@ -8386,7 +8390,7 @@ static uint32_t MirAggregateFieldCount(const H2MirProgram* program, uint32_t own
     return count;
 }
 
-static uint32_t FindMirMemAllocatorTypeRef(const H2MirProgram* program) {
+static uint32_t FindMirAllocatorTypeRef(const H2MirProgram* program) {
     uint32_t i;
     if (program == NULL) {
         return UINT32_MAX;
@@ -8408,11 +8412,11 @@ static uint32_t FindMirMemAllocatorTypeRef(const H2MirProgram* program) {
 static void InferMirStraightLineLocalTypes(
     H2Arena* arena, const H2PackageLoader* loader, H2MirProgram* program) {
     uint32_t funcIndex;
-    uint32_t memAllocatorTypeRef;
+    uint32_t allocatorTypeRef;
     if (arena == NULL || program == NULL) {
         return;
     }
-    memAllocatorTypeRef = FindMirMemAllocatorTypeRef(program);
+    allocatorTypeRef = FindMirAllocatorTypeRef(program);
     for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
         const H2MirFunction* fn = &program->funcs[funcIndex];
         const H2ParsedFile*  fnFile = FindLoaderFileByMirSource(
@@ -8553,10 +8557,10 @@ static void InferMirStraightLineLocalTypes(
                     }
                     if ((inst->aux == H2MirContextField_ALLOCATOR
                          || inst->aux == H2MirContextField_TEMP_ALLOCATOR)
-                        && memAllocatorTypeRef < program->typeLen)
+                        && allocatorTypeRef < program->typeLen)
                     {
                         stackTypes[stackLen] = MirInferredType_AGG;
-                        stackTypeRefs[stackLen++] = memAllocatorTypeRef;
+                        stackTypeRefs[stackLen++] = allocatorTypeRef;
                     } else {
                         stackTypes[stackLen] = MirInferredType_NONE;
                         stackTypeRefs[stackLen++] = UINT32_MAX;

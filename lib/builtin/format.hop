@@ -310,7 +310,7 @@ pub fn format(buf *[u8], const fmt &str, args ...anytype) int {
 pub fn format_str(fmt &str, args ...anytype) *str {
 	var empty [u8 0]
 	var n     int  = fmt_write_impl(empty, fmt, args...)
-	var out   *str = new str{ len: n }
+	var out   *str = alloc str{ len: n }
 	var cap   int  = n + 1
 	_ = fmt_write_impl_cap(out, cap, fmt, args...)
 	return out

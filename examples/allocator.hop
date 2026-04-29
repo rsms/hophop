@@ -1,15 +1,15 @@
-// Demonstrates `new` keyword forms:
-// - explicit allocator: `new T in ma` or `new [T N] in ma`
-// - ambient allocator: `new T` or `new [T N]` using `context.allocator`
+// Demonstrates `alloc` keyword forms:
+// - explicit allocator: `alloc T in ma` or `alloc [T N] in ma`
+// - ambient allocator: `alloc T` or `alloc [T N]` using `context.allocator`
 struct Pair {
 	x i32
 	y i32
 }
 
-fn explicit_forms(ma MemAllocator, n int) {
-	var p     *Pair    = new Pair in ma
-	var fixed *[i32 4] = new [i32 4] in ma
-	var dyn   *[i32]   = new [i32 n] in ma
+fn explicit_forms(ma Allocator, n int) {
+	var p     *Pair    = alloc Pair in ma
+	var fixed *[i32 4] = alloc [i32 4] in ma
+	var dyn   *[i32]   = alloc [i32 n] in ma
 
 	p.x = 42
 	p.y = 0
@@ -21,9 +21,9 @@ fn explicit_forms(ma MemAllocator, n int) {
 }
 
 fn ambient_forms(n int) {
-	var p     *Pair    = new Pair
-	var fixed *[i32 4] = new [i32 4]
-	var dyn   *[i32]   = new [i32 n]
+	var p     *Pair    = alloc Pair
+	var fixed *[i32 4] = alloc [i32 4]
+	var dyn   *[i32]   = alloc [i32 n]
 
 	p.x = 42
 	p.y = 0

@@ -15,7 +15,7 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/hop check examples/order_independent.hop`
 - Strings, `assert`, `len`, `cstr`: `examples/strings.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/strings.hop`
-- Full `str` capabilities (`&str`, `*str`, `[u8]` views, `concat`, `free`): `examples/str.hop`
+- Full `str` capabilities (`&str`, `*str`, `[u8]` views, `concat`, `dealloc`): `examples/str.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/str.hop`
 - Casts (`as`): `examples/casts.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/casts.hop`
@@ -35,7 +35,7 @@ Single-file mode is supported for package commands:
   - Check: `./_build/macos-aarch64-debug/hop check examples/arrays.hop`
 - Variable-size struct (dependent trailing field): `examples/vss.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/vss.hop`
-- HEP-2 allocator `new` keyword forms: `examples/allocator.hop`
+- HEP-2 allocator `alloc` keyword forms: `examples/allocator.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/allocator.hop`
 - Arena allocator with `import "mem"` and `free_all`: `examples/arena_allocator.hop`
   - Check: `./_build/macos-aarch64-debug/hop check examples/arena_allocator.hop`

@@ -1,12 +1,12 @@
-// Verifies the Wasm backend accepts new zero.
+// Verifies the Wasm backend accepts alloc zero.
 struct S {
 	x int
 	y [i32 2]
 }
 
 fn main() {
-	var p *S       = new S
-	var q *[i32 4] = new [i32 4]
+	var p *S       = alloc S
+	var q *[i32 4] = alloc [i32 4]
 
 	p.x = 7
 	q[0] = 9

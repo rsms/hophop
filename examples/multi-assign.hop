@@ -10,7 +10,7 @@ fn main() {
 	var u, v, w f64
 	assert u == 0.0 && v == 0.0 && w == 0.0
 
-	// short declarations infer new mutable locals
+	// short declarations infer alloc mutable locals
 	x, y := 1 as u32, 2 as u32
 	re, im := 0.0, 1.0
 	assert re == 0.0 && im == 1.0

@@ -1,10 +1,10 @@
 // Verifies a package const may reuse a builtin type name in value space.
 import "builtin"
 
-const MemAllocator = 1
+const Allocator = 1
 
 fn main() {
-	var mem *builtin.MemAllocator = (null as rawptr) as *builtin.MemAllocator
-	assert MemAllocator == 1
+	var mem *builtin.Allocator = (null as rawptr) as *builtin.Allocator
+	assert Allocator == 1
 	_ = mem
 }

@@ -19,5 +19,5 @@ fn main() {
 	var s   &str = "hi"
 	var out *str = format("i={}, f={f}, s={s}", a, b, s)
 	assert str_eq(out, want: "i=42, f=3.5, s=hi")
-	del out
+	dealloc out
 }

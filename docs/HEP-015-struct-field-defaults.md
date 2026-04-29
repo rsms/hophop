@@ -6,8 +6,8 @@ HEP-15 adds default initializers for `struct` fields:
 
 ```hop
 struct LoadFileContext {
-    mem    MemAllocator
-    tmpmem MemAllocator = mem
+    mem    Allocator
+    tmpmem Allocator = mem
     fs     ReadFS
 }
 ```

@@ -176,7 +176,7 @@ Arrays of such types:
 Pointer-allocated cases remain allowed:
 
 ```hop
-var p *S = new(ma, S)
+var p *S = alloc(ma, S)
 ```
 
 Fields may start as null at runtime storage level, but usage rules still require valid assignment
@@ -186,18 +186,18 @@ Static analysis for “assigned before use” is optional/future.
 
 ---
 
-## Built-in `new` with optionals
+## Built-in `alloc` with optionals
 
 Logical signatures once HEP-3 lands:
 
 ```hop
 // nullable-return forms
-fn new(ma mut&MemAllocator, type T) ?*T
-fn new(ma mut&MemAllocator, type T, N uint) ?*[T N]
+fn alloc(ma mut&Allocator, type T) ?*T
+fn alloc(ma mut&Allocator, type T, N uint) ?*[T N]
 
 // non-null forms (panic on allocation failure)
-fn new(ma mut&MemAllocator, type T) *T
-fn new(ma mut&MemAllocator, type T, N uint) *[T N]
+fn alloc(ma mut&Allocator, type T) *T
+fn alloc(ma mut&Allocator, type T, N uint) *[T N]
 ```
 
 Dispatch/overload details are backend/typechecker-defined.
@@ -231,7 +231,7 @@ Suggested staged rollout:
 1. Introduce `?` parsing + typing in permissive mode.
 2. Add warnings for implicit nullable-to-non-null flows.
 3. Flip to errors in strict/default mode.
-4. Update standard APIs (`new`, containers, lookup APIs) to expose nullable intent.
+4. Update standard APIs (`alloc`, containers, lookup APIs) to expose nullable intent.
 
 ---
 

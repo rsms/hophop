@@ -1,1 +1,1 @@
-tests/new_explicit_allocator_bad.hop:3:27: error: HOP2004: type mismatch: cannot use expression of type const_int as *MemAllocator
+tests/new_explicit_allocator_bad.hop:3:29: error: HOP2004: type mismatch: cannot use expression of type const_int as *Allocator

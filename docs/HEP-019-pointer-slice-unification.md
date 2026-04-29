@@ -261,7 +261,7 @@ fn main() {
 4. Validation:
    - full project test suite passes with HEP-19 behavior.
 5. Platform context alignment:
-   - built-in `platform.Context.mem` uses `*__hop_MemAllocator`.
+   - built-in `platform.Context.mem` uses `*__hop_Allocator`.
    - implicit `main` context fallback for `mem` is pointer-typed.
    - this removes legacy `mut&` assumptions during context compatibility checks.
 

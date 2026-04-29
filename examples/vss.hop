@@ -1,7 +1,7 @@
-// variable-size structs plus new allocation forms:
-// - `new T{...}` for initialized allocation
-// - VSS allocations require initializer (e.g. `new Packet{...}`)
-// - for non-VSS structs, `new T` is equivalent to `new T{}`
+// variable-size structs plus alloc allocation forms:
+// - `alloc T{...}` for initialized allocation
+// - VSS allocations require initializer (e.g. `alloc Packet{...}`)
+// - for non-VSS structs, `alloc T` is equivalent to `alloc T{}`
 struct Packet {
 	payloadLen u32
 	sampleLen  u32
@@ -20,7 +20,7 @@ fn main() {
 	var ma = context.allocator
 
 	// VSS: initializer is required so runtime allocation size can be computed.
-	var packet *Packet = new Packet{ payloadLen: 3, sampleLen: 2, name.len: 4 }
+	var packet *Packet = alloc Packet{ payloadLen: 3, sampleLen: 2, name.len: 4 }
 	assert packet.payloadLen == 3
 	assert packet.sampleLen == 2
 	assert packet.name.len == 4
@@ -28,10 +28,10 @@ fn main() {
 	assert packet.samples[0] == 0
 
 	// This would be an error:
-	// var bad *Packet = new Packet
-	// non-VSS: `new T` is equivalent to `new T{}`
-	var a *PlainStruct = new PlainStruct
-	var b *PlainStruct = new PlainStruct{}
+	// var bad *Packet = alloc Packet
+	// non-VSS: `alloc T` is equivalent to `alloc T{}`
+	var a *PlainStruct = alloc PlainStruct
+	var b *PlainStruct = alloc PlainStruct{}
 	assert a.name == "anon"
 	assert a.x == 7
 	assert a.y == 9
@@ -39,7 +39,7 @@ fn main() {
 	assert b.x == 7
 	assert b.y == 9
 
-	var c *PlainStruct = new PlainStruct{ name: "Monz", y: 2 }
+	var c *PlainStruct = alloc PlainStruct{ name: "Monz", y: 2 }
 	assert c.name == "Monz"
 	assert c.x == 7
 	assert c.y == 2

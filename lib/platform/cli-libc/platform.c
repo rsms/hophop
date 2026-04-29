@@ -18,7 +18,7 @@ static __hop_Context gMainContext;
 #define MALLOC_ALIGN ((size_t)_Alignof(max_align_t))
 
 static void* platform_mem_allocator_impl(
-    __hop_MemAllocator* self,
+    __hop_Allocator* self,
     void*              addr,
     __hop_int           align,
     __hop_int           curSize,
@@ -65,7 +65,7 @@ static void* platform_mem_allocator_impl(
         }
     }
 
-    // zero new memory
+    // zero allocated memory
     if (newPtr != NULL && *newSizeInOut > curSize) {
         memset((unsigned char*)newPtr + curSize, 0, (size_t)(*newSizeInOut - curSize));
     }

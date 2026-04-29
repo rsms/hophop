@@ -21,8 +21,8 @@ fn main() {
 	assert c.add(7) == add(c, d: 7)
 	assert msg.len() == len(msg)
 
-	var p ?*i32     = new i32
-	var q ?*[i32 4] = new [i32 4]
+	var p ?*i32     = alloc i32
+	var q ?*[i32 4] = alloc [i32 4]
 
 	assert p != null
 	assert q != null

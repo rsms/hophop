@@ -2105,7 +2105,7 @@ int H2TCCanAssign(H2TypeCheckCtx* c, int32_t dstType, int32_t srcType) {
     }
 
     if (dst->kind == H2TCType_PTR) {
-        /* Owned pointers (*T) can only come from new; references (&T) cannot be
+        /* Owned pointers (*T) can only come from alloc; references (&T) cannot be
          * implicitly promoted to owned pointers. */
         if (src->kind == H2TCType_ARRAY && dst->baseType >= 0
             && (uint32_t)dst->baseType < c->typeLen)
@@ -2521,7 +2521,7 @@ int H2TCCurrentContextFieldType(
             return -1;
         }
         if (H2NameEqLiteral(c->src, fieldStart, fieldEnd, "allocator")) {
-            int32_t t = H2TCFindMemAllocatorType(c);
+            int32_t t = H2TCFindAllocatorType(c);
             if (t < 0) {
                 return -1;
             }
@@ -2617,7 +2617,7 @@ int H2TCCurrentContextFieldTypeByLiteral(
             return -1;
         }
         if (H2TCStrEqNullable(fieldName, "allocator")) {
-            int32_t t = H2TCFindMemAllocatorType(c);
+            int32_t t = H2TCFindAllocatorType(c);
             if (t < 0) {
                 return -1;
             }

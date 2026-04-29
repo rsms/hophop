@@ -5,23 +5,23 @@ Status: Draft
 ## Summary
 
 HEP-38 changes heap allocation semantics to support selective GC without introducing a new pointer
-type or new allocation syntax.
+type or alloc allocation syntax.
 
 The rule is:
 
-- plain `new` allocates in the GC heap
-- explicit `new ... in allocator` allocates manual allocator-managed memory
+- plain `alloc` allocates in the GC heap
+- explicit `alloc ... in allocator` allocates manual allocator-managed memory
 
 Examples:
 
 ```hop
-var a *int  = new int
-var b *int  = new int in context.allocator
-var c *Vec2 = new Vec2{ x: 1, y: 2 }
-var d *Vec2 = new Vec2{ x: 1, y: 2 } in context.allocator
+var a *int  = alloc int
+var b *int  = alloc int in context.allocator
+var c *Vec2 = alloc Vec2{ x: 1, y: 2 }
+var d *Vec2 = alloc Vec2{ x: 1, y: 2 } in context.allocator
 
-del b
-del d
+dealloc b
+dealloc d
 ```
 
 GC-managed values and manual heap values both use ordinary `*T`.
@@ -45,7 +45,7 @@ HopHop needs to keep explicit memory management where it matters:
 It also benefits from automatic reclamation for graph-like or irregular heap structures where
 manual lifetime management is error-prone and noisy.
 
-Using plain `new` for GC and reserving `new ... in allocator` for manual memory is cleaner than
+Using plain `alloc` for GC and reserving `alloc ... in allocator` for manual memory is cleaner than
 adding a second allocation sigil:
 
 - the grammar stays almost unchanged
@@ -56,12 +56,12 @@ adding a second allocation sigil:
 ## Goals
 
 - Add selective GC without introducing a second pointer type.
-- Make plain `new` use GC-managed allocation.
-- Keep explicit manual allocation available through `new ... in allocator`.
-- Keep `del` for manual memory.
-- Catch common `del` mistakes in debug builds, including:
-  - calling `del` on a GC allocation
-  - calling `del` with a different allocator than the allocation originated from
+- Make plain `alloc` use GC-managed allocation.
+- Keep explicit manual allocation available through `alloc ... in allocator`.
+- Keep `dealloc` for manual memory.
+- Catch common `dealloc` mistakes in debug builds, including:
+  - calling `dealloc` on a GC allocation
+  - calling `dealloc` with a different allocator than the allocation originated from
 - Start with a precise collector for evaluator and Wasm.
 - Keep unsupported paths explicit: C backend flows must reject GC-using programs directly.
 
@@ -82,25 +82,25 @@ HEP-38 does not add:
 
 ### 1. Syntax
 
-No new allocation syntax is required.
+No additional allocation syntax is required.
 
-Existing `new` forms remain:
+Existing `alloc` forms remain:
 
 ```ebnf
-NewExpr = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
+AllocExpr = "alloc" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
 ```
 
 The change is semantic:
 
-- `new T` is GC allocation
-- `new T{...}` is GC allocation
-- `new [T n]` is GC allocation
-- `new ... in allocExpr` is manual allocation through `allocExpr`
+- `alloc T` is GC allocation
+- `alloc T{...}` is GC allocation
+- `alloc [T n]` is GC allocation
+- `alloc ... in allocExpr` is manual allocation through `allocExpr`
 
-`del` syntax is unchanged:
+`dealloc` syntax is unchanged:
 
-- `del value`
-- `del value in allocExpr`
+- `dealloc value`
+- `dealloc value in allocExpr`
 
 ### 2. Allocation classes
 
@@ -111,8 +111,8 @@ Every heap allocation belongs to exactly one provenance class:
 
 Creation rules:
 
-- plain `new` creates GC-managed allocations
-- `new ... in allocExpr` creates manual allocations
+- plain `alloc` creates GC-managed allocations
+- `alloc ... in allocExpr` creates manual allocations
 
 ### 3. Result type
 
@@ -128,76 +128,76 @@ The runtime distinguishes them by allocation provenance.
 
 ## Semantics
 
-### 1. Plain `new`
+### 1. Plain `alloc`
 
-Plain `new` no longer depends on `context.allocator`.
+Plain `alloc` no longer depends on `context.allocator`.
 
 Instead:
 
-- `new T`
-- `new T{...}`
-- `new [T n]`
+- `alloc T`
+- `alloc T{...}`
+- `alloc [T n]`
 
 allocate in the GC heap and return `*T`.
 
-This means plain `new` becomes available without requiring an ambient `MemAllocator`.
+This means plain `alloc` becomes available without requiring an ambient `Allocator`.
 
 ### 2. Explicit allocator form
 
-`new ... in allocExpr` remains the explicit manual allocation form.
+`alloc ... in allocExpr` remains the explicit manual allocation form.
 
 Examples:
 
 ```hop
-var p  *Pair    = new Pair in context.allocator
-var xs *[i32 4] = new [i32 4] in context.allocator
+var p  *Pair    = alloc Pair in context.allocator
+var xs *[i32 4] = alloc [i32 4] in context.allocator
 ```
 
 These allocations are not GC-managed.
-They are reclaimed explicitly through `del`.
+They are reclaimed explicitly through `dealloc`.
 
-### 3. `del`
+### 3. `dealloc`
 
-`del` remains the deallocation operation for manual memory only.
+`dealloc` remains the deallocation operation for manual memory only.
 
-Using `del` on a GC allocation is invalid.
-Using `del` with the wrong allocator is also invalid.
+Using `dealloc` on a GC allocation is invalid.
+Using `dealloc` with the wrong allocator is also invalid.
 
 Because GC and manual allocations intentionally share the same static type `*T`, these errors are
 not rejected by the type system.
 
 Instead, the runtime contract is:
 
-- debug builds must validate allocation provenance in `del`
+- debug builds must validate allocation provenance in `dealloc`
 - a mismatch must trap or report a direct runtime error
 - optimized builds may omit this check
 
 This catches both of the following mistakes:
 
 ```hop
-var p *Vec2 = new Vec2
-del p // invalid: GC allocation
+var p *Vec2 = alloc Vec2
+dealloc p // invalid: GC allocation
 ```
 
 ```hop
 var a1 = context.allocator
 var a2 = some_other_allocator()
-var p *Node = new Node in a1
-del p in a2 // invalid: allocator mismatch
+var p *Node = alloc Node in a1
+dealloc p in a2 // invalid: allocator mismatch
 ```
 
 ### 4. Debug allocator-origin checks
 
-In debug builds, each heap allocation must carry enough origin metadata for `del` to validate:
+In debug builds, each heap allocation must carry enough origin metadata for `dealloc` to validate:
 
 - allocation kind: GC or manual
 - for manual allocations, allocator-origin identity
 
 The exact metadata layout is implementation detail, but the check must be strong enough to detect:
 
-- `del` on GC-managed memory
-- `del ... in allocExpr` where `allocExpr` is not equivalent to the originating allocator
-- plain `del value` using `context.allocator` when the allocation came from a different allocator
+- `dealloc` on GC-managed memory
+- `dealloc ... in allocExpr` where `allocExpr` is not equivalent to the originating allocator
+- plain `dealloc value` using `context.allocator` when the allocation came from a different allocator
 
 This HEP does not require a particular notion of allocator identity beyond the guarantee that the
 debug check correctly detects mismatched origin under the runtime's allocator model.
@@ -250,7 +250,7 @@ Manual allocations are not scanned by the collector in v1.
 That means storing a GC pointer inside manual or otherwise unscanned memory is invalid in v1,
 including storage hidden in:
 
-- memory obtained from `new ... in allocator`
+- memory obtained from `alloc ... in allocator`
 - arena allocations
 - foreign memory
 - `rawptr` payloads
@@ -273,9 +273,9 @@ It should:
 
 - implement the precise GC heap
 - maintain root visibility for interpreter frames and temporaries
-- lower plain `new` to GC allocation
-- lower `new ... in allocExpr` to manual allocation
-- implement debug `del` provenance checks
+- lower plain `alloc` to GC allocation
+- lower `alloc ... in allocExpr` to manual allocation
+- implement debug `dealloc` provenance checks
 
 ### 2. Wasm
 
@@ -286,15 +286,15 @@ The Wasm path should:
 - provide a GC heap in linear memory
 - emit or derive precise root information for live pointer-carrying locals and globals
 - preserve current pointer/address semantics by keeping the initial collector non-moving
-- lower plain `new` to GC allocation
-- lower explicit allocator `new ... in allocExpr` to manual allocation
-- implement the same debug `del` provenance checks when debug runtime support is enabled
+- lower plain `alloc` to GC allocation
+- lower explicit allocator `alloc ... in allocExpr` to manual allocation
+- implement the same debug `dealloc` provenance checks when debug runtime support is enabled
 
 ### 3. C backend
 
 The C backend does not support GC in v1.
 
-That means any use of plain `new` must be rejected by:
+That means any use of plain `alloc` must be rejected by:
 
 - `hop build --output-format c`
 - `hop build`
@@ -303,38 +303,38 @@ That means any use of plain `new` must be rejected by:
 Recommended diagnostic shape:
 
 ```text
-plain new requires GC support, which is not available in the C backend; use `new ... in allocator` for manual allocation
+plain alloc requires GC support, which is not available in the C backend; use `alloc ... in allocator` for manual allocation
 ```
 
 Programs that use only explicit allocator forms remain valid for the C backend.
 
 ## Interaction with existing features
 
-### 1. `new`
+### 1. `alloc`
 
 This HEP is a compatibility break.
 
 Before HEP-38:
 
-- plain `new` used the ambient or explicit allocator model
+- plain `alloc` used the ambient or explicit allocator model
 
 After HEP-38:
 
-- plain `new` is GC allocation
-- only `new ... in allocExpr` is manual allocation
+- plain `alloc` is GC allocation
+- only `alloc ... in allocExpr` is manual allocation
 
 For existing manual-memory code, the migration is mechanical:
 
-- `new T` -> `new T in context.allocator`
-- `new T{...}` -> `new T{...} in context.allocator`
-- `new [T n]` -> `new [T n] in context.allocator`
+- `alloc T` -> `alloc T in context.allocator`
+- `alloc T{...}` -> `alloc T{...} in context.allocator`
+- `alloc [T n]` -> `alloc [T n] in context.allocator`
 
 or use another explicit allocator where appropriate.
 
-### 2. `del`
+### 2. `dealloc`
 
-`del` remains valid and necessary for manual memory.
-It is not a valid operation on plain-`new` GC allocations.
+`dealloc` remains valid and necessary for manual memory.
+It is not a valid operation on plain-`alloc` GC allocations.
 
 ### 3. `defer`
 
@@ -368,11 +368,11 @@ This is one of the main reasons for preferring selective GC over ARC here.
 Recommended diagnostics and runtime errors:
 
 1. Backend error:
-   - plain `new` used in C backend flow
+   - plain `alloc` used in C backend flow
 2. Debug runtime error:
-   - `del` used on a GC allocation
+   - `dealloc` used on a GC allocation
 3. Debug runtime error:
-   - `del` used with wrong allocator
+   - `dealloc` used with wrong allocator
 
 ## Examples
 
@@ -385,8 +385,8 @@ struct Node {
 }
 
 fn make_list() *Node {
-    var a = new Node{ value: 1 }
-    var b = new Node{ value: 2 }
+    var a = alloc Node{ value: 1 }
+    var b = alloc Node{ value: 2 }
     a.next = b
     return a
 }
@@ -397,12 +397,12 @@ fn make_list() *Node {
 ```hop
 fn main() {
     var ma     = context.allocator
-    var a *i32 = new i32 in ma
-    var b *i32 = new i32 in ma
+    var a *i32 = alloc i32 in ma
+    var b *i32 = alloc i32 in ma
     *a = 10
     *b = 32
     assert *a + *b == 42
-    del a, b in ma
+    dealloc a, b in ma
 }
 ```
 
@@ -414,8 +414,8 @@ struct Buf {
 }
 
 fn main() {
-    var buf  *Buf  = new Buf in context.allocator
-    var node *Node = new Node
+    var buf  *Buf  = alloc Buf in context.allocator
+    var node *Node = alloc Node
 
     // `buf` is manual and unscanned.
     // `node` is GC-managed.
@@ -428,16 +428,16 @@ fn main() {
 The core language and runtime work likely falls into these pieces:
 
 1. Typechecker:
-   - split `new` semantics by presence or absence of `in allocExpr`
+   - split `alloc` semantics by presence or absence of `in allocExpr`
    - keep result typing the same as today
 2. MIR / evaluator / Wasm lowering:
-   - add GC allocation lowering for plain `new`
-   - preserve manual allocation lowering for `new ... in allocExpr`
+   - add GC allocation lowering for plain `alloc`
+   - preserve manual allocation lowering for `alloc ... in allocExpr`
 3. Runtime:
    - add precise non-moving tracing collector
-   - add debug provenance metadata and `del` validation
+   - add debug provenance metadata and `dealloc` validation
 4. C backend:
-   - reject plain-`new` GC programs explicitly
+   - reject plain-`alloc` GC programs explicitly
 
 ## Open questions
 

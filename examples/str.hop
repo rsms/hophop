@@ -3,7 +3,7 @@
 // - explicit `*str` writable literals
 // - implicit conversion to `&[u8]` and `*[u8]`
 // - len/cstr builtins and receiver sugar
-// - concat allocation and del with ambient context allocator
+// - concat allocation and dealloc with ambient context allocator
 fn run() {
 	var lit_ro &str = "hello"
 	var lit_rw *str = "world"
@@ -32,11 +32,11 @@ fn run() {
 	var joined *str = concat(lit_ro, lit_rw)
 	assert len(joined) == 10
 	print(joined)
-	del joined
+	dealloc joined
 
 	var shout *str = concat(lit_ro, "!")
 	assert len(shout) == 6
-	del shout
+	dealloc shout
 }
 
 fn main() {

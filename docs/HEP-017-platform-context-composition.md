@@ -20,7 +20,7 @@ Example:
 ```hop
 // built-in package "platform"
 pub struct Context {
-    mem     mut&__hop_MemAllocator
+    mem     mut&__hop_Allocator
     console i32
 }
 ```
@@ -135,7 +135,7 @@ Given:
 import "platform"
 
 fn alloc() *u8 context platform.Context {
-    return new(u8)
+    return alloc(u8)
 }
 ```
 
@@ -194,7 +194,7 @@ From current behavior:
 
 ```hop
 pub struct Context {
-    mem     mut&__hop_MemAllocator
+    mem     mut&__hop_Allocator
     console i32
 }
 ```

@@ -16,5 +16,5 @@ fn str_eq(got, want &str) bool {
 fn main() {
 	var s *str = format("i={i}, f={}, s={s}, braces={{ok}}", 42 as i64, 3.5 as f64, "hi")
 	assert str_eq(s, want: "i=42, f=3.5, s=hi, braces={ok}")
-	del s
+	dealloc s
 }

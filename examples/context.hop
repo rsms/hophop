@@ -1,6 +1,6 @@
 // Ambient context is available in every function body.
 fn alloc_value() *i32 {
-	var p *i32 = new i32
+	var p *i32 = alloc i32
 	*p = 42
 	return p
 }
@@ -19,5 +19,5 @@ fn main() {
 	}
 
 	print("outer")
-	del p
+	dealloc p
 }

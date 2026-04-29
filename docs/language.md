@@ -52,7 +52,7 @@ See also:
 
 ### 2.3 Keywords
 - [LEX-KW-001][Stable] Keywords:
-  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null new del`.
+  `import pub struct union enum fn var const type if else for switch case default break continue return defer assert sizeof true false in as null alloc dealloc`.
 - [LEX-KW-002][Stable] `mut` is reserved legacy syntax and MUST be rejected in type positions.
 
 ### 2.4 Literals
@@ -169,7 +169,7 @@ Block           = "{" [ StmtList ] "}" .
 StmtList        = Stmt { ";" Stmt } [ ";" ] .
 Stmt            = Block | VarDeclStmt | LocalConstDecl | IfStmt | ForStmt | SwitchStmt
                 | ReturnStmt | BreakStmt | ContinueStmt | DeferStmt | AssertStmt
-                | ConstBlockStmt | DelStmt | ShortAssignStmt | MultiAssignStmt | ExprStmt .
+                | ConstBlockStmt | DeallocStmt | ShortAssignStmt | MultiAssignStmt | ExprStmt .
 
 VarDeclStmt     = "var" DeclNameList ( Type [ "=" ExprList ] | "=" ExprList ) .
 ShortAssignStmt = DeclNameList ":=" ExprList .
@@ -192,7 +192,7 @@ ContinueStmt    = "continue" .
 DeferStmt       = "defer" ( Block | Stmt ) .
 AssertStmt      = "assert" Expr [ "," Expr { "," Expr } ] .
 ConstBlockStmt  = "const" Block .
-DelStmt         = "del" Expr { "," Expr } [ "in" Expr ] .
+DeallocStmt         = "dealloc" Expr { "," Expr } [ "in" Expr ] .
 ExprStmt        = Expr .
 
 Expr            = AssignExpr .
@@ -222,11 +222,11 @@ UnwrapSuffix    = "!" .
 
 PrimaryExpr     = Ident | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
                 | TypeValueExpr
-                | CompoundLit | AnonStructLit | NewExpr
+                | CompoundLit | AnonStructLit | AllocExpr
                 | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")" | TupleExpr .
 TypeValueExpr   = "type" Type .
 TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
-NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
+AllocExpr       = "alloc" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
 AnonStructLit   = "struct" "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
@@ -337,7 +337,7 @@ fn f() {
   - floating point: `f32`, `f64`
   - constant numeric: `const_int`, `const_float`
 - [TYPE-BUILTIN-003][Stable] `int` and `uint` are pointer-sized signed/unsigned integers for the target.
-- [TYPE-BUILTIN-004][Stable] `MemAllocator` is a source-level type provided by builtin library declarations (for example `builtin.MemAllocator` and unqualified builtin lookup), not a language builtin type.
+- [TYPE-BUILTIN-004][Stable] `Allocator` is a source-level type provided by builtin library declarations (for example `builtin.Allocator` and unqualified builtin lookup), not a language builtin type.
 - [TYPE-BUILTIN-005][Stable] `rune` is a source-level alias type modeled as `type rune u32`, and its unqualified spelling is a primitive builtin type spelling for lookup purposes.
 - [TYPE-CONSTR-001][Stable] Constructed types: pointers `*T`, references `&T`, arrays `[T N]`, slices `[T]`, dependent arrays `[T .n]`, optionals `?T`, function types, tuple types `(T1, T2, ...)`, anonymous aggregates.
 - [TYPE-CONSTR-002][Stable] `[T]` is unsized and MUST NOT be used by value.
@@ -484,7 +484,7 @@ fn f() {
 - [EXPR-CMPHOOK-004][Stable] Comparison hooks MUST be pure:
   - MUST NOT use `context`
   - MUST NOT call functions/builtins
-  - MUST NOT allocate (`new`)
+  - MUST NOT allocate (`alloc`)
   - MUST NOT read top-level `var`/`const` symbols
 
 ### 6.2 Selector call sugar and overload resolution
@@ -555,7 +555,7 @@ fn f() {
 - [EXPR-ARRAY-LIT-002][Provisional] Without an expected type, a non-empty array literal infers a fixed array `[T N]` from the common element type and element count. `[]` requires an expected type.
 - [EXPR-ARRAY-LIT-003][Provisional] With expected `[T N]`, each supplied element is checked against `T`; fewer than `N` elements default-initialize the trailing elements, and more than `N` elements is invalid.
 - [EXPR-ARRAY-LIT-004][Provisional] With expected readonly `&[T N]` or `&[T]`, all elements must be const-evaluable and the compiler materializes immutable static storage. Bare array literals do not bind to mutable pointer or reference storage.
-- [EXPR-ARRAY-LIT-005][Provisional] `new [expr, ...]` allocates initialized array storage. Without an expected type it produces `*[T N]`; with expected `*[T]` it allocates dynamic-size storage using the literal length; with expected `*[T N]` it allocates fixed-size storage with default-filled trailing elements.
+- [EXPR-ARRAY-LIT-005][Provisional] `alloc [expr, ...]` allocates initialized array storage. Without an expected type it produces `*[T N]`; with expected `*[T]` it allocates dynamic-size storage using the literal length; with expected `*[T N]` it allocates fixed-size storage with default-filled trailing elements.
 
 ## 7. Statements and Control Flow
 
@@ -644,26 +644,26 @@ fn f() {
   - `copy(*[u8], &str)` is valid.
   - `copy(*str, &[u8])` is invalid unless `src` is explicitly cast to `&str`.
 
-### 9.4 `new`
-- [BI-NEW-001][Stable] Forms:
-  - `new T`
-  - `new T{...}`
-  - `new [T n]`
+### 9.4 `alloc`
+- [BI-ALLOC-001][Stable] Forms:
+  - `alloc T`
+  - `alloc T{...}`
+  - `alloc [T n]`
   - each with optional `in allocExpr`
-- [BI-NEW-002][Stable] Without explicit allocator, effective context MUST provide `allocator` compatible with `MemAllocator`.
-- [BI-NEW-002A][Stable] The explicit allocator, or effective context `allocator`, MUST be non-null and have a valid allocator implementation.
-- [BI-NEW-003][Stable] `n` in `new [T n]` MUST be integer-typed; constant negative values are invalid.
-- [BI-NEW-004][Stable] Variable-size element types require initializer in non-count form.
-- [BI-NEW-005][Stable] Static result typing:
-  - `new T` -> `*T`
-  - `new [T n]` -> `*[T N]` when `n` is constant positive `N`, else `*[T]`
-- [BI-NEW-005A][Stable] `new [T 0]` has type `*[T]` (runtime-length slice pointer form).
-- [BI-NEW-006][Provisional] In `Reference-hop`, codegen may insert implicit null-trap unwrap when coercing `new` into non-optional pointer destinations.
+- [BI-ALLOC-002][Stable] Without explicit allocator, effective context MUST provide `allocator` compatible with `Allocator`.
+- [BI-ALLOC-002A][Stable] The explicit allocator, or effective context `allocator`, MUST be non-null and have a valid allocator implementation.
+- [BI-ALLOC-003][Stable] `n` in `alloc [T n]` MUST be integer-typed; constant negative values are invalid.
+- [BI-ALLOC-004][Stable] Variable-size element types require initializer in non-count form.
+- [BI-ALLOC-005][Stable] Static result typing:
+  - `alloc T` -> `*T`
+  - `alloc [T n]` -> `*[T N]` when `n` is constant positive `N`, else `*[T]`
+- [BI-ALLOC-005A][Stable] `alloc [T 0]` has type `*[T]` (runtime-length slice pointer form).
+- [BI-ALLOC-006][Provisional] In `Reference-hop`, codegen may insert implicit null-trap unwrap when coercing `alloc` into non-optional pointer destinations.
 
-### 9.5 `concat(a, b)` and `del`
+### 9.5 `concat(a, b)` and `dealloc`
 - [BI-CONCAT-001][Stable] `concat(a, b)` requires both args `str`-assignable and context `allocator`; returns `*str`.
-- [BI-DEL-001][Stable] `del value` uses `context.allocator`; `del value in allocExpr` uses an explicit allocator.
-- [BI-DEL-002][Stable] `del a, b, c in allocExpr` frees each listed pointer through the same allocator.
+- [BI-DEALLOC-001][Stable] `dealloc value` uses `context.allocator`; `dealloc value in allocExpr` uses an explicit allocator.
+- [BI-DEALLOC-002][Stable] `dealloc a, b, c in allocExpr` frees each listed pointer through the same allocator.
 
 ### 9.6 `panic(msg)`
 - [BI-PANIC-001][Stable] Argument MUST be `str`-assignable.
@@ -684,7 +684,7 @@ fn f() {
 ### 9.9 `format(format, args...)` and `format_str(format, args...)`
 - [BI-FMT-001][Provisional] `format` and `format_str` are available without an explicit import.
 - [BI-FMT-001.1][Provisional] `format` and `format_str` are builtin package functions.
-- [BI-FMT-002][Provisional] `format` and `format_str(format, args...)` require effective context field `allocator` compatible with `MemAllocator`.
+- [BI-FMT-002][Provisional] `format` and `format_str(format, args...)` require effective context field `allocator` compatible with `Allocator`.
 - [BI-FMT-003][Provisional] `format` and `format_str(format, args...)` return `*str`.
 - [BI-FMT-004][Provisional] Supported placeholders are `{}`, `{i}`, `{f}`, and `{s}`.
 - [BI-FMT-005][Provisional] `{{` and `}}` represent literal braces.
@@ -788,7 +788,7 @@ This section is non-core and documents current reference behavior.
 
 - [REF-IMPL-001][Provisional] `switch` lowers to `if/else` chains.
 - [REF-IMPL-002][Provisional] Optional unwrap lowers to runtime null-trap helper.
-- [REF-IMPL-003][Provisional] `new` lowering uses allocator helpers and may inject implicit unwrap depending on destination optionality.
+- [REF-IMPL-003][Provisional] `alloc` lowering uses allocator helpers and may inject implicit unwrap depending on destination optionality.
 - [REF-IMPL-004][Provisional] Non-constant index/slice bounds checks are analyzed statically; runtime checks are not universally emitted.
 - [REF-IMPL-005][Provisional] Implicit main context type resolution order:
   1. named `builtin__Context`

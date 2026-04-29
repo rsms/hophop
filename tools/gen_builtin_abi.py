@@ -428,8 +428,8 @@ def order_struct_decls(decls: list[BuiltinDecl]) -> list[StructDecl]:
 def emit_builtin_abi(decls: list[BuiltinDecl], known_types: set[str]) -> str:
     ordered_structs = order_struct_decls(decls)
     struct_order = [d.name for d in ordered_structs]
-    if "MemAllocator" not in struct_order:
-        die("missing struct 'MemAllocator' in builtin package")
+    if "Allocator" not in struct_order:
+        die("missing struct 'Allocator' in builtin package")
     if "Context" not in struct_order:
         die("missing struct 'Context' in builtin package")
 

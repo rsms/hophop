@@ -563,12 +563,6 @@ static H2TokenKind H2KeywordKind(const char* s, uint32_t len) {
         if (H2StrEq(s, len, "for")) {
             return H2Tok_FOR;
         }
-        if (H2StrEq(s, len, "new")) {
-            return H2Tok_NEW;
-        }
-        if (H2StrEq(s, len, "del")) {
-            return H2Tok_DEL;
-        }
         if (H2StrEq(s, len, "var")) {
             return H2Tok_VAR;
         }
@@ -598,6 +592,9 @@ static H2TokenKind H2KeywordKind(const char* s, uint32_t len) {
             return H2Tok_TYPE;
         }
     } else if (len == 5) {
+        if (H2StrEq(s, len, "alloc")) {
+            return H2Tok_ALLOC;
+        }
         if (H2StrEq(s, len, "break")) {
             return H2Tok_BREAK;
         }
@@ -633,6 +630,9 @@ static H2TokenKind H2KeywordKind(const char* s, uint32_t len) {
             return H2Tok_ASSERT;
         }
     } else if (len == 7) {
+        if (H2StrEq(s, len, "dealloc")) {
+            return H2Tok_DEALLOC;
+        }
         if (H2StrEq(s, len, "anytype")) {
             return H2Tok_ANYTYPE;
         }
@@ -748,8 +748,8 @@ const char* H2TokenKindName(H2TokenKind kind) {
         case H2Tok_DEFER:         return "DEFER";
         case H2Tok_ASSERT:        return "ASSERT";
         case H2Tok_SIZEOF:        return "SIZEOF";
-        case H2Tok_NEW:           return "NEW";
-        case H2Tok_DEL:           return "DEL";
+        case H2Tok_ALLOC:         return "ALLOC";
+        case H2Tok_DEALLOC:       return "DEALLOC";
         case H2Tok_TRUE:          return "TRUE";
         case H2Tok_FALSE:         return "FALSE";
         case H2Tok_IN:            return "IN";

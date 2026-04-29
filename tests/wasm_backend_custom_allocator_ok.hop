@@ -1,16 +1,16 @@
 // Verifies the Wasm backend accepts custom allocator.
-fn custom_alloc_impl(_self *MemAllocator, _addr rawptr, _align, _curSize int, _newSizeInOut *int, _flags u32, _srcLoc SourceLocation) rawptr {
+fn custom_alloc_impl(_self *Allocator, _addr rawptr, _align, _curSize int, _newSizeInOut *int, _flags u32, _srcLoc SourceLocation) rawptr {
 	return cstr("................................................................") as rawptr
 }
 
 fn main() {
 	context.allocator.handler = custom_alloc_impl
-	var p *i32 = new i32
+	var p *i32 = alloc i32
 	*p = 7
 	assert *p == 7
 
 	var n  uint   = 3
-	var xs *[i32] = new [i32 n]
+	var xs *[i32] = alloc [i32 n]
 	xs[0] = 1
 	xs[2] = 9
 	assert len(xs) == 3
