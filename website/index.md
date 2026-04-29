@@ -473,26 +473,26 @@ fn divmod(a, b i32) (i32, i32) {
 ### Memory management
 
 HopHop is a manual memory-management language.
-You control allocations and deallocations with `new` and `del`.
+You control allocations and deallocations with `alloc` and `dealloc`.
 
-`new T` allocates memory, returning `*T`.
-`new [T n]` allocates an array of type `*[T]` (dynamically sized) or `*[T n]`,
+`alloc T` allocates memory, returning `*T`.
+`alloc [T n]` allocates an array of type `*[T]` (dynamically sized) or `*[T n]`,
 depending on the receiver type and if `n` can be computed at compile time or not.
 
 
 ```hop
 fn make_count() *i32 {
-    var p = new i32
+    var p = alloc i32
     *p = 1
     return p
 }
 
 fn release(p *i32) {
-    del p
+    dealloc p
 }
 ```
 
-`new` and `del` use the allocator defined by `context.allocator` by default. You can specify an explicit allocator with `in`, e.g. `v := new [i32 3] in my_allocator`.
+`alloc` and `dealloc` use the allocator defined by `context.allocator` by default. You can specify an explicit allocator with `in`, e.g. `v := alloc [i32 3] in my_allocator`.
 
 Unlike languages like C and Go, in hophop `*T` cannot be `null`. Instead, `?*T` [[optional]](#optional) must be used when something may be `null` (and checked before use.)
 
@@ -685,14 +685,21 @@ fn packet_len(p &Packet) u32 {
 
 `context` is an ambient builtin expression inside function bodies. The builtin `Context` provides at least `allocator`, `temp_allocator` and `logger`.
 
-Operations such as `new`, `del`, `concat`, `fmt` and `print` use context capabilities when no explicit resource is supplied.
+Operations such as `alloc`, `dealloc`, `concat`, `fmt` and `print` use context capabilities when no explicit resource is supplied.
 
 ```hop
-fn main() {
-    var alloc = context.allocator
-    var msg   = concat("hi, ", "there")
+fn print_hi() {
+    var msg = concat("hi, ", "there")
     print(msg)
-    del msg in alloc
+    dealloc msg
+}
+fn example(ma Allocator) {
+    // allocate in ma by default until this scope ends
+    context.allocator = ma
+    print_hi()
+}
+fn main() {
+    example(context.allocator)
 }
 ```
 
