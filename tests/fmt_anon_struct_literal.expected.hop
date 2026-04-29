@@ -1,0 +1,9 @@
+// Verifies formatter output for explicit anonymous struct literals.
+fn main() {
+	x := struct { x: 1, on: true }
+	y := struct {
+		longer: x.x,
+		on:     x.on,
+	}
+	_ = y
+}

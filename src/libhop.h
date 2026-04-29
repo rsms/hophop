@@ -480,6 +480,7 @@ enum {
     H2AstFlag_FOR_IN_VALUE_DISCARD = 0x00200000u,
     H2AstFlag_DEL_HAS_ALLOC = 0x00400000u,
     H2AstFlag_NEW_HAS_ARRAY_LIT = 0x00800000u,
+    H2AstFlag_COMPOUND_LIT_EXPLICIT_STRUCT = 0x01000000u,
 };
 
 typedef uint32_t H2Features;

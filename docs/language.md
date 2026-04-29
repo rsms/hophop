@@ -222,12 +222,13 @@ UnwrapSuffix    = "!" .
 
 PrimaryExpr     = Ident | IntLit | FloatLit | StringLit | RuneLit | BoolLit | "null"
                 | TypeValueExpr
-                | CompoundLit | NewExpr | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")"
-                | TupleExpr .
+                | CompoundLit | AnonStructLit | NewExpr
+                | "sizeof" "(" ( Type | Expr ) ")" | "(" Expr ")" | TupleExpr .
 TypeValueExpr   = "type" Type .
 TupleExpr       = "(" Expr "," Expr { "," Expr } ")" .
 NewExpr         = "new" ( "[" Type Expr "]" | Type [ "{" [ FieldInitList ] "}" ] ) [ "in" Expr ] .
 CompoundLit     = [ TypeName ] "{" [ FieldInitList ] "}" .
+AnonStructLit   = "struct" "{" [ FieldInitList ] "}" .
 FieldInitList   = FieldInit { "," FieldInit } [ "," ] .
 FieldInit       = Ident { "." Ident } ":" Expr .
 ```
@@ -529,12 +530,14 @@ fn f() {
 - [EXPR-TYPEVALUE-001][Provisional] `type T` forms a type-value expression of metatype `type`.
 - [EXPR-TYPEVALUE-002][Provisional] `type` prefix is required when an expression-context type value would otherwise collide with ordinary postfix expression grammar, including instantiated generic named types (`type Vector[i32]`) and constructed types (`type &[i32]`).
 - [EXPR-TYPEVALUE-003][Provisional] Simple builtin or named type value expressions that are already unambiguous, such as `i64`, remain valid without the `type` prefix.
+- [EXPR-TYPEVALUE-004][Provisional] Anonymous struct type values in expression context use `type struct { ... }`; without `type`, `struct { ... }` starts an anonymous struct literal.
 
 ### 6.4 Compound literals
 - [EXPR-COMPOUND-001][Stable] Compound literals are named-field only.
 - [EXPR-COMPOUND-002][Stable] Field names may be dotted (`a.b.c: ...`).
 - [EXPR-COMPOUND-003][Stable] Inferred `{ ... }` without explicit type requires expected aggregate type context or anonymous-struct inference.
 - [EXPR-COMPOUND-004][Stable] Anonymous-struct inference from `{ field: expr, ... }` uses field names and concretized field value types.
+- [EXPR-COMPOUND-011][Provisional] `struct { field: expr, ... }` is an explicit anonymous struct literal and uses the same anonymous-struct inference rules as `{ field: expr, ... }`.
 - [EXPR-COMPOUND-005][Stable] Duplicate field initializer paths in the same literal are invalid.
 - [EXPR-COMPOUND-006][Stable] Omitted fields are allowed:
   - struct fields without explicit initializer and without field-default evaluate to zero-value

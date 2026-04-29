@@ -2799,6 +2799,11 @@ static int H2FmtEmitExprCore(H2FmtCtx* c, int32_t nodeId) {
                 type = cur;
                 cur = H2FmtNextSibling(c->ast, cur);
             }
+            if ((n->flags & H2AstFlag_COMPOUND_LIT_EXPLICIT_STRUCT) != 0
+                && H2FmtWriteCStr(c, "struct ") != 0)
+            {
+                return -1;
+            }
             if (type >= 0 && H2FmtEmitType(c, type) != 0) {
                 return -1;
             }

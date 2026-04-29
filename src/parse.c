@@ -1340,6 +1340,16 @@ static int H2PParsePrimary(H2Parser* p, int32_t* out) {
         return H2PParseCompoundLiteralTail(p, -1, out);
     }
 
+    if (H2PMatch(p, H2Tok_STRUCT)) {
+        const H2Token* kw = H2PPrev(p);
+        if (H2PParseCompoundLiteralTail(p, -1, out) != 0) {
+            return -1;
+        }
+        p->nodes[*out].start = kw->start;
+        p->nodes[*out].flags |= H2AstFlag_COMPOUND_LIT_EXPLICIT_STRUCT;
+        return 0;
+    }
+
     if (H2PAt(p, H2Tok_TYPE) && (p->pos + 1u) < p->tokLen
         && H2PIsTypeStart(p->tok[p->pos + 1u].kind))
     {

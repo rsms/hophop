@@ -1,0 +1,5 @@
+tests/anon_struct_literal_type_fields_bad.hop:3:18: error: HOP1004: unexpected token
+    3 | 	x := struct { x int }
+      | 	                ^~~
+tests/anon_struct_literal_type_fields_bad.hop:3:18: note: expected token RBRACE
+tests/anon_struct_literal_type_fields_bad.hop:3:18: fix-it: insert "}"

@@ -1,0 +1,5 @@
+// Verifies expression-context struct literals require field initializers.
+fn main() {
+	x := struct { x int }
+	_ = x
+}

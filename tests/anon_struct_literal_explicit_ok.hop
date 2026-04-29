@@ -1,0 +1,16 @@
+// Verifies explicit anonymous struct literals are accepted.
+fn use(v struct {
+	x  int
+	on bool
+}) int {
+	assert v.on
+	return v.x
+}
+
+fn main() {
+	y := 3
+	x := struct { x: y, on: true }
+	assert use(x) == 3
+	assert x.x == 3
+	assert x.on
+}
