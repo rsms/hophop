@@ -4,7 +4,7 @@
 // - implicit conversion to `&[u8]` and `*[u8]`
 // - len/cstr builtins and receiver sugar
 // - concat allocation and dealloc with ambient context allocator
-fn run() {
+fn main() {
 	var lit_ro &str = "hello"
 	var lit_rw *str = "world"
 
@@ -37,8 +37,4 @@ fn run() {
 	var shout *str = concat(lit_ro, "!")
 	assert len(shout) == 6
 	dealloc shout
-}
-
-fn main() {
-	run()
 }
