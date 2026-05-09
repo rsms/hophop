@@ -15,6 +15,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 
 BUILTIN_C_TYPE = {
@@ -62,7 +63,7 @@ class StructDecl:
     file: str
 
 
-BuiltinDecl = EnumDecl | AliasDecl | StructDecl
+BuiltinDecl = Union[EnumDecl, AliasDecl, StructDecl]
 
 
 def die(msg: str) -> "None":

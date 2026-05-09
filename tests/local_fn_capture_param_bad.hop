@@ -1,0 +1,6 @@
+fn main(x int) {
+	fn get() int {
+		return x
+	}
+	_ = get
+}

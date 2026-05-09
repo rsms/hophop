@@ -128,6 +128,8 @@ enum {
     H2TCFunctionFlag_TEMPLATE = 1u << 1,
     H2TCFunctionFlag_TEMPLATE_INSTANCE = 1u << 2,
     H2TCFunctionFlag_TEMPLATE_HAS_ANYPACK = 1u << 3,
+    H2TCFunctionFlag_INTERNAL = 1u << 4,
+    H2TCFunctionFlag_LOCAL = 1u << 5,
 };
 
 enum {
@@ -1270,7 +1272,9 @@ int H2TCReadFunctionSig(
     int*            outIsVariadic,
     int32_t*        outContextType,
     int*            outHasBody);
-int     H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId);
+int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId);
+int H2TCRegisterFunctionValueNode(
+    H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int isLocal, int32_t* outFuncIndex);
 int     H2TCFinalizeFunctionTypes(H2TypeCheckCtx* c);
 int32_t H2TCFindTopLevelVarLikeNode(
     H2TypeCheckCtx* c, uint32_t start, uint32_t end, int32_t* outNameIndex);

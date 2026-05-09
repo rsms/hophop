@@ -2093,6 +2093,8 @@ static int H2FmtEmitDirectiveGroup(
 static int H2FmtEmitDirective(H2FmtCtx* c, int32_t nodeId);
 static int H2FmtEmitAggregateFieldBody(H2FmtCtx* c, int32_t firstFieldNodeId);
 static int H2FmtEmitExprList(H2FmtCtx* c, int32_t listNodeId);
+static int H2FmtEmitFnTail(H2FmtCtx* c, int32_t nodeId, int allowTypeParams);
+static int H2FmtEmitFnDecl(H2FmtCtx* c, int32_t nodeId);
 
 static int H2FmtEmitCompoundFieldWithAlign(H2FmtCtx* c, int32_t nodeId, uint32_t maxKeyLen) {
     const H2AstNode* n;
@@ -2459,7 +2461,12 @@ static int H2FmtEmitExprCore(H2FmtCtx* c, int32_t nodeId) {
         case H2Ast_STRING: return H2FmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
         case H2Ast_RUNE:   return H2FmtWriteSliceLiteral(c, n->dataStart, n->dataEnd);
         case H2Ast_NULL:   return H2FmtWriteCStr(c, "null");
-        case H2Ast_UNARY:  {
+        case H2Ast_ANON_FN:
+            if (H2FmtWriteCStr(c, "fn") != 0) {
+                return -1;
+            }
+            return H2FmtEmitFnTail(c, nodeId, 0);
+        case H2Ast_UNARY: {
             const char* op = H2FmtTokenOpText((H2TokenKind)n->op);
             ch = H2FmtFirstChild(c->ast, nodeId);
             if (H2FmtWriteCStr(c, op) != 0) {
@@ -4709,6 +4716,7 @@ static int H2FmtEmitStmtInline(H2FmtCtx* c, int32_t nodeId) {
     n = &c->ast->nodes[nodeId];
     switch (n->kind) {
         case H2Ast_BLOCK: return H2FmtEmitBlock(c, nodeId);
+        case H2Ast_FN:    return H2FmtEmitFnDecl(c, nodeId);
         case H2Ast_VAR:   return H2FmtEmitVarLike(c, nodeId, "var");
         case H2Ast_CONST: return H2FmtEmitVarLike(c, nodeId, "const");
         case H2Ast_CONST_BLOCK:
@@ -6059,23 +6067,15 @@ static int H2FmtEmitAggregateDecl(H2FmtCtx* c, int32_t nodeId, const char* kw) {
     return H2FmtEmitTrailingCommentsForNode(c, nodeId);
 }
 
-static int H2FmtEmitFnDecl(H2FmtCtx* c, int32_t nodeId) {
-    const H2AstNode* n = &c->ast->nodes[nodeId];
-    int32_t          child;
-    int              firstParam = 1;
-    int32_t          retType = -1;
-    int32_t          ctxClause = -1;
-    int32_t          body = -1;
-
-    if ((n->flags & H2AstFlag_PUB) != 0 && H2FmtWriteCStr(c, "pub ") != 0) {
-        return -1;
-    }
-    if (H2FmtWriteCStr(c, "fn ") != 0 || H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
-        return -1;
-    }
+static int H2FmtEmitFnTail(H2FmtCtx* c, int32_t nodeId, int allowTypeParams) {
+    int32_t child;
+    int     firstParam = 1;
+    int32_t retType = -1;
+    int32_t ctxClause = -1;
+    int32_t body = -1;
 
     child = H2FmtFirstChild(c->ast, nodeId);
-    if (H2FmtEmitTypeParamList(c, &child) != 0) {
+    if (allowTypeParams && H2FmtEmitTypeParamList(c, &child) != 0) {
         return -1;
     }
     if (H2FmtWriteChar(c, '(') != 0) {
@@ -6133,7 +6133,7 @@ static int H2FmtEmitFnDecl(H2FmtCtx* c, int32_t nodeId) {
             }
             runFirst = H2FmtNextSibling(c->ast, runFirst);
         }
-        if (H2FmtWriteChar(c, ' ') != 0) {
+        if (runType >= 0 && H2FmtWriteChar(c, ' ') != 0) {
             return -1;
         }
         if ((runFlags & H2AstFlag_PARAM_VARIADIC) != 0 && H2FmtWriteCStr(c, "...") != 0) {
@@ -6182,6 +6182,17 @@ static int H2FmtEmitFnDecl(H2FmtCtx* c, int32_t nodeId) {
         }
     }
     return H2FmtEmitTrailingCommentsForNode(c, nodeId);
+}
+
+static int H2FmtEmitFnDecl(H2FmtCtx* c, int32_t nodeId) {
+    const H2AstNode* n = &c->ast->nodes[nodeId];
+    if ((n->flags & H2AstFlag_PUB) != 0 && H2FmtWriteCStr(c, "pub ") != 0) {
+        return -1;
+    }
+    if (H2FmtWriteCStr(c, "fn ") != 0 || H2FmtWriteSlice(c, n->dataStart, n->dataEnd) != 0) {
+        return -1;
+    }
+    return H2FmtEmitFnTail(c, nodeId, 1);
 }
 
 static int H2FmtEmitDirective(H2FmtCtx* c, int32_t nodeId) {

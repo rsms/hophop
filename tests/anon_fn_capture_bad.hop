@@ -1,0 +1,7 @@
+fn main() {
+	x := 41
+	var f fn() int = fn() int {
+		return x + 1
+	}
+	_ = f
+}

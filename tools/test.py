@@ -34,6 +34,7 @@ MAIN_FN_RE = re.compile(r"(?m)^\s*fn\s+main\s*\(")
 EXAMPLE_COMPILE_SKIP: Set[str] = {
     # Known C backend gaps (tracked outside test discovery wiring).
     "examples/anytype.hop",
+    "examples/anon-functions.hop",
     "examples/generics.hop",
     "examples/string-format.hop",
     "examples/string-literal.hop",

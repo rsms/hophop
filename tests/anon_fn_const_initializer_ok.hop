@@ -1,0 +1,7 @@
+const add1 = fn(x int) int {
+	return x + 1
+}
+
+fn main() {
+	_ = add1
+}

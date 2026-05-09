@@ -67,6 +67,10 @@ typedef struct {
 
 static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out);
 static int H2PParseType(H2Parser* p, int32_t* out);
+static int H2PParseParamGroup(
+    H2Parser* p, int32_t fnNode, int* outIsVariadic, int allowMissingType);
+static int H2PParseBlock(H2Parser* p, int32_t* out);
+static int H2PParseFunDecl(H2Parser* p, int allowBody, int32_t* out);
 
 static const H2Token* H2PPeek(H2Parser* p) {
     if (p->pos >= p->tokLen) {
@@ -1312,6 +1316,65 @@ static int H2PParseAllocExpr(H2Parser* p, int32_t* out) {
     return 0;
 }
 
+static int H2PParseAnonFnExpr(H2Parser* p, int32_t* out) {
+    const H2Token* kw = H2PPeek(p);
+    const H2Token* t;
+    int32_t        fn;
+    int32_t        body;
+
+    if (H2PExpect(p, H2Tok_FN, H2Diag_EXPECTED_EXPR, &kw) != 0) {
+        return -1;
+    }
+    fn = H2PNewNode(p, H2Ast_ANON_FN, kw->start, kw->end);
+    if (fn < 0) {
+        return -1;
+    }
+    if (H2PExpect(p, H2Tok_LPAREN, H2Diag_UNEXPECTED_TOKEN, &t) != 0) {
+        return -1;
+    }
+    if (!H2PAt(p, H2Tok_RPAREN)) {
+        for (;;) {
+            int isVariadic = 0;
+            if (H2PParseParamGroup(p, fn, &isVariadic, 1) != 0) {
+                return -1;
+            }
+            if (!H2PMatch(p, H2Tok_COMMA)) {
+                break;
+            }
+        }
+    }
+    if (H2PExpect(p, H2Tok_RPAREN, H2Diag_UNEXPECTED_TOKEN, &t) != 0) {
+        return -1;
+    }
+    p->nodes[fn].end = t->end;
+    if (!H2PAt(p, H2Tok_LBRACE)) {
+        if (H2PAt(p, H2Tok_LPAREN)) {
+            if (H2PParseFnResultClause(p, fn) != 0) {
+                return -1;
+            }
+        } else {
+            int32_t retType;
+            if (H2PParseType(p, &retType) != 0) {
+                return -1;
+            }
+            p->nodes[retType].flags = 1;
+            if (H2PAddChild(p, fn, retType) != 0) {
+                return -1;
+            }
+            p->nodes[fn].end = p->nodes[retType].end;
+        }
+    }
+    if (H2PParseBlock(p, &body) != 0) {
+        return -1;
+    }
+    if (H2PAddChild(p, fn, body) != 0) {
+        return -1;
+    }
+    p->nodes[fn].end = p->nodes[body].end;
+    *out = fn;
+    return 0;
+}
+
 static int H2PParsePrimary(H2Parser* p, int32_t* out) {
     const H2Token* t = H2PPeek(p);
     int32_t        n;
@@ -1501,6 +1564,10 @@ static int H2PParsePrimary(H2Parser* p, int32_t* out) {
 
     if (H2PAt(p, H2Tok_LBRACK)) {
         return H2PParseArrayLiteral(p, out);
+    }
+
+    if (H2PAt(p, H2Tok_FN)) {
+        return H2PParseAnonFnExpr(p, out);
     }
 
     if (H2PMatch(p, H2Tok_SIZEOF)) {
@@ -2008,7 +2075,8 @@ static int H2PFnHasVariadicParam(H2Parser* p, int32_t fnNode) {
     return 0;
 }
 
-static int H2PParseParamGroup(H2Parser* p, int32_t fnNode, int* outIsVariadic) {
+static int H2PParseParamGroup(
+    H2Parser* p, int32_t fnNode, int* outIsVariadic, int allowMissingType) {
     const H2Token* lastName = NULL;
     int32_t        firstParam = -1;
     int32_t        lastParam = -1;
@@ -2061,6 +2129,23 @@ static int H2PParseParamGroup(H2Parser* p, int32_t fnNode, int* outIsVariadic) {
     }
 
     if (!H2PIsTypeStart(H2PPeek(p)->kind)) {
+        if (allowMissingType && !isVariadic) {
+            int32_t param = firstParam;
+            while (param >= 0) {
+                int32_t nextParam = p->nodes[param].nextSibling;
+                if (isConstGroup) {
+                    p->nodes[param].flags |= H2AstFlag_PARAM_CONST;
+                }
+                param = nextParam;
+            }
+            if (H2PAddChild(p, fnNode, firstParam) != 0) {
+                return -1;
+            }
+            if (outIsVariadic != NULL) {
+                *outIsVariadic = 0;
+            }
+            return 0;
+        }
         if (lastName != NULL) {
             H2PSetDiagWithArg(
                 p->diag,
@@ -2844,6 +2929,26 @@ static int H2PParseStmt(H2Parser* p, int32_t* out) {
 
     switch (H2PPeek(p)->kind) {
         case H2Tok_VAR: return H2PParseVarLikeStmt(p, H2Ast_VAR, 1, 1, out);
+        case H2Tok_FN:
+            if (H2PParseFunDecl(p, 1, out) != 0) {
+                return -1;
+            }
+            if (*out >= 0) {
+                int32_t child = p->nodes[*out].firstChild;
+                int     hasBody = 0;
+                p->nodes[*out].flags |= H2AstFlag_FN_LOCAL;
+                while (child >= 0) {
+                    if (p->nodes[child].kind == H2Ast_BLOCK) {
+                        hasBody = 1;
+                        break;
+                    }
+                    child = p->nodes[child].nextSibling;
+                }
+                if (!hasBody) {
+                    return H2PFail(p, H2Diag_UNEXPECTED_TOKEN);
+                }
+            }
+            return 0;
         case H2Tok_CONST:
             kw = H2PPeek(p);
             p->pos++;
@@ -3404,7 +3509,7 @@ static int H2PParseFunDecl(H2Parser* p, int allowBody, int32_t* out) {
     if (!H2PAt(p, H2Tok_RPAREN)) {
         for (;;) {
             int isVariadic = 0;
-            if (H2PParseParamGroup(p, fn, &isVariadic) != 0) {
+            if (H2PParseParamGroup(p, fn, &isVariadic, 0) != 0) {
                 return -1;
             }
             if (!H2PMatch(p, H2Tok_COMMA)) {
@@ -3686,6 +3791,7 @@ const char* H2AstKindName(H2AstKind kind) {
         case H2Ast_DIRECTIVE:         return "DIRECTIVE";
         case H2Ast_PUB:               return "PUB";
         case H2Ast_FN:                return "FN";
+        case H2Ast_ANON_FN:           return "ANON_FN";
         case H2Ast_PARAM:             return "PARAM";
         case H2Ast_TYPE_PARAM:        return "TYPE_PARAM";
         case H2Ast_CONTEXT_CLAUSE:    return "CONTEXT_CLAUSE";

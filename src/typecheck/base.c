@@ -469,6 +469,9 @@ int H2TCEmitUnusedSymbolWarnings(H2TypeCheckCtx* c) {
         const H2TCFunction* fn = &c->funcs[i];
         int32_t             fnNode;
         H2Diag              warning;
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) != 0) {
+            continue;
+        }
         if (fn->defNode < 0) {
             continue;
         }
@@ -1829,6 +1832,9 @@ int H2TCTypeIsFmtValue(H2TypeCheckCtx* c, int32_t typeId) {
 int32_t H2TCFindFunctionIndex(H2TypeCheckCtx* c, uint32_t start, uint32_t end) {
     uint32_t i;
     for (i = 0; i < c->funcLen; i++) {
+        if ((c->funcs[i].flags & H2TCFunctionFlag_INTERNAL) != 0) {
+            continue;
+        }
         if (H2NameEqSlice(c->src, c->funcs[i].nameStart, c->funcs[i].nameEnd, start, end)) {
             return (int32_t)i;
         }
@@ -1846,6 +1852,9 @@ int32_t H2TCFindBuiltinQualifiedFunctionIndex(H2TypeCheckCtx* c, uint32_t start,
     for (i = 0; i < c->funcLen; i++) {
         const H2TCFunction* fn = &c->funcs[i];
         uint32_t            candLen;
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) != 0) {
+            continue;
+        }
         if (fn->nameEnd <= fn->nameStart) {
             continue;
         }
@@ -1881,6 +1890,9 @@ int32_t H2TCFindPlainFunctionValueIndex(H2TypeCheckCtx* c, uint32_t start, uint3
     int32_t  found = -1;
     for (i = 0; i < c->funcLen; i++) {
         const H2TCFunction* fn = &c->funcs[i];
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) != 0) {
+            continue;
+        }
         if (!H2NameEqSlice(c->src, fn->nameStart, fn->nameEnd, start, end)) {
             continue;
         }

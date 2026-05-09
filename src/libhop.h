@@ -375,6 +375,7 @@ typedef enum {
     H2Ast_DIRECTIVE,
     H2Ast_PUB,
     H2Ast_FN,
+    H2Ast_ANON_FN,
     H2Ast_PARAM,
     H2Ast_TYPE_PARAM,
     H2Ast_CONTEXT_CLAUSE,
@@ -481,6 +482,7 @@ enum {
     H2AstFlag_DEALLOC_HAS_EXPLICIT_ALLOCATOR = 0x00400000u,
     H2AstFlag_ALLOC_HAS_ARRAY_LIT = 0x00800000u,
     H2AstFlag_COMPOUND_LIT_EXPLICIT_STRUCT = 0x01000000u,
+    H2AstFlag_FN_LOCAL = 0x02000000u,
 };
 
 typedef uint32_t H2Features;

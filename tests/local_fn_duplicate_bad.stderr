@@ -1,0 +1,6 @@
+tests/local_fn_duplicate_bad.hop:5:5: error: HOP2001: duplicate definition 'double'
+    5 | 	fn double(x int) int {
+      | 	   ^~~~~~
+tests/local_fn_duplicate_bad.hop:2:5: note: previous definition is here
+    2 | 	fn double(x int) int {
+      | 	   ^~~~~~

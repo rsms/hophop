@@ -1,0 +1,6 @@
+fn main() {
+	var f fn(int) int = fn(x) int {
+		return x + 1
+	}
+	assert f(41) == 42
+}

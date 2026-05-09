@@ -639,6 +639,12 @@ static const H2DiagInfo g_hopDiagInfo[H2Diag__COUNT] = {
                                           "insert '_ = ' to discard return value",
                                           H2DiagType_ERROR,
                                           1 },
+    [H2Diag_ANON_FN_CAPTURE_FORBIDDEN] = { "HOP2118",
+                                           "anonymous function cannot capture local runtime "
+                                           "binding '%s'",
+                                           NULL,
+                                           H2DiagType_ERROR,
+                                           1 },
     [H2Diag_CODEGEN_INTERNAL] = { "HOP3001", "internal codegen error", NULL, H2DiagType_ERROR, 0 },
     [H2Diag_WASM_BACKEND_UNSUPPORTED_MIR] = { "HOP3002",
                                               "Wasm backend does not support this MIR",

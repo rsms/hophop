@@ -1,0 +1,9 @@
+fn main() {
+	fn double(x int) int {
+		return x * 2
+	}
+	fn double(x int) int {
+		return x + x
+	}
+	_ = double
+}

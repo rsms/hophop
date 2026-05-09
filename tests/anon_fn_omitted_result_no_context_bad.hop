@@ -1,0 +1,6 @@
+fn main() {
+	f := fn(x int) {
+		return x
+	}
+	_ = f
+}

@@ -1,0 +1,10 @@
+fn apply_twice(f fn(int) int, x int) int {
+	return f(f(x))
+}
+
+fn main() {
+	shift := fn(x int) int {
+		return x + 10
+	}
+	assert shift.apply_twice(3) == 23
+}

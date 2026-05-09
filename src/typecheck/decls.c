@@ -967,6 +967,187 @@ int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
     return 0;
 }
 
+static int32_t H2TCFindFunctionByDeclNode(H2TypeCheckCtx* c, int32_t nodeId) {
+    uint32_t i;
+    for (i = 0; i < c->funcLen; i++) {
+        if (c->funcs[i].declNode == nodeId) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int H2TCResolveExpectedFunctionType(
+    H2TypeCheckCtx* c, int32_t expectedType, const H2TCType** outType) {
+    int32_t resolved;
+    *outType = NULL;
+    if (expectedType < 0 || (uint32_t)expectedType >= c->typeLen) {
+        return 0;
+    }
+    resolved = H2TCResolveAliasBaseType(c, expectedType);
+    if (resolved < 0 || (uint32_t)resolved >= c->typeLen) {
+        return 0;
+    }
+    if (c->types[resolved].kind != H2TCType_FUNCTION) {
+        return 0;
+    }
+    *outType = &c->types[resolved];
+    return 1;
+}
+
+int H2TCRegisterFunctionValueNode(
+    H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int isLocal, int32_t* outFuncIndex) {
+    const H2AstNode* n;
+    const H2TCType*  expectedFn = NULL;
+    int32_t          returnType = c->typeVoid;
+    uint32_t         paramCount = 0;
+    uint32_t         expectedParamCount = 0;
+    int              isVariadic = 0;
+    int32_t          child;
+    int32_t          existing;
+
+    if (outFuncIndex != NULL) {
+        *outFuncIndex = -1;
+    }
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_EXPR);
+    }
+    n = &c->ast->nodes[nodeId];
+    if (n->kind != H2Ast_ANON_FN && n->kind != H2Ast_FN) {
+        return H2TCFailNode(c, nodeId, H2Diag_EXPECTED_EXPR);
+    }
+    existing = H2TCFindFunctionByDeclNode(c, nodeId);
+    if (existing >= 0) {
+        if (outFuncIndex != NULL) {
+            *outFuncIndex = existing;
+        }
+        return 0;
+    }
+    if (H2TCResolveExpectedFunctionType(c, expectedType, &expectedFn)) {
+        expectedParamCount = expectedFn->fieldCount;
+        returnType = expectedFn->baseType;
+        isVariadic = (expectedFn->flags & H2TCTypeFlag_FUNCTION_VARIADIC) != 0;
+    }
+
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        const H2AstNode* ch = &c->ast->nodes[child];
+        if (ch->kind == H2Ast_TYPE_PARAM) {
+            return H2TCFailNode(c, child, H2Diag_GENERIC_FN_TYPE_ARGS_FORBIDDEN);
+        }
+        if (ch->kind == H2Ast_PARAM) {
+            int32_t typeNode = H2AstFirstChild(c->ast, child);
+            int32_t typeId = -1;
+            if (paramCount >= c->scratchParamCap) {
+                return H2TCFailNode(c, child, H2Diag_ARENA_OOM);
+            }
+            if (typeNode >= 0) {
+                c->allowConstNumericTypeName = 1;
+                c->allowAnytypeParamType = 1;
+                if (H2TCResolveTypeNode(c, typeNode, &typeId) != 0) {
+                    c->allowConstNumericTypeName = 0;
+                    c->allowAnytypeParamType = 0;
+                    return -1;
+                }
+                c->allowConstNumericTypeName = 0;
+                c->allowAnytypeParamType = 0;
+            } else {
+                if (expectedFn == NULL || paramCount >= expectedParamCount) {
+                    H2TCSetDiagWithArg(
+                        c->diag,
+                        H2Diag_PARAM_MISSING_TYPE,
+                        ch->start,
+                        ch->end,
+                        ch->dataStart,
+                        ch->dataEnd);
+                    return -1;
+                }
+                typeId = c->funcParamTypes[expectedFn->fieldStart + paramCount];
+            }
+            c->scratchParamTypes[paramCount] = typeId;
+            c->scratchParamFlags[paramCount] =
+                (ch->flags & H2AstFlag_PARAM_CONST) != 0 ? H2TCFuncParamFlag_CONST : 0u;
+            if ((ch->flags & H2AstFlag_PARAM_VARIADIC) != 0) {
+                isVariadic = 1;
+            }
+            paramCount++;
+        } else if (H2TCIsTypeNodeKind(ch->kind) && ch->flags == 1) {
+            c->allowConstNumericTypeName = 1;
+            if (H2TCResolveTypeNode(c, child, &returnType) != 0) {
+                c->allowConstNumericTypeName = 0;
+                return -1;
+            }
+            c->allowConstNumericTypeName = 0;
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    if (expectedFn != NULL && expectedParamCount != paramCount) {
+        return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
+    }
+    if (c->funcLen >= c->funcCap || c->funcParamLen + paramCount > c->funcParamCap) {
+        return H2TCFailNode(c, nodeId, H2Diag_ARENA_OOM);
+    }
+
+    {
+        uint32_t      idx = c->funcLen++;
+        H2TCFunction* f = &c->funcs[idx];
+        uint32_t      paramIndex = 0;
+        int32_t       scan = H2AstFirstChild(c->ast, nodeId);
+        f->nameStart = n->kind == H2Ast_FN ? n->dataStart : n->start;
+        f->nameEnd = n->kind == H2Ast_FN ? n->dataEnd : n->start;
+        f->returnType = returnType;
+        f->paramTypeStart = c->funcParamLen;
+        f->paramCount = (uint16_t)paramCount;
+        f->contextType = -1;
+        f->declNode = nodeId;
+        f->defNode = nodeId;
+        f->funcTypeId = -1;
+        f->templateArgStart = 0;
+        f->templateArgCount = 0;
+        f->templateRootFuncIndex = -1;
+        f->flags = H2TCFunctionFlag_INTERNAL;
+        if (isLocal) {
+            f->flags |= H2TCFunctionFlag_LOCAL;
+        }
+        if (isVariadic) {
+            f->flags |= H2TCFunctionFlag_VARIADIC;
+        }
+        while (scan >= 0) {
+            const H2AstNode* ch = &c->ast->nodes[scan];
+            if (ch->kind == H2Ast_PARAM) {
+                c->funcParamTypes[c->funcParamLen] = c->scratchParamTypes[paramIndex];
+                c->funcParamNameStarts[c->funcParamLen] = ch->dataStart;
+                c->funcParamNameEnds[c->funcParamLen] = ch->dataEnd;
+                c->funcParamFlags[c->funcParamLen] =
+                    c->scratchParamFlags[paramIndex] & H2TCFuncParamFlag_CONST;
+                c->funcParamCallArgStarts[c->funcParamLen] = 0;
+                c->funcParamCallArgEnds[c->funcParamLen] = 0;
+                c->funcParamCallArgExprNodes[c->funcParamLen] = -1;
+                c->funcParamLen++;
+                paramIndex++;
+            }
+            scan = H2AstNextSibling(c->ast, scan);
+        }
+        f->funcTypeId = H2TCInternFunctionType(
+            c,
+            f->returnType,
+            &c->funcParamTypes[f->paramTypeStart],
+            &c->funcParamFlags[f->paramTypeStart],
+            f->paramCount,
+            (f->flags & H2TCFunctionFlag_VARIADIC) != 0,
+            (int32_t)idx,
+            f->nameStart,
+            f->nameEnd);
+        if (f->funcTypeId < 0) {
+            return -1;
+        }
+        if (outFuncIndex != NULL) {
+            *outFuncIndex = (int32_t)idx;
+        }
+    }
+    return 0;
+}
+
 int H2TCFinalizeFunctionTypes(H2TypeCheckCtx* c) {
     uint32_t i;
     for (i = 0; i < c->funcLen; i++) {

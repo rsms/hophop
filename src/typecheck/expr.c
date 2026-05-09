@@ -434,6 +434,15 @@ int H2TCExprIsCompoundTemporary(H2TypeCheckCtx* c, int32_t exprNode) {
     if (n->kind == H2Ast_COMPOUND_LIT) {
         return 1;
     }
+    if (n->kind == H2Ast_ANON_FN) {
+        int32_t child = H2AstFirstChild(c->ast, exprNode);
+        while (child >= 0) {
+            if (c->ast->nodes[child].kind == H2Ast_PARAM && H2AstFirstChild(c->ast, child) < 0) {
+                return 1;
+            }
+            child = H2AstNextSibling(c->ast, child);
+        }
+    }
     if (n->kind == H2Ast_ARRAY_LIT) {
         return 1;
     }
@@ -668,6 +677,9 @@ int H2TCInferAnonStructTypeFromCompound(
         return 0;
     }
 }
+
+int H2TCTypeExpr_ANON_FN(
+    H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t expectedType, int32_t* outType);
 
 int H2TCTypeCompoundLit(H2TypeCheckCtx* c, int32_t nodeId, int32_t expectedType, int32_t* outType) {
     int32_t  child = H2AstFirstChild(c->ast, nodeId);
@@ -928,6 +940,10 @@ int H2TCTypeExprExpected(
         rc = H2TCTypeExpr(c, nodeId, outType);
         c->activeExpectedCallType = savedExpectedCallType;
         return rc;
+    }
+
+    if (n->kind == H2Ast_ANON_FN) {
+        return H2TCTypeExpr_ANON_FN(c, nodeId, n, expectedType, outType);
     }
 
     if (n->kind == H2Ast_COMPOUND_LIT) {
@@ -3782,6 +3798,60 @@ int H2TCTypeExpr_TUPLE_EXPR(
     return *outType < 0 ? -1 : 0;
 }
 
+static int H2TCCheckAnonFnNoLocalCaptures(H2TypeCheckCtx* c, int32_t nodeId, int isRoot) {
+    const H2AstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (!isRoot
+        && (n->kind == H2Ast_ANON_FN
+            || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)))
+    {
+        return 0;
+    }
+    if (n->kind == H2Ast_IDENT) {
+        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx >= 0) {
+            H2TCSetDiagWithArg(
+                c->diag,
+                H2Diag_ANON_FN_CAPTURE_FORBIDDEN,
+                n->start,
+                n->end,
+                n->dataStart,
+                n->dataEnd);
+            return -1;
+        }
+    }
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        if (H2TCCheckAnonFnNoLocalCaptures(c, child, 0) != 0) {
+            return -1;
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+int H2TCTypeExpr_ANON_FN(
+    H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t expectedType, int32_t* outType) {
+    int32_t fnIndex = -1;
+    (void)n;
+    if (H2TCCheckAnonFnNoLocalCaptures(c, nodeId, 1) != 0) {
+        return -1;
+    }
+    if (H2TCRegisterFunctionValueNode(c, nodeId, expectedType, 0, &fnIndex) != 0) {
+        return -1;
+    }
+    if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+        return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
+    }
+    H2TCMarkFunctionUsed(c, fnIndex);
+    *outType = c->funcs[(uint32_t)fnIndex].funcTypeId;
+    return 0;
+}
+
 int H2TCTypeExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     const H2AstNode* n;
     if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
@@ -3802,6 +3872,7 @@ int H2TCTypeExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         case H2Ast_CALL_WITH_CONTEXT: return H2TCTypeExpr_CALL_WITH_CONTEXT(c, nodeId, n, outType);
         case H2Ast_ALLOC:             return H2TCTypeExpr_ALLOC(c, nodeId, n, outType);
         case H2Ast_CALL:              return H2TCTypeExpr_CALL(c, nodeId, n, outType);
+        case H2Ast_ANON_FN:           return H2TCTypeExpr_ANON_FN(c, nodeId, n, -1, outType);
         case H2Ast_CALL_ARG:          {
             int32_t inner = H2AstFirstChild(c->ast, nodeId);
             if (inner < 0) {
@@ -3827,6 +3898,19 @@ int H2TCValidateConstInitializerExprNode(H2TypeCheckCtx* c, int32_t initNode) {
     H2CTFEValue      value;
     int              isConst = 0;
     int              rc;
+    if (c != NULL && initNode >= 0 && (uint32_t)initNode < c->ast->len
+        && c->ast->nodes[initNode].kind == H2Ast_ANON_FN)
+    {
+        int32_t initType = -1;
+        if (H2TCTypeExpr(c, initNode, &initType) != 0) {
+            return -1;
+        }
+        if (initType >= 0 && (uint32_t)initType < c->typeLen
+            && c->types[initType].kind == H2TCType_FUNCTION)
+        {
+            return 0;
+        }
+    }
     memset(&evalCtx, 0, sizeof(evalCtx));
     evalCtx.tc = c;
     evalCtx.rootCallOwnerFnIndex = -1;
@@ -3864,7 +3948,8 @@ static int H2TCValidateLocalConstFunctionInitializerExprNode(H2TypeCheckCtx* c, 
         int32_t inner = H2AstFirstChild(c->ast, initNode);
         return H2TCValidateLocalConstFunctionInitializerExprNode(c, inner);
     }
-    if (init->kind != H2Ast_IDENT && init->kind != H2Ast_FIELD_EXPR) {
+    if (init->kind != H2Ast_ANON_FN && init->kind != H2Ast_IDENT && init->kind != H2Ast_FIELD_EXPR)
+    {
         return 0;
     }
     if (H2TCTypeExpr(c, initNode, &initType) != 0) {

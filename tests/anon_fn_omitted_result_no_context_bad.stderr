@@ -1,0 +1,1 @@
+tests/anon_fn_omitted_result_no_context_bad.hop:3:10: error: HOP2004: type mismatch: cannot use 'x' of type int as void

@@ -1,0 +1,49 @@
+// Anonymous functions are ordinary function values, not closures.
+// They can be assigned, passed, returned, stored, and called indirectly.
+struct Step {
+	apply fn(int) int
+}
+
+const add1 = fn(x int) int {
+	return x + 1
+}
+
+fn run_step(x int, step Step) int {
+	return step.apply(x)
+}
+
+fn apply_twice(x int, f fn(int) int) int {
+	return f(f(x))
+}
+
+fn make_triple() fn(int) int {
+	return fn(x) {
+		return x * 3
+	}
+}
+
+fn main() {
+	var double fn(int) int = fn(x) {
+		return x * 2
+	}
+
+	shift := fn(x int) int {
+		return x + 10
+	}
+
+	step := Step{
+		apply: double,
+	}
+
+	fn square(x int) int {
+		return x * x
+	}
+
+	assert add1(41) == 42
+	assert double(21) == 42
+	assert shift(32) == 42
+	assert run_step(21, step) == 42
+	assert apply_twice(10, f: add1) == 12
+	assert make_triple()(14) == 42
+	assert square(7) == 49
+}

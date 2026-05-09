@@ -3655,6 +3655,19 @@ int H2TCEvalConstExprNode(
         return -1;
     }
     kind = c->ast->nodes[exprNode].kind;
+    if (kind == H2Ast_ANON_FN) {
+        int32_t fnIndex = -1;
+        if (H2TCRegisterFunctionValueNode(c, exprNode, -1, 0, &fnIndex) != 0) {
+            return -1;
+        }
+        if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+            *outIsConst = 0;
+            return 0;
+        }
+        H2MirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+        *outIsConst = 1;
+        return 0;
+    }
     if (kind == H2Ast_BINARY) {
         const H2AstNode* n = &c->ast->nodes[exprNode];
         if ((H2TokenKind)n->op == H2Tok_EQ || (H2TokenKind)n->op == H2Tok_NEQ) {

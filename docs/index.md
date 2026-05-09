@@ -103,3 +103,5 @@ Implemented core includes:
 - [HEP-037-short-variable-declarations.md](HEP-037-short-variable-declarations.md)
 - [HEP-038-selective-gc.md](HEP-038-selective-gc.md)
 - [HEP-039-array-literals.md](HEP-039-array-literals.md)
+- [HEP-040-anonymous-functions.md](HEP-040-anonymous-functions.md)
+- [HEP-041-lightweight-closures.md](HEP-041-lightweight-closures.md)

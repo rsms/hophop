@@ -1,0 +1,6 @@
+fn main() {
+	fn double(x int) int {
+		return x * 2
+	}
+	assert double(21) == 42
+}

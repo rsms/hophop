@@ -1786,11 +1786,97 @@ int H2TCTypeShortAssignStmt(H2TypeCheckCtx* c, int32_t nodeId) {
     return 0;
 }
 
+static int H2TCLocalFunctionCanReferenceLocal(H2TypeCheckCtx* c, int32_t localIdx) {
+    int32_t localType;
+    if (localIdx < 0 || (uint32_t)localIdx >= c->localLen) {
+        return 0;
+    }
+    if ((c->locals[localIdx].flags & H2TCLocalFlag_CONST) == 0) {
+        return 0;
+    }
+    localType = H2TCResolveAliasBaseType(c, c->locals[localIdx].typeId);
+    return localType >= 0 && (uint32_t)localType < c->typeLen
+        && c->types[localType].kind == H2TCType_FUNCTION;
+}
+
+static int H2TCCheckLocalFunctionNoLocalCaptures(H2TypeCheckCtx* c, int32_t nodeId, int isRoot) {
+    const H2AstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (!isRoot
+        && (n->kind == H2Ast_ANON_FN
+            || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)))
+    {
+        return 0;
+    }
+    if (n->kind == H2Ast_IDENT) {
+        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx >= 0 && !H2TCLocalFunctionCanReferenceLocal(c, localIdx)) {
+            H2TCSetDiagWithArg(
+                c->diag,
+                H2Diag_ANON_FN_CAPTURE_FORBIDDEN,
+                n->start,
+                n->end,
+                n->dataStart,
+                n->dataEnd);
+            return -1;
+        }
+    }
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        if (H2TCCheckLocalFunctionNoLocalCaptures(c, child, 0) != 0) {
+            return -1;
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+static int H2TCTypeLocalFunctionStmt(H2TypeCheckCtx* c, int32_t nodeId) {
+    const H2AstNode* n = &c->ast->nodes[nodeId];
+    int32_t          fnIndex = -1;
+    if ((n->flags & H2AstFlag_FN_LOCAL) == 0) {
+        return H2TCFailNode(c, nodeId, H2Diag_UNEXPECTED_TOKEN);
+    }
+    {
+        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx >= 0) {
+            return H2TCFailDuplicateDefinition(
+                c,
+                n->dataStart,
+                n->dataEnd,
+                c->locals[localIdx].nameStart,
+                c->locals[localIdx].nameEnd);
+        }
+    }
+    if (H2TCRegisterFunctionValueNode(c, nodeId, -1, 1, &fnIndex) != 0) {
+        return -1;
+    }
+    if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
+        return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
+    }
+    if (H2TCCheckLocalFunctionNoLocalCaptures(c, nodeId, 1) != 0) {
+        return -1;
+    }
+    if (H2TCLocalAdd(c, n->dataStart, n->dataEnd, c->funcs[(uint32_t)fnIndex].funcTypeId, 1, -1)
+        != 0)
+    {
+        return -1;
+    }
+    H2TCMarkLocalRead(c, (int32_t)c->localLen - 1);
+    H2TCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+    return 0;
+}
+
 int H2TCTypeStmt(
     H2TypeCheckCtx* c, int32_t nodeId, int32_t returnType, int loopDepth, int switchDepth) {
     const H2AstNode* n = &c->ast->nodes[nodeId];
     switch (n->kind) {
         case H2Ast_BLOCK:       return H2TCTypeBlock(c, nodeId, returnType, loopDepth, switchDepth);
+        case H2Ast_FN:          return H2TCTypeLocalFunctionStmt(c, nodeId);
         case H2Ast_VAR:
         case H2Ast_CONST:       return H2TCTypeVarLike(c, nodeId);
         case H2Ast_CONST_BLOCK: {
@@ -2208,6 +2294,14 @@ int H2TCTypeFunctionBody(H2TypeCheckCtx* c, int32_t funcIndex) {
     c->activeGenericArgStart = fn->templateArgStart;
     c->activeGenericArgCount = fn->templateArgCount;
     c->activeGenericDeclNode = fn->templateArgCount > 0 ? fn->declNode : -1;
+
+    if ((fn->flags & H2TCFunctionFlag_LOCAL) != 0 && fn->nameEnd > fn->nameStart) {
+        if (H2TCLocalAdd(c, fn->nameStart, fn->nameEnd, fn->funcTypeId, 1, -1) != 0) {
+            return -1;
+        }
+        H2TCMarkLocalRead(c, (int32_t)c->localLen - 1);
+        H2TCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+    }
 
     child = H2AstFirstChild(c->ast, nodeId);
     while (child >= 0) {
