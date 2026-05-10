@@ -848,6 +848,8 @@ typedef struct HOPEvalMirExecCtx {
     uint32_t                    evalToMirLen;
     uint32_t*                   mirToEval;
     uint32_t                    mirToEvalLen;
+    uint32_t*                   tcToMir;
+    uint32_t                    tcToMirLen;
     const H2ParsedFile**        sourceFiles;
     uint32_t                    sourceFileCap;
     const H2ParsedFile*         savedFiles[H2_EVAL_CALL_MAX_DEPTH];
@@ -1724,6 +1726,9 @@ static int HOPEvalCoerceValueToTypeNode(
     }
     type = &typeFile->ast.nodes[typeNode];
     sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
+    if (type->kind == H2Ast_TYPE_FN && HOPEvalValueIsInvokableFunctionRef(sourceValue)) {
+        return 0;
+    }
     if (type->kind == H2Ast_TYPE_ARRAY && sourceValue->kind == H2CTFEValue_ARRAY) {
         HOPEvalArray* sourceArray = HOPEvalValueAsArray(sourceValue);
         int32_t       elemTypeNode = ASTFirstChild(&typeFile->ast, typeNode);
@@ -2918,6 +2923,11 @@ int HOPEvalMirBuildTopInitProgram(
     int*                outSupported);
 void HOPEvalMirAdaptOutValue(
     const HOPEvalMirExecCtx* c, H2CTFEValue* _Nullable value, int* _Nullable inOutIsConst);
+int HOPEvalMirResolveFunctionValueExpr(
+    const HOPEvalMirExecCtx* _Nullable c,
+    const H2ParsedFile* _Nonnull file,
+    int32_t exprNode,
+    uint32_t* _Nonnull outMirFnIndex);
 int HOPEvalTryMirInvokeFunction(
     HOPEvalProgram*        p,
     const HOPEvalFunction* fn,
@@ -13727,6 +13737,17 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
 
     if (n->kind == H2Ast_ALLOC) {
         return HOPEvalEvalAllocExpr(p, exprNode, NULL, -1, outValue, outIsConst);
+    }
+
+    if (n->kind == H2Ast_ANON_FN) {
+        uint32_t mirFnIndex = UINT32_MAX;
+        if (HOPEvalMirResolveFunctionValueExpr(
+                p->currentMirExecCtx, p->currentFile, exprNode, &mirFnIndex))
+        {
+            H2MirValueSetFunctionRef(outValue, mirFnIndex);
+            *outIsConst = 1;
+            return 0;
+        }
     }
 
     if (n->kind == H2Ast_CALL_WITH_CONTEXT) {

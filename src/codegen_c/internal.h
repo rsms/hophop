@@ -2,6 +2,7 @@
 
 #include "../codegen.h"
 #include "../libhop-impl.h"
+#include "../typecheck/internal.h"
 
 H2_API_BEGIN
 typedef struct {
@@ -58,6 +59,7 @@ enum {
     H2FnSigFlag_TEMPLATE_BASE = 1u << 0,
     H2FnSigFlag_TEMPLATE_INSTANCE = 1u << 1,
     H2FnSigFlag_EXPANDED_ANYPACK = 1u << 2,
+    H2FnSigFlag_FUNCTION_VALUE_ENTRY = 1u << 3,
 };
 
 typedef struct {
@@ -226,6 +228,7 @@ typedef struct {
     H2TypeRef currentContextType;
     int       hasCurrentContext;
     int       currentFunctionIsMain;
+    int       currentFunctionValueEntry;
     int32_t   activeCallWithNode;
     const char* _Nullable activePackParamName;
     char** _Nullable activePackElemNames;
@@ -494,10 +497,13 @@ int ParseTypeRefFromConstEvalTypeId(H2CBackendC* c, int32_t typeId, H2TypeRef* o
 
 int ParseTypeRefFromConstEvalTypeTag(H2CBackendC* c, uint64_t typeTag, H2TypeRef* outType);
 
+char* _Nullable BuildClosureTypeCName(H2CBackendC* c, uint32_t tcFuncIndex);
+
 char* _Nullable BuildTemplateNamedTypeCName(
     H2CBackendC* c, const char* baseCName, uint32_t tcNamedIndex);
 
 int CollectTemplateInstanceNamedTypes(H2CBackendC* c);
+int CollectInternalFunctionValueSigs(H2CBackendC* c);
 
 int CodegenCNodeHasTypeParams(const H2CBackendC* c, int32_t nodeId);
 

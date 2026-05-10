@@ -21,6 +21,11 @@ typedef struct {
     uint32_t             backwardJumpCount;
 } H2MirExecRun;
 
+typedef struct {
+    uint32_t count;
+    H2CTFEValue* _Nonnull refs;
+} H2MirExecClosureData;
+
 #define H2MIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)
 #define H2MIR_EXEC_BYTE_REF_PROXY_TAG_FLAG (UINT64_C(1) << 56)
 
@@ -115,7 +120,10 @@ static int H2MirInitRun(
             run->locals[i] = args[i];
             if (program != NULL && function != NULL) {
                 const H2MirLocal* local = H2MirGetLocalMeta(run, i);
-                if (local->typeRef != UINT32_MAX) {
+                int               isHiddenClosureData =
+                    (function->flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) != 0u
+                    && function->paramCount > 0u && i + 1u == function->paramCount;
+                if (!isHiddenClosureData && local->typeRef != UINT32_MAX) {
                     int coerceRc = H2MirCoerceValueForType(run, local->typeRef, &run->locals[i]);
                     if (coerceRc <= 0) {
                         return coerceRc < 0 ? -1 : 0;
@@ -247,7 +255,7 @@ static int H2MirConstToValue(const H2MirConst* _Nonnull in, H2MirExecValue* _Non
             out->s.bytes = (const uint8_t*)in->bytes.ptr;
             out->s.len = in->bytes.len;
             return 1;
-        case H2MirConst_FUNCTION: H2MirValueSetFunctionRef(out, (uint32_t)in->bits); return 1;
+        case H2MirConst_FUNCTION: H2MirValueSetFunctionRef(out, in->aux); return 1;
         case H2MirConst_NULL:     out->kind = H2CTFEValue_NULL; return 1;
         default:                  return 0;
     }
@@ -260,9 +268,14 @@ void H2MirValueSetFunctionRef(H2MirExecValue* _Nonnull value, uint32_t functionI
     H2CTFEValueInvalid(value);
     value->kind = H2CTFEValue_TYPE;
     value->typeTag = H2MIR_EXEC_FUNCTION_REF_TAG_FLAG | (uint64_t)functionIndex;
+    value->s.bytes = NULL;
+    value->s.len = 0;
 }
 
-static int H2MirValueIsFunctionRef(const H2MirExecValue* value, uint32_t* _Nullable outFnIndex) {
+static int H2MirValueIsFunctionValue(
+    const H2MirExecValue* value,
+    uint32_t* _Nullable outFnIndex,
+    H2MirExecClosureData** _Nullable outData) {
     if (value == NULL || value->kind != H2CTFEValue_TYPE
         || (value->typeTag & H2MIR_EXEC_FUNCTION_REF_TAG_FLAG) == 0)
     {
@@ -271,7 +284,14 @@ static int H2MirValueIsFunctionRef(const H2MirExecValue* value, uint32_t* _Nulla
     if (outFnIndex != NULL) {
         *outFnIndex = (uint32_t)(value->typeTag & ~H2MIR_EXEC_FUNCTION_REF_TAG_FLAG);
     }
+    if (outData != NULL) {
+        *outData = (H2MirExecClosureData*)value->s.bytes;
+    }
     return 1;
+}
+
+static int H2MirValueIsFunctionRef(const H2MirExecValue* value, uint32_t* _Nullable outFnIndex) {
+    return H2MirValueIsFunctionValue(value, outFnIndex, NULL);
 }
 
 int H2MirValueAsFunctionRef(
@@ -510,6 +530,49 @@ static int H2MirRunLoop(
                 }
                 break;
             }
+            case H2MirOp_MAKE_CLOSURE: {
+                H2MirExecClosureData* data;
+                H2MirExecValue        value;
+                uint32_t              captureCount = (uint32_t)ins->tok;
+                uint32_t              i;
+                if (ins->aux >= run->program->constLen
+                    || run->program->consts[ins->aux].kind != H2MirConst_FUNCTION
+                    || captureCount > run->stackLen)
+                {
+                    return 0;
+                }
+                data = (H2MirExecClosureData*)H2ArenaAlloc(
+                    run->arena, sizeof(*data), (uint32_t)_Alignof(H2MirExecClosureData));
+                if (data == NULL) {
+                    H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
+                    return -1;
+                }
+                data->count = captureCount;
+                data->refs = NULL;
+                if (captureCount != 0u) {
+                    data->refs = (H2CTFEValue*)H2ArenaAlloc(
+                        run->arena,
+                        sizeof(H2CTFEValue) * captureCount,
+                        (uint32_t)_Alignof(H2CTFEValue));
+                    if (data->refs == NULL) {
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                }
+                for (i = captureCount; i > 0; i--) {
+                    if (H2CTFEPop(run, &data->refs[i - 1u]) != 0
+                        || data->refs[i - 1u].kind != H2CTFEValue_REFERENCE)
+                    {
+                        return 0;
+                    }
+                }
+                H2MirValueSetFunctionRef(&value, run->program->consts[ins->aux].aux);
+                value.s.bytes = (const uint8_t*)data;
+                if (H2CTFEPush(run, &value) != 0) {
+                    return -1;
+                }
+                break;
+            }
             case H2MirOp_LOCAL_LOAD:
                 if (ins->aux >= run->localCount) {
                     return 0;
@@ -530,6 +593,66 @@ static int H2MirRunLoop(
                 if (H2CTFEPush(run, &v) != 0) {
                     return -1;
                 }
+                break;
+            }
+            case H2MirOp_CAPTURE_ADDR: {
+                H2MirExecClosureData* data = NULL;
+                if (run->function == NULL
+                    || (run->function->flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) == 0u
+                    || run->function->paramCount == 0u || ins->aux >= run->function->captureCount
+                    || !H2MirValueIsFunctionValue(
+                        &run->locals[run->function->paramCount - 1u], NULL, &data)
+                    || data == NULL || ins->aux >= data->count)
+                {
+                    return 0;
+                }
+                if (H2CTFEPush(run, &data->refs[ins->aux]) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case H2MirOp_CAPTURE_LOAD: {
+                H2MirExecClosureData* data = NULL;
+                H2CTFEValue*          target;
+                if (run->function == NULL
+                    || (run->function->flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) == 0u
+                    || run->function->paramCount == 0u || ins->aux >= run->function->captureCount
+                    || !H2MirValueIsFunctionValue(
+                        &run->locals[run->function->paramCount - 1u], NULL, &data)
+                    || data == NULL || ins->aux >= data->count)
+                {
+                    return 0;
+                }
+                target = H2MirReferenceTarget(&data->refs[ins->aux]);
+                if (target == NULL) {
+                    return 0;
+                }
+                if (H2CTFEPush(run, target) != 0) {
+                    return -1;
+                }
+                break;
+            }
+            case H2MirOp_CAPTURE_STORE: {
+                H2MirExecClosureData* data = NULL;
+                H2MirExecValue        value;
+                H2CTFEValue*          target;
+                if (run->function == NULL
+                    || (run->function->flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) == 0u
+                    || run->function->paramCount == 0u || ins->aux >= run->function->captureCount
+                    || !H2MirValueIsFunctionValue(
+                        &run->locals[run->function->paramCount - 1u], NULL, &data)
+                    || data == NULL || ins->aux >= data->count)
+                {
+                    return 0;
+                }
+                if (H2CTFEPop(run, &value) != 0) {
+                    return 0;
+                }
+                target = H2MirReferenceTarget(&data->refs[ins->aux]);
+                if (target == NULL) {
+                    return 0;
+                }
+                *target = value;
                 break;
             }
             case H2MirOp_ADDR_OF: {
@@ -990,13 +1113,14 @@ static int H2MirRunLoop(
                 break;
             }
             case H2MirOp_CALL_INDIRECT: {
-                H2MirExecValue  callee;
-                H2MirExecValue  v;
-                H2MirExecValue* args = NULL;
-                int             callOk = 0;
-                uint32_t        fnIndex = 0;
-                uint32_t        argCount = H2MirResolvedCallArgCount(ins);
-                uint32_t        i;
+                H2MirExecValue        callee;
+                H2MirExecValue        v;
+                H2MirExecValue*       args = NULL;
+                int                   callOk = 0;
+                uint32_t              fnIndex = 0;
+                H2MirExecClosureData* closureData = NULL;
+                uint32_t              argCount = H2MirResolvedCallArgCount(ins);
+                uint32_t              i;
                 if (run->program == NULL || argCount + 1u > run->stackLen) {
                     H2MirSetReason(
                         run, ins, "indirect call stack is invalid during const evaluation");
@@ -1026,10 +1150,30 @@ static int H2MirRunLoop(
                         run, ins, "indirect call target is not available during const evaluation");
                     return 0;
                 }
-                if (!H2MirValueIsFunctionRef(&callee, &fnIndex) || fnIndex >= run->program->funcLen)
+                if (!H2MirValueIsFunctionValue(&callee, &fnIndex, &closureData)
+                    || fnIndex >= run->program->funcLen)
                 {
                     H2MirSetReason(run, ins, "indirect call target is not a function");
                     return 0;
+                }
+                if ((run->program->funcs[fnIndex].flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY)
+                    != 0u)
+                {
+                    H2MirExecValue* entryArgs = (H2MirExecValue*)H2ArenaAlloc(
+                        run->arena,
+                        sizeof(H2MirExecValue) * (argCount + 1u),
+                        (uint32_t)_Alignof(H2MirExecValue));
+                    if (entryArgs == NULL) {
+                        H2CTFESetDiag(run->env.diag, H2Diag_ARENA_OOM, ins->start, ins->end);
+                        return -1;
+                    }
+                    for (i = 0; i < argCount; i++) {
+                        entryArgs[i] = args[i];
+                    }
+                    H2MirValueSetFunctionRef(&entryArgs[argCount], fnIndex);
+                    entryArgs[argCount].s.bytes = (const uint8_t*)closureData;
+                    args = entryArgs;
+                    argCount++;
                 }
                 if (run->env.adjustCallArgs != NULL) {
                     int adjustRc = run->env.adjustCallArgs(
@@ -2640,6 +2784,25 @@ static int H2MirEvalFunctionInternal(
     }
     if (fn->localCount < fn->paramCount) {
         return 0;
+    }
+    if ((fn->flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) != 0u
+        && argCount + 1u == fn->paramCount && fn->captureCount == 0u)
+    {
+        H2MirExecValue* adjustedArgs = (H2MirExecValue*)H2ArenaAlloc(
+            arena, sizeof(H2MirExecValue) * (argCount + 1u), (uint32_t)_Alignof(H2MirExecValue));
+        uint32_t i;
+        if (adjustedArgs == NULL) {
+            if (env != NULL) {
+                H2CTFESetDiag(env->diag, H2Diag_ARENA_OOM, 0, 0);
+            }
+            return -1;
+        }
+        for (i = 0; i < argCount; i++) {
+            adjustedArgs[i] = args[i];
+        }
+        H2MirValueSetFunctionRef(&adjustedArgs[argCount], functionIndex);
+        args = adjustedArgs;
+        argCount++;
     }
     if ((fn->flags & H2MirFunctionFlag_VARIADIC) != 0u) {
         uint32_t          fixedCount = fn->paramCount > 0u ? fn->paramCount - 1u : 0u;

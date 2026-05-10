@@ -1,5 +1,6 @@
 #pragma once
 #include "mir.h"
+#include "mir_lower_stmt.h"
 
 H2_API_BEGIN
 
@@ -50,6 +51,18 @@ int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
     int32_t   varLikeNode,
     uint32_t  nameStart,
     uint32_t  nameEnd,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag);
+int H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   varLikeNode,
+    uint32_t  nameStart,
+    uint32_t  nameEnd,
+    const H2MirLowerOptions* _Nullable options,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     H2Diag* _Nullable diag);

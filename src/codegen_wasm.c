@@ -35,36 +35,38 @@ typedef struct {
 } HOPWasmFnSig;
 
 typedef struct {
-    uint16_t wasmValueIndex[256];
-    uint16_t wasmParamValueCount;
-    uint16_t wasmLocalValueCount;
-    uint16_t hiddenLocalStart;
-    uint16_t directCallScratchI32Start;
-    uint16_t directCallScratchI64Start;
-    uint16_t frameBaseLocal;
-    uint16_t scratch0Local;
-    uint16_t scratch1Local;
-    uint16_t scratch2Local;
-    uint16_t scratch3Local;
-    uint16_t scratch4Local;
-    uint16_t scratch5Local;
-    uint16_t scratch6Local;
-    uint16_t scratchI64Local;
-    uint32_t frameOffsets[256];
-    uint32_t auxOffsets[256];
-    uint32_t allocCallTempOffset;
-    uint32_t arrayCounts[256];
-    uint32_t localTypeRefs[256];
-    uint32_t stackTypeRefs[256];
-    uint32_t frameSize;
-    uint32_t tempFrameStart;
-    uint32_t stackLen;
-    uint8_t  localKinds[256];
-    uint8_t  localStorage[256];
-    uint8_t  localIntKinds[256];
-    uint8_t  stackKinds[256];
-    uint8_t  usesFrame;
-    uint8_t  _reserved[1];
+    const H2MirProgram* program;
+    uint16_t            wasmValueIndex[256];
+    uint16_t            wasmParamValueCount;
+    uint16_t            wasmLocalValueCount;
+    uint16_t            hiddenLocalStart;
+    uint16_t            directCallScratchI32Start;
+    uint16_t            directCallScratchI64Start;
+    uint16_t            frameBaseLocal;
+    uint16_t            scratch0Local;
+    uint16_t            scratch1Local;
+    uint16_t            scratch2Local;
+    uint16_t            scratch3Local;
+    uint16_t            scratch4Local;
+    uint16_t            scratch5Local;
+    uint16_t            scratch6Local;
+    uint16_t            scratchI64Local;
+    uint32_t            frameOffsets[256];
+    uint32_t            auxOffsets[256];
+    uint32_t            allocCallTempOffset;
+    uint32_t            arrayCounts[256];
+    uint32_t            localTypeRefs[256];
+    uint32_t            stackTypeRefs[256];
+    uint32_t            frameSize;
+    uint32_t            tempFrameStart;
+    uint32_t            closureFrameStart;
+    uint32_t            stackLen;
+    uint8_t             localKinds[256];
+    uint8_t             localStorage[256];
+    uint8_t             localIntKinds[256];
+    uint8_t             stackKinds[256];
+    uint8_t             usesFrame;
+    uint8_t             _reserved[1];
 } HOPWasmEmitState;
 
 enum {
@@ -115,6 +117,8 @@ typedef struct {
     uint32_t definedFuncCount;
     uint32_t frameGlobalIndex;
     uint32_t heapGlobalIndex;
+    uint32_t closureGlobalStartIndex;
+    uint32_t closureGlobalCount;
     uint32_t allocatorIndirectTypeIndex;
     uint32_t rootAllocFuncIndex;
     uint32_t tableFuncCount;
@@ -655,6 +659,10 @@ static const char* WasmMirOpName(H2MirOp op) {
         case H2MirOp_CALL:          return "CALL";
         case H2MirOp_CALL_HOST:     return "CALL_HOST";
         case H2MirOp_CALL_INDIRECT: return "CALL_INDIRECT";
+        case H2MirOp_MAKE_CLOSURE:  return "MAKE_CLOSURE";
+        case H2MirOp_CAPTURE_LOAD:  return "CAPTURE_LOAD";
+        case H2MirOp_CAPTURE_STORE: return "CAPTURE_STORE";
+        case H2MirOp_CAPTURE_ADDR:  return "CAPTURE_ADDR";
         case H2MirOp_CTX_GET:       return "CTX_GET";
         case H2MirOp_CTX_ADDR:      return "CTX_ADDR";
         case H2MirOp_JUMP:          return "JUMP";
@@ -825,6 +833,7 @@ static bool WasmProgramNeedsFunctionTable(const H2MirProgram* program) {
 
 static bool WasmProgramNeedsFrameMemory(
     const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramNeedsClosureGlobals(const H2MirProgram* program);
 static bool WasmProgramNeedsHeapMemory(
     const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmFunctionNeedsIndirectScratch(const H2MirProgram* program, const H2MirFunction* fn);
@@ -1513,6 +1522,10 @@ static int WasmAnalyzeImports(
     }
     imports->frameGlobalIndex = imports->importGlobalCount;
     imports->heapGlobalIndex = imports->importGlobalCount + (imports->needsFrameGlobal ? 1u : 0u);
+    imports->closureGlobalStartIndex =
+        imports->heapGlobalIndex + (imports->needsHeapGlobal ? 1u : 0u);
+    imports->closureGlobalCount =
+        WasmProgramNeedsClosureGlobals(unit->mirProgram) ? unit->mirProgram->funcLen : 0u;
     if (imports->hasFunctionTable) {
         imports->allocatorIndirectTypeIndex = unit->mirProgram->funcLen;
         imports->tableFuncCount =
@@ -1738,6 +1751,10 @@ static bool WasmFunctionNeedsFrameMemory(const H2MirProgram* program, const H2Mi
             case H2MirOp_AGG_ZERO:
             case H2MirOp_AGG_SET:
             case H2MirOp_LOCAL_ADDR:
+            case H2MirOp_MAKE_CLOSURE:
+            case H2MirOp_CAPTURE_LOAD:
+            case H2MirOp_CAPTURE_STORE:
+            case H2MirOp_CAPTURE_ADDR:
             case H2MirOp_ARRAY_ADDR:
             case H2MirOp_DEREF_LOAD:
             case H2MirOp_DEREF_STORE:
@@ -1749,8 +1766,28 @@ static bool WasmFunctionNeedsFrameMemory(const H2MirProgram* program, const H2Mi
             case H2MirOp_ALLOC_NEW:
             case H2MirOp_CTX_GET:
             case H2MirOp_CTX_ADDR:
-            case H2MirOp_SLICE_MAKE:  return true;
-            default:                  break;
+            case H2MirOp_SLICE_MAKE:    return true;
+            default:                    break;
+        }
+    }
+    return false;
+}
+
+static bool WasmProgramNeedsClosureGlobals(const H2MirProgram* program) {
+    uint32_t fnIndex;
+    if (program == NULL) {
+        return false;
+    }
+    for (fnIndex = 0; fnIndex < program->funcLen; fnIndex++) {
+        const H2MirFunction* fn = &program->funcs[fnIndex];
+        uint32_t             pc;
+        if (fn->captureCount > 0u) {
+            return true;
+        }
+        for (pc = 0; pc < fn->instLen; pc++) {
+            if (program->insts[fn->instStart + pc].op == H2MirOp_MAKE_CLOSURE) {
+                return true;
+            }
         }
     }
     return false;
@@ -2042,6 +2079,7 @@ static int WasmPrepareFunctionState(
         return -1;
     }
     memset(state, 0, sizeof(*state));
+    state->program = program;
     state->allocCallTempOffset = UINT32_MAX;
     state->directCallScratchI32Start = UINT16_MAX;
     state->directCallScratchI64Start = UINT16_MAX;
@@ -2178,6 +2216,14 @@ static int WasmPrepareFunctionState(
                 state->allocCallTempOffset = state->frameSize;
                 state->frameSize += 4u;
                 break;
+            }
+        }
+        state->closureFrameStart = state->frameSize;
+        for (tempPc = 0; tempPc < fn->instLen; tempPc++) {
+            const H2MirInst* inst = &program->insts[fn->instStart + tempPc];
+            if (inst->op == H2MirOp_MAKE_CLOSURE) {
+                state->frameSize = WasmAlign4(state->frameSize);
+                state->frameSize += (uint32_t)inst->tok * 4u;
             }
         }
         state->frameSize = WasmAlign4(state->frameSize);
@@ -3050,6 +3096,32 @@ static int WasmTempOffsetForPc(
             return 0;
         }
         offset += (uint32_t)WasmTypeByteSize(program, (uint32_t)typeRef);
+    }
+    return -1;
+}
+
+static int WasmClosureOffsetForPc(
+    const H2MirFunction*    fn,
+    const HOPWasmEmitState* state,
+    uint32_t                pc,
+    uint32_t* _Nonnull outOffset) {
+    uint32_t scanPc;
+    uint32_t offset;
+    if (fn == NULL || state == NULL || outOffset == NULL || pc >= fn->instLen) {
+        return -1;
+    }
+    offset = state->closureFrameStart;
+    for (scanPc = 0; scanPc <= pc; scanPc++) {
+        const H2MirInst* inst = &state->program->insts[fn->instStart + scanPc];
+        if (inst->op != H2MirOp_MAKE_CLOSURE) {
+            continue;
+        }
+        offset = WasmAlign4(offset);
+        if (scanPc == pc) {
+            *outOffset = offset;
+            return 0;
+        }
+        offset += (uint32_t)inst->tok * 4u;
     }
     return -1;
 }
@@ -4581,6 +4653,145 @@ static int WasmEmitFunctionRange(
                     return -1;
                 }
                 break;
+            case H2MirOp_MAKE_CLOSURE: {
+                uint32_t captureCount = (uint32_t)inst->tok;
+                uint32_t closureOffset = UINT32_MAX;
+                uint32_t targetFn = UINT32_MAX;
+                uint32_t i;
+                if (!state->usesFrame || imports == NULL || imports->closureGlobalCount == 0u
+                    || inst->aux >= program->constLen
+                    || program->consts[inst->aux].kind != H2MirConst_FUNCTION
+                    || captureCount > state->stackLen
+                    || WasmClosureOffsetForPc(fn, state, pc, &closureOffset) != 0)
+                {
+                    WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                    if (diag != NULL) {
+                        diag->detail = "unsupported closure value";
+                    }
+                    return -1;
+                }
+                targetFn = program->consts[inst->aux].aux;
+                if (targetFn >= program->funcLen || targetFn >= imports->closureGlobalCount) {
+                    return -1;
+                }
+                for (i = captureCount; i > 0u; i--) {
+                    uint8_t addrType = 0;
+                    if (WasmStackPop(state, &addrType) != 0 || !WasmTypeKindIsPointer(addrType)
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmEmitAddrFromFrame(body, state, closureOffset + ((i - 1u) * 4u), 0u)
+                               != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmEmitI32Store(body) != 0)
+                    {
+                        return -1;
+                    }
+                }
+                if (WasmEmitAddrFromFrame(body, state, closureOffset, 0u) != 0
+                    || WasmAppendByte(body, 0x24u) != 0
+                    || WasmAppendULEB(body, imports->closureGlobalStartIndex + targetFn) != 0
+                    || WasmAppendByte(body, 0x41u) != 0
+                    || WasmAppendSLEB32(body, (int32_t)targetFn) != 0
+                    || WasmStackPushEx(
+                           state,
+                           HOPWasmType_FUNC_REF,
+                           WasmFindFunctionValueTypeRef(program, targetFn))
+                           != 0)
+                {
+                    return -1;
+                }
+                break;
+            }
+            case H2MirOp_CAPTURE_ADDR: {
+                uint8_t  addrType = HOPWasmType_OPAQUE_PTR;
+                uint32_t funcIndex = (uint32_t)(fn - program->funcs);
+                if (imports == NULL || imports->closureGlobalCount == 0u
+                    || funcIndex >= imports->closureGlobalCount || inst->aux >= fn->captureCount)
+                {
+                    return -1;
+                }
+                if (fn->captureStart + inst->aux < program->captureLen) {
+                    addrType = WasmAddressTypeFromTypeRef(
+                        program, program->captures[fn->captureStart + inst->aux].typeRef);
+                    if (addrType == HOPWasmType_VOID) {
+                        addrType = HOPWasmType_OPAQUE_PTR;
+                    }
+                }
+                if (WasmAppendByte(body, 0x23u) != 0
+                    || WasmAppendULEB(body, imports->closureGlobalStartIndex + funcIndex) != 0
+                    || WasmAppendByte(body, 0x41u) != 0
+                    || WasmAppendSLEB32(body, (int32_t)(inst->aux * 4u)) != 0
+                    || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+                    || WasmStackPushEx(state, addrType, UINT32_MAX) != 0)
+                {
+                    return -1;
+                }
+                break;
+            }
+            case H2MirOp_CAPTURE_LOAD: {
+                uint8_t  addrType = HOPWasmType_OPAQUE_PTR;
+                uint8_t  valueType = HOPWasmType_VOID;
+                uint32_t valueTypeRef = UINT32_MAX;
+                if (fn->captureStart + inst->aux < program->captureLen) {
+                    valueTypeRef = program->captures[fn->captureStart + inst->aux].typeRef;
+                    addrType = WasmAddressTypeFromTypeRef(program, valueTypeRef);
+                    if (!WasmTypeKindFromMirType(program, valueTypeRef, &valueType)) {
+                        valueType = HOPWasmType_VOID;
+                    }
+                }
+                if (addrType == HOPWasmType_VOID || addrType == HOPWasmType_OPAQUE_PTR
+                    || valueType == HOPWasmType_VOID)
+                {
+                    WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                    if (diag != NULL) {
+                        diag->detail = "unsupported capture load";
+                    }
+                    return -1;
+                }
+                if (WasmAppendByte(body, 0x23u) != 0
+                    || WasmAppendULEB(
+                           body, imports->closureGlobalStartIndex + (uint32_t)(fn - program->funcs))
+                           != 0
+                    || WasmAppendByte(body, 0x41u) != 0
+                    || WasmAppendSLEB32(body, (int32_t)(inst->aux * 4u)) != 0
+                    || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+                    || WasmEmitTypedLoad(body, addrType) != 0
+                    || WasmStackPushEx(state, valueType, valueTypeRef) != 0)
+                {
+                    return -1;
+                }
+                break;
+            }
+            case H2MirOp_CAPTURE_STORE: {
+                uint8_t valueType = 0;
+                uint8_t addrType = HOPWasmType_OPAQUE_PTR;
+                if (fn->captureStart + inst->aux < program->captureLen) {
+                    addrType = WasmAddressTypeFromTypeRef(
+                        program, program->captures[fn->captureStart + inst->aux].typeRef);
+                }
+                if (WasmStackPop(state, &valueType) != 0 || addrType == HOPWasmType_VOID
+                    || addrType == HOPWasmType_OPAQUE_PTR
+                    || (addrType == HOPWasmType_FUNC_REF_PTR
+                            ? valueType != HOPWasmType_FUNC_REF
+                            : (valueType != HOPWasmType_I32 && !WasmTypeKindIsPointer(valueType)))
+                    || WasmAppendByte(body, 0x21u) != 0
+                    || WasmAppendULEB(body, state->scratch0Local) != 0
+                    || WasmAppendByte(body, 0x23u) != 0
+                    || WasmAppendULEB(
+                           body, imports->closureGlobalStartIndex + (uint32_t)(fn - program->funcs))
+                           != 0
+                    || WasmAppendByte(body, 0x41u) != 0
+                    || WasmAppendSLEB32(body, (int32_t)(inst->aux * 4u)) != 0
+                    || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+                    || WasmAppendByte(body, 0x20u) != 0
+                    || WasmAppendULEB(body, state->scratch0Local) != 0
+                    || WasmEmitTypedStore(body, addrType) != 0)
+                {
+                    return -1;
+                }
+                break;
+            }
             case H2MirOp_ARRAY_ADDR: {
                 uint8_t  indexType = 0;
                 uint8_t  baseType = 0;
@@ -6381,7 +6592,16 @@ static int WasmEmitFunctionRange(
                     }
                 }
                 if (calleeSig != NULL && !WasmSigMatchesAllocatorIndirect(calleeSig)) {
-                    if (argc != calleeSig->logicalParamCount || calleeSig->usesSRet) {
+                    int hasClosureDataParam =
+                        calleeFuncIndex < program->funcLen
+                        && (program->funcs[calleeFuncIndex].flags
+                            & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY)
+                               != 0u;
+                    uint32_t sourceParamCount =
+                        hasClosureDataParam && calleeSig->logicalParamCount > 0u
+                            ? calleeSig->logicalParamCount - 1u
+                            : calleeSig->logicalParamCount;
+                    if (argc != sourceParamCount || calleeSig->usesSRet) {
                         WasmSetDiag(
                             diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                         if (diag != NULL) {
@@ -6445,6 +6665,17 @@ static int WasmEmitFunctionRange(
                     for (scratchIndex = 0u; scratchIndex < totalArgSlots; scratchIndex++) {
                         if (WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch0Local + scratchIndex) != 0)
+                        {
+                            return -1;
+                        }
+                    }
+                    if (hasClosureDataParam) {
+                        if (imports == NULL || imports->closureGlobalCount == 0u
+                            || calleeFuncIndex >= imports->closureGlobalCount
+                            || WasmAppendByte(body, 0x23u) != 0
+                            || WasmAppendULEB(
+                                   body, imports->closureGlobalStartIndex + calleeFuncIndex)
+                                   != 0)
                         {
                             return -1;
                         }
@@ -7629,9 +7860,11 @@ static int EmitWasmBackend(
             goto oom;
         }
     }
-    if (imports.needsFrameGlobal || imports.needsHeapGlobal) {
+    if (imports.needsFrameGlobal || imports.needsHeapGlobal || imports.closureGlobalCount != 0u) {
         uint32_t globalCount =
-            (imports.needsFrameGlobal ? 1u : 0u) + (imports.needsHeapGlobal ? 1u : 0u);
+            (imports.needsFrameGlobal ? 1u : 0u) + (imports.needsHeapGlobal ? 1u : 0u)
+            + imports.closureGlobalCount;
+        uint32_t closureGlobalIndex;
         uint32_t staticEnd = WasmStaticDataEnd(&strings, &entry);
         uint32_t heapBaseInit = staticEnd;
         uint32_t frameBaseInit =
@@ -7652,6 +7885,16 @@ static int EmitWasmBackend(
             if (WasmAppendByte(&globalSec, 0x7fu) != 0 || WasmAppendByte(&globalSec, 0x01u) != 0
                 || WasmAppendByte(&globalSec, 0x41u) != 0
                 || WasmAppendSLEB32(&globalSec, (int32_t)heapBaseInit) != 0
+                || WasmAppendByte(&globalSec, 0x0bu) != 0)
+            {
+                goto oom;
+            }
+        }
+        for (closureGlobalIndex = 0; closureGlobalIndex < imports.closureGlobalCount;
+             closureGlobalIndex++)
+        {
+            if (WasmAppendByte(&globalSec, 0x7fu) != 0 || WasmAppendByte(&globalSec, 0x01u) != 0
+                || WasmAppendByte(&globalSec, 0x41u) != 0 || WasmAppendSLEB32(&globalSec, 0) != 0
                 || WasmAppendByte(&globalSec, 0x0bu) != 0)
             {
                 goto oom;

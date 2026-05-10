@@ -3798,49 +3798,10 @@ int H2TCTypeExpr_TUPLE_EXPR(
     return *outType < 0 ? -1 : 0;
 }
 
-static int H2TCCheckAnonFnNoLocalCaptures(H2TypeCheckCtx* c, int32_t nodeId, int isRoot) {
-    const H2AstNode* n;
-    int32_t          child;
-    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
-        return 0;
-    }
-    n = &c->ast->nodes[nodeId];
-    if (!isRoot
-        && (n->kind == H2Ast_ANON_FN
-            || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)))
-    {
-        return 0;
-    }
-    if (n->kind == H2Ast_IDENT) {
-        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
-        if (localIdx >= 0) {
-            H2TCSetDiagWithArg(
-                c->diag,
-                H2Diag_ANON_FN_CAPTURE_FORBIDDEN,
-                n->start,
-                n->end,
-                n->dataStart,
-                n->dataEnd);
-            return -1;
-        }
-    }
-    child = H2AstFirstChild(c->ast, nodeId);
-    while (child >= 0) {
-        if (H2TCCheckAnonFnNoLocalCaptures(c, child, 0) != 0) {
-            return -1;
-        }
-        child = H2AstNextSibling(c->ast, child);
-    }
-    return 0;
-}
-
 int H2TCTypeExpr_ANON_FN(
     H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t expectedType, int32_t* outType) {
     int32_t fnIndex = -1;
     (void)n;
-    if (H2TCCheckAnonFnNoLocalCaptures(c, nodeId, 1) != 0) {
-        return -1;
-    }
     if (H2TCRegisterFunctionValueNode(c, nodeId, expectedType, 0, &fnIndex) != 0) {
         return -1;
     }

@@ -11,6 +11,7 @@
 #include "mir_lower.h"
 #include "mir_lower_pkg.h"
 #include "mir_lower_stmt.h"
+#include "typecheck/internal.h"
 
 H2_API_BEGIN
 
@@ -55,6 +56,8 @@ typedef struct {
     HOPEvalProgram*     p;
     H2MirProgramBuilder builder;
     uint32_t*           evalToMir;
+    uint32_t*           tcToMir;
+    uint32_t            tcToMirLen;
     uint8_t*            loweringFns;
     uint32_t*           topConstToMir;
     uint8_t*            loweringTopConsts;
@@ -166,6 +169,159 @@ static int HOPEvalMirInternSourceFile(
     return 0;
 }
 
+static int HOPEvalMirEnsureTcMap(HOPEvalMirLowerCtx* c, uint32_t len) {
+    uint32_t* map;
+    uint32_t  i;
+    if (c == NULL) {
+        return -1;
+    }
+    if (len <= c->tcToMirLen && c->tcToMir != NULL) {
+        return 0;
+    }
+    map = (uint32_t*)H2ArenaAlloc(
+        c->p->arena, sizeof(uint32_t) * len, (uint32_t)_Alignof(uint32_t));
+    if (map == NULL && len != 0u) {
+        return ErrorSimple("out of memory");
+    }
+    for (i = 0; i < len; i++) {
+        map[i] = i < c->tcToMirLen && c->tcToMir != NULL ? c->tcToMir[i] : HOP_EVAL_MIR_FN_NONE;
+    }
+    c->tcToMir = map;
+    c->tcToMirLen = len;
+    c->execCtx.tcToMir = map;
+    c->execCtx.tcToMirLen = len;
+    return 0;
+}
+
+static int32_t HOPEvalMirFindTcFunctionValueByNode(const H2TypeCheckCtx* tc, int32_t nodeId) {
+    uint32_t i;
+    if (tc == NULL || nodeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) != 0
+            && (fn->declNode == nodeId || fn->defNode == nodeId))
+        {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int32_t HOPEvalMirFindTcFunctionByDeclNode(const H2TypeCheckCtx* tc, int32_t declNode) {
+    uint32_t i;
+    if (tc == NULL || declNode < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        if ((fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0 && fn->declNode == declNode) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+typedef struct {
+    HOPEvalMirLowerCtx*   c;
+    const H2TypeCheckCtx* tc;
+} HOPEvalMirFunctionValueResolveCtx;
+
+static int HOPEvalMirLowerInternalFunctionValues(
+    HOPEvalMirLowerCtx* c, const H2ParsedFile* file, const H2TypeCheckCtx* tc);
+
+static int HOPEvalMirResolveFunctionValueNode(
+    void* _Nullable ctx,
+    int32_t nodeId,
+    uint32_t* _Nonnull outFunctionIndex,
+    uint32_t* _Nonnull outCaptureStart,
+    uint32_t* _Nonnull outCaptureCount,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag) {
+    HOPEvalMirFunctionValueResolveCtx* r = (HOPEvalMirFunctionValueResolveCtx*)ctx;
+    int32_t                            tcFnIndex;
+    (void)diag;
+    *outFunctionIndex = UINT32_MAX;
+    *outCaptureStart = UINT32_MAX;
+    *outCaptureCount = 0;
+    *outSupported = 0;
+    if (r == NULL || r->c == NULL || r->tc == NULL) {
+        return 0;
+    }
+    tcFnIndex = HOPEvalMirFindTcFunctionValueByNode(r->tc, nodeId);
+    if (tcFnIndex < 0 || (uint32_t)tcFnIndex >= r->c->tcToMirLen
+        || r->c->tcToMir[(uint32_t)tcFnIndex] == HOP_EVAL_MIR_FN_NONE)
+    {
+        return 0;
+    }
+    *outFunctionIndex = r->c->tcToMir[(uint32_t)tcFnIndex];
+    if (*outFunctionIndex < r->c->builder.funcLen) {
+        *outCaptureStart = r->c->builder.funcs[*outFunctionIndex].captureStart;
+    }
+    *outCaptureCount = r->tc->funcs[(uint32_t)tcFnIndex].captureCount;
+    *outSupported = 1;
+    return 0;
+}
+
+static int HOPEvalMirResolveStaticCallMirTarget(
+    HOPEvalMirLowerCtx* c,
+    const H2ParsedFile* file,
+    int32_t             ownerFnNode,
+    const H2MirInst*    ins,
+    uint32_t*           outMirFnIndex) {
+    const H2TypeCheckCtx* tc;
+    const H2MirSymbolRef* symbol;
+    int32_t               ownerTcFnIndex;
+    int32_t               targetTcFnIndex = -1;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || file == NULL || ins == NULL || outMirFnIndex == NULL || ins->op != H2MirOp_CALL
+        || c->builder.symbols == NULL || ins->aux >= c->builder.symbolLen || !file->hasTypecheckCtx)
+    {
+        return 0;
+    }
+    tc = (const H2TypeCheckCtx*)file->typecheckCtx;
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != H2MirSymbol_CALL || symbol->target >= tc->ast->len) {
+        return 0;
+    }
+    ownerTcFnIndex = HOPEvalMirFindTcFunctionByDeclNode(tc, ownerFnNode);
+    if (ownerTcFnIndex < 0
+        || !H2TCFindCallTarget(tc, ownerTcFnIndex, (int32_t)symbol->target, &targetTcFnIndex)
+        || targetTcFnIndex < 0 || (uint32_t)targetTcFnIndex >= tc->funcLen)
+    {
+        return 0;
+    }
+    if (HOPEvalMirLowerInternalFunctionValues(c, file, tc) != 0
+        || (uint32_t)targetTcFnIndex >= c->tcToMirLen
+        || c->tcToMir[(uint32_t)targetTcFnIndex] == HOP_EVAL_MIR_FN_NONE)
+    {
+        return 0;
+    }
+    *outMirFnIndex = c->tcToMir[(uint32_t)targetTcFnIndex];
+    return 1;
+}
+
+static int HOPEvalMirFindFunctionBodyNode(const H2Ast* ast, int32_t fnNode) {
+    int32_t child;
+    if (ast == NULL || fnNode < 0 || (uint32_t)fnNode >= ast->len) {
+        return -1;
+    }
+    child = ast->nodes[fnNode].firstChild;
+    while (child >= 0) {
+        if (ast->nodes[child].kind == H2Ast_BLOCK) {
+            return child;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return -1;
+}
+
+static int HOPEvalMirLowerInternalFunctionValues(
+    HOPEvalMirLowerCtx* c, const H2ParsedFile* file, const H2TypeCheckCtx* tc);
+
 static int HOPEvalMirAdaptAggregateValue(
     const HOPEvalMirExecCtx* c, HOPEvalAggregate* _Nullable agg, uint32_t depth);
 
@@ -192,7 +348,7 @@ static int HOPEvalMirAdaptValue(
         }
         evalFnIndex = c->mirToEval[mirFnIndex];
         if (evalFnIndex == UINT32_MAX) {
-            return 0;
+            return 1;
         }
         HOPEvalValueSetFunctionRef(value, evalFnIndex);
         return 1;
@@ -264,6 +420,35 @@ void HOPEvalMirAdaptOutValue(
             *inOutIsConst = 0;
         }
     }
+}
+
+int HOPEvalMirResolveFunctionValueExpr(
+    const HOPEvalMirExecCtx* _Nullable c,
+    const H2ParsedFile* _Nonnull file,
+    int32_t exprNode,
+    uint32_t* _Nonnull outMirFnIndex) {
+    const HOPEvalMirExecCtx* cur = c;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (file == NULL || exprNode < 0 || outMirFnIndex == NULL || !file->hasTypecheckCtx) {
+        return 0;
+    }
+    while (cur != NULL) {
+        const H2TypeCheckCtx* tc = (const H2TypeCheckCtx*)file->typecheckCtx;
+        int32_t               tcFnIndex = HOPEvalMirFindTcFunctionValueByNode(tc, exprNode);
+        if (tcFnIndex >= 0 && cur->tcToMir != NULL && (uint32_t)tcFnIndex < cur->tcToMirLen
+            && cur->tcToMir[(uint32_t)tcFnIndex] != HOP_EVAL_MIR_FN_NONE)
+        {
+            *outMirFnIndex = cur->tcToMir[(uint32_t)tcFnIndex];
+            return 1;
+        }
+        if (cur->savedFileLen == 0 || cur->savedMirExecCtxs[cur->savedFileLen - 1u] == cur) {
+            break;
+        }
+        cur = cur->savedMirExecCtxs[cur->savedFileLen - 1u];
+    }
+    return 0;
 }
 
 static const H2Package* _Nullable HOPEvalMirFindImportTargetByAliasSlice(
@@ -775,6 +960,8 @@ static int HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
     const H2ParsedFile*       file,
     const H2MirInst*          ins,
     uint32_t*                 outEvalFnIndex);
+static int HOPEvalMirResolveSimpleFunctionValueAliasCallMirTarget(
+    HOPEvalMirLowerCtx* c, const H2ParsedFile* file, const H2MirInst* ins, uint32_t* outMirFnIndex);
 static int HOPEvalMirRewriteZeroArgFunctionValueCall(
     HOPEvalMirLowerCtx* c, const H2ParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex);
 
@@ -822,15 +1009,32 @@ static int HOPEvalMirLowerFunction(
         return -1;
     }
     (void)sourceRefIndex;
+    if (fn->file->hasTypecheckCtx
+        && HOPEvalMirLowerInternalFunctionValues(
+               c, fn->file, (const H2TypeCheckCtx*)fn->file->typecheckCtx)
+               != 0)
     {
-        HOPEvalMirLowerConstCtx lowerConstCtx;
-        H2MirLowerOptions       lowerOptions;
+        if (c->loweringFns != NULL) {
+            c->loweringFns[(uint32_t)evalFnIndex] = 0u;
+        }
+        return -1;
+    }
+    {
+        HOPEvalMirLowerConstCtx           lowerConstCtx;
+        H2MirLowerOptions                 lowerOptions;
+        HOPEvalMirFunctionValueResolveCtx resolveCtx;
         memset(&lowerConstCtx, 0, sizeof(lowerConstCtx));
         memset(&lowerOptions, 0, sizeof(lowerOptions));
+        memset(&resolveCtx, 0, sizeof(resolveCtx));
         lowerConstCtx.p = c->p;
         lowerConstCtx.file = fn->file;
+        resolveCtx.c = c;
+        resolveCtx.tc =
+            fn->file->hasTypecheckCtx ? (const H2TypeCheckCtx*)fn->file->typecheckCtx : NULL;
         lowerOptions.lowerConstExpr = HOPEvalMirLowerConstExpr;
         lowerOptions.lowerConstExprCtx = &lowerConstCtx;
+        lowerOptions.lowerFunctionValue = HOPEvalMirResolveFunctionValueNode;
+        lowerOptions.lowerFunctionValueCtx = &resolveCtx;
         if (H2MirLowerAppendSimpleFunctionWithOptions(
                 &c->builder,
                 c->p->arena,
@@ -964,6 +1168,18 @@ static int HOPEvalMirLowerFunction(
             }
             continue;
         }
+        if (HOPEvalMirResolveStaticCallMirTarget(c, fn->file, fn->fnNode, ins, &targetMirFnIndex)) {
+            ins = &c->builder.insts[instIndex];
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            continue;
+        }
+        if (HOPEvalMirResolveSimpleFunctionValueAliasCallMirTarget(
+                c, fn->file, ins, &targetMirFnIndex))
+        {
+            ins = &c->builder.insts[instIndex];
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            continue;
+        }
         if (HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
                 c, fn->file, ins, &targetEvalFnIndex))
         {
@@ -1039,6 +1255,89 @@ static int HOPEvalMirLowerFunction(
     return 1;
 }
 
+static int HOPEvalMirLowerInternalFunctionValues(
+    HOPEvalMirLowerCtx* c, const H2ParsedFile* file, const H2TypeCheckCtx* tc) {
+    uint32_t i;
+    if (c == NULL || file == NULL || tc == NULL) {
+        return 0;
+    }
+    if (HOPEvalMirEnsureTcMap(c, tc->funcLen) != 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction*               fn = &tc->funcs[i];
+        H2MirLowerOptions                 options = { 0 };
+        HOPEvalMirFunctionValueResolveCtx resolveCtx;
+        HOPEvalMirLowerConstCtx           lowerConstCtx;
+        H2MirCapture*                     captures = NULL;
+        uint32_t                          mirFnIndex = UINT32_MAX;
+        int32_t                           bodyNode;
+        int                               supported = 0;
+        uint32_t                          capIndex;
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) == 0 || fn->defNode < 0) {
+            continue;
+        }
+        if (c->tcToMir[i] != HOP_EVAL_MIR_FN_NONE) {
+            continue;
+        }
+        bodyNode = HOPEvalMirFindFunctionBodyNode(&file->ast, fn->defNode);
+        if (bodyNode < 0) {
+            continue;
+        }
+        if (fn->captureCount > 0u) {
+            captures = (H2MirCapture*)H2ArenaAlloc(
+                c->p->arena,
+                sizeof(H2MirCapture) * fn->captureCount,
+                (uint32_t)_Alignof(H2MirCapture));
+            if (captures == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            for (capIndex = 0; capIndex < fn->captureCount; capIndex++) {
+                const H2TCFunctionCapture* cap = &tc->functionCaptures[fn->captureStart + capIndex];
+                captures[capIndex].nameStart = cap->nameStart;
+                captures[capIndex].nameEnd = cap->nameEnd;
+                captures[capIndex].typeRef = UINT32_MAX;
+            }
+        }
+        memset(&resolveCtx, 0, sizeof(resolveCtx));
+        memset(&lowerConstCtx, 0, sizeof(lowerConstCtx));
+        resolveCtx.c = c;
+        resolveCtx.tc = tc;
+        lowerConstCtx.p = c->p;
+        lowerConstCtx.file = file;
+        options.lowerConstExpr = HOPEvalMirLowerConstExpr;
+        options.lowerConstExprCtx = &lowerConstCtx;
+        options.lowerFunctionValue = HOPEvalMirResolveFunctionValueNode;
+        options.lowerFunctionValueCtx = &resolveCtx;
+        options.captures = captures;
+        options.captureCount = fn->captureCount;
+        options.functionValueEntry = 1;
+        if (H2MirLowerAppendSimpleFunctionWithOptions(
+                &c->builder,
+                c->p->arena,
+                &file->ast,
+                (H2StrView){ file->source, file->sourceLen },
+                fn->defNode,
+                bodyNode,
+                &options,
+                &mirFnIndex,
+                &supported,
+                c->diag)
+            != 0)
+        {
+            return -1;
+        }
+        if (!supported) {
+            return 0;
+        }
+        c->tcToMir[i] = mirFnIndex;
+        if (c->execCtx.mirToEval != NULL && mirFnIndex < c->execCtx.mirToEvalLen) {
+            c->execCtx.mirToEval[mirFnIndex] = UINT32_MAX;
+        }
+    }
+    return 0;
+}
+
 static void HOPEvalMirRewriteLoadIdentToMirFunction(H2MirInst* ins, uint32_t targetMirFnIndex) {
     if (ins == NULL) {
         return;
@@ -1056,6 +1355,7 @@ static int HOPEvalMirRewriteLoadIdentToFunctionConst(
         return -1;
     }
     value.kind = H2MirConst_FUNCTION;
+    value.aux = targetMirFnIndex;
     value.bits = targetMirFnIndex;
     if (H2MirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;
@@ -1185,6 +1485,7 @@ static int HOPEvalMirRewriteQualifiedValueLoad(
         H2MirConst value = { 0 };
         uint32_t   constIndex = UINT32_MAX;
         value.kind = H2MirConst_FUNCTION;
+        value.aux = targetMirFnIndex;
         value.bits = targetMirFnIndex;
         if (H2MirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
             return -1;
@@ -1416,6 +1717,96 @@ static int HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(
     return 0;
 }
 
+static int HOPEvalMirResolveSimpleTopInitFunctionValueMirTarget(
+    HOPEvalMirLowerCtx* c,
+    const H2ParsedFile* file,
+    int                 isTopConst,
+    uint32_t            topInitIndex,
+    uint32_t*           outMirFnIndex) {
+    int32_t initExprNode = -1;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || file == NULL || outMirFnIndex == NULL) {
+        return 0;
+    }
+    if (isTopConst) {
+        if (topInitIndex >= c->p->topConstLen) {
+            return 0;
+        }
+        initExprNode = c->p->topConsts[topInitIndex].initExprNode;
+    } else {
+        if (topInitIndex >= c->p->topVarLen) {
+            return 0;
+        }
+        initExprNode = c->p->topVars[topInitIndex].initExprNode;
+    }
+    if (initExprNode >= 0 && (uint32_t)initExprNode < file->ast.len
+        && file->ast.nodes[initExprNode].kind == H2Ast_ANON_FN)
+    {
+        const H2TypeCheckCtx* tc =
+            file->hasTypecheckCtx ? (const H2TypeCheckCtx*)file->typecheckCtx : NULL;
+        int32_t tcFnIndex;
+        if (tc == NULL || HOPEvalMirLowerInternalFunctionValues(c, file, tc) != 0) {
+            return 0;
+        }
+        tcFnIndex = HOPEvalMirFindTcFunctionValueByNode(tc, initExprNode);
+        if (tcFnIndex < 0 || (uint32_t)tcFnIndex >= c->tcToMirLen
+            || c->tcToMir[(uint32_t)tcFnIndex] == HOP_EVAL_MIR_FN_NONE)
+        {
+            return 0;
+        }
+        *outMirFnIndex = c->tcToMir[(uint32_t)tcFnIndex];
+        return 1;
+    }
+    {
+        uint32_t targetEvalFnIndex = UINT32_MAX;
+        int      lowerRc;
+        if (!HOPEvalMirResolveSimpleTopInitFunctionValueTarget(
+                c, file, isTopConst, topInitIndex, &targetEvalFnIndex))
+        {
+            return 0;
+        }
+        lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, outMirFnIndex);
+        return lowerRc > 0;
+    }
+}
+
+static int HOPEvalMirResolveSimpleFunctionValueAliasCallMirTarget(
+    HOPEvalMirLowerCtx* c,
+    const H2ParsedFile* file,
+    const H2MirInst*    ins,
+    uint32_t*           outMirFnIndex) {
+    const H2Package*      currentPkg;
+    const H2MirSymbolRef* symbol;
+    uint32_t              topIndex = UINT32_MAX;
+    int                   isTopConst = 0;
+    if (outMirFnIndex != NULL) {
+        *outMirFnIndex = UINT32_MAX;
+    }
+    if (c == NULL || c->p == NULL || file == NULL || ins == NULL || outMirFnIndex == NULL
+        || ins->op != H2MirOp_CALL || c->builder.symbols == NULL
+        || ins->aux >= c->builder.symbolLen)
+    {
+        return 0;
+    }
+    currentPkg = HOPEvalFindPackageByFile(c->p, file);
+    if (currentPkg == NULL) {
+        return 0;
+    }
+    symbol = &c->builder.symbols[ins->aux];
+    if (symbol->kind != H2MirSymbol_CALL || symbol->flags != 0u) {
+        return 0;
+    }
+    if (!HOPEvalMirResolveTopInitSliceTargetForPackage(
+            c, currentPkg, file, symbol->nameStart, symbol->nameEnd, &isTopConst, &topIndex))
+    {
+        return 0;
+    }
+    return HOPEvalMirResolveSimpleTopInitFunctionValueMirTarget(
+        c, file, isTopConst, topIndex, outMirFnIndex);
+}
+
 static int HOPEvalMirRewriteZeroArgFunctionValueCall(
     HOPEvalMirLowerCtx* c, const H2ParsedFile* file, uint32_t ownerMirFnIndex, uint32_t instIndex) {
     const H2Package*      currentPkg;
@@ -1459,6 +1850,7 @@ static int HOPEvalMirRewriteZeroArgFunctionValueCall(
         return lowerRc;
     }
     value.kind = H2MirConst_FUNCTION;
+    value.aux = targetMirFnIndex;
     value.bits = targetMirFnIndex;
     if (H2MirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0
         || H2MirProgramBuilderInsertInst(
@@ -1591,6 +1983,12 @@ static int HOPEvalMirRewriteTopInitCalls(
             }
             continue;
         }
+        if (HOPEvalMirResolveSimpleFunctionValueAliasCallMirTarget(c, file, ins, &targetMirFnIndex))
+        {
+            ins = &c->builder.insts[instIndex];
+            HOPEvalMirRewriteCallToMirFunction(c, ins, targetMirFnIndex);
+            continue;
+        }
         if (HOPEvalMirResolveSimpleFunctionValueAliasCallTarget(c, file, ins, &targetEvalFnIndex)) {
             lowerRc = HOPEvalMirLowerFunction(c, (int32_t)targetEvalFnIndex, &targetMirFnIndex);
             if (lowerRc < 0) {
@@ -1692,21 +2090,37 @@ static int HOPEvalMirLowerNamedTopInitVarLike(
         return 0;
     }
     lowering[itemIndex] = 1u;
-    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
-            &c->builder,
-            c->p->arena,
-            &file->ast,
-            (H2StrView){ file->source, file->sourceLen },
-            nodeId,
-            nameStart,
-            nameEnd,
-            &mirFnIndex,
-            &supported,
-            c->diag)
-        != 0)
     {
-        lowering[itemIndex] = 0u;
-        return -1;
+        H2MirLowerOptions                 options = { 0 };
+        HOPEvalMirFunctionValueResolveCtx resolveCtx;
+        const H2TypeCheckCtx*             tc =
+            file->hasTypecheckCtx ? (const H2TypeCheckCtx*)file->typecheckCtx : NULL;
+        memset(&resolveCtx, 0, sizeof(resolveCtx));
+        if (tc != NULL && HOPEvalMirLowerInternalFunctionValues(c, file, tc) != 0) {
+            lowering[itemIndex] = 0u;
+            return -1;
+        }
+        resolveCtx.c = c;
+        resolveCtx.tc = tc;
+        options.lowerFunctionValue = HOPEvalMirResolveFunctionValueNode;
+        options.lowerFunctionValueCtx = &resolveCtx;
+        if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
+                &c->builder,
+                c->p->arena,
+                &file->ast,
+                (H2StrView){ file->source, file->sourceLen },
+                nodeId,
+                nameStart,
+                nameEnd,
+                &options,
+                &mirFnIndex,
+                &supported,
+                c->diag)
+            != 0)
+        {
+            lowering[itemIndex] = 0u;
+            return -1;
+        }
     }
     if (!supported || mirFnIndex == UINT32_MAX) {
         lowering[itemIndex] = 0u;

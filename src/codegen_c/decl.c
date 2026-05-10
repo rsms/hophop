@@ -1426,15 +1426,19 @@ int EmitFnTypeAliasDecls(H2CBackendC* c) {
         const H2FnTypeAlias* alias = &c->fnTypeAliases[i];
         uint32_t             p;
         EmitIndent(c, 0);
-        if (BufAppendCStr(&c->out, "typedef ") != 0
-            || EmitTypeNameWithDepth(c, &alias->returnType) != 0
-            || BufAppendCStr(&c->out, " (*") != 0 || BufAppendCStr(&c->out, alias->aliasName) != 0
-            || BufAppendCStr(&c->out, ")(") != 0)
+        if (BufAppendCStr(&c->out, "typedef struct ") != 0
+            || BufAppendCStr(&c->out, alias->aliasName) != 0 || BufAppendCStr(&c->out, " {\n") != 0)
+        {
+            return -1;
+        }
+        EmitIndent(c, 1);
+        if (EmitTypeNameWithDepth(c, &alias->returnType) != 0
+            || BufAppendCStr(&c->out, " (*code)(") != 0)
         {
             return -1;
         }
         if (alias->paramLen == 0) {
-            if (BufAppendCStr(&c->out, "void") != 0) {
+            if (BufAppendCStr(&c->out, "void* __hop_data") != 0) {
                 return -1;
             }
         } else {
@@ -1456,12 +1460,192 @@ int EmitFnTypeAliasDecls(H2CBackendC* c) {
                     return -1;
                 }
             }
+            if (BufAppendCStr(&c->out, ", void* __hop_data") != 0) {
+                return -1;
+            }
         }
         if (BufAppendCStr(&c->out, ");\n") != 0) {
             return -1;
         }
+        EmitIndent(c, 1);
+        if (BufAppendCStr(&c->out, "void* data;\n") != 0 || BufAppendCStr(&c->out, "} ") != 0
+            || BufAppendCStr(&c->out, alias->aliasName) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+        {
+            return -1;
+        }
     }
     return BufAppendChar(&c->out, '\n');
+}
+
+static int EmitClosureTypeDecls(H2CBackendC* c) {
+    const H2TypeCheckCtx* tc;
+    uint32_t              i;
+    int                   emittedAny = 0;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        char*               typeName;
+        uint32_t            capIndex;
+        if ((fn->flags & H2TCFunctionFlag_CAPTURING) == 0 || fn->captureCount == 0u) {
+            continue;
+        }
+        typeName = BuildClosureTypeCName(c, i);
+        if (typeName == NULL) {
+            return -1;
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "typedef struct ") != 0 || BufAppendCStr(&c->out, typeName) != 0
+            || BufAppendCStr(&c->out, " {\n") != 0)
+        {
+            return -1;
+        }
+        for (capIndex = 0; capIndex < fn->captureCount; capIndex++) {
+            const H2TCFunctionCapture* cap = &tc->functionCaptures[fn->captureStart + capIndex];
+            H2TypeRef                  capType;
+            char*                      capName;
+            if (ParseTypeRefFromConstEvalTypeId(c, cap->typeId, &capType) != 0) {
+                return -1;
+            }
+            capType.ptrDepth++;
+            capName = DupSlice(c, c->unit->source, cap->nameStart, cap->nameEnd);
+            if (capName == NULL) {
+                return -1;
+            }
+            EmitIndent(c, 1);
+            if (EmitTypeRefWithName(c, &capType, capName) != 0
+                || BufAppendCStr(&c->out, ";\n") != 0)
+            {
+                return -1;
+            }
+        }
+        EmitIndent(c, 0);
+        if (BufAppendCStr(&c->out, "} ") != 0 || BufAppendCStr(&c->out, typeName) != 0
+            || BufAppendCStr(&c->out, ";\n\n") != 0)
+        {
+            return -1;
+        }
+        emittedAny = 1;
+    }
+    (void)emittedAny;
+    return 0;
+}
+
+static int FnSigCanHaveValueWrapper(H2CBackendC* c, const H2FnSig* sig) {
+    H2Buf prefix = { 0 };
+    char* packagePrefix;
+    if (c == NULL || sig == NULL || c->unit == NULL || c->unit->packageName == NULL) {
+        return 0;
+    }
+    prefix.arena = &c->arena;
+    if (BufAppendCStr(&prefix, c->unit->packageName) != 0 || BufAppendCStr(&prefix, "__") != 0) {
+        return 0;
+    }
+    packagePrefix = BufFinish(&prefix);
+    {
+        size_t prefixLen = packagePrefix != NULL ? StrLen(packagePrefix) : 0;
+        if (packagePrefix == NULL || StrLen(sig->cName) < prefixLen
+            || memcmp(sig->cName, packagePrefix, prefixLen) != 0)
+        {
+            return 0;
+        }
+    }
+    return (sig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) == 0
+        && (sig->flags & H2FnSigFlag_TEMPLATE_BASE) == 0 && sig->hasContext == 0
+        && sig->isVariadic == 0 && !StrEq(sig->hopName, "main");
+}
+
+static int FnReturnTypeIsVoid(const H2TypeRef* t) {
+    return t != NULL && t->valid && t->baseName != NULL && StrEq(t->baseName, "void")
+        && t->ptrDepth == 0 && t->containerPtrDepth == 0
+        && t->containerKind == H2TypeContainer_SCALAR;
+}
+
+static int EmitFnValueWrapperName(H2CBackendC* c, const H2FnSig* sig) {
+    return BufAppendCStr(&c->out, sig->cName) != 0 || BufAppendCStr(&c->out, "__value") != 0
+             ? -1
+             : 0;
+}
+
+static int EmitFnValueWrapperSignature(H2CBackendC* c, const H2FnSig* sig) {
+    uint32_t p;
+    if (BufAppendCStr(&c->out, "static ") != 0 || EmitTypeNameWithDepth(c, &sig->returnType) != 0
+        || BufAppendChar(&c->out, ' ') != 0 || EmitFnValueWrapperName(c, sig) != 0
+        || BufAppendChar(&c->out, '(') != 0)
+    {
+        return -1;
+    }
+    for (p = 0; p < sig->paramLen; p++) {
+        const char* paramName =
+            sig->paramNames != NULL && sig->paramNames[p] != NULL && sig->paramNames[p][0] != '\0'
+                ? sig->paramNames[p]
+                : "__hop_v";
+        if (p > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (EmitTypeRefWithName(c, &sig->paramTypes[p], paramName) != 0) {
+            return -1;
+        }
+    }
+    if (sig->paramLen > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+        return -1;
+    }
+    return BufAppendCStr(
+        &c->out, "void* __hop_data __attribute__((unused))) __attribute__((unused))");
+}
+
+static int EmitFnValueWrapperDecls(H2CBackendC* c) {
+    uint32_t i;
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        if (!FnSigCanHaveValueWrapper(c, sig)) {
+            continue;
+        }
+        if (EmitFnValueWrapperSignature(c, sig) != 0 || BufAppendCStr(&c->out, ";\n") != 0) {
+            return -1;
+        }
+    }
+    return BufAppendChar(&c->out, '\n');
+}
+
+static int EmitFnValueWrapperDefs(H2CBackendC* c) {
+    uint32_t i;
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        uint32_t       p;
+        if (!FnSigCanHaveValueWrapper(c, sig)) {
+            continue;
+        }
+        if (EmitFnValueWrapperSignature(c, sig) != 0 || BufAppendCStr(&c->out, " {\n") != 0) {
+            return -1;
+        }
+        EmitIndent(c, 1);
+        if (!FnReturnTypeIsVoid(&sig->returnType) && BufAppendCStr(&c->out, "return ") != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, sig->cName) != 0 || BufAppendChar(&c->out, '(') != 0) {
+            return -1;
+        }
+        for (p = 0; p < sig->paramLen; p++) {
+            const char* paramName =
+                sig->paramNames != NULL && sig->paramNames[p] != NULL
+                        && sig->paramNames[p][0] != '\0'
+                    ? sig->paramNames[p]
+                    : "__hop_v";
+            if (p > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            if (BufAppendCStr(&c->out, paramName) != 0) {
+                return -1;
+            }
+        }
+        if (BufAppendCStr(&c->out, ");\n}\n\n") != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int FnNodeHasBody(const H2CBackendC* c, int32_t nodeId) {
@@ -1520,6 +1704,7 @@ int EmitFnDeclOrDef(
     H2TypeRef        savedContextType = c->currentContextType;
     int              savedHasContext = c->hasCurrentContext;
     int              savedCurrentFunctionIsMain = c->currentFunctionIsMain;
+    int              savedFunctionValueEntry = c->currentFunctionValueEntry;
     const char*      savedActivePackParamName = c->activePackParamName;
     char**           savedActivePackElemNames = c->activePackElemNames;
     H2TypeRef*       savedActivePackElemTypes = c->activePackElemTypes;
@@ -1588,8 +1773,11 @@ int EmitFnDeclOrDef(
     }
 
     EmitIndent(c, depth);
-    forceStatic = ((fnSig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0)
-               && (emitBody || c->emitPrivateFnDeclStatic);
+    forceStatic =
+        (((fnSig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0)
+         || ((fnSig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) != 0))
+        && (((fnSig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) != 0) || emitBody
+            || c->emitPrivateFnDeclStatic);
     if ((fnSig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0 && fnSig->tcFuncIndex == UINT32_MAX) {
         forceStatic = 0;
     }
@@ -1649,6 +1837,15 @@ int EmitFnDeclOrDef(
             firstParam = 0;
         }
     }
+    if ((fnSig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) != 0) {
+        if (!firstParam && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (BufAppendCStr(&c->out, "void* __hop_data __attribute__((unused))") != 0) {
+            return -1;
+        }
+        firstParam = 0;
+    }
 
     if (firstParam && BufAppendCStr(&c->out, "void") != 0) {
         return -1;
@@ -1701,7 +1898,8 @@ int EmitFnDeclOrDef(
     c->currentContextType = fnSemanticContextType;
     c->hasCurrentContext = hasFnContext;
     c->currentFunctionIsMain = !hasFnContext && isMainFn;
-    if ((fnSig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) != 0
+    c->currentFunctionValueEntry = (fnSig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) != 0;
+    if (fnSig->tcFuncIndex != UINT32_MAX
         && CodegenCPushActiveFunctionTypeContext(c, fnSig->tcFuncIndex) != 0)
     {
         c->currentReturnType = savedReturnType;
@@ -1709,6 +1907,7 @@ int EmitFnDeclOrDef(
         c->currentContextType = savedContextType;
         c->hasCurrentContext = savedHasContext;
         c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+        c->currentFunctionValueEntry = savedFunctionValueEntry;
         c->activePackParamName = savedActivePackParamName;
         c->activePackElemNames = savedActivePackElemNames;
         c->activePackElemTypes = savedActivePackElemTypes;
@@ -1728,6 +1927,7 @@ int EmitFnDeclOrDef(
         c->currentContextType = savedContextType;
         c->hasCurrentContext = savedHasContext;
         c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+        c->currentFunctionValueEntry = savedFunctionValueEntry;
         c->activePackParamName = savedActivePackParamName;
         c->activePackElemNames = savedActivePackElemNames;
         c->activePackElemTypes = savedActivePackElemTypes;
@@ -1746,6 +1946,7 @@ int EmitFnDeclOrDef(
     c->currentContextType = savedContextType;
     c->hasCurrentContext = savedHasContext;
     c->currentFunctionIsMain = savedCurrentFunctionIsMain;
+    c->currentFunctionValueEntry = savedFunctionValueEntry;
     c->activePackParamName = savedActivePackParamName;
     c->activePackElemNames = savedActivePackElemNames;
     c->activePackElemTypes = savedActivePackElemTypes;
@@ -2245,6 +2446,24 @@ int EmitHeader(H2CBackendC* c) {
     if (EmitFnTypeAliasDecls(c) != 0) {
         return -1;
     }
+    if (EmitClosureTypeDecls(c) != 0) {
+        return -1;
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        if ((sig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) == 0) {
+            continue;
+        }
+        if (EmitFnDeclOrDef(c, sig->nodeId, 0, 0, 1, sig) != 0) {
+            return -1;
+        }
+    }
+    if (c->fnSigLen > 0 && BufAppendChar(&c->out, '\n') != 0) {
+        return -1;
+    }
+    if (EmitFnValueWrapperDecls(c) != 0) {
+        return -1;
+    }
 
     for (i = 0; i < c->pubDeclLen; i++) {
         int32_t          nodeId = c->pubDecls[i].nodeId;
@@ -2409,6 +2628,9 @@ int EmitHeader(H2CBackendC* c) {
             return -1;
         }
     }
+    if (EmitFnValueWrapperDefs(c) != 0) {
+        return -1;
+    }
     for (i = 0; i < c->fnSigLen; i++) {
         const H2FnSig*   sig = &c->fnSigs[i];
         const H2AstNode* fnNode;
@@ -2417,6 +2639,26 @@ int EmitHeader(H2CBackendC* c) {
         }
         fnNode = NodeAt(c, sig->nodeId);
         if (fnNode == NULL || fnNode->kind != H2Ast_FN || !FnNodeHasBody(c, sig->nodeId)) {
+            continue;
+        }
+        if (EmitFnDeclOrDef(c, sig->nodeId, 0, 1, 1, sig) != 0 || BufAppendChar(&c->out, '\n') != 0)
+        {
+            if (c->diag != NULL && c->diag->code == H2Diag_NONE) {
+                SetDiagNode(c, sig->nodeId, H2Diag_CODEGEN_INTERNAL);
+            }
+            return -1;
+        }
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig*   sig = &c->fnSigs[i];
+        const H2AstNode* fnNode;
+        if ((sig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) == 0) {
+            continue;
+        }
+        fnNode = NodeAt(c, sig->nodeId);
+        if (fnNode == NULL || (fnNode->kind != H2Ast_FN && fnNode->kind != H2Ast_ANON_FN)
+            || !FnNodeHasBody(c, sig->nodeId))
+        {
             continue;
         }
         if (EmitFnDeclOrDef(c, sig->nodeId, 0, 1, 1, sig) != 0 || BufAppendChar(&c->out, '\n') != 0)

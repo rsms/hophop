@@ -1,6 +1,9 @@
-fn main(x int) {
+fn main() {
+	x := 1
 	fn get() int {
+		x += 1
 		return x
 	}
-	_ = get
+	assert get() == 2
+	assert get() == 3
 }

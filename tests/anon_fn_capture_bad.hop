@@ -1,7 +1,12 @@
 fn main() {
-	x := 41
-	var f fn() int = fn() int {
-		return x + 1
+	x := 1
+	y := 2
+	f := fn(z int) int {
+		x += 1
+		return x + y + z
 	}
-	_ = f
+	assert f(3) == 7
+	assert f(3) == 8
+	assert x == 3
+	assert y == 2
 }

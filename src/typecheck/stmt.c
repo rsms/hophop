@@ -58,6 +58,48 @@ int H2TCMarkTemplateRootFunctionUses(H2TypeCheckCtx* c) {
     return 0;
 }
 
+static int32_t H2TCFindFunctionValueDeclIndex(H2TypeCheckCtx* c, int32_t nodeId) {
+    uint32_t i;
+    if (c == NULL || nodeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        if (c->funcs[i].declNode == nodeId || c->funcs[i].defNode == nodeId) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int H2TCExprIsCapturingFunctionValue(H2TypeCheckCtx* c, int32_t exprNode) {
+    const H2AstNode* n;
+    uint32_t         i;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind == H2Ast_ANON_FN || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)) {
+        int32_t fnIdx = H2TCFindFunctionValueDeclIndex(c, exprNode);
+        return fnIdx >= 0 && (c->funcs[fnIdx].flags & H2TCFunctionFlag_CAPTURING) != 0;
+    }
+    if (n->kind != H2Ast_IDENT) {
+        return 0;
+    }
+    for (i = 0; i < c->funcLen; i++) {
+        const H2TCFunction* fn = &c->funcs[i];
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) == 0
+            || (fn->flags & H2TCFunctionFlag_CAPTURING) == 0
+            || fn->ownerFnIndex != c->currentFunctionIndex)
+        {
+            continue;
+        }
+        if (H2NameEqSlice(c->src, fn->nameStart, fn->nameEnd, n->dataStart, n->dataEnd)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void H2TCMarkConstBlockLocalReadsRec(
     H2TypeCheckCtx* c, int32_t nodeId, int skipDirectIdent) {
     const H2AstNode* n;
@@ -1786,55 +1828,6 @@ int H2TCTypeShortAssignStmt(H2TypeCheckCtx* c, int32_t nodeId) {
     return 0;
 }
 
-static int H2TCLocalFunctionCanReferenceLocal(H2TypeCheckCtx* c, int32_t localIdx) {
-    int32_t localType;
-    if (localIdx < 0 || (uint32_t)localIdx >= c->localLen) {
-        return 0;
-    }
-    if ((c->locals[localIdx].flags & H2TCLocalFlag_CONST) == 0) {
-        return 0;
-    }
-    localType = H2TCResolveAliasBaseType(c, c->locals[localIdx].typeId);
-    return localType >= 0 && (uint32_t)localType < c->typeLen
-        && c->types[localType].kind == H2TCType_FUNCTION;
-}
-
-static int H2TCCheckLocalFunctionNoLocalCaptures(H2TypeCheckCtx* c, int32_t nodeId, int isRoot) {
-    const H2AstNode* n;
-    int32_t          child;
-    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
-        return 0;
-    }
-    n = &c->ast->nodes[nodeId];
-    if (!isRoot
-        && (n->kind == H2Ast_ANON_FN
-            || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)))
-    {
-        return 0;
-    }
-    if (n->kind == H2Ast_IDENT) {
-        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
-        if (localIdx >= 0 && !H2TCLocalFunctionCanReferenceLocal(c, localIdx)) {
-            H2TCSetDiagWithArg(
-                c->diag,
-                H2Diag_ANON_FN_CAPTURE_FORBIDDEN,
-                n->start,
-                n->end,
-                n->dataStart,
-                n->dataEnd);
-            return -1;
-        }
-    }
-    child = H2AstFirstChild(c->ast, nodeId);
-    while (child >= 0) {
-        if (H2TCCheckLocalFunctionNoLocalCaptures(c, child, 0) != 0) {
-            return -1;
-        }
-        child = H2AstNextSibling(c->ast, child);
-    }
-    return 0;
-}
-
 static int H2TCTypeLocalFunctionStmt(H2TypeCheckCtx* c, int32_t nodeId) {
     const H2AstNode* n = &c->ast->nodes[nodeId];
     int32_t          fnIndex = -1;
@@ -1857,9 +1850,6 @@ static int H2TCTypeLocalFunctionStmt(H2TypeCheckCtx* c, int32_t nodeId) {
     }
     if (fnIndex < 0 || (uint32_t)fnIndex >= c->funcLen) {
         return H2TCFailNode(c, nodeId, H2Diag_TYPE_MISMATCH);
-    }
-    if (H2TCCheckLocalFunctionNoLocalCaptures(c, nodeId, 1) != 0) {
-        return -1;
     }
     if (H2TCLocalAdd(c, n->dataStart, n->dataEnd, c->funcs[(uint32_t)fnIndex].funcTypeId, 1, -1)
         != 0)
@@ -1972,6 +1962,9 @@ int H2TCTypeStmt(
                 }
                 if (!H2TCCanAssign(c, returnType, t)) {
                     return H2TCFailTypeMismatchDetail(c, expr, expr, t, returnType);
+                }
+                if (H2TCExprIsCapturingFunctionValue(c, expr)) {
+                    return H2TCFailNode(c, expr, H2Diag_CLOSURE_ESCAPE_FORBIDDEN);
                 }
                 return 0;
             }
@@ -2302,6 +2295,16 @@ int H2TCTypeFunctionBody(H2TypeCheckCtx* c, int32_t funcIndex) {
         H2TCMarkLocalRead(c, (int32_t)c->localLen - 1);
         H2TCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
     }
+    if ((fn->flags & H2TCFunctionFlag_CAPTURING) != 0) {
+        uint32_t i;
+        for (i = 0; i < fn->captureCount; i++) {
+            const H2TCFunctionCapture* cap = &c->functionCaptures[fn->captureStart + i];
+            if (H2TCLocalAdd(c, cap->nameStart, cap->nameEnd, cap->typeId, 0, -1) != 0) {
+                return -1;
+            }
+            H2TCMarkLocalInitialized(c, (int32_t)c->localLen - 1);
+        }
+    }
 
     child = H2AstFirstChild(c->ast, nodeId);
     while (child >= 0) {
@@ -2437,6 +2440,8 @@ int H2TCBuildCheckedContext(
         arena, sizeof(H2TCFunction) * capBase, (uint32_t)_Alignof(H2TCFunction));
     c.funcUsed = (uint8_t*)H2ArenaAlloc(
         arena, sizeof(uint8_t) * capBase, (uint32_t)_Alignof(uint8_t));
+    c.functionCaptures = (H2TCFunctionCapture*)H2ArenaAlloc(
+        arena, sizeof(H2TCFunctionCapture) * capBase * 4u, (uint32_t)_Alignof(H2TCFunctionCapture));
     c.funcParamTypes = (int32_t*)H2ArenaAlloc(
         arena, sizeof(int32_t) * capBase * 8u, (uint32_t)_Alignof(int32_t));
     c.funcParamNameStarts = (uint32_t*)H2ArenaAlloc(
@@ -2481,14 +2486,15 @@ int H2TCBuildCheckedContext(
         arena, sizeof(uint8_t) * ast->len, (uint32_t)_Alignof(uint8_t));
 
     if (c.types == NULL || c.fields == NULL || c.namedTypes == NULL || c.funcs == NULL
-        || c.funcUsed == NULL || c.funcParamTypes == NULL || c.funcParamNameStarts == NULL
-        || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL || c.genericArgTypes == NULL
-        || c.funcParamCallArgStarts == NULL || c.funcParamCallArgEnds == NULL
-        || c.funcParamCallArgExprNodes == NULL || c.scratchParamTypes == NULL
-        || c.scratchParamFlags == NULL || c.locals == NULL || c.localUses == NULL
-        || c.constEvalValues == NULL || c.constEvalState == NULL || c.topVarLikeTypes == NULL
-        || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL || c.warningDedup == NULL
-        || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL || c.callTargets == NULL)
+        || c.funcUsed == NULL || c.functionCaptures == NULL || c.funcParamTypes == NULL
+        || c.funcParamNameStarts == NULL || c.funcParamNameEnds == NULL || c.funcParamFlags == NULL
+        || c.genericArgTypes == NULL || c.funcParamCallArgStarts == NULL
+        || c.funcParamCallArgEnds == NULL || c.funcParamCallArgExprNodes == NULL
+        || c.scratchParamTypes == NULL || c.scratchParamFlags == NULL || c.locals == NULL
+        || c.localUses == NULL || c.constEvalValues == NULL || c.constEvalState == NULL
+        || c.topVarLikeTypes == NULL || c.topVarLikeTypeState == NULL || c.variantNarrows == NULL
+        || c.warningDedup == NULL || c.constDiagUses == NULL || c.constDiagFnInvoked == NULL
+        || c.callTargets == NULL)
     {
         H2TCSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
         return -1;
@@ -2503,6 +2509,8 @@ int H2TCBuildCheckedContext(
     c.funcLen = 0;
     c.funcCap = capBase;
     c.funcUsedCap = capBase;
+    c.functionCaptureLen = 0;
+    c.functionCaptureCap = capBase * 4u;
     c.funcParamLen = 0;
     c.funcParamCap = capBase * 8u;
     c.genericArgLen = 0;

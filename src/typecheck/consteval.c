@@ -3656,7 +3656,9 @@ int H2TCEvalConstExprNode(
     }
     kind = c->ast->nodes[exprNode].kind;
     if (kind == H2Ast_ANON_FN) {
-        int32_t fnIndex = -1;
+        int32_t  fnIndex = -1;
+        uint32_t functionValueIndex = 0;
+        int32_t  i;
         if (H2TCRegisterFunctionValueNode(c, exprNode, -1, 0, &fnIndex) != 0) {
             return -1;
         }
@@ -3664,7 +3666,12 @@ int H2TCEvalConstExprNode(
             *outIsConst = 0;
             return 0;
         }
-        H2MirValueSetFunctionRef(outValue, (uint32_t)fnIndex);
+        for (i = 0; i < fnIndex; i++) {
+            if ((c->funcs[i].flags & H2TCFunctionFlag_INTERNAL) != 0 && c->funcs[i].defNode >= 0) {
+                functionValueIndex++;
+            }
+        }
+        H2MirValueSetFunctionRef(outValue, functionValueIndex);
         *outIsConst = 1;
         return 0;
     }
@@ -5837,6 +5844,7 @@ static int H2TCMirConstRewriteQualifiedFunctionValueLoad(
     }
     fieldIns = &c->builder.insts[loadInstIndex + 1u];
     value.kind = H2MirConst_FUNCTION;
+    value.aux = targetMirFnIndex;
     value.bits = targetMirFnIndex;
     if (H2MirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;
@@ -6202,6 +6210,7 @@ static int H2TCMirConstRewriteLoadIdentToFunctionConst(
         return -1;
     }
     value.kind = H2MirConst_FUNCTION;
+    value.aux = targetMirFnIndex;
     value.bits = targetMirFnIndex;
     if (H2MirProgramBuilderAddConst(&c->builder, &value, &constIndex) != 0) {
         return -1;

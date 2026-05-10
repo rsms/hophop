@@ -36,6 +36,10 @@ typedef enum {
     H2MirOp_CALL_FN,
     H2MirOp_CALL_HOST,
     H2MirOp_CALL_INDIRECT,
+    H2MirOp_MAKE_CLOSURE,
+    H2MirOp_CAPTURE_LOAD,
+    H2MirOp_CAPTURE_STORE,
+    H2MirOp_CAPTURE_ADDR,
     H2MirOp_DEREF_LOAD,
     H2MirOp_DEREF_STORE,
     H2MirOp_ADDR_OF,
@@ -159,13 +163,23 @@ typedef struct {
     uint32_t typeRef;
     uint32_t nameStart;
     uint32_t nameEnd;
+    uint32_t astNode;
     uint32_t flags;
+    uint32_t captureStart;
+    uint32_t captureCount;
 } H2MirFunction;
 
 enum {
     H2MirFunctionFlag_NONE = 0,
     H2MirFunctionFlag_VARIADIC = 1u << 0,
+    H2MirFunctionFlag_FUNCTION_VALUE_ENTRY = 1u << 1,
 };
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    uint32_t typeRef;
+} H2MirCapture;
 
 typedef struct {
     uint32_t nameStart;
@@ -456,6 +470,8 @@ typedef struct {
     uint32_t              hostLen;
     const H2MirSymbolRef* symbols;
     uint32_t              symbolLen;
+    const H2MirCapture*   captures;
+    uint32_t              captureLen;
 } H2MirProgram;
 
 typedef struct {
@@ -487,6 +503,9 @@ typedef struct {
     H2MirSymbolRef* symbols;
     uint32_t        symbolLen;
     uint32_t        symbolCap;
+    H2MirCapture*   captures;
+    uint32_t        captureLen;
+    uint32_t        captureCap;
     uint32_t        openFunc;
     uint8_t         hasOpenFunc;
     uint8_t         _reserved[3];
@@ -527,6 +546,10 @@ int H2MirProgramBuilderAddHost(
 int H2MirProgramBuilderAddSymbol(
     H2MirProgramBuilder* _Nonnull b,
     const H2MirSymbolRef* _Nonnull value,
+    uint32_t* _Nullable outIndex);
+int H2MirProgramBuilderAddCapture(
+    H2MirProgramBuilder* _Nonnull b,
+    const H2MirCapture* _Nonnull value,
     uint32_t* _Nullable outIndex);
 int H2MirProgramBuilderBeginFunction(
     H2MirProgramBuilder* _Nonnull b,

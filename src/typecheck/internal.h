@@ -114,6 +114,9 @@ typedef struct {
     int32_t  declNode;
     int32_t  defNode;
     int32_t  funcTypeId;
+    int32_t  ownerFnIndex;
+    uint32_t captureStart;
+    uint16_t captureCount;
     uint32_t templateArgStart;
     uint16_t templateArgCount;
     int16_t  templateRootFuncIndex;
@@ -130,7 +133,15 @@ enum {
     H2TCFunctionFlag_TEMPLATE_HAS_ANYPACK = 1u << 3,
     H2TCFunctionFlag_INTERNAL = 1u << 4,
     H2TCFunctionFlag_LOCAL = 1u << 5,
+    H2TCFunctionFlag_CAPTURING = 1u << 6,
 };
+
+typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    int32_t  typeId;
+    int32_t  ownerFnIndex;
+} H2TCFunctionCapture;
 
 enum {
     H2TCFuncParamFlag_CONST = 1u << 0,
@@ -246,11 +257,14 @@ typedef struct {
     uint32_t       namedTypeLen;
     uint32_t       namedTypeCap;
 
-    H2TCFunction* funcs;
-    uint32_t      funcLen;
-    uint32_t      funcCap;
-    uint8_t*      funcUsed;
-    uint32_t      funcUsedCap;
+    H2TCFunction*        funcs;
+    uint32_t             funcLen;
+    uint32_t             funcCap;
+    uint8_t*             funcUsed;
+    uint32_t             funcUsedCap;
+    H2TCFunctionCapture* functionCaptures;
+    uint32_t             functionCaptureLen;
+    uint32_t             functionCaptureCap;
 
     int32_t*  funcParamTypes;
     uint32_t* funcParamNameStarts;

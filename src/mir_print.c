@@ -144,6 +144,10 @@ static const char* H2MirOpName(H2MirOp op) {
         case H2MirOp_CALL_FN:         return "CALL_FN";
         case H2MirOp_CALL_HOST:       return "CALL_HOST";
         case H2MirOp_CALL_INDIRECT:   return "CALL_INDIRECT";
+        case H2MirOp_MAKE_CLOSURE:    return "MAKE_CLOSURE";
+        case H2MirOp_CAPTURE_LOAD:    return "CAPTURE_LOAD";
+        case H2MirOp_CAPTURE_STORE:   return "CAPTURE_STORE";
+        case H2MirOp_CAPTURE_ADDR:    return "CAPTURE_ADDR";
         case H2MirOp_DEREF_LOAD:      return "DEREF_LOAD";
         case H2MirOp_DEREF_STORE:     return "DEREF_STORE";
         case H2MirOp_ADDR_OF:         return "ADDR_OF";

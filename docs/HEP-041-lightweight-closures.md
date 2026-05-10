@@ -164,9 +164,10 @@ not to go through a function value may still lower to the backend's normal direc
 
 ## Capturing locals
 
-When a function captures runtime locals from an enclosing function, the compiler moves those locals
-into a compiler-generated closure struct. Captured reads and writes become field accesses through
-that struct.
+When a function captures runtime locals from an enclosing function, the compiler gives the closure
+entry access to those locals through a compiler-generated closure struct. A backend may move captured
+locals into that struct, or may store pointers to the original local storage when that preserves the
+same lifetime and mutation behavior.
 
 Source:
 
@@ -204,7 +205,7 @@ fn _main_f$value(z int, data rawptr) int {
 }
 ```
 
-This lowering preserves mutation: `x += 1` mutates the closure field, not a stale copy.
+This lowering preserves mutation: `x += 1` mutates the captured storage, not a stale copy.
 
 If a captured local is also used directly in the enclosing function after the closure is formed, the
 direct uses also refer to the closure field:
@@ -221,8 +222,9 @@ fn main() {
 }
 ```
 
-Conceptually, once `x` is captured, `x` is stored in the closure struct for the remainder of its
-scope. The source name `x` continues to behave like a local variable.
+Conceptually, once `x` is captured, the closure and the enclosing function share the same logical
+storage for `x` for the remainder of its scope. The source name `x` continues to behave like a local
+variable.
 
 ## Capture eligibility
 

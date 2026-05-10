@@ -1,1 +1,0 @@
-tests/local_fn_capture_param_bad.hop:3:10: error: HOP2118: anonymous function cannot capture local runtime binding 'x'

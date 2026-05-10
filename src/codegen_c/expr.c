@@ -651,6 +651,98 @@ static int TypeRefIsFunctionAlias(const H2CBackendC* c, const H2TypeRef* type) {
         && FindFnTypeAliasByName(c, type->baseName) != NULL;
 }
 
+static const H2FnSig* _Nullable FindFunctionValueSigForIdent(
+    H2CBackendC* c, const H2AstNode* ident, const H2FnTypeAlias* alias) {
+    uint32_t i;
+    if (ident == NULL || alias == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        uint32_t       p;
+        int            same = 1;
+        if ((sig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) != 0 || sig->hasContext
+            || sig->isVariadic || sig->paramLen != alias->paramLen
+            || !SliceEqName(c->unit->source, ident->dataStart, ident->dataEnd, sig->hopName)
+            || !TypeRefEqual(&sig->returnType, &alias->returnType))
+        {
+            continue;
+        }
+        for (p = 0; p < alias->paramLen; p++) {
+            if (!TypeRefEqual(&sig->paramTypes[p], &alias->paramTypes[p])) {
+                same = 0;
+                break;
+            }
+        }
+        if (same) {
+            return sig;
+        }
+    }
+    return NULL;
+}
+
+static int EmitFunctionValueDataLiteral(H2CBackendC* c, const H2FnSig* sig) {
+    const H2TypeCheckCtx* tc;
+    const H2TCFunction*   fn;
+    char*                 closureType;
+    uint32_t              i;
+    if (sig == NULL || c->constEval == NULL || sig->tcFuncIndex == UINT32_MAX
+        || sig->tcFuncIndex >= c->constEval->tc.funcLen)
+    {
+        return BufAppendCStr(&c->out, "((void*)0)");
+    }
+    tc = &c->constEval->tc;
+    fn = &tc->funcs[sig->tcFuncIndex];
+    if ((fn->flags & H2TCFunctionFlag_CAPTURING) == 0 || fn->captureCount == 0u) {
+        return BufAppendCStr(&c->out, "((void*)0)");
+    }
+    closureType = BuildClosureTypeCName(c, sig->tcFuncIndex);
+    if (closureType == NULL) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((void*)&((") != 0 || BufAppendCStr(&c->out, closureType) != 0
+        || BufAppendCStr(&c->out, "){") != 0)
+    {
+        return -1;
+    }
+    for (i = 0; i < fn->captureCount; i++) {
+        const H2TCFunctionCapture* cap = &tc->functionCaptures[fn->captureStart + i];
+        if (i > 0 && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (BufAppendChar(&c->out, '.') != 0
+            || BufAppendSlice(&c->out, c->unit->source, cap->nameStart, cap->nameEnd) != 0
+            || BufAppendCStr(&c->out, " = &") != 0
+            || BufAppendSlice(&c->out, c->unit->source, cap->nameStart, cap->nameEnd) != 0)
+        {
+            return -1;
+        }
+    }
+    return BufAppendCStr(&c->out, "}))");
+}
+
+static int EmitFunctionValueLiteral(H2CBackendC* c, const H2TypeRef* dstType, const H2FnSig* sig) {
+    if (dstType == NULL || sig == NULL || dstType->baseName == NULL) {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, "((") != 0 || BufAppendCStr(&c->out, dstType->baseName) != 0
+        || BufAppendCStr(&c->out, "){ .code = ") != 0 || BufAppendCStr(&c->out, sig->cName) != 0)
+    {
+        return -1;
+    }
+    if ((sig->flags & H2FnSigFlag_FUNCTION_VALUE_ENTRY) == 0
+        && BufAppendCStr(&c->out, "__value") != 0)
+    {
+        return -1;
+    }
+    if (BufAppendCStr(&c->out, ", .data = ") != 0 || EmitFunctionValueDataLiteral(c, sig) != 0
+        || BufAppendCStr(&c->out, " })") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 int TypeRefAssignableCost(
     H2CBackendC* c, const H2TypeRef* dst, const H2TypeRef* src, uint8_t* outCost) {
     const H2FieldInfo* path[64];
@@ -4445,6 +4537,26 @@ int InferExprType_CALL_ARG(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H
     return InferExprType(c, inner, outType);
 }
 
+int InferExprType_ANON_FN(H2CBackendC* c, int32_t nodeId, const H2AstNode* n, H2TypeRef* outType) {
+    const H2FnSig* sig;
+    const char*    aliasName = NULL;
+    (void)n;
+    sig = FindFnSigByNodeId(c, nodeId);
+    if (sig == NULL) {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    if (EnsureFnTypeAlias(
+            c, sig->returnType, sig->paramTypes, sig->paramLen, sig->isVariadic, &aliasName)
+        != 0)
+    {
+        TypeRefSetInvalid(outType);
+        return -1;
+    }
+    TypeRefSetScalar(outType, aliasName);
+    return 0;
+}
+
 static int ExprIsHoleIdent(H2CBackendC* c, int32_t nodeId) {
     const H2AstNode* n = NodeAt(c, nodeId);
     return n != NULL && n->kind == H2Ast_IDENT
@@ -4563,6 +4675,7 @@ int InferExprType(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
         case H2Ast_BINARY:            return InferExprType_BINARY(c, nodeId, n, outType);
         case H2Ast_TUPLE_EXPR:        return InferExprType_TUPLE_EXPR(c, nodeId, n, outType);
         case H2Ast_CALL_ARG:          return InferExprType_CALL_ARG(c, nodeId, n, outType);
+        case H2Ast_ANON_FN:           return InferExprType_ANON_FN(c, nodeId, n, outType);
         case H2Ast_TYPE_VALUE:        TypeRefSetScalar(outType, "__hop_type"); return 0;
         default:                      TypeRefSetInvalid(outType); return 0;
     }
@@ -7997,8 +8110,18 @@ int EmitExprCoerced(H2CBackendC* c, int32_t exprNode, const H2TypeRef* _Nullable
             return 0;
         }
     }
-    if (expr != NULL && expr->kind == H2Ast_IDENT && TypeRefIsFunctionAlias(c, dstType)) {
-        return EmitExpr(c, exprNode);
+    if (TypeRefIsFunctionAlias(c, dstType)) {
+        const H2FnTypeAlias* alias = FindFnTypeAliasByName(c, dstType->baseName);
+        if (expr != NULL && expr->kind == H2Ast_ANON_FN) {
+            const H2FnSig* sig = FindFnSigByNodeId(c, exprNode);
+            return EmitFunctionValueLiteral(c, dstType, sig);
+        }
+        if (expr != NULL && expr->kind == H2Ast_IDENT && alias != NULL) {
+            const H2FnSig* sig = FindFunctionValueSigForIdent(c, expr, alias);
+            if (sig != NULL) {
+                return EmitFunctionValueLiteral(c, dstType, sig);
+            }
+        }
     }
     if (InferExprType(c, exprNode, &srcType) != 0 || !srcType.valid) {
         if (TypeRefIsBorrowedStrValue(dstType) && expr != NULL && expr->kind == H2Ast_BINARY
@@ -8707,6 +8830,19 @@ int EmitFieldPathLValue(
 int EmitCompoundFieldValueCoerced(
     H2CBackendC* c, const H2AstNode* field, int32_t exprNode, const H2TypeRef* _Nullable dstType) {
     if (exprNode >= 0) {
+        const H2AstNode*     expr = NodeAt(c, exprNode);
+        const H2FnTypeAlias* alias =
+            dstType != NULL && dstType->baseName != NULL
+                ? FindFnTypeAliasByName(c, dstType->baseName)
+                : NULL;
+        if (field != NULL && expr != NULL && expr->kind == H2Ast_IDENT && alias != NULL
+            && SliceEq(c->unit->source, field->dataStart, field->dataEnd, "handler"))
+        {
+            const H2FnSig* sig = FindFunctionValueSigForIdent(c, expr, alias);
+            if (sig != NULL) {
+                return BufAppendCStr(&c->out, sig->cName);
+            }
+        }
         return EmitExprCoerced(c, exprNode, dstType);
     }
     if (field == NULL || (field->flags & H2AstFlag_COMPOUND_FIELD_SHORTHAND) == 0) {
@@ -9461,6 +9597,31 @@ int EmitExpr_IDENT(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         }
         return AppendMappedIdentifier(c, n->dataStart, n->dataEnd);
     }
+    if (c->currentFunctionValueEntry && c->constEval != NULL && c->activeTcFuncIndex != UINT32_MAX
+        && c->activeTcFuncIndex < c->constEval->tc.funcLen)
+    {
+        const H2TypeCheckCtx* tc = &c->constEval->tc;
+        const H2TCFunction*   fn = &tc->funcs[c->activeTcFuncIndex];
+        uint32_t              i;
+        for (i = 0; i < fn->captureCount; i++) {
+            const H2TCFunctionCapture* cap = &tc->functionCaptures[fn->captureStart + i];
+            if (cap->nameEnd - cap->nameStart == n->dataEnd - n->dataStart
+                && memcmp(
+                       c->unit->source + cap->nameStart,
+                       c->unit->source + n->dataStart,
+                       cap->nameEnd - cap->nameStart)
+                       == 0)
+            {
+                if (BufAppendCStr(&c->out, "(*__hop_cl->") != 0
+                    || BufAppendSlice(&c->out, c->unit->source, cap->nameStart, cap->nameEnd) != 0
+                    || BufAppendChar(&c->out, ')') != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+        }
+    }
     if (FindFnSigBySlice(c, n->dataStart, n->dataEnd) != NULL
         || FindTopLevelVarLikeNodeBySlice(c, n->dataStart, n->dataEnd, &topVarLikeNode) == 0)
     {
@@ -10058,6 +10219,45 @@ int EmitExpr_CALL_WITH_CONTEXT(H2CBackendC* c, int32_t nodeId, const H2AstNode* 
     rc = EmitExpr(c, callNode);
     c->activeCallWithNode = savedActive;
     return rc;
+}
+
+static int IsBuiltinRawFunctionPointerField(H2CBackendC* c, int32_t fieldExprNode) {
+    const H2AstNode* field = NodeAt(c, fieldExprNode);
+    int32_t          recvNode;
+    H2TypeRef        recvType;
+    if (field == NULL || field->kind != H2Ast_FIELD_EXPR) {
+        return 0;
+    }
+    recvNode = AstFirstChild(&c->ast, fieldExprNode);
+    if (recvNode < 0 || InferExprType(c, recvNode, &recvType) != 0 || !recvType.valid
+        || recvType.baseName == NULL)
+    {
+        return 0;
+    }
+    if (!SliceEq(c->unit->source, field->dataStart, field->dataEnd, "handler")) {
+        return 0;
+    }
+    return StrEq(recvType.baseName, "__hop_Logger") || StrEq(recvType.baseName, "__hop_Allocator");
+}
+
+static int EmitRawFunctionPointerCall(H2CBackendC* c, int32_t callNode, int32_t calleeNode) {
+    int32_t arg = AstNextSibling(&c->ast, calleeNode);
+    int     first = 1;
+    (void)callNode;
+    if (EmitExpr(c, calleeNode) != 0 || BufAppendChar(&c->out, '(') != 0) {
+        return -1;
+    }
+    while (arg >= 0) {
+        if (!first && BufAppendCStr(&c->out, ", ") != 0) {
+            return -1;
+        }
+        if (EmitExpr(c, arg) != 0) {
+            return -1;
+        }
+        first = 0;
+        arg = AstNextSibling(&c->ast, arg);
+    }
+    return BufAppendChar(&c->out, ')');
 }
 
 int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
@@ -10844,6 +11044,38 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
                 }
             }
         }
+        if (sig == NULL && callee != NULL && callee->kind == H2Ast_FIELD_EXPR
+            && IsBuiltinRawFunctionPointerField(c, child))
+        {
+            return EmitRawFunctionPointerCall(c, nodeId, child);
+        }
+        if (sig == NULL && typeAlias != NULL) {
+            int32_t arg = AstNextSibling(&c->ast, child);
+            if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __hop_fn = ") != 0
+                || EmitExpr(c, child) != 0 || BufAppendCStr(&c->out, "; __hop_fn.code(") != 0)
+            {
+                return -1;
+            }
+            while (arg >= 0) {
+                if (!first && BufAppendCStr(&c->out, ", ") != 0) {
+                    return -1;
+                }
+                if (argIndex < typeAlias->paramLen) {
+                    if (EmitExprCoerced(c, arg, &typeAlias->paramTypes[argIndex]) != 0) {
+                        return -1;
+                    }
+                } else if (EmitExpr(c, arg) != 0) {
+                    return -1;
+                }
+                first = 0;
+                argIndex++;
+                arg = AstNextSibling(&c->ast, arg);
+            }
+            if (!first && BufAppendCStr(&c->out, ", ") != 0) {
+                return -1;
+            }
+            return BufAppendCStr(&c->out, "__hop_fn.data); }))");
+        }
         if ((callee != NULL && callee->kind == H2Ast_IDENT
              && (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print")
                  || (FindNameBySlice(c, callee->dataStart, callee->dataEnd) != NULL
@@ -11349,6 +11581,17 @@ int EmitExpr_TUPLE_EXPR(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     return BufAppendCStr(&c->out, "})");
 }
 
+int EmitExpr_ANON_FN(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
+    H2TypeRef      type;
+    const H2FnSig* sig;
+    (void)n;
+    if (InferExprType(c, nodeId, &type) != 0 || !TypeRefIsFunctionAlias(c, &type)) {
+        return -1;
+    }
+    sig = FindFnSigByNodeId(c, nodeId);
+    return EmitFunctionValueLiteral(c, &type, sig);
+}
+
 int EmitExpr(H2CBackendC* c, int32_t nodeId) {
     const H2AstNode* n = NodeAt(c, nodeId);
     int              rc;
@@ -11377,6 +11620,7 @@ int EmitExpr(H2CBackendC* c, int32_t nodeId) {
         case H2Ast_NULL:              rc = EmitExpr_NULL(c, nodeId, n); break;
         case H2Ast_UNWRAP:            rc = EmitExpr_UNWRAP(c, nodeId, n); break;
         case H2Ast_TUPLE_EXPR:        rc = EmitExpr_TUPLE_EXPR(c, nodeId, n); break;
+        case H2Ast_ANON_FN:           rc = EmitExpr_ANON_FN(c, nodeId, n); break;
         case H2Ast_CALL_ARG:          rc = EmitExpr_CALL_ARG(c, nodeId, n); break;
         case H2Ast_TYPE_VALUE:        {
             H2TypeRef reflectedType;
@@ -11519,6 +11763,29 @@ int EmitBlockImpl(H2CBackendC* c, int32_t nodeId, uint32_t depth, int inlineOpen
         PopDeferScope(c);
         PopScope(c);
         return -1;
+    }
+    if (inlineOpen && c->currentFunctionValueEntry && c->constEval != NULL
+        && c->activeTcFuncIndex != UINT32_MAX && c->activeTcFuncIndex < c->constEval->tc.funcLen)
+    {
+        const H2TCFunction* fn = &c->constEval->tc.funcs[c->activeTcFuncIndex];
+        if ((fn->flags & H2TCFunctionFlag_CAPTURING) != 0 && fn->captureCount > 0u) {
+            char* closureType = BuildClosureTypeCName(c, c->activeTcFuncIndex);
+            if (closureType == NULL) {
+                PopDeferScope(c);
+                PopScope(c);
+                return -1;
+            }
+            EmitIndent(c, depth + 1u);
+            if (BufAppendCStr(&c->out, closureType) != 0
+                || BufAppendCStr(&c->out, "* __hop_cl = (") != 0
+                || BufAppendCStr(&c->out, closureType) != 0
+                || BufAppendCStr(&c->out, "*)__hop_data;\n") != 0)
+            {
+                PopDeferScope(c);
+                PopScope(c);
+                return -1;
+            }
+        }
     }
     while (child >= 0) {
         if (EmitStmt(c, child, depth + 1u) != 0) {
@@ -11804,6 +12071,39 @@ int EmitVarLikeStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth, int isConst)
         }
         return 0;
     }
+}
+
+int EmitLocalFunctionStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
+    const H2AstNode* n = NodeAt(c, nodeId);
+    const H2FnSig*   sig;
+    const char*      aliasName = NULL;
+    char*            name;
+    H2TypeRef        type;
+    if (n == NULL || n->kind != H2Ast_FN) {
+        return -1;
+    }
+    sig = FindFnSigByNodeId(c, nodeId);
+    if (sig == NULL) {
+        return -1;
+    }
+    name = DupSlice(c, c->unit->source, n->dataStart, n->dataEnd);
+    if (name == NULL) {
+        return -1;
+    }
+    if (EnsureFnTypeAlias(
+            c, sig->returnType, sig->paramTypes, sig->paramLen, sig->isVariadic, &aliasName)
+        != 0)
+    {
+        return -1;
+    }
+    TypeRefSetScalar(&type, aliasName);
+    EmitIndent(c, depth);
+    if (EmitTypeRefWithName(c, &type, name) != 0 || BufAppendCStr(&c->out, " = ") != 0
+        || EmitFunctionValueLiteral(c, &type, sig) != 0 || BufAppendCStr(&c->out, ";\n") != 0)
+    {
+        return -1;
+    }
+    return AddLocal(c, name, type);
 }
 
 int EmitMultiAssignStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
@@ -13446,6 +13746,7 @@ int EmitStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
         case H2Ast_BLOCK:        return EmitBlock(c, nodeId, depth);
         case H2Ast_VAR:          return EmitVarLikeStmt(c, nodeId, depth, 0);
         case H2Ast_CONST:        return EmitVarLikeStmt(c, nodeId, depth, 1);
+        case H2Ast_FN:           return EmitLocalFunctionStmt(c, nodeId, depth);
         case H2Ast_CONST_BLOCK:  return 0;
         case H2Ast_MULTI_ASSIGN: return EmitMultiAssignStmt(c, nodeId, depth);
         case H2Ast_SHORT_ASSIGN: return EmitShortAssignStmt(c, nodeId, depth);

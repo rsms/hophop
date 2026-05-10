@@ -1,11 +1,8 @@
-// Anonymous functions are ordinary function values, not closures.
-// They can be assigned, passed, returned, stored, and called indirectly.
+// Anonymous functions are ordinary function values.
+// They can be assigned, passed, returned when non-capturing, stored, and called indirectly.
+// They can also capture enclosing locals when the closure does not escape its stack scope.
 struct Step {
 	apply fn(int) int
-}
-
-const add1 = fn(x int) int {
-	return x + 1
 }
 
 fn run_step(x int, step Step) int {
@@ -16,6 +13,10 @@ fn apply_twice(x int, f fn(int) int) int {
 	return f(f(x))
 }
 
+fn keep_value(x int, keep fn(int) bool) bool {
+	return keep(x)
+}
+
 fn make_triple() fn(int) int {
 	return fn(x) {
 		return x * 3
@@ -23,27 +24,56 @@ fn make_triple() fn(int) int {
 }
 
 fn main() {
-	var double fn(int) int = fn(x) {
+	var twice fn(int) int = fn(x) {
 		return x * 2
 	}
 
+	offset := 10
 	shift := fn(x int) int {
-		return x + 10
+		return x + offset
 	}
 
 	step := Step{
-		apply: double,
+		apply: twice,
+	}
+
+	const add1 = fn(x int) int {
+		return x + 1
 	}
 
 	fn square(x int) int {
 		return x * x
 	}
 
+	threshold := 40
+	is_large := fn(x int) bool {
+		return x > threshold
+	}
+
+	count := 0
+	next_count := fn() int {
+		count += 1
+		return count
+	}
+
+	total := 0
+	fn add_to_total(x int) int {
+		total += x
+		return total
+	}
+
 	assert add1(41) == 42
-	assert double(21) == 42
+	assert twice(21) == 42
 	assert shift(32) == 42
 	assert run_step(21, step) == 42
 	assert apply_twice(10, f: add1) == 12
 	assert make_triple()(14) == 42
 	assert square(7) == 49
+	assert keep_value(42, keep: is_large)
+	assert next_count() == 1
+	assert next_count() == 2
+	assert count == 2
+	assert add_to_total(10) == 10
+	assert add_to_total(32) == 42
+	assert total == 42
 }

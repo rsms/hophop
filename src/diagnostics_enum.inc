@@ -171,13 +171,15 @@ H2Diag_NONE = 0, H2Diag_UNEXPECTED_CHAR, /* HOP1001: unexpected character */
                                                      storage requires const-evaluable elements */
     H2Diag_ARRAY_LITERAL_MUT_REF_FORBIDDEN,       /* HOP2115: array literal cannot bind to mutable
                                                      reference or pointer storage */
-    H2Diag_PARAM_ANON_AFTER_NAMED,       /* HOP2116: anonymous parameter '{s}' cannot follow named
-                                            parameter '{s}' */
-    H2Diag_RETURN_VALUE_NOT_HANDLED,     /* HOP2117: return value of type {s} not handled */
-    H2Diag_ANON_FN_CAPTURE_FORBIDDEN,    /* HOP2118: anonymous function cannot capture local runtime
-                                            binding '{s}' */
-    H2Diag_CODEGEN_INTERNAL,             /* HOP3001: internal codegen error */
-    H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, /* HOP3002: Wasm backend does not support this MIR */
+    H2Diag_PARAM_ANON_AFTER_NAMED,    /* HOP2116: anonymous parameter '{s}' cannot follow named
+                                         parameter '{s}' */
+    H2Diag_RETURN_VALUE_NOT_HANDLED,  /* HOP2117: return value of type {s} not handled */
+    H2Diag_ANON_FN_CAPTURE_FORBIDDEN, /* HOP2118: anonymous function cannot capture local runtime
+                                         binding '{s}' */
+    H2Diag_CLOSURE_ESCAPE_FORBIDDEN, /* HOP2119: capturing function value cannot escape its defining
+                                        scope */
+    H2Diag_CODEGEN_INTERNAL,         /* HOP3001: internal codegen error */
+    H2Diag_WASM_BACKEND_UNSUPPORTED_MIR,      /* HOP3002: Wasm backend does not support this MIR */
     H2Diag_WASM_BACKEND_UNSUPPORTED_HOSTCALL, /* HOP3003: Wasm backend does not support this
                                                  hostcall */
     H2Diag_WASM_BACKEND_PLATFORM_REQUIRED, /* HOP3004: Wasm backend requires a platform target for

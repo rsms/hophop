@@ -221,6 +221,7 @@ int H2MirLowerAppendZeroInitTypeFunction(
     function.sourceRef = sourceIndex;
     function.nameStart = typeAst->start;
     function.nameEnd = typeAst->end;
+    function.astNode = (uint32_t)typeNode;
     function.typeRef = typeIndex;
     if (H2MirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
         H2MirLowerPkgSetDiag(diag, H2Diag_ARENA_OOM, typeAst->start, typeAst->end);
@@ -347,6 +348,125 @@ int H2MirLowerAppendTopInitFunction(
     return 0;
 }
 
+static int H2MirLowerAppendAnonFunctionValueTopInitFunction(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   initExprNode,
+    int32_t   declTypeNode,
+    const H2MirLowerOptions* _Nonnull options,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag) {
+    H2MirFunction  function = { 0 };
+    H2MirSourceRef sourceRef = { 0 };
+    H2MirConst     functionConst = { 0 };
+    uint32_t       sourceIndex = UINT32_MAX;
+    uint32_t       functionIndex = UINT32_MAX;
+    uint32_t       targetFunctionIndex = UINT32_MAX;
+    uint32_t       captureStart = UINT32_MAX;
+    uint32_t       captureCount = 0;
+    uint32_t       constIndex = UINT32_MAX;
+    int            functionValueSupported = 0;
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (builder == NULL || arena == NULL || ast == NULL || outFunctionIndex == NULL
+        || outSupported == NULL || options == NULL || options->lowerFunctionValue == NULL
+        || initExprNode < 0 || (uint32_t)initExprNode >= ast->len)
+    {
+        H2MirLowerPkgSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
+    }
+    if (options->lowerFunctionValue(
+            options->lowerFunctionValueCtx,
+            initExprNode,
+            &targetFunctionIndex,
+            &captureStart,
+            &captureCount,
+            &functionValueSupported,
+            diag)
+        != 0)
+    {
+        return -1;
+    }
+    (void)captureStart;
+    if (!functionValueSupported || targetFunctionIndex == UINT32_MAX || captureCount != 0u) {
+        return 0;
+    }
+    sourceRef.src = src;
+    if (H2MirProgramBuilderAddSource(builder, &sourceRef, &sourceIndex) != 0) {
+        H2MirLowerPkgSetDiag(
+            diag, H2Diag_ARENA_OOM, ast->nodes[initExprNode].start, ast->nodes[initExprNode].end);
+        return -1;
+    }
+    function.sourceRef = sourceIndex;
+    function.typeRef = UINT32_MAX;
+    function.astNode = UINT32_MAX;
+    if (declTypeNode >= 0) {
+        H2MirTypeRef typeRef = {
+            .astNode = (uint32_t)declTypeNode,
+            .sourceRef = sourceIndex,
+            .flags = 0,
+            .aux = 0,
+        };
+        if (H2MirProgramBuilderAddType(builder, &typeRef, &function.typeRef) != 0) {
+            H2MirLowerPkgSetDiag(
+                diag,
+                H2Diag_ARENA_OOM,
+                ast->nodes[declTypeNode].start,
+                ast->nodes[declTypeNode].end);
+            return -1;
+        }
+    }
+    if (H2MirProgramBuilderBeginFunction(builder, &function, &functionIndex) != 0) {
+        H2MirLowerPkgSetDiag(
+            diag, H2Diag_ARENA_OOM, ast->nodes[initExprNode].start, ast->nodes[initExprNode].end);
+        return -1;
+    }
+    functionConst.kind = H2MirConst_FUNCTION;
+    functionConst.aux = targetFunctionIndex;
+    functionConst.bits = targetFunctionIndex;
+    if (H2MirProgramBuilderAddConst(builder, &functionConst, &constIndex) != 0
+        || H2MirProgramBuilderAppendInst(
+               builder,
+               &(H2MirInst){
+                   .op = H2MirOp_PUSH_CONST,
+                   .aux = constIndex,
+                   .start = ast->nodes[initExprNode].start,
+                   .end = ast->nodes[initExprNode].end,
+               })
+               != 0
+        || H2MirProgramBuilderAppendInst(
+               builder,
+               &(H2MirInst){
+                   .op = H2MirOp_RETURN,
+                   .start = ast->nodes[initExprNode].start,
+                   .end = ast->nodes[initExprNode].end,
+               })
+               != 0)
+    {
+        H2MirLowerPkgSetDiag(
+            diag, H2Diag_ARENA_OOM, ast->nodes[initExprNode].start, ast->nodes[initExprNode].end);
+        return -1;
+    }
+    if (H2MirProgramBuilderEndFunction(builder) != 0) {
+        H2MirLowerPkgSetDiag(
+            diag,
+            H2Diag_UNEXPECTED_TOKEN,
+            ast->nodes[initExprNode].start,
+            ast->nodes[initExprNode].end);
+        return -1;
+    }
+    *outFunctionIndex = functionIndex;
+    *outSupported = 1;
+    return 0;
+}
+
 int H2MirLowerAppendNamedTopInitFunction(
     H2MirProgramBuilder* _Nonnull builder,
     H2Arena* _Nonnull arena,
@@ -382,7 +502,7 @@ int H2MirLowerAppendNamedTopInitFunction(
     return 0;
 }
 
-int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+int H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
     H2MirProgramBuilder* _Nonnull builder,
     H2Arena* _Nonnull arena,
     const H2Ast* _Nonnull ast,
@@ -390,6 +510,7 @@ int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
     int32_t   varLikeNode,
     uint32_t  nameStart,
     uint32_t  nameEnd,
+    const H2MirLowerOptions* _Nullable options,
     uint32_t* _Nonnull outFunctionIndex,
     int* _Nonnull outSupported,
     H2Diag* _Nullable diag) {
@@ -420,6 +541,33 @@ int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
         return 0;
     }
     initExprNode = H2MirLowerPkgVarLikeInitExprNodeAt(ast, varLikeNode, nameIndex);
+    if (initExprNode >= 0 && (uint32_t)initExprNode < ast->len
+        && ast->nodes[initExprNode].kind == H2Ast_ANON_FN && options != NULL
+        && options->lowerFunctionValue != NULL)
+    {
+        if (H2MirLowerAppendAnonFunctionValueTopInitFunction(
+                builder,
+                arena,
+                ast,
+                src,
+                initExprNode,
+                parts.typeNode,
+                options,
+                outFunctionIndex,
+                outSupported,
+                diag)
+            != 0)
+        {
+            return -1;
+        }
+        if (*outSupported && *outFunctionIndex != UINT32_MAX && nameEnd > nameStart
+            && *outFunctionIndex < builder->funcLen)
+        {
+            builder->funcs[*outFunctionIndex].nameStart = nameStart;
+            builder->funcs[*outFunctionIndex].nameEnd = nameEnd;
+        }
+        return 0;
+    }
     return H2MirLowerAppendNamedTopInitFunction(
         builder,
         arena,
@@ -429,6 +577,31 @@ int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
         parts.typeNode,
         nameStart,
         nameEnd,
+        outFunctionIndex,
+        outSupported,
+        diag);
+}
+
+int H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+    H2MirProgramBuilder* _Nonnull builder,
+    H2Arena* _Nonnull arena,
+    const H2Ast* _Nonnull ast,
+    H2StrView src,
+    int32_t   varLikeNode,
+    uint32_t  nameStart,
+    uint32_t  nameEnd,
+    uint32_t* _Nonnull outFunctionIndex,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag) {
+    return H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
+        builder,
+        arena,
+        ast,
+        src,
+        varLikeNode,
+        nameStart,
+        nameEnd,
+        NULL,
         outFunctionIndex,
         outSupported,
         diag);

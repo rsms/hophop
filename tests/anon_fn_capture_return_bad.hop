@@ -1,0 +1,7 @@
+fn make_counter() fn() int {
+	x := 0
+	return fn() int {
+		x += 1
+		return x
+	}
+}

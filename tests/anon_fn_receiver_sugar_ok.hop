@@ -3,8 +3,9 @@ fn apply_twice(f fn(int) int, x int) int {
 }
 
 fn main() {
+	offset := 10
 	shift := fn(x int) int {
-		return x + 10
+		return x + offset
 	}
 	assert shift.apply_twice(3) == 23
 }

@@ -140,6 +140,7 @@
 {"id": "HOP2116", "name": "PARAM_ANON_AFTER_NAMED", "category": "semantic", "message": "anonymous parameter '{s}' cannot follow named parameter '{s}'"}
 {"id": "HOP2117", "name": "RETURN_VALUE_NOT_HANDLED", "category": "semantic", "message": "return value of type {s} not handled", "hint": "insert '_ = ' to discard return value"}
 {"id": "HOP2118", "name": "ANON_FN_CAPTURE_FORBIDDEN", "category": "semantic", "message": "anonymous function cannot capture local runtime binding '{s}'"}
+{"id": "HOP2119", "name": "CLOSURE_ESCAPE_FORBIDDEN", "category": "semantic", "message": "capturing function value cannot escape its defining scope"}
 {"id": "HOP3001", "name": "CODEGEN_INTERNAL", "category": "codegen", "message": "internal codegen error"}
 {"id": "HOP3002", "name": "WASM_BACKEND_UNSUPPORTED_MIR", "category": "codegen", "message": "Wasm backend does not support this MIR"}
 {"id": "HOP3003", "name": "WASM_BACKEND_UNSUPPORTED_HOSTCALL", "category": "codegen", "message": "Wasm backend does not support this hostcall"}

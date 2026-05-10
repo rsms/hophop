@@ -566,6 +566,7 @@ int H2MirLowerAppendExprAsFunction(
     function.typeRef = UINT32_MAX;
     function.nameStart = 0;
     function.nameEnd = 0;
+    function.astNode = UINT32_MAX;
     if (resultTypeNode >= 0) {
         const H2AstNode* typeNode = &ast->nodes[resultTypeNode];
         typeRef.astNode = (uint32_t)resultTypeNode;

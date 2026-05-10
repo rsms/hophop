@@ -6,9 +6,23 @@ H2_API_BEGIN
 typedef int (*H2MirLowerConstExprFn)(
     void* _Nullable ctx, int32_t exprNode, H2MirConst* _Nonnull outValue, H2Diag* _Nullable diag);
 
+typedef int (*H2MirLowerFunctionValueFn)(
+    void* _Nullable ctx,
+    int32_t nodeId,
+    uint32_t* _Nonnull outFunctionIndex,
+    uint32_t* _Nonnull outCaptureStart,
+    uint32_t* _Nonnull outCaptureCount,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag);
+
 typedef struct {
     H2MirLowerConstExprFn _Nullable lowerConstExpr;
     void* _Nullable lowerConstExprCtx;
+    H2MirLowerFunctionValueFn _Nullable lowerFunctionValue;
+    void* _Nullable lowerFunctionValueCtx;
+    const H2MirCapture* _Nullable captures;
+    uint32_t captureCount;
+    int      functionValueEntry;
 } H2MirLowerOptions;
 
 int H2MirLowerSimpleFunction(

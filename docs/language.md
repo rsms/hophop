@@ -436,10 +436,10 @@ fn f() {
 - [EXPR-UNWRAP-001][Stable] `x!` requires `x : ?T` and yields `T`.
 - [EXPR-UNWRAP-002][Stable] Unwrapping `null` is a runtime trap (panic), never undefined behavior.
 - [EXPR-ADD-001][Provisional] String `+` currently supports compile-time concatenation only for non-parenthesized literal chains (e.g. `"a" + "b" + "c"`). Other string `+` forms are invalid in `Reference-hop`.
-- [EXPR-FN-001][Provisional] `fn(...) [Result] Block` in expression context forms an anonymous function value. Anonymous functions are ordinary non-closure function values.
+- [EXPR-FN-001][Provisional] `fn(...) [Result] Block` in expression context forms an anonymous function value. Function values use a uniform `(code, data)` representation; non-capturing functions use null data, and capturing anonymous functions use implementation-managed stack closure data.
 - [EXPR-FN-002][Provisional] Anonymous function parameter types may be omitted only when a concrete expected `fn(...) R` type supplies them. Without an expected function type, every parameter type is required.
 - [EXPR-FN-003][Provisional] Anonymous function result types may be omitted only when a concrete expected `fn(...) R` type supplies the result. Without an expected function type, omitted result means `void`.
-- [EXPR-FN-004][Provisional] Anonymous functions may reference package-scope variables and visible constants, but MUST NOT reference enclosing runtime locals, parameters, or loop bindings.
+- [EXPR-FN-004][Provisional] Anonymous functions may reference package-scope variables, visible constants, and enclosing runtime bindings that can be captured by a non-escaping stack closure. Capturing function values MUST NOT escape the defining runtime scope.
 - [EXPR-FN-005][Provisional] Anonymous functions cannot declare type parameters.
 
 ### 6.1 Comparable and ordered types
@@ -566,7 +566,7 @@ fn f() {
 
 - [STMT-EXPR-001][Stable] A function call used as a bare expression statement must return `void`. A non-`void` call result must be used or explicitly discarded with `_ = call(...)`.
 - [STMT-FN-001][Provisional] `fn name(...) [Result] Block` inside a block declares an immutable local function value visible after the declaration.
-- [STMT-FN-002][Provisional] Local named functions are non-closures; they follow the same capture restrictions as anonymous functions.
+- [STMT-FN-002][Provisional] Local named functions follow the same stack-closure capture and escape rules as anonymous functions.
 - [STMT-FN-003][Provisional] Local named functions require explicit parameter types, a body, and no type parameter list. Duplicate local function names in the same visible local scope are invalid.
 - [STMT-IF-001][Stable] `if` condition MUST be bool or optional.
 - [STMT-IF-002][Provisional] In const-evaluated statement contexts and template-instance function bodies, if-condition expressions that are const-evaluable booleans specialize branch checking: only the taken branch is required to typecheck.

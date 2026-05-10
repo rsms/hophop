@@ -224,6 +224,8 @@ typedef struct HOPEvalMirExecCtx {
     uint32_t                    evalToMirLen;
     uint32_t*                   mirToEval;
     uint32_t                    mirToEvalLen;
+    uint32_t*                   tcToMir;
+    uint32_t                    tcToMirLen;
     const H2ParsedFile**        sourceFiles;
     uint32_t                    sourceFileCap;
     const H2ParsedFile*         savedFiles[H2_EVAL_CALL_MAX_DEPTH];
@@ -331,6 +333,11 @@ int HOPEvalMirBuildTopInitProgram(
     int*                outSupported);
 void HOPEvalMirAdaptOutValue(
     const HOPEvalMirExecCtx* c, H2CTFEValue* _Nullable value, int* _Nullable inOutIsConst);
+int HOPEvalMirResolveFunctionValueExpr(
+    const HOPEvalMirExecCtx* _Nullable c,
+    const H2ParsedFile* _Nonnull file,
+    int32_t exprNode,
+    uint32_t* _Nonnull outMirFnIndex);
 int HOPEvalTryMirEvalExprWithType(
     HOPEvalProgram*     p,
     const H2ParsedFile* file,

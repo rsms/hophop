@@ -98,6 +98,14 @@ typedef struct {
     uint32_t cap;
 } H2MirTcFunctionMap;
 
+typedef struct {
+    const H2Package*           pkg;
+    const H2ParsedFile*        file;
+    const H2TypeCheckCtx*      tc;
+    const H2MirProgramBuilder* builder;
+    const H2MirTcFunctionMap*  tcFnMap;
+} H2MirFunctionValueResolveCtx;
+
 static const H2SymbolDecl* _Nullable FindPackageTypeDeclBySlice(
     const H2Package* pkg, const char* src, uint32_t start, uint32_t end);
 static int PatchMirFunctionTypeRefsFromTC(
@@ -109,6 +117,65 @@ static int PatchMirFunctionTypeRefsFromTC(
     const H2TypeCheckCtx*  tc,
     uint32_t               tcFnIndex,
     uint32_t               mirFnIndex);
+static int FindMirTcFunctionDecl(
+    const H2MirTcFunctionMap* map,
+    const H2Package*          pkg,
+    const H2ParsedFile*       file,
+    uint32_t                  tcFnIndex,
+    uint32_t* _Nonnull outMirFnIndex);
+static int32_t FindTypecheckFunctionValueByNode(const H2TypeCheckCtx* tc, int32_t nodeId);
+
+static int ResolveMirFunctionValueNode(
+    void* _Nullable ctx,
+    int32_t nodeId,
+    uint32_t* _Nonnull outFunctionIndex,
+    uint32_t* _Nonnull outCaptureStart,
+    uint32_t* _Nonnull outCaptureCount,
+    int* _Nonnull outSupported,
+    H2Diag* _Nullable diag) {
+    H2MirFunctionValueResolveCtx* r = (H2MirFunctionValueResolveCtx*)ctx;
+    int32_t                       tcFnIndex;
+    uint32_t                      mirFnIndex = UINT32_MAX;
+    (void)diag;
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = UINT32_MAX;
+    }
+    if (outCaptureStart != NULL) {
+        *outCaptureStart = UINT32_MAX;
+    }
+    if (outCaptureCount != NULL) {
+        *outCaptureCount = 0;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 0;
+    }
+    if (r == NULL || r->tc == NULL || r->tcFnMap == NULL) {
+        return 0;
+    }
+    tcFnIndex = FindTypecheckFunctionValueByNode(r->tc, nodeId);
+    if (tcFnIndex < 0) {
+        return 0;
+    }
+    if (!FindMirTcFunctionDecl(r->tcFnMap, r->pkg, r->file, (uint32_t)tcFnIndex, &mirFnIndex)) {
+        return 0;
+    }
+    if (outFunctionIndex != NULL) {
+        *outFunctionIndex = mirFnIndex;
+    }
+    if (outCaptureStart != NULL) {
+        *outCaptureStart =
+            r->builder != NULL && mirFnIndex < r->builder->funcLen
+                ? r->builder->funcs[mirFnIndex].captureStart
+                : UINT32_MAX;
+    }
+    if (outCaptureCount != NULL) {
+        *outCaptureCount = r->tc->funcs[(uint32_t)tcFnIndex].captureCount;
+    }
+    if (outSupported != NULL) {
+        *outSupported = 1;
+    }
+    return 0;
+}
 
 static int AddMirResolvedDecl(
     H2MirResolvedDeclMap* map,
@@ -221,6 +288,22 @@ static int32_t FindTypecheckFunctionByDeclNode(
         const H2TCFunction* fn = &tc->funcs[i];
         int isInstance = (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0 ? 1 : 0;
         if (fn->declNode == declNode && isInstance == wantTemplateInstance) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+static int32_t FindTypecheckFunctionValueByNode(const H2TypeCheckCtx* tc, int32_t nodeId) {
+    uint32_t i;
+    if (tc == NULL || nodeId < 0) {
+        return -1;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) != 0
+            && (fn->declNode == nodeId || fn->defNode == nodeId))
+        {
             return (int32_t)i;
         }
     }
@@ -800,6 +883,7 @@ static int AppendMirForeignImportDecl(
     }
     fn.nameStart = n->dataStart;
     fn.nameEnd = n->dataEnd;
+    fn.astNode = (uint32_t)nodeId;
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
     typeNode =
@@ -878,6 +962,7 @@ static int AppendMirPlaybitEntryHookWrapper(
     }
     fn.nameStart = n->dataStart;
     fn.nameEnd = n->dataEnd;
+    fn.astNode = (uint32_t)nodeId;
     fn.sourceRef = sourceIndex;
     fn.typeRef = UINT32_MAX;
     if (H2MirProgramBuilderBeginFunction(builder, &fn, outFunctionIndex) != 0) {
@@ -1032,13 +1117,24 @@ static int AppendMirDeclsFromFile(
             }
             bodyNode = FindFunctionBodyNode(file, child);
             if (bodyNode >= 0) {
-                if (H2MirLowerAppendSimpleFunction(
+                H2MirFunctionValueResolveCtx resolveCtx;
+                H2MirLowerOptions            options = { 0 };
+                memset(&resolveCtx, 0, sizeof(resolveCtx));
+                resolveCtx.pkg = pkg;
+                resolveCtx.file = file;
+                resolveCtx.tc = tc;
+                resolveCtx.builder = builder;
+                resolveCtx.tcFnMap = tcFnMap;
+                options.lowerFunctionValue = ResolveMirFunctionValueNode;
+                options.lowerFunctionValueCtx = &resolveCtx;
+                if (H2MirLowerAppendSimpleFunctionWithOptions(
                         builder,
                         arena,
                         ast,
                         src,
                         child,
                         bodyNode,
+                        &options,
                         &outFunctionIndex,
                         &supported,
                         &diag)
@@ -1140,18 +1236,28 @@ static int AppendMirDeclsFromFile(
                 uint32_t i;
                 uint32_t nameCount = AstListCount(ast, firstChild);
                 for (i = 0; i < nameCount; i++) {
-                    uint32_t         outFunctionIndex = UINT32_MAX;
-                    int32_t          nameNode = AstListItemAt(ast, firstChild, i);
-                    const H2AstNode* nameAst =
+                    H2MirFunctionValueResolveCtx resolveCtx;
+                    H2MirLowerOptions            options = { 0 };
+                    uint32_t                     outFunctionIndex = UINT32_MAX;
+                    int32_t                      nameNode = AstListItemAt(ast, firstChild, i);
+                    const H2AstNode*             nameAst =
                         (nameNode >= 0 && (uint32_t)nameNode < ast->len)
                             ? &ast->nodes[nameNode]
                             : NULL;
                     if (nameAst == NULL) {
                         return ErrorMirUnsupported(file, n, kindName, NULL);
                     }
+                    memset(&resolveCtx, 0, sizeof(resolveCtx));
+                    resolveCtx.pkg = pkg;
+                    resolveCtx.file = file;
+                    resolveCtx.tc = tc;
+                    resolveCtx.builder = builder;
+                    resolveCtx.tcFnMap = tcFnMap;
+                    options.lowerFunctionValue = ResolveMirFunctionValueNode;
+                    options.lowerFunctionValueCtx = &resolveCtx;
                     diag = (H2Diag){ 0 };
                     supported = 0;
-                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
                             builder,
                             arena,
                             ast,
@@ -1159,6 +1265,7 @@ static int AppendMirDeclsFromFile(
                             child,
                             nameAst->dataStart,
                             nameAst->dataEnd,
+                            &options,
                             &outFunctionIndex,
                             &supported,
                             &diag)
@@ -1193,7 +1300,17 @@ static int AppendMirDeclsFromFile(
                         return ErrorSimple("out of memory");
                     }
                 } else {
-                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySlice(
+                    H2MirFunctionValueResolveCtx resolveCtx;
+                    H2MirLowerOptions            options = { 0 };
+                    memset(&resolveCtx, 0, sizeof(resolveCtx));
+                    resolveCtx.pkg = pkg;
+                    resolveCtx.file = file;
+                    resolveCtx.tc = tc;
+                    resolveCtx.builder = builder;
+                    resolveCtx.tcFnMap = tcFnMap;
+                    options.lowerFunctionValue = ResolveMirFunctionValueNode;
+                    options.lowerFunctionValueCtx = &resolveCtx;
+                    if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
                             builder,
                             arena,
                             ast,
@@ -1201,6 +1318,7 @@ static int AppendMirDeclsFromFile(
                             child,
                             n->dataStart,
                             n->dataEnd,
+                            &options,
                             &outFunctionIndex,
                             &supported,
                             &diag)
@@ -1283,6 +1401,106 @@ static int AppendMirTemplateInstancesFromFile(
         if (!supported) {
             return ErrorMirUnsupported(
                 file, &file->ast.nodes[fn->declNode], "function body", &diag);
+        }
+        if (PatchMirFunctionTypeRefsFromTC(
+                arena, loader, builder, pkg, file, tc, i, outFunctionIndex)
+            != 0)
+        {
+            return ErrorSimple("out of memory");
+        }
+        if (AddMirTcFunctionDecl(tcFnMap, pkg, file, i, outFunctionIndex) != 0) {
+            return ErrorSimple("out of memory");
+        }
+    }
+    return 0;
+}
+
+static int AppendMirInternalFunctionValuesFromFile(
+    const H2PackageLoader* loader,
+    H2MirProgramBuilder*   builder,
+    H2Arena*               arena,
+    const H2Package*       pkg,
+    const H2ParsedFile*    file,
+    H2MirTcFunctionMap*    tcFnMap) {
+    H2TypeCheckCtx* tc =
+        file != NULL && file->hasTypecheckCtx ? (H2TypeCheckCtx*)file->typecheckCtx : NULL;
+    uint32_t i;
+    if (loader == NULL || builder == NULL || arena == NULL || pkg == NULL || file == NULL
+        || tcFnMap == NULL || tc == NULL)
+    {
+        return 0;
+    }
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction*          fn = &tc->funcs[i];
+        H2MirFunctionValueResolveCtx resolveCtx;
+        H2MirLowerOptions            options = { 0 };
+        H2MirCapture*                captures = NULL;
+        uint32_t                     outFunctionIndex = UINT32_MAX;
+        int32_t                      bodyNode;
+        H2Diag                       diag = { 0 };
+        int                          supported = 0;
+        uint32_t                     capIndex;
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) == 0 || fn->defNode < 0) {
+            continue;
+        }
+        if (FindMirTcFunctionDecl(tcFnMap, pkg, file, i, &outFunctionIndex)) {
+            continue;
+        }
+        bodyNode = FindFunctionBodyNode(file, fn->defNode);
+        if (bodyNode < 0) {
+            continue;
+        }
+        if (fn->captureCount > 0u) {
+            captures = (H2MirCapture*)H2ArenaAlloc(
+                arena, sizeof(H2MirCapture) * fn->captureCount, (uint32_t)_Alignof(H2MirCapture));
+            if (captures == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            for (capIndex = 0; capIndex < fn->captureCount; capIndex++) {
+                const H2TCFunctionCapture* cap = &tc->functionCaptures[fn->captureStart + capIndex];
+                captures[capIndex].nameStart = cap->nameStart;
+                captures[capIndex].nameEnd = cap->nameEnd;
+                captures[capIndex].typeRef = UINT32_MAX;
+                if (EnsureMirBuilderBuiltinTypeRefFromTC(
+                        builder, tc, cap->typeId, &captures[capIndex].typeRef)
+                        < 0
+                    || (captures[capIndex].typeRef == UINT32_MAX
+                        && EnsureMirBuilderNamedTypeRefFromTC(
+                               builder, tc, 0u, cap->typeId, &captures[capIndex].typeRef)
+                               < 0))
+                {
+                    return ErrorSimple("out of memory");
+                }
+            }
+        }
+        memset(&resolveCtx, 0, sizeof(resolveCtx));
+        resolveCtx.pkg = pkg;
+        resolveCtx.file = file;
+        resolveCtx.tc = tc;
+        resolveCtx.builder = builder;
+        resolveCtx.tcFnMap = tcFnMap;
+        options.lowerFunctionValue = ResolveMirFunctionValueNode;
+        options.lowerFunctionValueCtx = &resolveCtx;
+        options.captures = captures;
+        options.captureCount = fn->captureCount;
+        options.functionValueEntry = 1;
+        if (H2MirLowerAppendSimpleFunctionWithOptions(
+                builder,
+                arena,
+                &file->ast,
+                (H2StrView){ file->source, file->sourceLen },
+                fn->defNode,
+                bodyNode,
+                &options,
+                &outFunctionIndex,
+                &supported,
+                &diag)
+            != 0)
+        {
+            return PrintHOPDiagLineCol(file->path, file->source, &diag, 0);
+        }
+        if (!supported) {
+            return ErrorMirUnsupported(file, &file->ast.nodes[fn->defNode], "function body", &diag);
         }
         if (PatchMirFunctionTypeRefsFromTC(
                 arena, loader, builder, pkg, file, tc, i, outFunctionIndex)
@@ -6612,6 +6830,12 @@ static int32_t FindMirFunctionDeclNode(const H2ParsedFile* file, const H2MirFunc
     if (file == NULL || fn == NULL) {
         return -1;
     }
+    if (fn->astNode < file->ast.len
+        && (file->ast.nodes[fn->astNode].kind == H2Ast_FN
+            || file->ast.nodes[fn->astNode].kind == H2Ast_ANON_FN))
+    {
+        return (int32_t)fn->astNode;
+    }
     child = ASTFirstChild(&file->ast, file->ast.root);
     while (child >= 0) {
         const H2AstNode* n = &file->ast.nodes[child];
@@ -6635,7 +6859,8 @@ static bool MirFunctionTypeMatchesDecl(
     if (typeFile == NULL || fnFile == NULL || typeNode < 0 || fnNode < 0
         || (uint32_t)typeNode >= typeFile->ast.len || (uint32_t)fnNode >= fnFile->ast.len
         || typeFile->ast.nodes[typeNode].kind != H2Ast_TYPE_FN
-        || fnFile->ast.nodes[fnNode].kind != H2Ast_FN)
+        || (fnFile->ast.nodes[fnNode].kind != H2Ast_FN
+            && fnFile->ast.nodes[fnNode].kind != H2Ast_ANON_FN))
     {
         return false;
     }
@@ -8474,6 +8699,81 @@ static void InferMirStraightLineLocalTypes(
                     stackTypes[stackLen] = MirInferredType_AGG;
                     stackTypeRefs[stackLen++] = inst->aux;
                     break;
+                case H2MirOp_MAKE_CLOSURE: {
+                    uint32_t targetFn;
+                    if (inst->aux >= program->constLen
+                        || program->consts[inst->aux].kind != H2MirConst_FUNCTION
+                        || stackLen < (uint32_t)inst->tok)
+                    {
+                        supported = 0;
+                        break;
+                    }
+                    targetFn = program->consts[inst->aux].aux;
+                    if (targetFn >= program->funcLen
+                        || EnsureMirFunctionRefTypeRef(
+                               arena, program, targetFn, &stackTypeRefs[stackLen - inst->tok])
+                               != 0)
+                    {
+                        supported = 0;
+                        break;
+                    }
+                    stackLen -= (uint32_t)inst->tok;
+                    stackTypes[stackLen] = MirInferredType_FUNC_REF;
+                    stackLen++;
+                    break;
+                }
+                case H2MirOp_CAPTURE_ADDR: {
+                    uint32_t typeRef = UINT32_MAX;
+                    uint32_t ptrFlags = H2MirTypeFlag_OPAQUE_PTR;
+                    if (inst->aux >= fn->captureCount || stackLen >= 512u) {
+                        supported = 0;
+                        break;
+                    }
+                    if (fn->captureStart + inst->aux < program->captureLen) {
+                        typeRef = program->captures[fn->captureStart + inst->aux].typeRef;
+                    }
+                    if (typeRef < program->typeLen
+                        && H2MirTypeRefScalarKind(&program->types[typeRef]) == H2MirTypeScalar_I32)
+                    {
+                        switch (H2MirTypeRefIntKind(&program->types[typeRef])) {
+                            case H2MirIntKind_U8:   ptrFlags = H2MirTypeFlag_U8_PTR; break;
+                            case H2MirIntKind_I8:   ptrFlags = H2MirTypeFlag_I8_PTR; break;
+                            case H2MirIntKind_U16:  ptrFlags = H2MirTypeFlag_U16_PTR; break;
+                            case H2MirIntKind_I16:  ptrFlags = H2MirTypeFlag_I16_PTR; break;
+                            case H2MirIntKind_U32:  ptrFlags = H2MirTypeFlag_U32_PTR; break;
+                            case H2MirIntKind_BOOL:
+                            case H2MirIntKind_I32:  ptrFlags = H2MirTypeFlag_I32_PTR; break;
+                            default:                break;
+                        }
+                    }
+                    if (EnsureMirFlaggedTypeRef(arena, program, ptrFlags, &typeRef) != 0) {
+                        supported = 0;
+                        break;
+                    }
+                    stackTypes[stackLen] = MirProgramTypeKind(program, typeRef);
+                    stackTypeRefs[stackLen++] = typeRef;
+                    break;
+                }
+                case H2MirOp_CAPTURE_LOAD:
+                    if (inst->aux >= fn->captureCount || stackLen >= 512u) {
+                        supported = 0;
+                        break;
+                    }
+                    if (fn->captureStart + inst->aux < program->captureLen) {
+                        uint32_t typeRef = program->captures[fn->captureStart + inst->aux].typeRef;
+                        stackTypes[stackLen] = MirProgramTypeKind(program, typeRef);
+                        stackTypeRefs[stackLen++] = typeRef;
+                    } else {
+                        supported = 0;
+                    }
+                    break;
+                case H2MirOp_CAPTURE_STORE:
+                    if (inst->aux >= fn->captureCount || stackLen == 0u) {
+                        supported = 0;
+                        break;
+                    }
+                    stackLen--;
+                    break;
                 case H2MirOp_TUPLE_MAKE:
                     if (inst->aux < program->typeLen
                         && H2MirTypeRefIsFixedArrayStr(&program->types[inst->aux]))
@@ -9062,6 +9362,14 @@ int BuildPackageMirProgram(
                 rc = AppendMirSelectedPlatformPanicDeclsFromFile(
                     &builder, arena, pkg, &pkg->files[fileIndex], &declMap);
             } else {
+                rc = AppendMirInternalFunctionValuesFromFile(
+                    loader, &builder, arena, pkg, &pkg->files[fileIndex], &tcFnMap);
+                if (rc != 0) {
+                    free(tcFnMap.v);
+                    free(declMap.v);
+                    free(topoOrder);
+                    return -1;
+                }
                 rc = AppendMirDeclsFromFile(
                     loader,
                     entryPkg,

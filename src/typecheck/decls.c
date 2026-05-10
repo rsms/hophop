@@ -927,6 +927,9 @@ int H2TCCollectFunctionFromNode(H2TypeCheckCtx* c, int32_t nodeId) {
         f->declNode = nodeId;
         f->defNode = hasBody ? nodeId : -1;
         f->funcTypeId = -1;
+        f->ownerFnIndex = -1;
+        f->captureStart = 0;
+        f->captureCount = 0;
         f->templateArgStart = genericArgStart;
         f->templateArgCount = genericArgCount;
         f->templateRootFuncIndex = -1;
@@ -975,6 +978,96 @@ static int32_t H2TCFindFunctionByDeclNode(H2TypeCheckCtx* c, int32_t nodeId) {
         }
     }
     return -1;
+}
+
+static int H2TCFunctionCaptureExists(
+    H2TypeCheckCtx* c, const H2TCFunction* f, uint32_t nameStart, uint32_t nameEnd) {
+    uint32_t i;
+    if (f == NULL || f->captureCount == 0u) {
+        return 0;
+    }
+    for (i = 0; i < f->captureCount; i++) {
+        const H2TCFunctionCapture* cap = &c->functionCaptures[f->captureStart + i];
+        if (H2NameEqSlice(c->src, cap->nameStart, cap->nameEnd, nameStart, nameEnd)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int H2TCFunctionAddCapture(H2TypeCheckCtx* c, uint32_t fnIndex, int32_t localIdx) {
+    H2TCFunction* fn;
+    H2TCLocal*    local;
+    if (fnIndex >= c->funcLen || localIdx < 0 || (uint32_t)localIdx >= c->localLen) {
+        return 0;
+    }
+    fn = &c->funcs[fnIndex];
+    local = &c->locals[(uint32_t)localIdx];
+    if (H2TCFunctionCaptureExists(c, fn, local->nameStart, local->nameEnd)) {
+        return 0;
+    }
+    if (c->functionCaptureLen >= c->functionCaptureCap) {
+        return H2TCFailSpan(c, H2Diag_ARENA_OOM, local->nameStart, local->nameEnd);
+    }
+    if (fn->captureCount == 0u) {
+        fn->captureStart = c->functionCaptureLen;
+    } else if (fn->captureStart + fn->captureCount != c->functionCaptureLen) {
+        return H2TCFailSpan(c, H2Diag_ARENA_OOM, local->nameStart, local->nameEnd);
+    }
+    c->functionCaptures[c->functionCaptureLen].nameStart = local->nameStart;
+    c->functionCaptures[c->functionCaptureLen].nameEnd = local->nameEnd;
+    c->functionCaptures[c->functionCaptureLen].typeId = local->typeId;
+    c->functionCaptures[c->functionCaptureLen].ownerFnIndex = c->currentFunctionIndex;
+    c->functionCaptureLen++;
+    fn->captureCount++;
+    fn->flags |= H2TCFunctionFlag_CAPTURING;
+    return 0;
+}
+
+static int H2TCCollectFunctionCapturesRec(
+    H2TypeCheckCtx* c, uint32_t fnIndex, int32_t nodeId, int isRoot) {
+    const H2AstNode* n;
+    int32_t          child;
+    if (nodeId < 0 || (uint32_t)nodeId >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[nodeId];
+    if (!isRoot
+        && (n->kind == H2Ast_ANON_FN
+            || (n->kind == H2Ast_FN && (n->flags & H2AstFlag_FN_LOCAL) != 0)))
+    {
+        return 0;
+    }
+    if (n->kind == H2Ast_IDENT) {
+        int32_t localIdx = H2TCLocalFind(c, n->dataStart, n->dataEnd);
+        if (localIdx >= 0) {
+            int32_t localType = H2TCResolveAliasBaseType(c, c->locals[(uint32_t)localIdx].typeId);
+            if (!((c->locals[(uint32_t)localIdx].flags & H2TCLocalFlag_CONST) != 0 && localType >= 0
+                  && (uint32_t)localType < c->typeLen
+                  && c->types[(uint32_t)localType].kind == H2TCType_FUNCTION))
+            {
+                if (H2TCFunctionAddCapture(c, fnIndex, localIdx) != 0) {
+                    return -1;
+                }
+                H2TCMarkLocalRead(c, localIdx);
+            }
+        }
+    }
+    child = H2AstFirstChild(c->ast, nodeId);
+    while (child >= 0) {
+        if (H2TCCollectFunctionCapturesRec(c, fnIndex, child, 0) != 0) {
+            return -1;
+        }
+        child = H2AstNextSibling(c->ast, child);
+    }
+    return 0;
+}
+
+static int H2TCCollectFunctionCaptures(H2TypeCheckCtx* c, uint32_t fnIndex, int32_t nodeId) {
+    if (c->currentFunctionIndex < 0) {
+        return 0;
+    }
+    return H2TCCollectFunctionCapturesRec(c, fnIndex, nodeId, 1);
 }
 
 static int H2TCResolveExpectedFunctionType(
@@ -1102,6 +1195,9 @@ int H2TCRegisterFunctionValueNode(
         f->declNode = nodeId;
         f->defNode = nodeId;
         f->funcTypeId = -1;
+        f->ownerFnIndex = c->currentFunctionIndex;
+        f->captureStart = c->functionCaptureLen;
+        f->captureCount = 0;
         f->templateArgStart = 0;
         f->templateArgCount = 0;
         f->templateRootFuncIndex = -1;
@@ -1139,6 +1235,9 @@ int H2TCRegisterFunctionValueNode(
             f->nameStart,
             f->nameEnd);
         if (f->funcTypeId < 0) {
+            return -1;
+        }
+        if (H2TCCollectFunctionCaptures(c, idx, nodeId) != 0) {
             return -1;
         }
         if (outFuncIndex != NULL) {

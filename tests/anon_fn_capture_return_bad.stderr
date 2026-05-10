@@ -1,0 +1,1 @@
+tests/anon_fn_capture_return_bad.hop:3:9: error: HOP2119: capturing function value cannot escape its defining scope

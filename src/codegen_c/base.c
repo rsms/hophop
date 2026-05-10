@@ -653,6 +653,11 @@ int EmitConstEvaluatedScalar(
     {
         return 0;
     }
+    if (dstType->ptrDepth == 0 && dstType->baseName != NULL
+        && FindFnTypeAliasByName(c, dstType->baseName) != NULL)
+    {
+        return 0;
+    }
     switch (value->kind) {
         case H2CTFEValue_INT:
             if (BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
@@ -2575,7 +2580,11 @@ int EnsureFnTypeAlias(
             }
         }
         b.arena = &c->arena;
-        if (BufAppendCStr(&b, "__hop_fn_t_") != 0 || BufAppendU32(&b, c->fnTypeAliasLen) != 0) {
+        if (BufAppendCStr(&b, "__hop_fn_t_") != 0
+            || (c->unit != NULL && c->unit->packageName != NULL
+                && (BufAppendCStr(&b, c->unit->packageName) != 0 || BufAppendChar(&b, '_') != 0))
+            || BufAppendU32(&b, c->fnTypeAliasLen) != 0)
+        {
             return -1;
         }
         aliasName = BufFinish(&b);
@@ -4305,6 +4314,150 @@ char* _Nullable BuildExpandedPackElemName(H2CBackendC* c, const char* packName, 
     return BufFinish(&b);
 }
 
+static char* _Nullable BuildInternalFunctionCName(
+    H2CBackendC* c, const H2TCFunction* fn, uint32_t tcFuncIndex) {
+    H2Buf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, c->unit->packageName) != 0 || BufAppendCStr(&b, "__fnv_") != 0) {
+        return NULL;
+    }
+    if (fn != NULL && fn->nameEnd > fn->nameStart) {
+        if (BufAppendSlice(&b, c->unit->source, fn->nameStart, fn->nameEnd) != 0
+            || BufAppendChar(&b, '_') != 0)
+        {
+            return NULL;
+        }
+    }
+    if (BufAppendU32(&b, tcFuncIndex) != 0) {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
+static char* _Nullable BuildInternalFunctionHopName(
+    H2CBackendC* c, const H2TCFunction* fn, uint32_t tcFuncIndex) {
+    H2Buf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, "__hop_internal_fn_") != 0 || BufAppendU32(&b, tcFuncIndex) != 0) {
+        return NULL;
+    }
+    if (fn != NULL && fn->nameEnd > fn->nameStart) {
+        if (BufAppendChar(&b, '_') != 0
+            || BufAppendSlice(&b, c->unit->source, fn->nameStart, fn->nameEnd) != 0)
+        {
+            return NULL;
+        }
+    }
+    return BufFinish(&b);
+}
+
+char* _Nullable BuildClosureTypeCName(H2CBackendC* c, uint32_t tcFuncIndex) {
+    H2Buf b = { 0 };
+    b.arena = &c->arena;
+    if (BufAppendCStr(&b, "__hop_closure_") != 0 || BufAppendU32(&b, tcFuncIndex) != 0) {
+        return NULL;
+    }
+    return BufFinish(&b);
+}
+
+int CollectInternalFunctionValueSigs(H2CBackendC* c) {
+    const H2TypeCheckCtx* tc;
+    uint32_t              i;
+    if (c == NULL || c->constEval == NULL) {
+        return 0;
+    }
+    tc = &c->constEval->tc;
+    for (i = 0; i < tc->funcLen; i++) {
+        const H2TCFunction* fn = &tc->funcs[i];
+        H2TypeRef           returnType;
+        H2TypeRef           contextType;
+        H2TypeRef*          paramTypes = NULL;
+        char**              paramNames = NULL;
+        uint8_t*            paramFlags = NULL;
+        uint32_t            p;
+        char*               cName;
+        char*               hopName;
+        if ((fn->flags & H2TCFunctionFlag_INTERNAL) == 0 || fn->defNode < 0) {
+            continue;
+        }
+        if (ParseTypeRefFromConstEvalTypeId(c, fn->returnType, &returnType) != 0) {
+            return -1;
+        }
+        if (ResolveMainSemanticContextType(c, &contextType) != 0) {
+            return -1;
+        }
+        if (fn->paramCount > 0) {
+            paramTypes = (H2TypeRef*)H2ArenaAlloc(
+                &c->arena, sizeof(H2TypeRef) * fn->paramCount, (uint32_t)_Alignof(H2TypeRef));
+            paramNames = (char**)H2ArenaAlloc(
+                &c->arena, sizeof(char*) * fn->paramCount, (uint32_t)_Alignof(char*));
+            paramFlags = (uint8_t*)H2ArenaAlloc(
+                &c->arena, sizeof(uint8_t) * fn->paramCount, (uint32_t)_Alignof(uint8_t));
+            if (paramTypes == NULL || paramNames == NULL || paramFlags == NULL) {
+                return -1;
+            }
+        }
+        for (p = 0; p < fn->paramCount; p++) {
+            uint32_t slot = fn->paramTypeStart + p;
+            if (ParseTypeRefFromConstEvalTypeId(c, tc->funcParamTypes[slot], &paramTypes[p]) != 0) {
+                return -1;
+            }
+            paramNames[p] = DupParamNameFromSpanOrDefault(
+                c, tc->funcParamNameStarts[slot], tc->funcParamNameEnds[slot], p);
+            if (paramNames[p] == NULL) {
+                return -1;
+            }
+            paramFlags[p] =
+                (tc->funcParamFlags[slot] & H2TCFuncParamFlag_CONST) != 0
+                    ? H2CCGParamFlag_CONST
+                    : 0u;
+        }
+        cName = BuildInternalFunctionCName(c, fn, i);
+        hopName = BuildInternalFunctionHopName(c, fn, i);
+        if (cName == NULL || hopName == NULL) {
+            return -1;
+        }
+        {
+            const char* aliasName = NULL;
+            if (EnsureFnTypeAlias(
+                    c,
+                    returnType,
+                    paramTypes,
+                    fn->paramCount,
+                    (fn->flags & H2TCFunctionFlag_VARIADIC) != 0,
+                    &aliasName)
+                != 0)
+            {
+                return -1;
+            }
+            (void)aliasName;
+        }
+        if (AddFnSig(
+                c,
+                hopName,
+                cName,
+                fn->defNode,
+                returnType,
+                paramTypes,
+                paramNames,
+                paramFlags,
+                fn->paramCount,
+                (fn->flags & H2TCFunctionFlag_VARIADIC) != 0,
+                0,
+                contextType,
+                H2FnSigFlag_FUNCTION_VALUE_ENTRY,
+                i,
+                0u,
+                0u,
+                NULL)
+            != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int CollectTemplateInstanceFnSigs(H2CBackendC* c) {
     const H2TypeCheckCtx* tc;
     uint32_t              i;
@@ -4667,6 +4820,9 @@ int CollectFnAndFieldInfo(H2CBackendC* c) {
         }
     }
     if (CollectTemplateInstanceFnSigs(c) != 0) {
+        return -1;
+    }
+    if (CollectInternalFunctionValueSigs(c) != 0) {
         return -1;
     }
     if (CollectTemplateInstanceNamedTypes(c) != 0) {

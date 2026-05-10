@@ -334,6 +334,21 @@ int H2MirProgramBuilderAddSymbol(
         outIndex);
 }
 
+int H2MirProgramBuilderAddCapture(
+    H2MirProgramBuilder* b, const H2MirCapture* value, uint32_t* _Nullable outIndex) {
+    if (b == NULL) {
+        return -1;
+    }
+    return H2MirProgramBuilderAppendElem(
+        b->arena,
+        (void**)&b->captures,
+        value,
+        (uint32_t)sizeof(*value),
+        &b->captureLen,
+        &b->captureCap,
+        outIndex);
+}
+
 int H2MirProgramBuilderBeginFunction(
     H2MirProgramBuilder* b, const H2MirFunction* value, uint32_t* _Nullable outIndex) {
     H2MirFunction fn;
@@ -455,6 +470,8 @@ void H2MirProgramBuilderFinish(const H2MirProgramBuilder* b, H2MirProgram* outPr
     outProgram->hostLen = b->hostLen;
     outProgram->symbols = b->symbols;
     outProgram->symbolLen = b->symbolLen;
+    outProgram->captures = b->captures;
+    outProgram->captureLen = b->captureLen;
 }
 
 int H2MirValidateProgram(const H2MirProgram* program, H2Diag* _Nullable diag) {
@@ -549,6 +566,22 @@ int H2MirValidateProgram(const H2MirProgram* program, H2Diag* _Nullable diag) {
                     break;
                 case H2MirOp_CALL_FN:
                     if (ins->aux >= program->funcLen) {
+                        H2MirSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case H2MirOp_MAKE_CLOSURE:
+                    if (ins->aux >= program->constLen
+                        || program->consts[ins->aux].kind != H2MirConst_FUNCTION)
+                    {
+                        H2MirSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, ins->start, ins->end);
+                        return -1;
+                    }
+                    break;
+                case H2MirOp_CAPTURE_LOAD:
+                case H2MirOp_CAPTURE_STORE:
+                case H2MirOp_CAPTURE_ADDR:
+                    if (ins->aux >= fn->captureCount) {
                         H2MirSetDiag(diag, H2Diag_UNEXPECTED_TOKEN, ins->start, ins->end);
                         return -1;
                     }
