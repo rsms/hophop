@@ -573,6 +573,37 @@ fn main() {
 }
 ```
 
+### Function Closures
+
+Anonymous functions use `fn(...) { ... }` in expression context. They produce ordinary function values, so they can be assigned to locals, passed to other functions and called indirectly.
+
+When an anonymous function references enclosing locals, it forms a limited stack closure. Captured locals may be read and mutated, but the closure must not outlive the scope that owns those locals. This keeps callbacks allocation-free and lets the compiler reject escaping captures.
+
+```hop
+fn keep_value(x int, keep fn(int) bool) bool {
+    return keep(x)
+}
+
+fn main() {
+    threshold := 40
+    is_large := fn(x int) bool {
+        return x > threshold
+    }
+
+    count := 0
+    next_count := fn() int {
+        count += 1
+        return count
+    }
+
+    assert keep_value(42, keep: is_large)
+    assert next_count() == 1
+    assert next_count() == 2
+}
+```
+
+Local named functions can also capture enclosing locals under the same non-escaping rules.
+
 ### Compile-time evaluation
 
 A parameter marked `const` requires a const-evaluable argument at the call site. This lets library code validate values while typechecking the caller.
