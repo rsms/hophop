@@ -1,0 +1,134 @@
+fn print_number(n i32) {
+	if n == 1 {
+		print("1")
+	} else if n == 2 {
+		print("2")
+	} else if n == 4 {
+		print("4")
+	} else if n == 7 {
+		print("7")
+	} else if n == 8 {
+		print("8")
+	} else if n == 11 {
+		print("11")
+	} else if n == 13 {
+		print("13")
+	} else if n == 14 {
+		print("14")
+	} else if n == 16 {
+		print("16")
+	} else if n == 17 {
+		print("17")
+	} else if n == 19 {
+		print("19")
+	} else if n == 22 {
+		print("22")
+	} else if n == 23 {
+		print("23")
+	} else if n == 26 {
+		print("26")
+	} else if n == 28 {
+		print("28")
+	} else if n == 29 {
+		print("29")
+	} else if n == 31 {
+		print("31")
+	} else if n == 32 {
+		print("32")
+	} else if n == 34 {
+		print("34")
+	} else if n == 37 {
+		print("37")
+	} else if n == 38 {
+		print("38")
+	} else if n == 41 {
+		print("41")
+	} else if n == 43 {
+		print("43")
+	} else if n == 44 {
+		print("44")
+	} else if n == 46 {
+		print("46")
+	} else if n == 47 {
+		print("47")
+	} else if n == 49 {
+		print("49")
+	} else if n == 52 {
+		print("52")
+	} else if n == 53 {
+		print("53")
+	} else if n == 56 {
+		print("56")
+	} else if n == 58 {
+		print("58")
+	} else if n == 59 {
+		print("59")
+	} else if n == 61 {
+		print("61")
+	} else if n == 62 {
+		print("62")
+	} else if n == 64 {
+		print("64")
+	} else if n == 67 {
+		print("67")
+	} else if n == 68 {
+		print("68")
+	} else if n == 71 {
+		print("71")
+	} else if n == 73 {
+		print("73")
+	} else if n == 74 {
+		print("74")
+	} else if n == 76 {
+		print("76")
+	} else if n == 77 {
+		print("77")
+	} else if n == 79 {
+		print("79")
+	} else if n == 82 {
+		print("82")
+	} else if n == 83 {
+		print("83")
+	} else if n == 86 {
+		print("86")
+	} else if n == 88 {
+		print("88")
+	} else if n == 89 {
+		print("89")
+	} else if n == 91 {
+		print("91")
+	} else if n == 92 {
+		print("92")
+	} else if n == 94 {
+		print("94")
+	} else if n == 97 {
+		print("97")
+	} else if n == 98 {
+		print("98")
+	} else {
+		assert false
+	}
+}
+
+fn main() {
+	var fizz i32 = 0
+	var buzz i32 = 0
+	for var i i32 = 1; i <= 100; i += 1 {
+		fizz += 1
+		buzz += 1
+
+		if fizz == 3 && buzz == 5 {
+			print("FizzBuzz")
+			fizz = 0
+			buzz = 0
+		} else if fizz == 3 {
+			print("Fizz")
+			fizz = 0
+		} else if buzz == 5 {
+			print("Buzz")
+			buzz = 0
+		} else {
+			print_number(i)
+		}
+	}
+}

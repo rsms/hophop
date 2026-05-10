@@ -1299,6 +1299,8 @@ static int H2MirRunLoop(
                     return -1;
                 }
                 if (!indexIsConst) {
+                    H2MirSetReason(
+                        run, ins, "index is out of bounds or unsupported during const evaluation");
                     return 0;
                 }
                 if (H2CTFEPush(run, &out) != 0) {
@@ -1389,6 +1391,10 @@ static int H2MirRunLoop(
                     return -1;
                 }
                 if (!addrIsConst) {
+                    H2MirSetReason(
+                        run,
+                        ins,
+                        "array index is out of bounds or unsupported during const evaluation");
                     return 0;
                 }
                 if (H2CTFEPush(run, &out) != 0) {

@@ -1,0 +1,35 @@
+fn is_palindrome(text &str) bool {
+	var bytes &[u8] = text
+	var n     int   = len(bytes)
+	for var i int = 0; i < n / 2; i += 1 {
+		if bytes[i] != bytes[n - 1 - i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn main() {
+	assert is_palindrome("racecar")
+	assert is_palindrome("step on no pets")
+	assert is_palindrome("")
+	assert !is_palindrome("hello")
+
+	if is_palindrome("racecar") {
+		print("racecar: true")
+	} else {
+		print("racecar: false")
+	}
+
+	if is_palindrome("hello") {
+		print("hello: true")
+	} else {
+		print("hello: false")
+	}
+
+	if is_palindrome("step on no pets") {
+		print("step on no pets: true")
+	} else {
+		print("step on no pets: false")
+	}
+}

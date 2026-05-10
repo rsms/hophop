@@ -1,0 +1,40 @@
+fn binary_search(values &[i32 9], target i32) i32 {
+	var lo i32 = 0
+	var hi i32 = len(values) as i32
+
+	for lo < hi {
+		var mid = lo + (hi - lo)/2
+		if values[mid] == target {
+			return mid
+		}
+		if values[mid] < target {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+
+	return -1
+}
+
+fn main() {
+	var values [i32 9]
+	values[0] = -3
+	values[1] = 0
+	values[2] = 1
+	values[3] = 2
+	values[4] = 4
+	values[5] = 5
+	values[6] = 7
+	values[7] = 8
+	values[8] = 11
+
+	assert binary_search(&values, target: -3) == 0
+	print("-3 -> 0")
+	assert binary_search(&values, target: 4) == 4
+	print("4 -> 4")
+	assert binary_search(&values, target: 11) == 8
+	print("11 -> 8")
+	assert binary_search(&values, target: 6) == -1
+	print("6 -> -1")
+}

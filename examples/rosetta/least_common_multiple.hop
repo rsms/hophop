@@ -1,0 +1,53 @@
+fn gcd(a, b i32) i32 {
+	x := a
+	y := b
+	if x < 0 {
+		x = -x
+	}
+	if y < 0 {
+		y = -y
+	}
+
+	if x == 0 {
+		return y
+	}
+	if y == 0 {
+		return x
+	}
+
+	for x != y {
+		if x > y {
+			x -= y
+		} else {
+			y -= x
+		}
+	}
+	return x
+}
+
+fn lcm(a, b i32) i32 {
+	if a == 0 || b == 0 {
+		return 0
+	}
+
+	var result = (a / gcd(a, b)) * b
+	if result < 0 {
+		return -result
+	}
+	return result
+}
+
+fn main() {
+	assert lcm(21, b: 6) == 42
+	print("lcm(21, 6) = 42")
+	assert lcm(48, b: 18) == 144
+	print("lcm(48, 18) = 144")
+	assert lcm(17, b: 13) == 221
+	print("lcm(17, 13) = 221")
+	assert lcm(0, b: 42) == 0
+	print("lcm(0, 42) = 0")
+	assert lcm(9, b: 9) == 9
+	print("lcm(9, 9) = 9")
+	assert lcm(270, b: 192) == 8640
+	print("lcm(270, 192) = 8640")
+}

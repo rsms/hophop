@@ -40,6 +40,10 @@ EXAMPLE_COMPILE_SKIP: Set[str] = {
     "examples/string-literal.hop",
     "examples/tuples.hop",
 }
+EXAMPLE_PACKAGE_SKIP: Set[str] = {
+    # Rosetta examples are intentionally standalone source files in one directory.
+    "examples/rosetta",
+}
 
 
 @dataclass
@@ -333,6 +337,8 @@ def build_auto_example_cases(manifest_cases: List[TestCase]) -> List[TestCase]:
             )
 
     for rel in package_dirs:
+        if rel in EXAMPLE_PACKAGE_SKIP:
+            continue
         abs_pkg = abs_path(rel)
         slug = sanitize_name(rel)
         append_case(

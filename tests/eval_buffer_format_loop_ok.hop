@@ -1,0 +1,9 @@
+fn main() {
+	var buf [u8 16]
+	for i := 0; i < 2000; i += 1 {
+		n := buf.format("{}", i)
+		assert n > 0
+		assert buf[0] >= '0'
+		assert buf[0] <= '9'
+	}
+}

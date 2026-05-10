@@ -1,0 +1,36 @@
+fn bytes_eq(got &[u8], want &str) bool {
+	if len(got) != len(want) {
+		return false
+	}
+
+	var wb &[u8] = want
+	for var i int = 0; i < len(got); i += 1 {
+		if got[i] != wb[i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn reverse(dst *[u8], text &str) int {
+	var src &[u8] = text
+	var n   int   = len(src)
+	for var i int = 0; i < n; i += 1 {
+		dst[i] = src[n - 1 - i]
+	}
+	return n
+}
+
+fn main() {
+	var out [u8 32]
+
+	var n1 int = reverse(out[:], text: "stressed")
+	assert bytes_eq(out[:n1], want: "desserts")
+	print("desserts")
+
+	var n2 int = reverse(out[:], text: "abcd")
+	assert bytes_eq(out[:n2], want: "dcba")
+
+	var n3 int = reverse(out[:], text: "")
+	assert n3 == 0
+}

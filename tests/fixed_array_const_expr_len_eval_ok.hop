@@ -1,0 +1,10 @@
+const limit = 8
+
+fn main() {
+	var flags [bool limit - 1]
+
+	flags[limit - 2] = true
+
+	assert !flags[0]
+	assert flags[6]
+}

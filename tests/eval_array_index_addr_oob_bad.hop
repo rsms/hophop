@@ -1,0 +1,8 @@
+fn main() {
+	const limit = 4
+	var flags [bool limit - 2]
+	index := 0
+
+	index = limit - 2
+	flags[index] = true
+}

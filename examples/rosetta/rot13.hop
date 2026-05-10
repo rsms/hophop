@@ -1,0 +1,40 @@
+fn bytes_eq(got &[u8], want &str) bool {
+	if len(got) != len(want) {
+		return false
+	}
+
+	var wb &[u8] = want
+	for var i int = 0; i < len(got); i += 1 {
+		if got[i] != wb[i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn rot13_byte(byte u8) u8 {
+	var x int = byte as int
+	if x >= 65 && x <= 90 {
+		return (((x - 65) + 13)%26 + 65) as u8
+	}
+	if x >= 97 && x <= 122 {
+		return (((x - 97) + 13)%26 + 97) as u8
+	}
+	return byte
+}
+
+fn rot13(dst *[u8], text &str) int {
+	var src &[u8] = text
+	for var i int = 0; i < len(src); i += 1 {
+		dst[i] = rot13_byte(src[i])
+	}
+	return len(src)
+}
+
+fn main() {
+	var out [u8 64]
+	var n   int = rot13(out[:], text: "The Quick Brown Fox jumps over 13 lazy dogs.")
+
+	assert bytes_eq(out[:n], want: "Gur Dhvpx Oebja Sbk whzcf bire 13 ynml qbtf.")
+	print("Gur Dhvpx Oebja Sbk whzcf bire 13 ynml qbtf.")
+}

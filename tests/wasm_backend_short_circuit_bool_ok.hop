@@ -1,0 +1,25 @@
+fn must_not_call() bool {
+	assert false
+	return true
+}
+
+fn main() {
+	value := 0
+
+	if true || must_not_call() {
+		value = 1
+	}
+	assert value == 1
+
+	if false && must_not_call() {
+		assert false
+	} else {
+		value = 2
+	}
+	assert value == 2
+
+	if (value == 2 || must_not_call()) && true {
+		value = 3
+	}
+	assert value == 3
+}

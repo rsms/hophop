@@ -1,0 +1,9 @@
+fn main() {
+	i := 0
+	s := ""
+	for i < 10000 {
+		s = "{}".format(i)
+		i += 1
+	}
+	assert len(s) > 0
+}

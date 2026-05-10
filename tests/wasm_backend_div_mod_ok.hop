@@ -1,0 +1,6 @@
+fn main() {
+	assert 7 / 2 == 3
+	assert 7 % 2 == 1
+	assert -7 / 2 == -3
+	assert -7 % 2 == -1
+}

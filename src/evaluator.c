@@ -4274,6 +4274,70 @@ static int HOPEvalTypeNameOfValue(H2CTFEValue* typeValue, H2CTFEValue* outValue)
     return 1;
 }
 
+static int HOPEvalTypeArrayLen(
+    const HOPEvalProgram* p,
+    const H2ParsedFile*   file,
+    int32_t               typeNode,
+    uint32_t*             outLen,
+    int*                  outIsConst) {
+    const H2AstNode* n;
+    int32_t          elemNode;
+    int32_t          countNode;
+    H2CTFEValue      countValue;
+    int              countIsConst = 0;
+    int64_t          count = 0;
+    if (outLen != NULL) {
+        *outLen = 0;
+    }
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || file == NULL || typeNode < 0 || (uint32_t)typeNode >= file->ast.len
+        || outLen == NULL || outIsConst == NULL)
+    {
+        return -1;
+    }
+    n = &file->ast.nodes[typeNode];
+    if (n->kind != H2Ast_TYPE_ARRAY) {
+        return 0;
+    }
+    if (HOPEvalParseUintSlice(file->source, n->dataStart, n->dataEnd, outLen)) {
+        *outIsConst = 1;
+        return 0;
+    }
+    elemNode = ASTFirstChild(&file->ast, typeNode);
+    countNode = elemNode >= 0 ? file->ast.nodes[elemNode].nextSibling : -1;
+    if (countNode < 0 || (uint32_t)countNode >= file->ast.len) {
+        return 0;
+    }
+    if (p->currentFile != file) {
+        if (p->currentExecCtx != NULL) {
+            H2CTFEExecSetReasonNode(
+                p->currentExecCtx,
+                countNode,
+                "array length expression is not available in evaluator backend");
+        }
+        return 0;
+    }
+    if (HOPEvalExecExprCb((void*)p, countNode, &countValue, &countIsConst) != 0) {
+        return -1;
+    }
+    if (!countIsConst || H2CTFEValueToInt64(&countValue, &count) != 0 || count < 0
+        || (uint64_t)count > UINT32_MAX)
+    {
+        if (p->currentExecCtx != NULL) {
+            H2CTFEExecSetReasonNode(
+                p->currentExecCtx,
+                countNode,
+                "array length expression is not const-evaluable in evaluator backend");
+        }
+        return 0;
+    }
+    *outLen = (uint32_t)count;
+    *outIsConst = 1;
+    return 0;
+}
+
 static int HOPEvalZeroInitTypeNode(
     const HOPEvalProgram* p,
     const H2ParsedFile*   file,
@@ -4522,15 +4586,18 @@ static int HOPEvalZeroInitTypeNode(
             *outIsConst = 1;
             return 0;
         case H2Ast_TYPE_ARRAY: {
-            const H2AstNode* arrayTypeNode = &file->ast.nodes[typeNode];
-            int32_t          elemTypeNode = ASTFirstChild(&file->ast, typeNode);
-            uint32_t         len = 0;
-            uint32_t         i;
-            HOPEvalArray*    array;
-            if (elemTypeNode < 0
-                || !HOPEvalParseUintSlice(
-                    file->source, arrayTypeNode->dataStart, arrayTypeNode->dataEnd, &len))
-            {
+            int32_t       elemTypeNode = ASTFirstChild(&file->ast, typeNode);
+            uint32_t      len = 0;
+            int           lenIsConst = 0;
+            uint32_t      i;
+            HOPEvalArray* array;
+            if (elemTypeNode < 0) {
+                return 0;
+            }
+            if (HOPEvalTypeArrayLen(p, file, typeNode, &len, &lenIsConst) != 0) {
+                return -1;
+            }
+            if (!lenIsConst) {
                 return 0;
             }
             array = (HOPEvalArray*)H2ArenaAlloc(
@@ -9978,7 +10045,7 @@ static int HOPEvalMirIndexAddr(
             *outIsConst = 1;
             return 0;
         }
-        if (p->currentExecCtx != NULL) {
+        if (array == NULL && p->currentExecCtx != NULL) {
             H2CTFEExecSetReason(
                 p->currentExecCtx, 0, 0, "index address is not supported by evaluator backend");
         }
@@ -12261,6 +12328,7 @@ static int HOPEvalInvokeFunction(
     H2CTFEExecBinding*     paramBindings = NULL;
     H2CTFEExecEnv          paramFrame;
     H2CTFEExecCtx          execCtx;
+    H2Diag                 diag = { 0 };
     const H2ParsedFile*    savedFile;
     H2CTFEExecCtx*         savedExecCtx;
     const HOPEvalContext*  savedContext;
@@ -12417,6 +12485,7 @@ static int HOPEvalInvokeFunction(
     execCtx.ast = ast;
     execCtx.src.ptr = fn->file->source;
     execCtx.src.len = fn->file->sourceLen;
+    execCtx.diag = &diag;
     execCtx.env = &paramFrame;
     execCtx.evalExpr = HOPEvalExecExprCb;
     execCtx.evalExprCtx = p;
@@ -12451,11 +12520,16 @@ static int HOPEvalInvokeFunction(
         p, fn, fnIndex, args, argCount, outValue, outDidReturn, &isConst);
 
     if (rc != 0) {
+        if (diag.code != H2Diag_NONE) {
+            rc = H2EvalReportDiag(p, fn->file->path, fn->file->source, &diag);
+        } else {
+            rc = H2EvalReportSimpleFailure(p, "evaluator backend failed");
+        }
         p->callDepth--;
         p->currentContext = savedContext;
         p->currentExecCtx = savedExecCtx;
         p->currentFile = savedFile;
-        return -1;
+        return rc;
     }
     if (!isConst) {
         uint32_t    errStart = execCtx.nonConstStart;
@@ -15505,6 +15579,9 @@ int HOPEvalRunProgramInternal(
             &program, mainIndex, &noArgsValue, 0, &program.rootContext, &retValue, &didReturn)
         != 0)
     {
+        if (!program.reportedFailure) {
+            ErrorSimple("evaluator backend failed without diagnostic");
+        }
         goto end;
     }
     rc = program.exitCalled ? program.exitCode : 0;

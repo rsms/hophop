@@ -73,7 +73,10 @@ static int HOPEvalBuiltinPackageFnHasHopEvaluatorBody(const HOPEvalFunction* fn)
 }
 
 static int HOPEvalMirInitLowerCtx(
-    HOPEvalProgram* p, uint32_t extraMirFuncs, HOPEvalMirLowerCtx* _Nonnull outCtx) {
+    HOPEvalProgram* p,
+    H2Arena*        arena,
+    uint32_t        extraMirFuncs,
+    HOPEvalMirLowerCtx* _Nonnull outCtx) {
     uint32_t*            evalToMir;
     uint8_t*             loweringFns;
     uint32_t*            topConstToMir;
@@ -84,7 +87,7 @@ static int HOPEvalMirInitLowerCtx(
     const H2ParsedFile** sourceFiles;
     uint32_t             i;
     uint32_t             mirCap;
-    if (p == NULL || outCtx == NULL) {
+    if (p == NULL || arena == NULL || outCtx == NULL) {
         return -1;
     }
     memset(outCtx, 0, sizeof(*outCtx));
@@ -93,21 +96,21 @@ static int HOPEvalMirInitLowerCtx(
         return -1;
     }
     evalToMir = (uint32_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
+        arena, sizeof(uint32_t) * p->funcLen, (uint32_t)_Alignof(uint32_t));
     loweringFns = (uint8_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint8_t) * p->funcLen, (uint32_t)_Alignof(uint8_t));
+        arena, sizeof(uint8_t) * p->funcLen, (uint32_t)_Alignof(uint8_t));
     topConstToMir = (uint32_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint32_t) * p->topConstLen, (uint32_t)_Alignof(uint32_t));
+        arena, sizeof(uint32_t) * p->topConstLen, (uint32_t)_Alignof(uint32_t));
     loweringTopConsts = (uint8_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint8_t) * p->topConstLen, (uint32_t)_Alignof(uint8_t));
+        arena, sizeof(uint8_t) * p->topConstLen, (uint32_t)_Alignof(uint8_t));
     topVarToMir = (uint32_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint32_t) * p->topVarLen, (uint32_t)_Alignof(uint32_t));
+        arena, sizeof(uint32_t) * p->topVarLen, (uint32_t)_Alignof(uint32_t));
     loweringTopVars = (uint8_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint8_t) * p->topVarLen, (uint32_t)_Alignof(uint8_t));
+        arena, sizeof(uint8_t) * p->topVarLen, (uint32_t)_Alignof(uint8_t));
     mirToEval = (uint32_t*)H2ArenaAlloc(
-        p->arena, sizeof(uint32_t) * mirCap, (uint32_t)_Alignof(uint32_t));
+        arena, sizeof(uint32_t) * mirCap, (uint32_t)_Alignof(uint32_t));
     sourceFiles = (const H2ParsedFile**)H2ArenaAlloc(
-        p->arena, sizeof(const H2ParsedFile*) * mirCap, (uint32_t)_Alignof(const H2ParsedFile*));
+        arena, sizeof(const H2ParsedFile*) * mirCap, (uint32_t)_Alignof(const H2ParsedFile*));
     if (evalToMir == NULL || loweringFns == NULL || topConstToMir == NULL
         || loweringTopConsts == NULL || topVarToMir == NULL || loweringTopVars == NULL
         || mirToEval == NULL || sourceFiles == NULL)
@@ -130,7 +133,7 @@ static int HOPEvalMirInitLowerCtx(
         mirToEval[i] = UINT32_MAX;
         sourceFiles[i] = NULL;
     }
-    H2MirProgramBuilderInit(&outCtx->builder, p->arena);
+    H2MirProgramBuilderInit(&outCtx->builder, arena);
     outCtx->p = p;
     outCtx->evalToMir = evalToMir;
     outCtx->loweringFns = loweringFns;
@@ -179,7 +182,7 @@ static int HOPEvalMirEnsureTcMap(HOPEvalMirLowerCtx* c, uint32_t len) {
         return 0;
     }
     map = (uint32_t*)H2ArenaAlloc(
-        c->p->arena, sizeof(uint32_t) * len, (uint32_t)_Alignof(uint32_t));
+        c->builder.arena, sizeof(uint32_t) * len, (uint32_t)_Alignof(uint32_t));
     if (map == NULL && len != 0u) {
         return ErrorSimple("out of memory");
     }
@@ -1037,7 +1040,7 @@ static int HOPEvalMirLowerFunction(
         lowerOptions.lowerFunctionValueCtx = &resolveCtx;
         if (H2MirLowerAppendSimpleFunctionWithOptions(
                 &c->builder,
-                c->p->arena,
+                c->builder.arena,
                 &fn->file->ast,
                 (H2StrView){ fn->file->source, fn->file->sourceLen },
                 fn->fnNode,
@@ -1286,7 +1289,7 @@ static int HOPEvalMirLowerInternalFunctionValues(
         }
         if (fn->captureCount > 0u) {
             captures = (H2MirCapture*)H2ArenaAlloc(
-                c->p->arena,
+                c->builder.arena,
                 sizeof(H2MirCapture) * fn->captureCount,
                 (uint32_t)_Alignof(H2MirCapture));
             if (captures == NULL) {
@@ -1314,7 +1317,7 @@ static int HOPEvalMirLowerInternalFunctionValues(
         options.functionValueEntry = 1;
         if (H2MirLowerAppendSimpleFunctionWithOptions(
                 &c->builder,
-                c->p->arena,
+                c->builder.arena,
                 &file->ast,
                 (H2StrView){ file->source, file->sourceLen },
                 fn->defNode,
@@ -2106,7 +2109,7 @@ static int HOPEvalMirLowerNamedTopInitVarLike(
         options.lowerFunctionValueCtx = &resolveCtx;
         if (H2MirLowerAppendNamedVarLikeTopInitFunctionBySliceWithOptions(
                 &c->builder,
-                c->p->arena,
+                c->builder.arena,
                 &file->ast,
                 (H2StrView){ file->source, file->sourceLen },
                 nodeId,
@@ -2226,7 +2229,7 @@ int HOPEvalMirBuildTopInitProgram(
     {
         return -1;
     }
-    if (HOPEvalMirInitLowerCtx(p, 1u, &lowerCtx) != 0) {
+    if (HOPEvalMirInitLowerCtx(p, p->arena, 1u, &lowerCtx) != 0) {
         return -1;
     }
     if (H2MirLowerBeginNamedTopInitProgram(
@@ -2276,27 +2279,34 @@ int HOPEvalTryMirInvokeFunction(
     H2MirProgram       program = { 0 };
     H2MirExecEnv       env = { 0 };
     HOPEvalMirLowerCtx lowerCtx;
+    uint8_t            mirArenaMem[32 * 1024];
+    H2Arena            mirArena;
     uint32_t           mirFnIndex = UINT32_MAX;
     int                lowerRc;
     int                mirIsConst = 0;
+    int                rc = 0;
     if (p == NULL || fn == NULL || outValue == NULL || outDidReturn == NULL || outIsConst == NULL) {
         return -1;
     }
     *outDidReturn = 0;
     *outIsConst = 0;
-    if (HOPEvalMirInitLowerCtx(p, 0u, &lowerCtx) != 0) {
-        return -1;
+    H2ArenaInit(&mirArena, mirArenaMem, (uint32_t)sizeof(mirArenaMem));
+    H2ArenaSetAllocator(&mirArena, NULL, CodegenArenaGrow, CodegenArenaFree);
+    if (HOPEvalMirInitLowerCtx(p, &mirArena, 0u, &lowerCtx) != 0) {
+        rc = -1;
+        goto end;
     }
     lowerRc = HOPEvalMirLowerFunction(&lowerCtx, fnIndex, &mirFnIndex);
     if (lowerRc < 0) {
-        return -1;
+        rc = -1;
+        goto end;
     }
     if (lowerRc == 0 || mirFnIndex == UINT32_MAX) {
         if (p->currentExecCtx != NULL && lowerCtx.diag != NULL && lowerCtx.diag->detail != NULL) {
             H2CTFEExecSetReason(
                 p->currentExecCtx, lowerCtx.diag->start, lowerCtx.diag->end, lowerCtx.diag->detail);
         }
-        return 0;
+        goto end;
     }
     lowerCtx.execCtx.rootMirFnIndex = mirFnIndex;
     H2MirProgramBuilderFinish(&lowerCtx.builder, &program);
@@ -2308,14 +2318,17 @@ int HOPEvalTryMirInvokeFunction(
             p->arena, &program, mirFnIndex, args, argCount, &env, outValue, &mirIsConst)
         != 0)
     {
-        return -1;
+        rc = -1;
+        goto end;
     }
     HOPEvalMirAdaptOutValue(&lowerCtx.execCtx, outValue, &mirIsConst);
     *outIsConst = mirIsConst;
     if (mirIsConst) {
         *outDidReturn = outValue->kind != H2CTFEValue_INVALID;
     }
-    return 0;
+end:
+    H2ArenaDispose(&mirArena);
+    return rc;
 }
 
 H2_API_END

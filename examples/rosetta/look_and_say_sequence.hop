@@ -1,0 +1,65 @@
+fn bytes_eq(got &[u8], want &str) bool {
+	if len(got) != len(want) {
+		return false
+	}
+
+	var wb &[u8] = want
+	for var i int = 0; i < len(got); i += 1 {
+		if got[i] != wb[i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn look_and_say_next(dst *[u8], src &[u8]) int {
+	var out int = 0
+	var i   int = 0
+	for i < len(src) {
+		var byte  u8  = src[i]
+		var count int = 1
+		i += 1
+
+		for i < len(src) {
+			if src[i] != byte {
+				break
+			}
+			count += 1
+			i += 1
+		}
+
+		dst[out] = (count + 48) as u8
+		out += 1
+		dst[out] = byte
+		out += 1
+	}
+	return out
+}
+
+fn assert_term(term &[u8], want &str) {
+	assert bytes_eq(term, want)
+	print(want)
+}
+
+fn main() {
+	var a [u8 64]
+	var b [u8 64]
+	var n int = 1
+	a[0] = '1' as u8
+
+	assert_term(a[:n], want: "1")
+	var next int = look_and_say_next(b[:], src: a[:n])
+	assert_term(b[:next], want: "11")
+
+	n = look_and_say_next(a[:], src: b[:next])
+	assert_term(a[:n], want: "21")
+
+	next = look_and_say_next(b[:], src: a[:n])
+	assert_term(b[:next], want: "1211")
+
+	n = look_and_say_next(a[:], src: b[:next])
+	assert_term(a[:n], want: "111221")
+
+	next = look_and_say_next(b[:], src: a[:n])
+	assert_term(b[:next], want: "312211")
+}

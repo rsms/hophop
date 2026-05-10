@@ -1,0 +1,41 @@
+fn print_door(door i32) {
+	if door == 1 {
+		print("door 1")
+	} else if door == 4 {
+		print("door 4")
+	} else if door == 9 {
+		print("door 9")
+	} else if door == 16 {
+		print("door 16")
+	} else if door == 25 {
+		print("door 25")
+	} else if door == 36 {
+		print("door 36")
+	} else if door == 49 {
+		print("door 49")
+	} else if door == 64 {
+		print("door 64")
+	} else if door == 81 {
+		print("door 81")
+	} else if door == 100 {
+		print("door 100")
+	} else {
+		assert false
+	}
+}
+
+fn main() {
+	var doors [bool 101]
+
+	for var pass i32 = 1; pass <= 100; pass += 1 {
+		for var door = pass; door <= 100; door += pass {
+			doors[door] = !doors[door]
+		}
+	}
+
+	for var door i32 = 1; door <= 100; door += 1 {
+		if doors[door] {
+			print_door(door)
+		}
+	}
+}

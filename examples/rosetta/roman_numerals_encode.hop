@@ -1,0 +1,73 @@
+fn bytes_eq(got &[u8], want &str) bool {
+	if len(got) != len(want) {
+		return false
+	}
+
+	var wb &[u8] = want
+	for var i int = 0; i < len(got); i += 1 {
+		if got[i] != wb[i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn append_byte(buf *[u8], pos int, byte u8) int {
+	buf[pos] = byte
+	return pos + 1
+}
+
+fn append_digit(buf *[u8], pos, digit int, one, five, ten u8) int {
+	out := pos
+	if digit <= 3 {
+		for var i int = 0; i < digit; i += 1 {
+			out = append_byte(buf, pos: out, byte: one)
+		}
+		return out
+	}
+	if digit == 4 {
+		out = append_byte(buf, pos: out, byte: one)
+		return append_byte(buf, pos: out, byte: five)
+	}
+	if digit <= 8 {
+		out = append_byte(buf, pos: out, byte: five)
+		for var i int = 5; i < digit; i += 1 {
+			out = append_byte(buf, pos: out, byte: one)
+		}
+		return out
+	}
+	out = append_byte(buf, pos: out, byte: one)
+	return append_byte(buf, pos: out, byte: ten)
+}
+
+fn roman_encode(buf *[u8], value int) int {
+	n := value
+	var out int = 0
+
+	for n >= 1000 {
+		out = append_byte(buf, pos: out, byte: 'M' as u8)
+		n -= 1000
+	}
+
+	out = append_digit(buf, pos: out, digit: n / 100, one: 'C' as u8, five: 'D' as u8, ten: 'M' as u8)
+	n = n % 100
+	out = append_digit(buf, pos: out, digit: n / 10, one: 'X' as u8, five: 'L' as u8, ten: 'C' as u8)
+	n = n % 10
+	return append_digit(buf, pos: out, digit: n, one: 'I' as u8, five: 'V' as u8, ten: 'X' as u8)
+}
+
+fn check_and_print(value int, want &str) {
+	var out [u8 32]
+	var n   int = roman_encode(out[:], value)
+	assert bytes_eq(out[:n], want)
+	print(want)
+}
+
+fn main() {
+	check_and_print(1, want: "I")
+	check_and_print(4, want: "IV")
+	check_and_print(9, want: "IX")
+	check_and_print(42, want: "XLII")
+	check_and_print(1990, want: "MCMXC")
+	check_and_print(2024, want: "MMXXIV")
+}

@@ -1027,6 +1027,29 @@ static bool WasmTypeKindFromMirType(
     return false;
 }
 
+static bool WasmTypeKindFromMirLocal(
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    const H2MirLocal*    local,
+    uint8_t*             outTypeKind) {
+    if (outTypeKind == NULL) {
+        return false;
+    }
+    *outTypeKind = HOPWasmType_VOID;
+    if (local == NULL) {
+        return false;
+    }
+    if (WasmLocalIsSourceLocation(program, fn, local)) {
+        *outTypeKind = HOPWasmType_I32;
+        return true;
+    }
+    if (local->typeRef == UINT32_MAX) {
+        *outTypeKind = HOPWasmType_I32;
+        return true;
+    }
+    return WasmTypeKindFromMirType(program, local->typeRef, outTypeKind);
+}
+
 static bool WasmTypeKindIsPointer(uint8_t typeKind) {
     return typeKind == HOPWasmType_STR_PTR || typeKind == HOPWasmType_U8_PTR
         || typeKind == HOPWasmType_I32_PTR || typeKind == HOPWasmType_I8_PTR
@@ -1733,7 +1756,7 @@ static bool WasmFunctionNeedsFrameMemory(const H2MirProgram* program, const H2Mi
     }
     for (i = 0; i < fn->localCount; i++) {
         uint8_t typeKind = 0;
-        if (WasmTypeKindFromMirType(program, program->locals[fn->localStart + i].typeRef, &typeKind)
+        if (WasmTypeKindFromMirLocal(program, fn, &program->locals[fn->localStart + i], &typeKind)
             && (typeKind == HOPWasmType_STR_PTR || typeKind == HOPWasmType_AGG_REF
                 || WasmTypeKindIsPointer(typeKind) || WasmTypeKindIsArrayView(typeKind)
                 || WasmTypeKindIsSlice(typeKind)))
@@ -1945,10 +1968,7 @@ static int WasmBuildFunctionSignatures(
                 return -1;
             }
             local = &program->locals[fn->localStart + j];
-            if (WasmLocalIsSourceLocation(program, fn, local)) {
-                paramType = HOPWasmType_I32;
-            } else if (
-                !WasmTypeKindFromMirType(program, local->typeRef, &paramType)
+            if (!WasmTypeKindFromMirLocal(program, fn, local, &paramType)
                 || !WasmTypeKindIsSupported(paramType))
             {
                 paramType = HOPWasmType_VOID;
@@ -2095,10 +2115,7 @@ static int WasmPrepareFunctionState(
     for (i = 0; i < fn->localCount; i++) {
         const H2MirLocal* local = &program->locals[fn->localStart + i];
         uint8_t           typeKind = 0;
-        if (WasmLocalIsSourceLocation(program, fn, local)) {
-            typeKind = HOPWasmType_I32;
-        } else if (
-            !WasmTypeKindFromMirType(program, local->typeRef, &typeKind)
+        if (!WasmTypeKindFromMirLocal(program, fn, local, &typeKind)
             || !WasmTypeKindIsSupported(typeKind))
         {
             typeKind = HOPWasmType_VOID;
@@ -2127,7 +2144,7 @@ static int WasmPrepareFunctionState(
         state->localIntKinds[i] =
             (uint8_t)((local->typeRef < program->typeLen)
                           ? H2MirTypeRefIntKind(&program->types[local->typeRef])
-                          : H2MirIntKind_NONE);
+                          : H2MirIntKind_I32);
         state->arrayCounts[i] =
             (local->typeRef < program->typeLen)
                 ? H2MirTypeRefFixedArrayCount(&program->types[local->typeRef])
@@ -3493,6 +3510,8 @@ static int WasmEmitBinaryI32(
         case H2Tok_ADD: opcode = 0x6au; break;
         case H2Tok_SUB: opcode = 0x6bu; break;
         case H2Tok_MUL: opcode = 0x6cu; break;
+        case H2Tok_DIV: opcode = 0x6du; break;
+        case H2Tok_MOD: opcode = 0x6fu; break;
         case H2Tok_AND: opcode = 0x71u; break;
         case H2Tok_EQ:  opcode = 0x46u; break;
         case H2Tok_NEQ: opcode = 0x47u; break;
@@ -3517,6 +3536,8 @@ static int WasmEmitBinaryI64(
         case H2Tok_ADD: opcode = 0x7cu; break;
         case H2Tok_SUB: opcode = 0x7du; break;
         case H2Tok_MUL: opcode = 0x7eu; break;
+        case H2Tok_DIV: opcode = 0x7fu; break;
+        case H2Tok_MOD: opcode = 0x81u; break;
         case H2Tok_AND: opcode = 0x83u; break;
         case H2Tok_EQ:  opcode = 0x51u; break;
         case H2Tok_NEQ: opcode = 0x52u; break;
@@ -3574,6 +3595,527 @@ static int WasmEmitUnaryI64(
             }
             return -1;
     }
+}
+
+static int WasmEmitFunctionRange(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    startPc,
+    uint32_t                    endPc,
+    H2Diag* _Nullable diag);
+
+static bool WasmConstBoolValue(const H2MirProgram* program, uint32_t constIndex, int* outValue) {
+    if (program == NULL || outValue == NULL || constIndex >= program->constLen) {
+        return false;
+    }
+    if (program->consts[constIndex].kind != H2MirConst_BOOL) {
+        return false;
+    }
+    *outValue = program->consts[constIndex].bits != 0 ? 1 : 0;
+    return true;
+}
+
+static bool WasmInstIsBoolConst(
+    const H2MirProgram* program, const H2MirFunction* fn, uint32_t pc, int value) {
+    const H2MirInst* inst;
+    int              actual = 0;
+    if (program == NULL || fn == NULL || pc >= fn->instLen) {
+        return false;
+    }
+    inst = &program->insts[fn->instStart + pc];
+    return inst->op == H2MirOp_PUSH_CONST && WasmConstBoolValue(program, inst->aux, &actual)
+        && actual == value;
+}
+
+static int WasmEmitBoolConst(HOPWasmBuf* body, HOPWasmEmitState* state, int value) {
+    if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, value != 0 ? 1 : 0) != 0
+        || WasmStackPushEx(state, HOPWasmType_I32, UINT32_MAX) != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static bool WasmFindJumpIfFalse(
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             startPc,
+    uint32_t             endPc,
+    uint32_t             falseTarget,
+    uint32_t*            outPc) {
+    uint32_t pc;
+    if (program == NULL || fn == NULL || outPc == NULL || startPc >= endPc || endPc > fn->instLen) {
+        return false;
+    }
+    for (pc = startPc; pc < endPc; pc++) {
+        const H2MirInst* inst = &program->insts[fn->instStart + pc];
+        if (inst->op == H2MirOp_JUMP_IF_FALSE
+            && (falseTarget == UINT32_MAX || inst->aux == falseTarget))
+        {
+            *outPc = pc;
+            return true;
+        }
+    }
+    return false;
+}
+
+static int WasmEmitAndTail(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    startPc,
+    uint32_t                    falseTarget,
+    uint32_t                    mergeTarget,
+    H2Diag* _Nullable diag);
+
+static int WasmEmitOrRange(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    startPc,
+    uint32_t                    mergeTarget,
+    H2Diag* _Nullable diag);
+
+static int WasmEmitBoolIf(
+    HOPWasmBuf*       body,
+    HOPWasmEmitState* state,
+    uint32_t          stackDepthBefore,
+    H2Diag* _Nullable diag,
+    const H2MirInst* branchInst,
+    int (*thenFn)(void* ctx),
+    void* thenCtx,
+    int (*elseFn)(void* ctx),
+    void* elseCtx) {
+    if (WasmAppendByte(body, 0x04u) != 0 || WasmAppendByte(body, 0x7fu) != 0) {
+        return -1;
+    }
+    if (thenFn(thenCtx) != 0) {
+        return -1;
+    }
+    if (state->stackLen != stackDepthBefore + 1u
+        || state->stackKinds[stackDepthBefore] != HOPWasmType_I32)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+        if (diag != NULL) {
+            diag->detail = "boolean branch stack mismatch";
+        }
+        return -1;
+    }
+    state->stackLen = stackDepthBefore;
+    if (WasmAppendByte(body, 0x05u) != 0) {
+        return -1;
+    }
+    if (elseFn(elseCtx) != 0) {
+        return -1;
+    }
+    if (state->stackLen != stackDepthBefore + 1u
+        || state->stackKinds[stackDepthBefore] != HOPWasmType_I32)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+        if (diag != NULL) {
+            diag->detail = "boolean branch stack mismatch";
+        }
+        return -1;
+    }
+    return WasmAppendByte(body, 0x0bu);
+}
+
+typedef struct {
+    const H2MirProgram*         program;
+    const HOPWasmFnSig*         sigs;
+    const HOPWasmImportLayout*  imports;
+    const HOPWasmStringLayout*  strings;
+    const H2MirFunction*        fn;
+    HOPWasmBuf*                 body;
+    HOPWasmEmitState*           state;
+    const HOPWasmBranchTargets* branchTargets;
+    uint8_t                     resultKind;
+    uint32_t                    startPc;
+    uint32_t                    endPc;
+    uint32_t                    falseTarget;
+    uint32_t                    mergeTarget;
+    H2Diag* _Nullable diag;
+} HOPWasmBoolExprCtx;
+
+static int WasmEmitBoolConstTrueCtx(void* ctx) {
+    HOPWasmBoolExprCtx* c = (HOPWasmBoolExprCtx*)ctx;
+    return WasmEmitBoolConst(c->body, c->state, 1);
+}
+
+static int WasmEmitBoolConstFalseCtx(void* ctx) {
+    HOPWasmBoolExprCtx* c = (HOPWasmBoolExprCtx*)ctx;
+    return WasmEmitBoolConst(c->body, c->state, 0);
+}
+
+static int WasmEmitAndTailCtx(void* ctx) {
+    HOPWasmBoolExprCtx* c = (HOPWasmBoolExprCtx*)ctx;
+    return WasmEmitAndTail(
+        c->program,
+        c->sigs,
+        c->imports,
+        c->strings,
+        c->fn,
+        c->body,
+        c->state,
+        c->branchTargets,
+        c->resultKind,
+        c->startPc,
+        c->falseTarget,
+        c->mergeTarget,
+        c->diag);
+}
+
+static int WasmEmitOrRangeCtx(void* ctx) {
+    HOPWasmBoolExprCtx* c = (HOPWasmBoolExprCtx*)ctx;
+    return WasmEmitOrRange(
+        c->program,
+        c->sigs,
+        c->imports,
+        c->strings,
+        c->fn,
+        c->body,
+        c->state,
+        c->branchTargets,
+        c->resultKind,
+        c->startPc,
+        c->mergeTarget,
+        c->diag);
+}
+
+static int WasmEmitAndTail(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    startPc,
+    uint32_t                    falseTarget,
+    uint32_t                    mergeTarget,
+    H2Diag* _Nullable diag) {
+    uint32_t           branchPc = 0;
+    uint8_t            condType = 0;
+    uint32_t           stackDepthBefore;
+    const H2MirInst*   branchInst;
+    HOPWasmBoolExprCtx thenCtx;
+    HOPWasmBoolExprCtx elseCtx;
+    if (startPc + 2u == falseTarget && falseTarget < fn->instLen
+        && WasmInstIsBoolConst(program, fn, startPc, 1)
+        && program->insts[fn->instStart + startPc + 1u].op == H2MirOp_JUMP
+        && program->insts[fn->instStart + startPc + 1u].aux == mergeTarget)
+    {
+        return WasmEmitBoolConst(body, state, 1);
+    }
+    if (!WasmFindJumpIfFalse(program, fn, startPc, falseTarget, falseTarget, &branchPc)
+        || branchPc + 1u >= falseTarget)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+        if (diag != NULL) {
+            diag->detail = "unsupported boolean expression shape";
+        }
+        return -1;
+    }
+    branchInst = &program->insts[fn->instStart + branchPc];
+    if (WasmEmitFunctionRange(
+            program,
+            sigs,
+            imports,
+            strings,
+            fn,
+            body,
+            state,
+            branchTargets,
+            resultKind,
+            startPc,
+            branchPc,
+            diag)
+            != 0
+        || WasmStackPop(state, &condType) != 0 || condType != HOPWasmType_I32)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+        if (diag != NULL) {
+            diag->detail = "unsupported boolean condition";
+        }
+        return -1;
+    }
+    stackDepthBefore = state->stackLen;
+    thenCtx = (HOPWasmBoolExprCtx){
+        program,       sigs,       imports,       strings,     fn,          body,        state,
+        branchTargets, resultKind, branchPc + 1u, falseTarget, falseTarget, mergeTarget, diag
+    };
+    elseCtx = thenCtx;
+    return WasmEmitBoolIf(
+        body,
+        state,
+        stackDepthBefore,
+        diag,
+        branchInst,
+        WasmEmitAndTailCtx,
+        &thenCtx,
+        WasmEmitBoolConstFalseCtx,
+        &elseCtx);
+}
+
+static int WasmEmitOrRange(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    startPc,
+    uint32_t                    mergeTarget,
+    H2Diag* _Nullable diag) {
+    uint32_t           branchPc = 0;
+    uint32_t           falseTarget;
+    uint8_t            condType = 0;
+    uint32_t           stackDepthBefore;
+    const H2MirInst*   branchInst;
+    HOPWasmBoolExprCtx thenCtx;
+    HOPWasmBoolExprCtx elseCtx;
+    if (startPc + 1u == mergeTarget && WasmInstIsBoolConst(program, fn, startPc, 0)) {
+        return WasmEmitBoolConst(body, state, 0);
+    }
+    if (!WasmFindJumpIfFalse(program, fn, startPc, mergeTarget, UINT32_MAX, &branchPc)
+        || branchPc + 2u >= mergeTarget)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, fn->nameStart, fn->nameEnd);
+        if (diag != NULL) {
+            diag->detail = "unsupported boolean expression shape";
+        }
+        return -1;
+    }
+    branchInst = &program->insts[fn->instStart + branchPc];
+    falseTarget = branchInst->aux;
+    if (falseTarget != branchPc + 3u || !WasmInstIsBoolConst(program, fn, branchPc + 1u, 1)
+        || program->insts[fn->instStart + branchPc + 2u].op != H2MirOp_JUMP
+        || program->insts[fn->instStart + branchPc + 2u].aux != mergeTarget)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+        if (diag != NULL) {
+            diag->detail = "unsupported boolean expression shape";
+        }
+        return -1;
+    }
+    if (WasmEmitFunctionRange(
+            program,
+            sigs,
+            imports,
+            strings,
+            fn,
+            body,
+            state,
+            branchTargets,
+            resultKind,
+            startPc,
+            branchPc,
+            diag)
+            != 0
+        || WasmStackPop(state, &condType) != 0 || condType != HOPWasmType_I32)
+    {
+        WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+        if (diag != NULL) {
+            diag->detail = "unsupported boolean condition";
+        }
+        return -1;
+    }
+    stackDepthBefore = state->stackLen;
+    thenCtx = (HOPWasmBoolExprCtx){
+        program,       sigs,       imports, strings, fn, body,        state,
+        branchTargets, resultKind, 0u,      0u,      0u, mergeTarget, diag
+    };
+    elseCtx = thenCtx;
+    elseCtx.startPc = falseTarget;
+    return WasmEmitBoolIf(
+        body,
+        state,
+        stackDepthBefore,
+        diag,
+        branchInst,
+        WasmEmitBoolConstTrueCtx,
+        &thenCtx,
+        WasmEmitOrRangeCtx,
+        &elseCtx);
+}
+
+static bool WasmBoolOrShape(
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             pc,
+    uint32_t             endPc,
+    uint32_t*            outFalseTarget,
+    uint32_t*            outMergeTarget) {
+    const H2MirInst* inst;
+    uint32_t         falseTarget;
+    uint32_t         mergeTarget;
+    if (program == NULL || fn == NULL || pc + 2u >= endPc) {
+        return false;
+    }
+    inst = &program->insts[fn->instStart + pc];
+    falseTarget = inst->aux;
+    if (falseTarget != pc + 3u || falseTarget > endPc
+        || !WasmInstIsBoolConst(program, fn, pc + 1u, 1)
+        || program->insts[fn->instStart + pc + 2u].op != H2MirOp_JUMP)
+    {
+        return false;
+    }
+    mergeTarget = program->insts[fn->instStart + pc + 2u].aux;
+    if (mergeTarget <= falseTarget || mergeTarget > endPc) {
+        return false;
+    }
+    *outFalseTarget = falseTarget;
+    *outMergeTarget = mergeTarget;
+    return true;
+}
+
+static bool WasmBoolAndShape(
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             pc,
+    uint32_t             endPc,
+    uint32_t*            outFalseTarget,
+    uint32_t*            outMergeTarget) {
+    const H2MirInst* backedge;
+    uint32_t         falseTarget;
+    uint32_t         mergeTarget;
+    if (program == NULL || fn == NULL || pc + 2u >= endPc) {
+        return false;
+    }
+    falseTarget = program->insts[fn->instStart + pc].aux;
+    if (falseTarget == 0u || falseTarget >= endPc
+        || !WasmInstIsBoolConst(program, fn, falseTarget, 0))
+    {
+        return false;
+    }
+    backedge = &program->insts[fn->instStart + falseTarget - 1u];
+    if (backedge->op != H2MirOp_JUMP || backedge->aux <= falseTarget || backedge->aux > endPc) {
+        return false;
+    }
+    mergeTarget = backedge->aux;
+    if (mergeTarget != falseTarget + 1u) {
+        return false;
+    }
+    *outFalseTarget = falseTarget;
+    *outMergeTarget = mergeTarget;
+    return true;
+}
+
+static int WasmTryEmitBoolBranchExpr(
+    const H2MirProgram*         program,
+    const HOPWasmFnSig*         sigs,
+    const HOPWasmImportLayout*  imports,
+    const HOPWasmStringLayout*  strings,
+    const H2MirFunction*        fn,
+    HOPWasmBuf*                 body,
+    HOPWasmEmitState*           state,
+    const HOPWasmBranchTargets* branchTargets,
+    uint8_t                     resultKind,
+    uint32_t                    pc,
+    uint32_t                    endPc,
+    uint32_t*                   outNextPc,
+    int*                        outHandled,
+    H2Diag* _Nullable diag) {
+    const H2MirInst*   branchInst = &program->insts[fn->instStart + pc];
+    uint32_t           falseTarget = UINT32_MAX;
+    uint32_t           mergeTarget = UINT32_MAX;
+    uint8_t            condType = 0;
+    uint32_t           stackDepthBefore;
+    HOPWasmBoolExprCtx thenCtx;
+    HOPWasmBoolExprCtx elseCtx;
+    *outHandled = 0;
+    if (WasmBoolOrShape(program, fn, pc, endPc, &falseTarget, &mergeTarget)) {
+        *outHandled = 1;
+        if (WasmStackPop(state, &condType) != 0 || condType != HOPWasmType_I32) {
+            WasmSetDiag(
+                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+            if (diag != NULL) {
+                diag->detail = "unsupported boolean condition";
+            }
+            return -1;
+        }
+        stackDepthBefore = state->stackLen;
+        thenCtx = (HOPWasmBoolExprCtx){
+            program,       sigs,       imports, strings, fn,          body,        state,
+            branchTargets, resultKind, 0u,      0u,      falseTarget, mergeTarget, diag
+        };
+        elseCtx = thenCtx;
+        elseCtx.startPc = falseTarget;
+        if (WasmEmitBoolIf(
+                body,
+                state,
+                stackDepthBefore,
+                diag,
+                branchInst,
+                WasmEmitBoolConstTrueCtx,
+                &thenCtx,
+                WasmEmitOrRangeCtx,
+                &elseCtx)
+            != 0)
+        {
+            return -1;
+        }
+        *outNextPc = mergeTarget;
+        return 0;
+    }
+    if (WasmBoolAndShape(program, fn, pc, endPc, &falseTarget, &mergeTarget)) {
+        *outHandled = 1;
+        if (WasmStackPop(state, &condType) != 0 || condType != HOPWasmType_I32) {
+            WasmSetDiag(
+                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, branchInst->start, branchInst->end);
+            if (diag != NULL) {
+                diag->detail = "unsupported boolean condition";
+            }
+            return -1;
+        }
+        stackDepthBefore = state->stackLen;
+        thenCtx = (HOPWasmBoolExprCtx){
+            program,       sigs,       imports, strings,     fn,          body,        state,
+            branchTargets, resultKind, pc + 1u, falseTarget, falseTarget, mergeTarget, diag
+        };
+        elseCtx = thenCtx;
+        if (WasmEmitBoolIf(
+                body,
+                state,
+                stackDepthBefore,
+                diag,
+                branchInst,
+                WasmEmitAndTailCtx,
+                &thenCtx,
+                WasmEmitBoolConstFalseCtx,
+                &elseCtx)
+            != 0)
+        {
+            return -1;
+        }
+        *outNextPc = mergeTarget;
+        return 0;
+    }
+    return 0;
 }
 
 static int WasmEmitFunctionRange(
@@ -6863,10 +7405,35 @@ static int WasmEmitFunctionRange(
                 uint32_t             falseTarget = inst->aux;
                 uint32_t             thenEnd = falseTarget;
                 uint32_t             mergeTarget = falseTarget;
+                uint32_t             boolNextPc = pc;
                 HOPWasmBranchTargets nestedTargets = WasmNestedBranchTargets(branchTargets);
                 uint32_t             stackDepthBefore;
                 uint32_t             branchDepth = 0;
+                int                  boolHandled = 0;
                 int                  hasElse = 0;
+                if (WasmTryEmitBoolBranchExpr(
+                        program,
+                        sigs,
+                        imports,
+                        strings,
+                        fn,
+                        body,
+                        state,
+                        branchTargets,
+                        resultKind,
+                        pc,
+                        endPc,
+                        &boolNextPc,
+                        &boolHandled,
+                        diag)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (boolHandled) {
+                    pc = boolNextPc;
+                    continue;
+                }
                 if (falseTarget <= pc + 1u || falseTarget > endPc) {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
@@ -6888,16 +7455,6 @@ static int WasmEmitFunctionRange(
                         if (WasmBranchDepthForJump(branchTargets, maybeElseJump->aux, &branchDepth))
                         {
                             thenEnd = falseTarget;
-                        } else if (maybeElseJump->aux <= falseTarget) {
-                            WasmSetDiag(
-                                diag,
-                                H2Diag_WASM_BACKEND_UNSUPPORTED_MIR,
-                                maybeElseJump->start,
-                                maybeElseJump->end);
-                            if (diag != NULL) {
-                                diag->detail = "loops/backedges are not supported";
-                            }
-                            return -1;
                         } else if (maybeElseJump->aux > endPc) {
                             WasmSetDiag(
                                 diag,
@@ -6908,7 +7465,7 @@ static int WasmEmitFunctionRange(
                                 diag->detail = "unsupported control-flow graph shape";
                             }
                             return -1;
-                        } else {
+                        } else if (maybeElseJump->aux > falseTarget) {
                             hasElse = 1;
                             thenEnd = falseTarget - 1u;
                             mergeTarget = maybeElseJump->aux;

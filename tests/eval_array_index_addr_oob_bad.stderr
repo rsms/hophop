@@ -1,0 +1,3 @@
+tests/eval_array_index_addr_oob_bad.hop:7:2: error: HOP4003: evaluator backend: array index is out of bounds or unsupported during const evaluation
+call trace:
+  tests/eval_array_index_addr_oob_bad.hop:1:4: in fn main

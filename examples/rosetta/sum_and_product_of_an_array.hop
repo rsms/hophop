@@ -1,0 +1,21 @@
+fn main() {
+	var values [i32 6]
+	values[0] = 1
+	values[1] = 2
+	values[2] = 3
+	values[3] = 4
+	values[4] = 5
+	values[5] = 6
+
+	var sum     i32 = 0
+	var product i32 = 1
+
+	for var i i32 = 0; i < 6; i += 1 {
+		sum += values[i]
+		product *= values[i]
+	}
+
+	assert sum == 21
+	assert product == 720
+	print("sum = 21, product = 720")
+}
