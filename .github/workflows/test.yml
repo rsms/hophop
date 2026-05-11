@@ -22,5 +22,5 @@ jobs:
 
       - name: Run tests
         run: |
-          export PATH=$(brew --prefix llvm)/bin:$PATH &&
+          export "PATH=/opt/homebrew/opt/llvm/bin:$PATH" &&
           ./build.sh test
