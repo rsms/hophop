@@ -426,6 +426,9 @@ static int ReplacePathExtensionDup(const char* path, const char* extension, char
     if (dot != NULL && (slash == NULL || dot > slash)) {
         stemLen = (size_t)(dot - path);
     }
+    if (extensionLen > SIZE_MAX - 1u || stemLen > SIZE_MAX - extensionLen - 1u) {
+        return -1;
+    }
     out = (char*)malloc(stemLen + extensionLen + 1u);
     if (out == NULL) {
         return -1;
@@ -471,7 +474,11 @@ static int DefaultPackageExecutableOutputPath(
         || StrEq(platformTarget, H2_PLAYBIT_PLATFORM_TARGET))
     {
         size_t len = strlen(pkgName);
-        out = (char*)malloc(len + 5u + 1u);
+        if (len > SIZE_MAX - sizeof(".wasm")) {
+            free(pkgName);
+            return -1;
+        }
+        out = (char*)malloc(len + sizeof(".wasm"));
         if (out == NULL) {
             free(pkgName);
             return -1;
