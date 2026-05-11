@@ -1,0 +1,63 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install base tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates gnupg lsb-release ninja-build python3 wget
+
+      - name: Select Clang
+        run: |
+          set -euo pipefail
+
+          use_existing=0
+          if command -v clang >/dev/null 2>&1 && command -v clang-format >/dev/null 2>&1; then
+              clang_major=$(clang --version | sed -nE 's/^.*clang version ([0-9]+).*/\1/p' | head -n1)
+              if [ -n "$clang_major" ] && [ "$clang_major" -ge 17 ]; then
+                  use_existing=1
+              fi
+          fi
+
+          if [ "$use_existing" = 1 ]; then
+              echo "Using runner-provided clang"
+              exit 0
+          fi
+
+          echo "Installing LLVM 22"
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key |
+              sudo gpg --dearmor -o /usr/share/keyrings/llvm-snapshot.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" |
+              sudo tee /etc/apt/sources.list.d/llvm-toolchain-noble-22.list
+          sudo apt-get update
+          sudo apt-get install -y clang-22 clang-format-22 libclang-rt-22-dev
+          echo "/usr/lib/llvm-22/bin" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        run: |
+          clang --version
+          clang-format --version
+          ninja --version
+          python3 --version
+          node --version
+
+      - name: Run tests
+        run: ./build.sh test
