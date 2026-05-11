@@ -22,5 +22,8 @@ jobs:
 
       - name: Run tests
         run: |
-          export "PATH=/opt/homebrew/opt/llvm/bin:$PATH" &&
+          export "PATH=/opt/homebrew/opt/llvm/bin:$PATH"
+          which clang || true
+          which clang-format || true
+          brew --prefix llvm
           ./build.sh test
