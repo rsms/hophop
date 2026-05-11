@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: macos-15
@@ -18,5 +22,5 @@ jobs:
 
       - name: Run tests
         run: |
-          export PATH=$(brew --prefix llvm@18)/bin:$PATH &&
+          export PATH=$(brew --prefix llvm)/bin:$PATH &&
           ./build.sh test
