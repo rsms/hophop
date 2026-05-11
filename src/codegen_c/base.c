@@ -212,19 +212,23 @@ int IsBuiltinType(const char* s) {
     return StrEq(s, "bool") || StrEq(s, "str") || StrEq(s, "u8") || StrEq(s, "u16")
         || StrEq(s, "u32") || StrEq(s, "u64") || StrEq(s, "i8") || StrEq(s, "i16")
         || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "uint") || StrEq(s, "int")
-        || StrEq(s, "rawptr") || StrEq(s, "f32") || StrEq(s, "f64") || StrEq(s, "const_int")
-        || StrEq(s, "const_float") || StrEq(s, "type") || StrEq(s, "anytype");
+        || StrEq(s, "rawptr") || StrEq(s, "rune") || StrEq(s, "builtin__rune") || StrEq(s, "f32")
+        || StrEq(s, "f64") || StrEq(s, "const_int") || StrEq(s, "const_float") || StrEq(s, "type")
+        || StrEq(s, "anytype");
 }
 
 int IsIntegerCTypeName(const char* s) {
     return StrEq(s, "__hop_u8") || StrEq(s, "__hop_u16") || StrEq(s, "__hop_u32")
         || StrEq(s, "__hop_u64") || StrEq(s, "__hop_uint") || StrEq(s, "__hop_i8")
         || StrEq(s, "__hop_i16") || StrEq(s, "__hop_i32") || StrEq(s, "__hop_i64")
-        || StrEq(s, "__hop_int");
+        || StrEq(s, "__hop_int") || StrEq(s, "u8") || StrEq(s, "u16") || StrEq(s, "u32")
+        || StrEq(s, "u64") || StrEq(s, "uint") || StrEq(s, "i8") || StrEq(s, "i16")
+        || StrEq(s, "i32") || StrEq(s, "i64") || StrEq(s, "int") || StrEq(s, "rune")
+        || StrEq(s, "builtin__rune");
 }
 
 int IsFloatCTypeName(const char* s) {
-    return StrEq(s, "__hop_f32") || StrEq(s, "__hop_f64");
+    return StrEq(s, "__hop_f32") || StrEq(s, "__hop_f64") || StrEq(s, "f32") || StrEq(s, "f64");
 }
 
 int SliceEq(const char* src, uint32_t start, uint32_t end, const char* s) {
@@ -2043,20 +2047,56 @@ const char* TypeRefDisplayBaseName(const H2CBackendC* c, const char* baseName) {
     return baseName;
 }
 
+static int EmitInlineCStrLiteral(H2Buf* out, const char* s) {
+    const unsigned char* p;
+    if (out == NULL || s == NULL || BufAppendChar(out, '"') != 0) {
+        return -1;
+    }
+    for (p = (const unsigned char*)s; *p != 0; p++) {
+        if (*p == (unsigned char)'"' || *p == (unsigned char)'\\') {
+            if (BufAppendChar(out, '\\') != 0 || BufAppendChar(out, (char)*p) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (*p == (unsigned char)'\n') {
+            if (BufAppendCStr(out, "\\n") != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (*p == (unsigned char)'\r') {
+            if (BufAppendCStr(out, "\\r") != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (*p == (unsigned char)'\t') {
+            if (BufAppendCStr(out, "\\t") != 0) {
+                return -1;
+            }
+            continue;
+        }
+        if (BufAppendChar(out, (char)*p) != 0) {
+            return -1;
+        }
+    }
+    return BufAppendChar(out, '"');
+}
+
 int EmitTypeNameStringLiteralFromTypeRef(H2CBackendC* c, const H2TypeRef* _Nullable t) {
     const char* name = "<type>";
-    int32_t     literalId;
     if (t != NULL && t->valid && !t->isOptional && t->containerKind == H2TypeContainer_SCALAR
         && t->ptrDepth == 0 && t->containerPtrDepth == 0)
     {
         name = TypeRefDisplayBaseName(c, t->baseName);
     }
-    if (GetOrAddStringLiteralBytes(c, (const uint8_t*)name, (uint32_t)StrLen(name), &literalId)
-        != 0)
+    if (BufAppendCStr(&c->out, "(*__hop_strlit(") != 0 || EmitInlineCStrLiteral(&c->out, name) != 0
+        || BufAppendCStr(&c->out, "))") != 0)
     {
         return -1;
     }
-    return EmitStringLiteralValue(c, literalId, 0);
+    return 0;
 }
 
 int EmitTypeTagKindLiteralFromTypeRef(H2CBackendC* c, const H2TypeRef* t) {
@@ -2173,13 +2213,15 @@ const char* _Nullable ResolveTypeName(H2CBackendC* c, uint32_t start, uint32_t e
     int                      hasDot = 0;
     uint32_t                 i;
     static const char* const builtinSlNames[] = {
-        "bool", "str", "u8",     "u16",       "u32", "u64", "i8",          "i16",  "i32",     "i64",
-        "uint", "int", "rawptr", "const_int", "f32", "f64", "const_float", "type", "anytype",
+        "bool",          "str",       "u8",  "u16",  "u32",         "u64",    "i8",
+        "i16",           "i32",       "i64", "uint", "int",         "rawptr", "rune",
+        "builtin__rune", "const_int", "f32", "f64",  "const_float", "type",   "anytype",
     };
     static const char* const builtinCNames[] = {
-        "__hop_bool", "__hop_str", "__hop_u8",  "__hop_u16",  "__hop_u32", "__hop_u64", "__hop_i8",
-        "__hop_i16",  "__hop_i32", "__hop_i64", "__hop_uint", "__hop_int", "void",      "__hop_int",
-        "__hop_f32",  "__hop_f64", "__hop_f64", "__hop_type", "__hop_u8",
+        "__hop_bool", "__hop_str",  "__hop_u8",  "__hop_u16", "__hop_u32",  "__hop_u64",
+        "__hop_i8",   "__hop_i16",  "__hop_i32", "__hop_i64", "__hop_uint", "__hop_int",
+        "void",       "__hop_u32",  "__hop_u32", "__hop_int", "__hop_f32",  "__hop_f64",
+        "__hop_f64",  "__hop_type", "__hop_u8",
     };
 
     normalized = DupAndReplaceDots(c, c->unit->source, start, end);
@@ -2230,6 +2272,8 @@ void NormalizeCoreRuntimeTypeName(H2TypeRef* outType) {
         outType->baseName = "__hop_Logger";
     } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__Context")) {
         outType->baseName = "__hop_Context";
+    } else if (outType->baseName != NULL && StrEq(outType->baseName, "builtin__rune")) {
+        outType->baseName = "__hop_u32";
     }
 }
 
@@ -2716,6 +2760,13 @@ int ParseTypeRef(H2CBackendC* c, int32_t nodeId, H2TypeRef* outType) {
         case H2Ast_TYPE_NAME: {
             H2TypeRef reflectedType;
             int       handled = 0;
+            if (AstFirstChild(&c->ast, nodeId) < 0
+                && (SliceEq(c->unit->source, n->dataStart, n->dataEnd, "rune")
+                    || SliceEq(c->unit->source, n->dataStart, n->dataEnd, "builtin__rune")))
+            {
+                TypeRefSetScalar(outType, "__hop_u32");
+                return 0;
+            }
             if (ParseTypeRefFromActiveTypecheck(c, nodeId, outType, &handled) != 0) {
                 return -1;
             }

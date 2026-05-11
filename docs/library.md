@@ -204,10 +204,11 @@ Behavior:
 ### `print`
 
 ```hop
-fn print(message &str)
+fn print(args ...anytype)
 ```
 
-`print` writes a UTF-8 message to standard output and ends the message with a line break.
+`print` writes its arguments to standard output separated by spaces and ends the message with a line break.
+It uses the same scalar, pointer, string, and type formatting support as `format`.
 It is implemented by calling `context.logger.handler(&context.logger, message, LogLevel.Info, 0)`.
 
 

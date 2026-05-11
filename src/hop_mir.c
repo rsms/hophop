@@ -5802,6 +5802,22 @@ static int ClassifyMirFuncFieldCall(
     uint32_t* _Nullable outInsertAfterPc,
     uint32_t* _Nullable outImplFieldRef);
 
+static uint32_t RemapMirPcAfterOmit(
+    const uint8_t* _Nullable omit, uint32_t oldInstLen, uint32_t oldPc) {
+    uint32_t i;
+    uint32_t removed = 0;
+    uint32_t limit = oldPc < oldInstLen ? oldPc : oldInstLen;
+    if (omit == NULL) {
+        return oldPc;
+    }
+    for (i = 0; i < limit; i++) {
+        if (omit[i] != 0u) {
+            removed++;
+        }
+    }
+    return oldPc - removed;
+}
+
 static int ResolvePackageMirProgram(
     const H2PackageLoader*      loader,
     const H2MirResolvedDeclMap* declMap,
@@ -6166,6 +6182,9 @@ static int ResolvePackageMirProgram(
                     }
                 }
             }
+            if (inst.op == H2MirOp_JUMP || inst.op == H2MirOp_JUMP_IF_FALSE) {
+                inst.aux = RemapMirPcAfterOmit(omit, fn->instLen, inst.aux);
+            }
             insts[instOutLen++] = inst;
         }
         funcs[funcIndex].instLen = instOutLen - funcs[funcIndex].instStart;
@@ -6328,210 +6347,6 @@ static int LoaderTargetNeedsSelectedPlatformMir(const H2PackageLoader* _Nullable
     return loader != NULL && loader->platformTarget != NULL
         && (StrEq(loader->platformTarget, H2_WASM_MIN_PLATFORM_TARGET)
             || StrEq(loader->platformTarget, H2_PLAYBIT_PLATFORM_TARGET));
-}
-
-static int BuilderHasHostPrintCall(const H2MirProgramBuilder* builder) {
-    uint32_t i;
-    if (builder == NULL) {
-        return 0;
-    }
-    for (i = 0; i < builder->instLen; i++) {
-        const H2MirInst* inst = &builder->insts[i];
-        if (inst->op == H2MirOp_CALL_HOST && inst->aux < builder->hostLen
-            && builder->hosts[inst->aux].target == H2MirHostTarget_PRINT)
-        {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int FindMirIntConstIndex(const H2MirProgram* program, uint64_t bits, uint32_t* outIndex) {
-    uint32_t i;
-    if (outIndex != NULL) {
-        *outIndex = UINT32_MAX;
-    }
-    if (program == NULL || outIndex == NULL) {
-        return 0;
-    }
-    for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == H2MirConst_INT && program->consts[i].bits == bits) {
-            *outIndex = i;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int EnsureMirIntConstIndex(
-    H2Arena* arena, H2MirProgram* program, uint64_t bits, uint32_t* outIndex) {
-    H2MirConst* consts;
-    uint32_t    i;
-    if (outIndex != NULL) {
-        *outIndex = UINT32_MAX;
-    }
-    if (arena == NULL || program == NULL || outIndex == NULL) {
-        return 0;
-    }
-    for (i = 0; i < program->constLen; i++) {
-        if (program->consts[i].kind == H2MirConst_INT && program->consts[i].bits == bits) {
-            *outIndex = i;
-            return 1;
-        }
-    }
-    consts = (H2MirConst*)H2ArenaAlloc(
-        arena, sizeof(H2MirConst) * (program->constLen + 1u), (uint32_t)_Alignof(H2MirConst));
-    if (consts == NULL) {
-        return 0;
-    }
-    for (i = 0; i < program->constLen; i++) {
-        consts[i] = program->consts[i];
-    }
-    consts[program->constLen] = (H2MirConst){
-        .kind = H2MirConst_INT,
-        .bits = bits,
-    };
-    *outIndex = program->constLen;
-    program->consts = consts;
-    program->constLen++;
-    return 1;
-}
-
-static int RewriteMirWasmPrintHostcalls(
-    const H2PackageLoader*      loader,
-    const H2MirResolvedDeclMap* declMap,
-    H2Arena*                    arena,
-    H2MirProgram*               program) {
-    const H2MirResolvedDecl* consoleLogDecl;
-    const H2MirFunction*     consoleLogFn;
-    H2MirFunction*           funcs;
-    H2MirInst*               insts;
-    uint32_t                 zeroConstIndex = UINT32_MAX;
-    uint32_t                 flagsTypeRef;
-    uint32_t                 totalExtraLen = 0u;
-    uint32_t                 funcIndex;
-    uint32_t                 instOutLen = 0u;
-    if (!LoaderTargetNeedsSelectedPlatformMir(loader)) {
-        return 0;
-    }
-    if (loader == NULL || loader->selectedPlatformPkg == NULL || declMap == NULL || arena == NULL
-        || program == NULL)
-    {
-        return -1;
-    }
-    consoleLogDecl = FindMirResolvedDeclByCStr(
-        declMap, loader->selectedPlatformPkg, "console_log", H2MirDeclKind_FN);
-    if (consoleLogDecl == NULL || consoleLogDecl->functionIndex >= program->funcLen) {
-        return 0;
-    }
-    consoleLogFn = &program->funcs[consoleLogDecl->functionIndex];
-    if (consoleLogFn->paramCount < 2u || consoleLogFn->localStart + 1u >= program->localLen) {
-        return -1;
-    }
-    flagsTypeRef = program->locals[consoleLogFn->localStart + 1u].typeRef;
-    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const H2MirFunction* fn = &program->funcs[funcIndex];
-        uint32_t             pc;
-        for (pc = 0; pc < fn->instLen; pc++) {
-            const H2MirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == H2MirOp_CALL_HOST && inst->aux < program->hostLen
-                && program->hosts[inst->aux].target == H2MirHostTarget_PRINT)
-            {
-                totalExtraLen += 2u;
-            }
-        }
-    }
-    if (totalExtraLen == 0u) {
-        return 0;
-    }
-    if (!EnsureMirIntConstIndex(arena, program, 0u, &zeroConstIndex)) {
-        return -1;
-    }
-    if (program->instLen + totalExtraLen < program->instLen) {
-        return -1;
-    }
-    funcs = (H2MirFunction*)H2ArenaAlloc(
-        arena, sizeof(H2MirFunction) * program->funcLen, (uint32_t)_Alignof(H2MirFunction));
-    insts = (H2MirInst*)H2ArenaAlloc(
-        arena,
-        sizeof(H2MirInst) * (program->instLen + totalExtraLen),
-        (uint32_t)_Alignof(H2MirInst));
-    if ((funcs == NULL && program->funcLen != 0u)
-        || (insts == NULL && program->instLen + totalExtraLen != 0u))
-    {
-        return -1;
-    }
-    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
-        const H2MirFunction* fn = &program->funcs[funcIndex];
-        uint32_t*            insertCounts = NULL;
-        uint32_t*            pcMap = NULL;
-        uint32_t             extraLen = 0u;
-        uint32_t             delta = 0u;
-        uint32_t             pc;
-        funcs[funcIndex] = *fn;
-        funcs[funcIndex].instStart = instOutLen;
-        if (fn->instLen != 0u) {
-            insertCounts = (uint32_t*)calloc(fn->instLen, sizeof(uint32_t));
-            pcMap = (uint32_t*)calloc(fn->instLen, sizeof(uint32_t));
-            if (insertCounts == NULL || pcMap == NULL) {
-                free(insertCounts);
-                free(pcMap);
-                return -1;
-            }
-        }
-        for (pc = 0; pc < fn->instLen; pc++) {
-            const H2MirInst* inst = &program->insts[fn->instStart + pc];
-            if (inst->op == H2MirOp_CALL_HOST && inst->aux < program->hostLen
-                && program->hosts[inst->aux].target == H2MirHostTarget_PRINT)
-            {
-                insertCounts[pc] = 2u;
-                extraLen += 2u;
-            }
-        }
-        funcs[funcIndex].instLen = fn->instLen + extraLen;
-        for (pc = 0; pc < fn->instLen; pc++) {
-            pcMap[pc] = pc + delta;
-            delta += insertCounts[pc];
-        }
-        for (pc = 0; pc < fn->instLen; pc++) {
-            const H2MirInst* srcInst = &program->insts[fn->instStart + pc];
-            if (insertCounts[pc] != 0u) {
-                insts[instOutLen++] = (H2MirInst){
-                    .op = H2MirOp_PUSH_CONST,
-                    .aux = zeroConstIndex,
-                    .start = srcInst->start,
-                    .end = srcInst->end,
-                };
-                insts[instOutLen++] = (H2MirInst){
-                    .op = H2MirOp_CAST,
-                    .tok = H2MirCastTarget_INT,
-                    .aux = flagsTypeRef,
-                    .start = srcInst->start,
-                    .end = srcInst->end,
-                };
-            }
-            insts[instOutLen] = *srcInst;
-            if ((srcInst->op == H2MirOp_JUMP || srcInst->op == H2MirOp_JUMP_IF_FALSE)
-                && srcInst->aux < fn->instLen)
-            {
-                insts[instOutLen].aux = pcMap[srcInst->aux];
-            } else if (
-                srcInst->op == H2MirOp_CALL_HOST && srcInst->aux < program->hostLen
-                && program->hosts[srcInst->aux].target == H2MirHostTarget_PRINT)
-            {
-                insts[instOutLen].op = H2MirOp_CALL_FN;
-                insts[instOutLen].aux = consoleLogDecl->functionIndex;
-                insts[instOutLen].tok = (uint16_t)((srcInst->tok & H2MirCallArgFlag_MASK) | 2u);
-            }
-            instOutLen++;
-        }
-        free(insertCounts);
-        free(pcMap);
-    }
-    program->funcs = funcs;
-    program->insts = insts;
-    program->instLen = instOutLen;
-    return 0;
 }
 
 static int RewriteMirFuncFieldCalls(
@@ -9403,27 +9218,6 @@ int BuildPackageMirProgram(
             }
         }
     }
-    if (loader != NULL && loader->selectedPlatformPkg != NULL && loader->platformTarget != NULL
-        && StrEq(loader->platformTarget, H2_WASM_MIN_PLATFORM_TARGET)
-        && !PackageUsesPlatformImport(loader) && BuilderHasHostPrintCall(&builder))
-    {
-        uint32_t fileIndex;
-        for (fileIndex = 0; fileIndex < loader->selectedPlatformPkg->fileLen; fileIndex++) {
-            if (AppendMirSelectedPlatformConsoleLogDeclsFromFile(
-                    &builder,
-                    arena,
-                    loader->selectedPlatformPkg,
-                    &loader->selectedPlatformPkg->files[fileIndex],
-                    &declMap)
-                != 0)
-            {
-                free(tcFnMap.v);
-                free(declMap.v);
-                free(topoOrder);
-                return -1;
-            }
-        }
-    }
     H2MirProgramBuilderFinish(&builder, outProgram);
     EnrichMirTypeFlags(loader, outProgram);
     if (EnrichMirOpaquePtrPointees(loader, arena, outProgram) != 0) {
@@ -9451,12 +9245,6 @@ int BuildPackageMirProgram(
         return -1;
     }
     if (ResolvePackageMirProgram(loader, &declMap, &tcFnMap, arena, outProgram, outProgram) != 0) {
-        free(tcFnMap.v);
-        free(declMap.v);
-        free(topoOrder);
-        return -1;
-    }
-    if (RewriteMirWasmPrintHostcalls(loader, &declMap, arena, outProgram) != 0) {
         free(tcFnMap.v);
         free(declMap.v);
         free(topoOrder);

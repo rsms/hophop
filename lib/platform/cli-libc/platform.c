@@ -76,7 +76,7 @@ static void* platform_mem_allocator_impl(
 static void platform_log_handler(
     __hop_Logger*  self,
     __hop_str      message,
-    __hop_LogLevel level,
+    __hop_i32      level,
     __hop_LogFlags flags) {
     __hop_int n = message.len;
     FILE*    out = (level >= __hop_LogLevel_Error) ? stderr : stdout;

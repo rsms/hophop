@@ -1,1 +1,1 @@
-tests/print_bad_arg_type.hop:3:8: error: HOP2004: type mismatch: cannot use expression of type const_int as &str
+tests/print_bad_arg_type.hop:7:8: error: HOP2075: consteval error: print requires scalar, type, pointer, or string arguments

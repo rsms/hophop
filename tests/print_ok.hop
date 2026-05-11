@@ -1,4 +1,13 @@
-// Verifies print is accepted.
+// Verifies variadic print is accepted.
 fn main() {
-	print("hello from print")
+	var text *str = alloc str{ len: 2 }
+	text[0] = 'o'
+	text[1] = 'k'
+	print(123)
+	print(4.5, "six")
+	print(true, 'x')
+	print(text)
+	print(null as rawptr, (null as rawptr) as *i32)
+	print()
+	dealloc text
 }

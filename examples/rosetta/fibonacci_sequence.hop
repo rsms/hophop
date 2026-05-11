@@ -1,3 +1,5 @@
+import "platform"
+
 fn fibonacci(n i32) i32 {
 	var a i32 = 0
 	var b i32 = 1
@@ -54,45 +56,45 @@ fn expected_fibonacci(n i32) i32 {
 
 fn print_fibonacci(n i32) {
 	if n == 0 {
-		print("0")
+		platform.console_log("0", flags: 0)
 	} else if n == 1 {
-		print("1")
+		platform.console_log("1", flags: 0)
 	} else if n == 2 {
-		print("1")
+		platform.console_log("1", flags: 0)
 	} else if n == 3 {
-		print("2")
+		platform.console_log("2", flags: 0)
 	} else if n == 4 {
-		print("3")
+		platform.console_log("3", flags: 0)
 	} else if n == 5 {
-		print("5")
+		platform.console_log("5", flags: 0)
 	} else if n == 6 {
-		print("8")
+		platform.console_log("8", flags: 0)
 	} else if n == 7 {
-		print("13")
+		platform.console_log("13", flags: 0)
 	} else if n == 8 {
-		print("21")
+		platform.console_log("21", flags: 0)
 	} else if n == 9 {
-		print("34")
+		platform.console_log("34", flags: 0)
 	} else if n == 10 {
-		print("55")
+		platform.console_log("55", flags: 0)
 	} else if n == 11 {
-		print("89")
+		platform.console_log("89", flags: 0)
 	} else if n == 12 {
-		print("144")
+		platform.console_log("144", flags: 0)
 	} else if n == 13 {
-		print("233")
+		platform.console_log("233", flags: 0)
 	} else if n == 14 {
-		print("377")
+		platform.console_log("377", flags: 0)
 	} else if n == 15 {
-		print("610")
+		platform.console_log("610", flags: 0)
 	} else if n == 16 {
-		print("987")
+		platform.console_log("987", flags: 0)
 	} else if n == 17 {
-		print("1597")
+		platform.console_log("1597", flags: 0)
 	} else if n == 18 {
-		print("2584")
+		platform.console_log("2584", flags: 0)
 	} else if n == 19 {
-		print("4181")
+		platform.console_log("4181", flags: 0)
 	} else {
 		assert false
 	}

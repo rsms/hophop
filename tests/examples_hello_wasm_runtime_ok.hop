@@ -1,0 +1,6 @@
+// Verifies direct Wasm hello-world output through the platform log surface.
+import "platform"
+
+fn main() {
+	platform.console_log("hello world", flags: 0)
+}

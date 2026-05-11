@@ -1,3 +1,5 @@
+import "platform"
+
 fn bytes_eq(got &[u8], want &str) bool {
 	if len(got) != len(want) {
 		return false
@@ -60,7 +62,7 @@ fn check_and_print(value int, want &str) {
 	var out [u8 32]
 	var n   int = roman_encode(out[:], value)
 	assert bytes_eq(out[:n], want)
-	print(want)
+	platform.console_log(want, flags: 0)
 }
 
 fn main() {

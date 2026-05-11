@@ -1,4 +1,8 @@
-// Verifies print bad argument type.
+// Verifies print rejects aggregate arguments.
+struct Pair {
+	x int
+}
+
 fn main() {
-	print(1)
+	print(Pair{ x: 1 })
 }

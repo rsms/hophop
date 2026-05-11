@@ -394,9 +394,7 @@ static int H2MirLowerRewriteHostInst(
     if (in->op != H2MirOp_CALL || in->aux >= builder->symbolLen) {
         return 0;
     }
-    if (in->end == in->start + 5u && memcmp(src.ptr + in->start, "print", 5) == 0) {
-        hostTarget = H2MirHostTarget_PRINT;
-    } else if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "copy", 4) == 0) {
+    if (in->end == in->start + 4u && memcmp(src.ptr + in->start, "copy", 4) == 0) {
         hostTarget = H2MirHostTarget_COPY;
     } else if (in->end == in->start + 6u && memcmp(src.ptr + in->start, "concat", 6) == 0) {
         hostTarget = H2MirHostTarget_CONCAT;

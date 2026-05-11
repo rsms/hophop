@@ -2483,67 +2483,6 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = c->typeVoid;
             return 0;
         }
-        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")
-            && H2TCFindFunctionIndex(c, callee->dataStart, callee->dataEnd) < 0)
-        {
-            H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
-            uint32_t        argCount = 0;
-            int32_t         resolvedFn = -1;
-            int32_t         mutRefTempArgNode = -1;
-            int             status;
-            int32_t         msgArgNode = H2AstNextSibling(c->ast, calleeNode);
-            int32_t         msgArgType;
-            int32_t         nextArgNode;
-            int32_t         logType;
-            int32_t         wantStrType;
-            if (H2TCCollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, NULL, &argCount)
-                != 0)
-            {
-                return -1;
-            }
-            status = H2TCResolveCallByName(
-                c,
-                callee->dataStart,
-                callee->dataEnd,
-                callArgs,
-                argCount,
-                0,
-                0,
-                &resolvedFn,
-                &mutRefTempArgNode);
-            if (status < 0) {
-                return -1;
-            }
-            if (status == 0 && resolvedFn >= 0 && (uint32_t)resolvedFn < c->funcLen
-                && H2TCFunctionNameEq(c, (uint32_t)resolvedFn, callee->dataStart, callee->dataEnd))
-            {
-                *outType = c->funcs[(uint32_t)resolvedFn].returnType;
-                return 0;
-            }
-            if (msgArgNode < 0) {
-                return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
-            }
-            if (H2TCTypeExpr(c, msgArgNode, &msgArgType) != 0) {
-                return -1;
-            }
-            wantStrType = H2TCGetStrRefType(c, callee->start, callee->end);
-            if (wantStrType < 0) {
-                return H2TCFailNode(c, calleeNode, H2Diag_UNKNOWN_TYPE);
-            }
-            if (!H2TCCanAssign(c, wantStrType, msgArgType)) {
-                return H2TCFailTypeMismatchDetail(
-                    c, msgArgNode, msgArgNode, msgArgType, wantStrType);
-            }
-            nextArgNode = H2AstNextSibling(c->ast, msgArgNode);
-            if (nextArgNode >= 0) {
-                return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
-            }
-            if (H2TCGetEffectiveContextFieldTypeByLiteral(c, "logger", &logType) != 0) {
-                return -1;
-            }
-            *outType = c->typeVoid;
-            return 0;
-        }
         {
             H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
             uint32_t        argCount = 0;
@@ -2784,58 +2723,6 @@ int H2TCTypeExpr_CALL(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
             *outType = c->typeVoid;
             return 0;
         }
-        if (H2NameEqLiteral(c->src, callee->dataStart, callee->dataEnd, "print")
-            && H2TCFindFunctionIndex(c, callee->dataStart, callee->dataEnd) < 0)
-        {
-            H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
-            uint32_t        argCount = 0;
-            int32_t         resolvedFn = -1;
-            int32_t         mutRefTempArgNode = -1;
-            int             status;
-            int32_t         nextArgNode = H2AstNextSibling(c->ast, calleeNode);
-            int32_t         logType;
-            int32_t         wantStrType = H2TCGetStrRefType(c, callee->start, callee->end);
-            if (H2TCCollectCallArgInfo(
-                    c, nodeId, calleeNode, 1, recvNode, callArgs, NULL, &argCount)
-                != 0)
-            {
-                return -1;
-            }
-            status = H2TCResolveCallByName(
-                c,
-                callee->dataStart,
-                callee->dataEnd,
-                callArgs,
-                argCount,
-                1,
-                0,
-                &resolvedFn,
-                &mutRefTempArgNode);
-            if (status < 0) {
-                return -1;
-            }
-            if (status == 0 && resolvedFn >= 0 && (uint32_t)resolvedFn < c->funcLen
-                && H2TCFunctionNameEq(c, (uint32_t)resolvedFn, callee->dataStart, callee->dataEnd))
-            {
-                *outType = c->funcs[(uint32_t)resolvedFn].returnType;
-                return 0;
-            }
-            if (wantStrType < 0) {
-                return H2TCFailNode(c, calleeNode, H2Diag_UNKNOWN_TYPE);
-            }
-            if (!H2TCCanAssign(c, wantStrType, recvType)) {
-                return H2TCFailNode(c, recvNode, H2Diag_TYPE_MISMATCH);
-            }
-            if (nextArgNode >= 0) {
-                return H2TCFailNode(c, nodeId, H2Diag_ARITY_MISMATCH);
-            }
-            if (H2TCGetEffectiveContextFieldTypeByLiteral(c, "logger", &logType) != 0) {
-                return -1;
-            }
-            *outType = c->typeVoid;
-            return 0;
-        }
-
         {
             H2TCCallArgInfo callArgs[H2TC_MAX_CALL_ARGS];
             uint32_t        argCount = 0;
@@ -3169,7 +3056,8 @@ int H2TCTypeExpr_CAST(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int
     }
     if (H2TCIsRawptrType(c, resolvedTargetType)) {
         if (!(src->kind == H2TCType_NULL || H2TCIsRawptrType(c, resolvedSourceType)
-              || src->kind == H2TCType_PTR || src->kind == H2TCType_REF))
+              || src->kind == H2TCType_PTR || src->kind == H2TCType_REF
+              || src->kind == H2TCType_ANYTYPE))
         {
             return H2TCFailInvalidCast(c, nodeId, sourceType, targetType);
         }

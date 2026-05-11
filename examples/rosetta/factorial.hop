@@ -1,3 +1,5 @@
+import "platform"
+
 fn factorial_recursive(n i32) i32 {
 	if n < 2 {
 		return 1
@@ -19,27 +21,27 @@ fn print_factorial(n i32) {
 	assert recursive == iterative
 
 	if n == 0 {
-		print("0! = 1")
+		platform.console_log("0! = 1", flags: 0)
 	} else if n == 1 {
-		print("1! = 1")
+		platform.console_log("1! = 1", flags: 0)
 	} else if n == 2 {
-		print("2! = 2")
+		platform.console_log("2! = 2", flags: 0)
 	} else if n == 3 {
-		print("3! = 6")
+		platform.console_log("3! = 6", flags: 0)
 	} else if n == 4 {
-		print("4! = 24")
+		platform.console_log("4! = 24", flags: 0)
 	} else if n == 5 {
-		print("5! = 120")
+		platform.console_log("5! = 120", flags: 0)
 	} else if n == 6 {
-		print("6! = 720")
+		platform.console_log("6! = 720", flags: 0)
 	} else if n == 7 {
-		print("7! = 5040")
+		platform.console_log("7! = 5040", flags: 0)
 	} else if n == 8 {
-		print("8! = 40320")
+		platform.console_log("8! = 40320", flags: 0)
 	} else if n == 9 {
-		print("9! = 362880")
+		platform.console_log("9! = 362880", flags: 0)
 	} else if n == 10 {
-		print("10! = 3628800")
+		platform.console_log("10! = 3628800", flags: 0)
 	} else {
 		assert false
 	}

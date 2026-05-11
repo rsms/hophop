@@ -5,9 +5,44 @@ H2_API_BEGIN
 
 static int TypeRefIsStringByteSequence(const H2TypeRef* t);
 static int TypeRefIsBorrowedStrValue(const H2TypeRef* t);
+static int TypeRefIsPointerBackedStr(const H2TypeRef* t);
 static int EmitStrValueExpr(H2CBackendC* c, int32_t exprNode, const H2TypeRef* type);
 static int EmitStrValueName(H2CBackendC* c, const char* name, const H2TypeRef* type);
 static int EmitStrAddressExpr(H2CBackendC* c, int32_t exprNode, const H2TypeRef* type);
+
+static int TypeRefCanCScalarCast(H2CBackendC* c, const H2TypeRef* dst, const H2TypeRef* src) {
+    const char* dstBase;
+    const char* srcBase;
+    if (c == NULL || dst == NULL || src == NULL || !dst->valid || !src->valid
+        || dst->containerKind != H2TypeContainer_SCALAR
+        || src->containerKind != H2TypeContainer_SCALAR || dst->containerPtrDepth != 0
+        || src->containerPtrDepth != 0 || dst->isOptional || src->isOptional
+        || dst->baseName == NULL || src->baseName == NULL)
+    {
+        return 0;
+    }
+    dstBase = ResolveScalarAliasBaseName(c, dst->baseName);
+    srcBase = ResolveScalarAliasBaseName(c, src->baseName);
+    if (dstBase == NULL) {
+        dstBase = dst->baseName;
+    }
+    if (srcBase == NULL) {
+        srcBase = src->baseName;
+    }
+    if (TypeRefIsStr(dst) || TypeRefIsStr(src)) {
+        return 0;
+    }
+    if (dst->ptrDepth == 0 && src->ptrDepth == 0) {
+        return (IsIntegerCTypeName(dstBase) || IsFloatCTypeName(dstBase))
+            && (IsIntegerCTypeName(srcBase) || IsFloatCTypeName(srcBase));
+    }
+    if (dst->ptrDepth > 0 || src->ptrDepth > 0) {
+        return (dst->ptrDepth > 0 && src->ptrDepth > 0)
+            || (dst->ptrDepth > 0 && StrEq(srcBase, "void"))
+            || (src->ptrDepth > 0 && StrEq(dstBase, "void"));
+    }
+    return !TypeRefIsStr(dst) && !TypeRefIsStr(src);
+}
 
 int IsTypeNodeKind(H2AstKind kind) {
     return kind == H2Ast_TYPE_NAME || kind == H2Ast_TYPE_PTR || kind == H2Ast_TYPE_REF
@@ -22,29 +57,36 @@ int IsActivePackIdent(const H2CBackendC* c, uint32_t start, uint32_t end) {
         && SliceEqName(c->unit->source, start, end, c->activePackParamName);
 }
 
-static int CallArgIsActivePackIdent(const H2CBackendC* c, const H2CCallArgInfo* arg) {
-    const H2AstNode* n;
-    if (c == NULL || arg == NULL || arg->exprNode < 0) {
+static int TypeRefCanActivePackElemCoerceC(
+    H2CBackendC* c, const H2TypeRef* dstType, const H2TypeRef* elemType) {
+    uint8_t cost = 0;
+    if (c == NULL || dstType == NULL || elemType == NULL || !dstType->valid || !elemType->valid) {
         return 0;
     }
-    n = NodeAt(c, arg->exprNode);
-    return n != NULL && n->kind == H2Ast_IDENT && IsActivePackIdent(c, n->dataStart, n->dataEnd);
+    if (TypeRefIsBorrowedStrValue(dstType)) {
+        return TypeRefIsStr(elemType);
+    }
+    if (TypeRefIsPointerBackedStr(dstType)) {
+        return TypeRefIsPointerBackedStr(elemType);
+    }
+    if (TypeRefIsStr(dstType) || TypeRefIsBorrowedStrValue(elemType)) {
+        return 0;
+    }
+    if (TypeRefEqual(dstType, elemType)) {
+        return 1;
+    }
+    if (TypeRefAssignableCost(c, dstType, elemType, &cost) == 0) {
+        if (TypeRefIsStr(elemType)) {
+            return 0;
+        }
+        return 1;
+    }
+    return TypeRefCanCScalarCast(c, dstType, elemType);
 }
 
-static int EmitActivePackElemNameCoerced(
-    H2CBackendC* c, uint32_t packIndex, const H2TypeRef* dstType) {
-    const char*      name;
-    const H2TypeRef* elemType;
-    uint8_t          cost = 0;
-    if (c == NULL || dstType == NULL || !dstType->valid || c->activePackElemNames == NULL
-        || c->activePackElemTypes == NULL || packIndex >= c->activePackElemCount
-        || c->activePackElemNames[packIndex] == NULL)
-    {
-        return -1;
-    }
-    name = c->activePackElemNames[packIndex];
-    elemType = &c->activePackElemTypes[packIndex];
-    if (TypeRefAssignableCost(c, dstType, elemType, &cost) != 0) {
+static int EmitActivePackElemNameCoercion(
+    H2CBackendC* c, const char* name, const H2TypeRef* elemType, const H2TypeRef* dstType) {
+    if (!TypeRefCanActivePackElemCoerceC(c, dstType, elemType)) {
         return -1;
     }
     if (TypeRefIsBorrowedStrValue(dstType) && TypeRefIsStr(elemType)) {
@@ -60,6 +102,30 @@ static int EmitActivePackElemNameCoerced(
         return -1;
     }
     return 0;
+}
+
+static int CallArgIsActivePackIdent(const H2CBackendC* c, const H2CCallArgInfo* arg) {
+    const H2AstNode* n;
+    if (c == NULL || arg == NULL || arg->exprNode < 0) {
+        return 0;
+    }
+    n = NodeAt(c, arg->exprNode);
+    return n != NULL && n->kind == H2Ast_IDENT && IsActivePackIdent(c, n->dataStart, n->dataEnd);
+}
+
+static int EmitActivePackElemNameCoerced(
+    H2CBackendC* c, uint32_t packIndex, const H2TypeRef* dstType) {
+    const char*      name;
+    const H2TypeRef* elemType;
+    if (c == NULL || dstType == NULL || !dstType->valid || c->activePackElemNames == NULL
+        || c->activePackElemTypes == NULL || packIndex >= c->activePackElemCount
+        || c->activePackElemNames[packIndex] == NULL)
+    {
+        return -1;
+    }
+    name = c->activePackElemNames[packIndex];
+    elemType = &c->activePackElemTypes[packIndex];
+    return EmitActivePackElemNameCoercion(c, name, elemType, dstType);
 }
 
 int ResolveActivePackConstIndex(
@@ -205,28 +271,22 @@ int EmitDynamicActivePackIndexCoerced(
     }
 
     for (i = 0; i < c->activePackElemCount; i++) {
-        uint8_t cost = 0;
+        int compatible;
         if (c->activePackElemNames == NULL || c->activePackElemNames[i] == NULL) {
             return -1;
         }
-        if (TypeRefAssignableCost(c, dstType, &c->activePackElemTypes[i], &cost) == 0) {
+        compatible = TypeRefCanActivePackElemCoerceC(c, dstType, &c->activePackElemTypes[i]);
+        if (compatible) {
             if (BufAppendCStr(&c->out, "case ") != 0 || BufAppendU32(&c->out, i) != 0
                 || BufAppendCStr(&c->out, "u: ") != 0 || BufAppendCStr(&c->out, valueName) != 0
                 || BufAppendCStr(&c->out, " = ") != 0)
             {
                 return -1;
             }
-            if (TypeRefIsBorrowedStrValue(dstType) && TypeRefIsStr(&c->activePackElemTypes[i])) {
-                if (EmitStrValueName(c, c->activePackElemNames[i], &c->activePackElemTypes[i]) != 0
-                    || BufAppendCStr(&c->out, "; break; ") != 0)
-                {
-                    return -1;
-                }
-            } else if (
-                BufAppendCStr(&c->out, "((") != 0 || EmitTypeNameWithDepth(c, dstType) != 0
-                || BufAppendCStr(&c->out, ")(") != 0
-                || BufAppendCStr(&c->out, c->activePackElemNames[i]) != 0
-                || BufAppendCStr(&c->out, ")); break; ") != 0)
+            if (EmitActivePackElemNameCoercion(
+                    c, c->activePackElemNames[i], &c->activePackElemTypes[i], dstType)
+                    != 0
+                || BufAppendCStr(&c->out, "; break; ") != 0)
             {
                 return -1;
             }
@@ -1935,6 +1995,281 @@ int MaterializeTemplateInstanceForDispatchCase(
         return -1;
     }
     return 0;
+}
+
+int FindTemplateInstanceSigForDispatchCase(
+    const H2CBackendC* c,
+    const H2FnSig*     baseSig,
+    const H2TypeRef*   paramTypes,
+    const uint8_t*     paramFlags,
+    const H2FnSig**    outSig);
+static int FindExpandedVariadicTemplateInstance(
+    const H2CBackendC* c,
+    const H2FnSig*     baseSig,
+    const H2TypeRef*   paramTypes,
+    const uint8_t*     paramFlags,
+    uint32_t           paramLen,
+    const H2FnSig**    outSig);
+
+static int MaterializeTemplateInstanceForActivePackSpread(
+    H2CBackendC* c, const H2FnSig* baseSig, const H2CCallBinding* binding, const H2FnSig** outSig) {
+    H2TypeRef* paramTypes;
+    char**     paramNames;
+    uint8_t*   paramFlags = NULL;
+    uint32_t   fixedCount;
+    uint32_t   paramLen;
+    uint32_t   p;
+    uint32_t   tempId;
+    H2Buf      cNameBuf = { 0 };
+    char*      cName;
+    char*      packParamName;
+    if (outSig != NULL) {
+        *outSig = NULL;
+    }
+    if (c == NULL || baseSig == NULL || binding == NULL || outSig == NULL
+        || (baseSig->flags & H2FnSigFlag_TEMPLATE_BASE) == 0 || !baseSig->isVariadic
+        || baseSig->paramLen == 0 || binding->spreadArgIndex == UINT32_MAX || !binding->isVariadic
+        || c->activePackElemCount > H2CCG_MAX_CALL_ARGS || c->activePackElemTypes == NULL
+        || c->activePackParamName == NULL)
+    {
+        return 1;
+    }
+    fixedCount = baseSig->paramLen - 1u;
+    paramLen = fixedCount + c->activePackElemCount;
+    if (paramLen > 0) {
+        paramTypes = (H2TypeRef*)H2ArenaAlloc(
+            &c->arena, paramLen * sizeof(H2TypeRef), (uint32_t)_Alignof(H2TypeRef));
+        paramNames = (char**)H2ArenaAlloc(
+            &c->arena, paramLen * sizeof(char*), (uint32_t)_Alignof(char*));
+        if (baseSig->paramFlags != NULL) {
+            paramFlags = (uint8_t*)H2ArenaAlloc(
+                &c->arena, paramLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+        }
+        if (paramTypes == NULL || paramNames == NULL
+            || (baseSig->paramFlags != NULL && paramFlags == NULL))
+        {
+            return -1;
+        }
+    }
+    for (p = 0; p < fixedCount; p++) {
+        paramTypes[p] = baseSig->paramTypes[p];
+        paramNames[p] = baseSig->paramNames != NULL ? baseSig->paramNames[p] : NULL;
+        if (paramFlags != NULL) {
+            paramFlags[p] = baseSig->paramFlags[p] & H2CCGParamFlag_CONST;
+        }
+    }
+    packParamName =
+        baseSig->packParamName != NULL ? baseSig->packParamName : (char*)c->activePackParamName;
+    for (p = 0; p < c->activePackElemCount; p++) {
+        uint32_t outIndex = fixedCount + p;
+        paramTypes[outIndex] = c->activePackElemTypes[p];
+        paramNames[outIndex] = BuildExpandedPackElemName(c, packParamName, p);
+        if (paramNames[outIndex] == NULL) {
+            return -1;
+        }
+        if (paramFlags != NULL) {
+            paramFlags[outIndex] = baseSig->paramFlags[fixedCount] & H2CCGParamFlag_CONST;
+        }
+    }
+
+    tempId = FmtNextTempId(c);
+    cNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&cNameBuf, baseSig->cName) != 0 || BufAppendCStr(&cNameBuf, "__ti_rt") != 0
+        || BufAppendU32(&cNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    cName = BufFinish(&cNameBuf);
+    if (cName == NULL) {
+        return -1;
+    }
+    if (AddFnSig(
+            c,
+            baseSig->hopName,
+            cName,
+            baseSig->nodeId,
+            baseSig->returnType,
+            paramTypes,
+            paramNames,
+            paramFlags,
+            paramLen,
+            0,
+            baseSig->hasContext,
+            baseSig->contextType,
+            (uint16_t)(H2FnSigFlag_TEMPLATE_INSTANCE | H2FnSigFlag_EXPANDED_ANYPACK),
+            UINT32_MAX,
+            fixedCount,
+            c->activePackElemCount,
+            packParamName)
+        != 0)
+    {
+        return -1;
+    }
+    return FindExpandedVariadicTemplateInstance(
+        c, baseSig, paramTypes, paramFlags, paramLen, outSig);
+}
+
+static int FindExpandedVariadicTemplateInstance(
+    const H2CBackendC* c,
+    const H2FnSig*     baseSig,
+    const H2TypeRef*   paramTypes,
+    const uint8_t*     paramFlags,
+    uint32_t           paramLen,
+    const H2FnSig**    outSig) {
+    uint32_t i;
+    if (outSig != NULL) {
+        *outSig = NULL;
+    }
+    if (c == NULL || baseSig == NULL || (paramLen > 0 && paramTypes == NULL) || outSig == NULL) {
+        return -1;
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        uint32_t       p;
+        if (sig->nodeId != baseSig->nodeId || (sig->flags & H2FnSigFlag_TEMPLATE_INSTANCE) == 0
+            || (sig->flags & H2FnSigFlag_EXPANDED_ANYPACK) == 0 || sig->paramLen != paramLen
+            || sig->isVariadic != 0 || sig->hasContext != baseSig->hasContext)
+        {
+            continue;
+        }
+        for (p = 0; p < sig->paramLen; p++) {
+            uint8_t sigPflags = sig->paramFlags != NULL ? sig->paramFlags[p] : 0u;
+            uint8_t wantPflags = paramFlags != NULL ? paramFlags[p] : 0u;
+            if (!TypeRefEqual(&sig->paramTypes[p], &paramTypes[p])
+                || (sigPflags & H2CCGParamFlag_CONST) != (wantPflags & H2CCGParamFlag_CONST))
+            {
+                break;
+            }
+        }
+        if (p == sig->paramLen) {
+            *outSig = sig;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int MaterializeTemplateInstanceForVariadicCall(
+    H2CBackendC*          c,
+    const H2FnSig*        baseSig,
+    const H2CCallBinding* binding,
+    const H2TypeRef*      argTypes,
+    uint32_t              argCount,
+    const H2FnSig**       outSig) {
+    H2TypeRef* paramTypes = NULL;
+    char**     paramNames = NULL;
+    uint8_t*   paramFlags = NULL;
+    uint32_t   fixedCount;
+    uint32_t   tailCount;
+    uint32_t   paramLen;
+    uint32_t   p;
+    uint32_t   tempId;
+    H2Buf      cNameBuf = { 0 };
+    char*      cName;
+    char*      packParamName;
+    int        findRc;
+    if (outSig != NULL) {
+        *outSig = NULL;
+    }
+    if (c == NULL || baseSig == NULL || binding == NULL || argTypes == NULL || outSig == NULL
+        || (baseSig->flags & H2FnSigFlag_TEMPLATE_BASE) == 0 || !baseSig->isVariadic
+        || baseSig->paramLen == 0 || !binding->isVariadic || binding->spreadArgIndex != UINT32_MAX
+        || binding->fixedInputCount > argCount)
+    {
+        return 1;
+    }
+    fixedCount = baseSig->paramLen - 1u;
+    tailCount = argCount - binding->fixedInputCount;
+    paramLen = fixedCount + tailCount;
+    if (paramLen > H2CCG_MAX_CALL_ARGS) {
+        return 1;
+    }
+    if (paramLen > 0) {
+        paramTypes = (H2TypeRef*)H2ArenaAlloc(
+            &c->arena, paramLen * sizeof(H2TypeRef), (uint32_t)_Alignof(H2TypeRef));
+        paramNames = (char**)H2ArenaAlloc(
+            &c->arena, paramLen * sizeof(char*), (uint32_t)_Alignof(char*));
+        if (baseSig->paramFlags != NULL) {
+            paramFlags = (uint8_t*)H2ArenaAlloc(
+                &c->arena, paramLen * sizeof(uint8_t), (uint32_t)_Alignof(uint8_t));
+        }
+        if (paramTypes == NULL || paramNames == NULL
+            || (baseSig->paramFlags != NULL && paramFlags == NULL))
+        {
+            return -1;
+        }
+    }
+    for (p = 0; p < fixedCount; p++) {
+        paramTypes[p] = baseSig->paramTypes[p];
+        paramNames[p] = baseSig->paramNames != NULL ? baseSig->paramNames[p] : NULL;
+        if (paramFlags != NULL) {
+            paramFlags[p] = baseSig->paramFlags[p] & H2CCGParamFlag_CONST;
+        }
+    }
+    packParamName =
+        baseSig->packParamName != NULL
+            ? baseSig->packParamName
+            : (baseSig->paramNames != NULL ? baseSig->paramNames[fixedCount] : NULL);
+    if (packParamName == NULL) {
+        packParamName = "args";
+    }
+    for (p = 0; p < tailCount; p++) {
+        uint32_t argIndex = binding->fixedInputCount + p;
+        uint32_t outIndex = fixedCount + p;
+        if (argIndex >= argCount || !argTypes[argIndex].valid) {
+            return 1;
+        }
+        paramTypes[outIndex] = argTypes[argIndex];
+        paramNames[outIndex] = BuildExpandedPackElemName(c, packParamName, p);
+        if (paramNames[outIndex] == NULL) {
+            return -1;
+        }
+        if (paramFlags != NULL) {
+            paramFlags[outIndex] = baseSig->paramFlags[fixedCount] & H2CCGParamFlag_CONST;
+        }
+    }
+
+    findRc = FindExpandedVariadicTemplateInstance(
+        c, baseSig, paramTypes, paramFlags, paramLen, outSig);
+    if (findRc <= 0) {
+        return findRc;
+    }
+
+    tempId = FmtNextTempId(c);
+    cNameBuf.arena = &c->arena;
+    if (BufAppendCStr(&cNameBuf, baseSig->cName) != 0 || BufAppendCStr(&cNameBuf, "__ti_rt") != 0
+        || BufAppendU32(&cNameBuf, tempId) != 0)
+    {
+        return -1;
+    }
+    cName = BufFinish(&cNameBuf);
+    if (cName == NULL) {
+        return -1;
+    }
+    if (AddFnSig(
+            c,
+            baseSig->hopName,
+            cName,
+            baseSig->nodeId,
+            baseSig->returnType,
+            paramTypes,
+            paramNames,
+            paramFlags,
+            paramLen,
+            0,
+            baseSig->hasContext,
+            baseSig->contextType,
+            (uint16_t)(H2FnSigFlag_TEMPLATE_INSTANCE | H2FnSigFlag_EXPANDED_ANYPACK),
+            UINT32_MAX,
+            fixedCount,
+            tailCount,
+            packParamName)
+        != 0)
+    {
+        return -1;
+    }
+    return FindExpandedVariadicTemplateInstance(
+        c, baseSig, paramTypes, paramFlags, paramLen, outSig);
 }
 
 int FindTemplateInstanceSigForDispatchCase(
@@ -4870,7 +5205,7 @@ int EmitArrayLiteral(H2CBackendC* c, int32_t nodeId, const H2TypeRef* _Nullable 
 int EmitAssertFormatArg(H2CBackendC* c, int32_t nodeId);
 
 int IsStrBaseName(const char* _Nullable s) {
-    return s != NULL && (StrEq(s, "__hop_str") || StrEq(s, "builtin__str"));
+    return s != NULL && (StrEq(s, "__hop_str") || StrEq(s, "builtin__str") || StrEq(s, "str"));
 }
 
 int TypeRefIsStr(const H2TypeRef* t) {
@@ -8641,21 +8976,17 @@ int EmitResolvedCall(
     if (sig == NULL || binding == NULL) {
         return -1;
     }
-    if (StrEq(calleeName, "print")) {
-        calleeName = "builtin__print";
-    } else if (StrEq(calleeName, "source_location_of")) {
+    if (StrEq(calleeName, "source_location_of")) {
         calleeName = "builtin__source_location_of";
     }
     if (BufAppendCStr(&c->out, calleeName) != 0 || BufAppendChar(&c->out, '(') != 0) {
         return -1;
     }
-    if (sig != NULL && (sig->hasContext || StrEq(calleeName, "builtin__print"))) {
+    if (sig != NULL && sig->hasContext) {
         if (sig->hasContext) {
             if (EmitContextArgForSig(c, sig) != 0) {
                 return -1;
             }
-        } else if (BufAppendCStr(&c->out, "context") != 0) {
-            return -1;
         }
         if (sig->paramLen > 0 && BufAppendCStr(&c->out, ", ") != 0) {
             return -1;
@@ -8698,22 +9029,8 @@ int EmitResolvedCall(
                 if (argExpr != NULL && argExpr->kind == H2Ast_CALL) {
                     argCallee = NodeAt(c, AstFirstChild(&c->ast, argCallNode));
                 }
-                if (StrEq(calleeName, "builtin__print") && argExpr != NULL
-                    && (argExpr->kind == H2Ast_CALL || argExpr->kind == H2Ast_CALL_WITH_CONTEXT))
-                {
-                    if (BufAppendCStr(&c->out, "(*(") != 0 || EmitExpr(c, argExprNode) != 0
-                        || BufAppendCStr(&c->out, "))") != 0)
-                    {
-                        if (c->diag != NULL && c->diag->code == H2Diag_NONE) {
-                            SetDiagNode(c, argNode, H2Diag_CODEGEN_INTERNAL);
-                        }
-                        return -1;
-                    }
-                    continue;
-                }
-                if ((TypeRefIsBorrowedStrValue(&sig->paramTypes[i])
-                     || StrEq(calleeName, "builtin__print"))
-                    && argCallee != NULL && argCallee->kind == H2Ast_IDENT
+                if (TypeRefIsBorrowedStrValue(&sig->paramTypes[i]) && argCallee != NULL
+                    && argCallee->kind == H2Ast_IDENT
                     && SliceEq(c->unit->source, argCallee->dataStart, argCallee->dataEnd, "concat"))
                 {
                     if (BufAppendCStr(&c->out, "(*(") != 0 || EmitExpr(c, argExprNode) != 0
@@ -10272,9 +10589,19 @@ static int IsBuiltinRawFunctionPointerField(H2CBackendC* c, int32_t fieldExprNod
 }
 
 static int EmitRawFunctionPointerCall(H2CBackendC* c, int32_t callNode, int32_t calleeNode) {
-    int32_t arg = AstNextSibling(&c->ast, calleeNode);
-    int     first = 1;
+    int32_t              arg = AstNextSibling(&c->ast, calleeNode);
+    uint32_t             argIndex = 0;
+    int                  first = 1;
+    H2TypeRef            calleeType;
+    const H2FnTypeAlias* typeAlias = NULL;
     (void)callNode;
+    if (InferExprType(c, calleeNode, &calleeType) == 0 && calleeType.valid
+        && calleeType.containerKind == H2TypeContainer_SCALAR && calleeType.ptrDepth == 0
+        && calleeType.containerPtrDepth == 0 && calleeType.baseName != NULL
+        && !calleeType.isOptional)
+    {
+        typeAlias = FindFnTypeAliasByName(c, calleeType.baseName);
+    }
     if (EmitExpr(c, calleeNode) != 0 || BufAppendChar(&c->out, '(') != 0) {
         return -1;
     }
@@ -10282,19 +10609,116 @@ static int EmitRawFunctionPointerCall(H2CBackendC* c, int32_t callNode, int32_t 
         if (!first && BufAppendCStr(&c->out, ", ") != 0) {
             return -1;
         }
-        if (EmitExpr(c, arg) != 0) {
+        if (typeAlias != NULL && argIndex < typeAlias->paramLen) {
+            if (EmitExprCoerced(c, arg, &typeAlias->paramTypes[argIndex]) != 0) {
+                return -1;
+            }
+        } else if (EmitExpr(c, arg) != 0) {
             return -1;
         }
         first = 0;
+        argIndex++;
         arg = AstNextSibling(&c->ast, arg);
     }
     return BufAppendChar(&c->out, ')');
+}
+
+static int TryEmitExpandedVariadicTemplateCall(
+    H2CBackendC* c, int32_t nodeId, int32_t calleeNode, uint32_t nameStart, uint32_t nameEnd) {
+    H2CCallArgInfo callArgs[H2CCG_MAX_CALL_ARGS];
+    int32_t        argNodes[H2CCG_MAX_CALL_ARGS];
+    H2TypeRef      argTypes[H2CCG_MAX_CALL_ARGS];
+    H2CCallBinding binding;
+    const H2FnSig* baseSig = NULL;
+    const H2FnSig* expandedSig = NULL;
+    uint32_t       argCount = 0;
+    uint32_t       i;
+    int            matRc;
+    if (CollectCallArgInfo(c, nodeId, calleeNode, 0, -1, callArgs, argTypes, &argCount) != 0) {
+        return 1;
+    }
+    for (i = 0; i < argCount; i++) {
+        argNodes[i] = callArgs[i].exprNode;
+    }
+    for (i = 0; i < c->fnSigLen; i++) {
+        const H2FnSig* sig = &c->fnSigs[i];
+        if (!sig->isVariadic || (sig->flags & H2FnSigFlag_TEMPLATE_BASE) == 0) {
+            continue;
+        }
+        if (!SliceEqName(c->unit->source, nameStart, nameEnd, sig->hopName)
+            && !FnSigIsBuiltinQualifiedSlice(c, sig, nameStart, nameEnd)
+            && !HasUnqualifiedFnSigIdentity(c, sig, nameStart, nameEnd))
+        {
+            continue;
+        }
+        if (baseSig != NULL) {
+            return 1;
+        }
+        baseSig = sig;
+    }
+    if (baseSig == NULL || (baseSig->flags & H2FnSigFlag_TEMPLATE_BASE) == 0) {
+        return 1;
+    }
+    if (PrepareCallBinding(c, baseSig, callArgs, argNodes, argTypes, argCount, 0, 0, &binding) != 0
+        && PrepareCallBinding(c, baseSig, callArgs, argNodes, argTypes, argCount, 0, 1, &binding)
+               != 0)
+    {
+        return 1;
+    }
+    if (binding.spreadArgIndex != UINT32_MAX && binding.spreadArgIndex < argCount
+        && CallArgIsActivePackIdent(c, &callArgs[binding.spreadArgIndex]))
+    {
+        matRc = MaterializeTemplateInstanceForActivePackSpread(c, baseSig, &binding, &expandedSig);
+    } else {
+        matRc = MaterializeTemplateInstanceForVariadicCall(
+            c, baseSig, &binding, argTypes, argCount, &expandedSig);
+    }
+    if (matRc < 0) {
+        return -1;
+    }
+    if (matRc == 0 && expandedSig != NULL) {
+        H2CCallBinding expandedBinding;
+        if (PrepareCallBinding(
+                c, expandedSig, callArgs, argNodes, argTypes, argCount, 0, 0, &expandedBinding)
+                == 0
+            || PrepareCallBinding(
+                   c, expandedSig, callArgs, argNodes, argTypes, argCount, 0, 1, &expandedBinding)
+                   == 0)
+        {
+            if (expandedSig->paramLen == 0
+                && EmitInlineStaticFnPrototypeForSig(c, expandedSig) != 0)
+            {
+                return -1;
+            }
+            return EmitResolvedCall(
+                c, nodeId, expandedSig->cName, expandedSig, &expandedBinding, 0);
+        }
+    }
+    return 1;
 }
 
 int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
     int32_t          child = AstFirstChild(&c->ast, nodeId);
     const H2AstNode* callee = NodeAt(c, child);
     (void)n;
+    if (callee != NULL && callee->kind == H2Ast_IDENT
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "source_location_of"))
+    {
+        return BufAppendCStr(&c->out, "__hop_source_location(__FILE__, __LINE__)");
+    }
+    if (callee != NULL && callee->kind == H2Ast_IDENT
+        && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "fmt_rawptr_addr"))
+    {
+        int32_t arg = AstNextSibling(&c->ast, child);
+        if (arg >= 0 && AstNextSibling(&c->ast, arg) < 0) {
+            if (BufAppendCStr(&c->out, "((__hop_uint)(uintptr_t)(") != 0 || EmitExpr(c, arg) != 0
+                || BufAppendCStr(&c->out, "))") != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+    }
     if (callee != NULL && callee->kind == H2Ast_IDENT
         && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "kind"))
     {
@@ -10878,6 +11302,19 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
             for (i = 0; i < argCount; i++) {
                 argNodes[i] = callArgs[i].exprNode;
             }
+            for (i = 0; i < argCount; i++) {
+                if (callArgs[i].spread && CallArgIsActivePackIdent(c, &callArgs[i])) {
+                    int templateRc = TryEmitExpandedVariadicTemplateCall(
+                        c, nodeId, child, callee->dataStart, callee->dataEnd);
+                    if (templateRc == 0) {
+                        return 0;
+                    }
+                    if (templateRc < 0) {
+                        return -1;
+                    }
+                    break;
+                }
+            }
             status = ResolveCallTarget(
                 c,
                 callee->dataStart,
@@ -10913,6 +11350,85 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
                 }
             }
             if (status == 0 && resolvedName != NULL) {
+                if (resolvedSig != NULL && resolvedSig->isVariadic
+                    && (resolvedSig->flags & H2FnSigFlag_TEMPLATE_BASE) != 0)
+                {
+                    const H2FnSig* expandedSig = NULL;
+                    int            matRc = MaterializeTemplateInstanceForVariadicCall(
+                        c, resolvedSig, &binding, argTypes, argCount, &expandedSig);
+                    if (matRc < 0) {
+                        return -1;
+                    }
+                    if (matRc == 0 && expandedSig != NULL) {
+                        H2CCallBinding expandedBinding;
+                        if (PrepareCallBinding(
+                                c,
+                                expandedSig,
+                                callArgs,
+                                argNodes,
+                                argTypes,
+                                argCount,
+                                0,
+                                0,
+                                &expandedBinding)
+                                == 0
+                            || PrepareCallBinding(
+                                   c,
+                                   expandedSig,
+                                   callArgs,
+                                   argNodes,
+                                   argTypes,
+                                   argCount,
+                                   0,
+                                   1,
+                                   &expandedBinding)
+                                   == 0)
+                        {
+                            return EmitResolvedCall(
+                                c, nodeId, expandedSig->cName, expandedSig, &expandedBinding, 0);
+                        }
+                    }
+                }
+                if (resolvedSig != NULL && binding.spreadArgIndex != UINT32_MAX
+                    && binding.spreadArgIndex < argCount
+                    && CallArgIsActivePackIdent(c, &callArgs[binding.spreadArgIndex]))
+                {
+                    const H2FnSig* spreadSig = NULL;
+                    int            matRc = MaterializeTemplateInstanceForActivePackSpread(
+                        c, resolvedSig, &binding, &spreadSig);
+                    if (matRc < 0) {
+                        return -1;
+                    }
+                    if (matRc == 0 && spreadSig != NULL) {
+                        H2CCallBinding spreadBinding;
+                        if (PrepareCallBinding(
+                                c,
+                                spreadSig,
+                                callArgs,
+                                argNodes,
+                                argTypes,
+                                argCount,
+                                0,
+                                0,
+                                &spreadBinding)
+                                == 0
+                            || PrepareCallBinding(
+                                   c,
+                                   spreadSig,
+                                   callArgs,
+                                   argNodes,
+                                   argTypes,
+                                   argCount,
+                                   0,
+                                   1,
+                                   &spreadBinding)
+                                   == 0)
+                        {
+                            return EmitResolvedCall(
+                                c, nodeId, spreadSig->cName, spreadSig, &spreadBinding, 0);
+                        }
+                    }
+                }
                 return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 0);
             }
             if (status == 2) {
@@ -10951,6 +11467,50 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
                     }
                 }
                 if (status == 0 && resolvedName != NULL) {
+                    if (resolvedSig != NULL && resolvedSig->isVariadic
+                        && (resolvedSig->flags & H2FnSigFlag_TEMPLATE_BASE) != 0)
+                    {
+                        const H2FnSig* expandedSig = NULL;
+                        int            matRc = MaterializeTemplateInstanceForVariadicCall(
+                            c, resolvedSig, &binding, argTypes, argCount, &expandedSig);
+                        if (matRc < 0) {
+                            return -1;
+                        }
+                        if (matRc == 0 && expandedSig != NULL) {
+                            H2CCallBinding expandedBinding;
+                            if (PrepareCallBinding(
+                                    c,
+                                    expandedSig,
+                                    callArgs,
+                                    argNodes,
+                                    argTypes,
+                                    argCount,
+                                    0,
+                                    0,
+                                    &expandedBinding)
+                                    == 0
+                                || PrepareCallBinding(
+                                       c,
+                                       expandedSig,
+                                       callArgs,
+                                       argNodes,
+                                       argTypes,
+                                       argCount,
+                                       0,
+                                       1,
+                                       &expandedBinding)
+                                       == 0)
+                            {
+                                return EmitResolvedCall(
+                                    c,
+                                    nodeId,
+                                    expandedSig->cName,
+                                    expandedSig,
+                                    &expandedBinding,
+                                    1);
+                            }
+                        }
+                    }
                     return EmitResolvedCall(c, nodeId, resolvedName, resolvedSig, &binding, 1);
                 }
             }
@@ -11036,11 +11596,10 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         const H2FnTypeAlias* typeAlias = NULL;
         uint32_t             argIndex = 0;
         int                  first = 1;
-        int                  emittedBuiltinPrintFallback = 0;
         if (callee != NULL && callee->kind == H2Ast_IDENT) {
-            sig = FindFnSigBySlice(c, callee->dataStart, callee->dataEnd);
+            sig = FindSingleVariadicFnSigBySlice(c, callee->dataStart, callee->dataEnd);
             if (sig == NULL) {
-                sig = FindSingleVariadicFnSigBySlice(c, callee->dataStart, callee->dataEnd);
+                sig = FindFnSigBySlice(c, callee->dataStart, callee->dataEnd);
             }
         }
         if (sig == NULL && callee != NULL) {
@@ -11071,6 +11630,87 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
                            c, sig, callArgs, argNodes, argTypes, argCount, 0, 1, &binding)
                            == 0)
                 {
+                    if ((sig->flags & H2FnSigFlag_TEMPLATE_BASE) != 0) {
+                        const H2FnSig* expandedSig = NULL;
+                        int            matRc = MaterializeTemplateInstanceForVariadicCall(
+                            c, sig, &binding, argTypes, argCount, &expandedSig);
+                        if (matRc < 0) {
+                            return -1;
+                        }
+                        if (matRc == 0 && expandedSig != NULL) {
+                            H2CCallBinding expandedBinding;
+                            if (PrepareCallBinding(
+                                    c,
+                                    expandedSig,
+                                    callArgs,
+                                    argNodes,
+                                    argTypes,
+                                    argCount,
+                                    0,
+                                    0,
+                                    &expandedBinding)
+                                    == 0
+                                || PrepareCallBinding(
+                                       c,
+                                       expandedSig,
+                                       callArgs,
+                                       argNodes,
+                                       argTypes,
+                                       argCount,
+                                       0,
+                                       1,
+                                       &expandedBinding)
+                                       == 0)
+                            {
+                                return EmitResolvedCall(
+                                    c,
+                                    nodeId,
+                                    expandedSig->cName,
+                                    expandedSig,
+                                    &expandedBinding,
+                                    0);
+                            }
+                        }
+                    }
+                    if (binding.spreadArgIndex != UINT32_MAX
+                        && CallArgIsActivePackIdent(c, &callArgs[binding.spreadArgIndex]))
+                    {
+                        const H2FnSig* spreadSig = NULL;
+                        int            matRc = MaterializeTemplateInstanceForActivePackSpread(
+                            c, sig, &binding, &spreadSig);
+                        if (matRc < 0) {
+                            return -1;
+                        }
+                        if (matRc == 0 && spreadSig != NULL) {
+                            H2CCallBinding spreadBinding;
+                            if (PrepareCallBinding(
+                                    c,
+                                    spreadSig,
+                                    callArgs,
+                                    argNodes,
+                                    argTypes,
+                                    argCount,
+                                    0,
+                                    0,
+                                    &spreadBinding)
+                                    == 0
+                                || PrepareCallBinding(
+                                       c,
+                                       spreadSig,
+                                       callArgs,
+                                       argNodes,
+                                       argTypes,
+                                       argCount,
+                                       0,
+                                       1,
+                                       &spreadBinding)
+                                       == 0)
+                            {
+                                return EmitResolvedCall(
+                                    c, nodeId, spreadSig->cName, spreadSig, &spreadBinding, 0);
+                            }
+                        }
+                    }
                     return EmitResolvedCall(c, nodeId, sig->cName, sig, &binding, 0);
                 }
             }
@@ -11107,38 +11747,32 @@ int EmitExpr_CALL(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
             }
             return BufAppendCStr(&c->out, "__hop_fn.data); }))");
         }
-        if ((callee != NULL && callee->kind == H2Ast_IDENT
-             && (SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "print")
-                 || (FindNameBySlice(c, callee->dataStart, callee->dataEnd) != NULL
-                     && StrEq(
-                         FindNameBySlice(c, callee->dataStart, callee->dataEnd)->cName,
-                         "builtin__print"))))
-            || (sig != NULL && StrEq(sig->cName, "builtin__print")))
-        {
-            if (BufAppendCStr(&c->out, "builtin__print(context") != 0) {
-                return -1;
-            }
-            first = 0;
-            emittedBuiltinPrintFallback = 1;
-        } else if (
-            callee != NULL && callee->kind == H2Ast_IDENT
+        if (callee != NULL && callee->kind == H2Ast_IDENT
             && SliceEq(c->unit->source, callee->dataStart, callee->dataEnd, "source_location_of"))
         {
             if (BufAppendCStr(&c->out, "builtin__source_location_of(") != 0) {
                 return -1;
             }
-        } else if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
-            return -1;
+        } else {
+            if (callee != NULL && callee->kind == H2Ast_IDENT) {
+                int templateRc = TryEmitExpandedVariadicTemplateCall(
+                    c, nodeId, child, callee->dataStart, callee->dataEnd);
+                if (templateRc == 0) {
+                    return 0;
+                }
+                if (templateRc < 0) {
+                    return -1;
+                }
+            }
+            if (EmitExpr(c, child) != 0 || BufAppendChar(&c->out, '(') != 0) {
+                return -1;
+            }
         }
-        if (!emittedBuiltinPrintFallback && sig != NULL
-            && (sig->hasContext || StrEq(sig->cName, "builtin__print")))
-        {
+        if (sig != NULL && sig->hasContext) {
             if (sig->hasContext) {
                 if (EmitContextArgForSig(c, sig) != 0) {
                     return -1;
                 }
-            } else if (BufAppendCStr(&c->out, "context") != 0) {
-                return -1;
             }
             first = 0;
         }

@@ -52,6 +52,17 @@ typedef int (*H2MirAdjustCallArgsFn)(
     H2MirExecValue* _Nonnull args,
     uint32_t argCount,
     H2Diag* _Nullable diag);
+typedef int (*H2MirIndirectCallFn)(
+    void* _Nullable ctx,
+    const H2MirProgram* _Nullable program,
+    const H2MirFunction* _Nullable function,
+    const H2MirInst* _Nullable inst,
+    const H2MirExecValue* _Nonnull callee,
+    const H2MirExecValue* _Nullable args,
+    uint32_t argCount,
+    H2MirExecValue* _Nonnull outValue,
+    int* _Nonnull outIsConst,
+    H2Diag* _Nullable diag);
 
 typedef int (*H2MirHostCallFn)(
     void* _Nullable ctx,
@@ -221,8 +232,10 @@ typedef struct {
     H2MirResolveCallPreFn _Nullable resolveCallPre;
     H2MirResolveCallFn _Nullable resolveCall;
     H2MirAdjustCallArgsFn _Nullable adjustCallArgs;
+    H2MirIndirectCallFn _Nullable indirectCall;
     void* _Nullable resolveCtx;
     void* _Nullable adjustCallArgsCtx;
+    void* _Nullable indirectCallCtx;
     H2MirHostCallFn _Nullable hostCall;
     void* _Nullable hostCtx;
     H2MirZeroInitLocalFn _Nullable zeroInitLocal;

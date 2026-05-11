@@ -4493,6 +4493,8 @@ int H2TCResolveCallFromCandidates(
     int32_t          mutRefTempArgNode = -1;
     int32_t          autoRefType = -1;
     int              hasAutoRefType = 0;
+    int              bestWasVariadic = 0;
+    int              bestWasTemplateInstance = 0;
     H2TCCallMapError firstMapError;
     int              hasMapError = 0;
     uint32_t         firstMapErrorCost = UINT32_MAX;
@@ -4697,23 +4699,38 @@ int H2TCResolveCallFromCandidates(
             ambiguous = 0;
             *outFuncIndex = candidateFnIdx;
             bestTotal = curTotal;
+            bestWasVariadic = (fn->flags & H2TCFunctionFlag_VARIADIC) != 0;
+            bestWasTemplateInstance = (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0;
             for (j = 0; j < argCount; j++) {
                 bestCosts[j] = curCosts[j];
             }
             continue;
         }
         cmp = H2TCCostVectorCompare(curCosts, bestCosts, argCount);
-        if (cmp < 0 || (cmp == 0 && curTotal < bestTotal)) {
+        if (cmp < 0 || (cmp == 0 && curTotal < bestTotal)
+            || (cmp == 0 && curTotal == bestTotal && bestWasVariadic
+                && (fn->flags & H2TCFunctionFlag_VARIADIC) == 0)
+            || (cmp == 0 && curTotal == bestTotal && bestWasTemplateInstance
+                && (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) == 0))
+        {
             uint32_t j;
             *outFuncIndex = candidateFnIdx;
             bestTotal = curTotal;
             ambiguous = 0;
+            bestWasVariadic = (fn->flags & H2TCFunctionFlag_VARIADIC) != 0;
+            bestWasTemplateInstance = (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0;
             for (j = 0; j < argCount; j++) {
                 bestCosts[j] = curCosts[j];
             }
             continue;
         }
         if (cmp == 0 && curTotal == bestTotal && candidateFnIdx != *outFuncIndex) {
+            if (!bestWasTemplateInstance && (fn->flags & H2TCFunctionFlag_TEMPLATE_INSTANCE) != 0) {
+                continue;
+            }
+            if (!bestWasVariadic && (fn->flags & H2TCFunctionFlag_VARIADIC) != 0) {
+                continue;
+            }
             ambiguous = 1;
         }
     }

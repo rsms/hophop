@@ -17,7 +17,6 @@ H2_API_BEGIN
 
 enum {
     HOP_EVAL_MIR_HOST_INVALID = H2MirHostTarget_INVALID,
-    HOP_EVAL_MIR_HOST_PRINT = H2MirHostTarget_PRINT,
     HOP_EVAL_MIR_HOST_PLATFORM_EXIT = H2MirHostTarget_PLATFORM_EXIT,
     HOP_EVAL_MIR_HOST_DEALLOC = H2MirHostTarget_DEALLOC,
     HOP_EVAL_MIR_HOST_CONCAT = H2MirHostTarget_CONCAT,
@@ -779,6 +778,7 @@ struct HOPEvalReflectedType {
 #define H2_EVAL_RUNTIME_ALLOC_MAGIC         0x48414c4cu
 #define H2_EVAL_RUNTIME_ALLOC_STATE_MAGIC   0x48414c53u
 #define H2_EVAL_SYNTHETIC_FN_ROOT_ALLOCATOR UINT32_MAX
+#define H2_EVAL_SYNTHETIC_FN_ROOT_LOGGER    (UINT32_MAX - 1u)
 
 enum {
     HOPEvalReflectType_NAMED = 1,
@@ -903,6 +903,13 @@ static int H2EvalInitRootAllocatorValue(
 static int  H2EvalInitRootAllocators(HOPEvalProgram* p);
 static void H2EvalFreeRuntimeAllocatorState(H2EvalRuntimeAllocatorState* state);
 static int  H2EvalInvokeSyntheticRootAllocator(
+    HOPEvalProgram*    p,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst);
+static int H2EvalInitRootLoggerValue(HOPEvalProgram* p, H2CTFEValue* outValue);
+static int H2EvalInvokeSyntheticRootLogger(
     HOPEvalProgram*    p,
     const H2CTFEValue* args,
     uint32_t           argCount,
@@ -3328,6 +3335,90 @@ static int H2EvalInitRootAllocators(HOPEvalProgram* p) {
         return -1;
     }
     return 0;
+}
+
+static int H2EvalInitRootLoggerValue(HOPEvalProgram* p, H2CTFEValue* outValue) {
+    const H2ParsedFile* logFile = NULL;
+    H2CTFEValue         aggregateValue;
+    H2CTFEValue         handlerValue;
+    H2CTFEValue*        handlerField;
+    H2CTFEValue*        minLevelField;
+    H2CTFEValue*        flagsField;
+    H2CTFEValue*        prefixField;
+    HOPEvalAggregate*   agg;
+    int32_t             logNode = -1;
+    int                 isConst = 0;
+    if (p == NULL || outValue == NULL) {
+        return -1;
+    }
+    if (!H2EvalFindBuiltinStructDecl(p, "Logger", &logFile, &logNode) || logFile == NULL
+        || logNode < 0)
+    {
+        return ErrorSimple("failed to resolve builtin Logger for evaluator runtime");
+    }
+    if (HOPEvalZeroInitAggregateValue(p, logFile, logNode, &aggregateValue, &isConst) != 0) {
+        return -1;
+    }
+    if (!isConst) {
+        return ErrorSimple("failed to initialize evaluator root logger");
+    }
+    agg = HOPEvalValueAsAggregate(&aggregateValue);
+    if (agg == NULL) {
+        return ErrorSimple("failed to build evaluator root logger");
+    }
+    handlerField = HOPEvalAggregateLookupFieldValuePtr(agg, "handler", 0u, 7u);
+    minLevelField = HOPEvalAggregateLookupFieldValuePtr(agg, "min_level", 0u, 9u);
+    flagsField = HOPEvalAggregateLookupFieldValuePtr(agg, "flags", 0u, 5u);
+    prefixField = HOPEvalAggregateLookupFieldValuePtr(agg, "prefix", 0u, 6u);
+    if (handlerField == NULL || minLevelField == NULL || flagsField == NULL || prefixField == NULL)
+    {
+        return ErrorSimple("failed to initialize evaluator root logger fields");
+    }
+    H2MirValueSetFunctionRef(&handlerValue, H2_EVAL_SYNTHETIC_FN_ROOT_LOGGER);
+    *handlerField = handlerValue;
+    HOPEvalValueSetInt(minLevelField, 0);
+    HOPEvalValueSetInt(flagsField, 0);
+    *prefixField = p->loggerPrefix;
+    *outValue = aggregateValue;
+    return 0;
+}
+
+static int H2EvalInvokeSyntheticRootLogger(
+    HOPEvalProgram*    p,
+    const H2CTFEValue* args,
+    uint32_t           argCount,
+    H2CTFEValue*       outValue,
+    int*               outIsConst) {
+    const H2CTFEValue* message;
+    const H2CTFEValue* levelValue;
+    FILE*              out = stdout;
+    (void)p;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (outValue == NULL || outIsConst == NULL || args == NULL || argCount < 2u) {
+        return 0;
+    }
+    message = HOPEvalValueTargetOrSelf(&args[1]);
+    if (message == NULL || message->kind != H2CTFEValue_STRING) {
+        return 0;
+    }
+    if (argCount >= 3u) {
+        levelValue = HOPEvalValueTargetOrSelf(&args[2]);
+        if (levelValue != NULL && levelValue->kind == H2CTFEValue_INT && levelValue->i64 >= 30) {
+            out = stderr;
+        }
+    }
+    if (message->s.len > 0 && message->s.bytes != NULL) {
+        if (fwrite(message->s.bytes, 1, message->s.len, out) != message->s.len) {
+            return ErrorSimple("failed to write logger output");
+        }
+    }
+    fputc('\n', out);
+    fflush(out);
+    HOPEvalValueSetNull(outValue);
+    *outIsConst = 1;
+    return 1;
 }
 
 static void H2EvalFreeRuntimeAllocatorState(H2EvalRuntimeAllocatorState* state) {
@@ -10802,58 +10893,6 @@ static int HOPEvalMirHostCall(
     if (p == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;
     }
-    if (hostId == HOP_EVAL_MIR_HOST_PRINT && argCount == 1u) {
-        const H2Package* currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
-        int32_t          localPrintFn = -1;
-        int              localPrintScore = -1;
-        uint32_t         i;
-        if (currentPkg != NULL) {
-            for (i = 0; i < p->funcLen; i++) {
-                const HOPEvalFunction* fn = &p->funcs[i];
-                int                    score = 0;
-                if (fn->pkg != currentPkg || fn->isBuiltinPackageFn || fn->paramCount != argCount
-                    || !SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "print"))
-                {
-                    continue;
-                }
-                if (HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score)
-                    && score > localPrintScore)
-                {
-                    localPrintFn = (int32_t)i;
-                    localPrintScore = score;
-                }
-            }
-        }
-        if (localPrintFn >= 0) {
-            int didReturn = 0;
-            if (HOPEvalInvokeFunction(
-                    p, localPrintFn, args, argCount, p->currentContext, outValue, &didReturn)
-                != 0)
-            {
-                return -1;
-            }
-            if (!didReturn) {
-                HOPEvalValueSetNull(outValue);
-            }
-            *outIsConst = 1;
-            return 0;
-        }
-        const H2CTFEValue* message = HOPEvalValueTargetOrSelf(&args[0]);
-        if (message == NULL || message->kind != H2CTFEValue_STRING) {
-            *outIsConst = 0;
-            return 0;
-        }
-        if (message->s.len > 0 && message->s.bytes != NULL) {
-            if (fwrite(message->s.bytes, 1, message->s.len, stdout) != message->s.len) {
-                return ErrorSimple("failed to write print output");
-            }
-        }
-        fputc('\n', stdout);
-        fflush(stdout);
-        HOPEvalValueSetNull(outValue);
-        *outIsConst = 1;
-        return 0;
-    }
     if (hostId == HOP_EVAL_MIR_HOST_CONCAT && argCount == 2u) {
         int concatRc = HOPEvalValueConcatStrings(p->arena, &args[0], &args[1], outValue);
         if (concatRc < 0) {
@@ -10915,6 +10954,46 @@ static int HOPEvalMirHostCall(
     }
     *outIsConst = 0;
     return 0;
+}
+
+static int HOPEvalMirIndirectCall(
+    void*                 ctx,
+    const H2MirProgram*   program,
+    const H2MirFunction*  function,
+    const H2MirInst*      inst,
+    const H2MirExecValue* callee,
+    const H2MirExecValue* args,
+    uint32_t              argCount,
+    H2MirExecValue*       outValue,
+    int*                  outIsConst,
+    H2Diag* _Nullable diag) {
+    HOPEvalProgram*       p = (HOPEvalProgram*)ctx;
+    const H2MirExecValue* target;
+    uint32_t              fnIndex = 0;
+    (void)program;
+    (void)function;
+    (void)inst;
+    (void)diag;
+    if (outIsConst != NULL) {
+        *outIsConst = 0;
+    }
+    if (p == NULL || callee == NULL || outValue == NULL || outIsConst == NULL) {
+        return 0;
+    }
+    target = HOPEvalValueTargetOrSelf(callee);
+    if (H2MirValueAsFunctionRef(target, &fnIndex)) {
+        if (fnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_LOGGER) {
+            return H2EvalInvokeSyntheticRootLogger(p, args, argCount, outValue, outIsConst);
+        }
+        if (fnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_ALLOCATOR) {
+            return H2EvalInvokeSyntheticRootAllocator(p, args, argCount, outValue, outIsConst);
+        }
+        return 0;
+    }
+    if (!HOPEvalValueIsFunctionRef(target, NULL)) {
+        return 0;
+    }
+    return HOPEvalInvokeFunctionRef(p, target, args, argCount, outValue, outIsConst);
 }
 
 static void HOPEvalMirSetReason(
@@ -11294,8 +11373,10 @@ void HOPEvalMirInitExecEnv(
     env->resolveCallPre = HOPEvalResolveCallMirPre;
     env->resolveCall = HOPEvalResolveCallMir;
     env->adjustCallArgs = HOPEvalMirAdjustCallArgs;
+    env->indirectCall = HOPEvalMirIndirectCall;
     env->resolveCtx = p;
     env->adjustCallArgsCtx = p;
+    env->indirectCallCtx = p;
     env->hostCall = HOPEvalMirHostCall;
     env->hostCtx = p;
     env->zeroInitLocal = HOPEvalMirZeroInitLocal;
@@ -12315,6 +12396,112 @@ static int HOPEvalMatchPatternCb(
     return 1;
 }
 
+static uint32_t HOPEvalMutableByteBufferLen(const H2CTFEValue* value) {
+    const H2CTFEValue* target = HOPEvalValueTargetOrSelf(value);
+    HOPEvalArray*      array;
+    if (target == NULL) {
+        return 0;
+    }
+    if (target->kind == H2CTFEValue_STRING) {
+        return target->s.len;
+    }
+    array = HOPEvalValueAsArray(target);
+    return array != NULL ? array->len : 0u;
+}
+
+static int HOPEvalWriteBytesToMutableBuffer(
+    HOPEvalProgram* p, const H2CTFEValue* bufValue, int64_t cap, const H2CTFEValue* textValue) {
+    H2CTFEValue*  target;
+    HOPEvalArray* array;
+    uint32_t      payloadCap;
+    uint32_t      copyLen;
+    uint32_t      i;
+    if (p == NULL || bufValue == NULL || textValue == NULL || cap <= 0) {
+        return 1;
+    }
+    target = HOPEvalValueReferenceTarget(bufValue);
+    if (target == NULL) {
+        target = (H2CTFEValue*)HOPEvalValueTargetOrSelf(bufValue);
+    }
+    if (target == NULL || textValue->kind != H2CTFEValue_STRING) {
+        return 0;
+    }
+    payloadCap = (uint32_t)(cap - 1);
+    copyLen = textValue->s.len < payloadCap ? textValue->s.len : payloadCap;
+    if (target->kind == H2CTFEValue_STRING) {
+        if (HOPEvalEnsureStringStorage(p->arena, target) != 0) {
+            return -1;
+        }
+        if (copyLen > 0u && textValue->s.bytes != NULL) {
+            memcpy((uint8_t*)target->s.bytes, textValue->s.bytes, copyLen);
+        }
+        if (target->s.bytes != NULL && copyLen <= target->s.len) {
+            ((uint8_t*)target->s.bytes)[copyLen] = 0;
+        }
+        return 1;
+    }
+    array = HOPEvalValueAsArray(target);
+    if (array == NULL) {
+        return 0;
+    }
+    for (i = 0; i < copyLen && i < array->len; i++) {
+        HOPEvalValueSetInt(
+            &array->elems[i], textValue->s.bytes != NULL ? textValue->s.bytes[i] : 0);
+        HOPEvalValueSetRuntimeTypeCode(&array->elems[i], HOPEvalTypeCode_U8);
+    }
+    if (copyLen < array->len) {
+        HOPEvalValueSetInt(&array->elems[copyLen], 0);
+        HOPEvalValueSetRuntimeTypeCode(&array->elems[copyLen], HOPEvalTypeCode_U8);
+    }
+    return 1;
+}
+
+static int HOPEvalTryInvokePrintStringFormatter(
+    HOPEvalProgram*        p,
+    const HOPEvalFunction* fn,
+    const H2CTFEValue*     args,
+    uint32_t               argCount,
+    H2CTFEValue*           outValue,
+    int*                   outDidReturn) {
+    const H2CTFEValue* textValue;
+    int64_t            cap = 0;
+    int                writeRc;
+    if (p == NULL || fn == NULL || args == NULL || outValue == NULL || outDidReturn == NULL
+        || !fn->isBuiltinPackageFn)
+    {
+        return 0;
+    }
+    if (SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "fmt_write_print_impl")) {
+        if (argCount != 2) {
+            return 0;
+        }
+        cap = (int64_t)HOPEvalMutableByteBufferLen(&args[0]);
+        textValue = HOPEvalValueTargetOrSelf(&args[1]);
+    } else if (
+        SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "fmt_write_print_impl_cap"))
+    {
+        if (argCount != 3 || H2CTFEValueToInt64(&args[1], &cap) != 0) {
+            return 0;
+        }
+        textValue = HOPEvalValueTargetOrSelf(&args[2]);
+    } else {
+        return 0;
+    }
+    if (textValue == NULL || textValue->kind != H2CTFEValue_STRING) {
+        return 0;
+    }
+    writeRc = HOPEvalWriteBytesToMutableBuffer(p, &args[0], cap, textValue);
+    if (writeRc < 0) {
+        return -1;
+    }
+    if (writeRc == 0) {
+        return 0;
+    }
+    HOPEvalValueSetInt(outValue, (int64_t)textValue->s.len);
+    *outDidReturn = 1;
+    return 1;
+}
+
 static int HOPEvalInvokeFunction(
     HOPEvalProgram* p,
     int32_t         fnIndex,
@@ -12356,6 +12543,14 @@ static int HOPEvalInvokeFunction(
             ast->nodes[fn->fnNode].start,
             ast->nodes[fn->fnNode].end,
             "evaluator backend call arity mismatch");
+    }
+
+    {
+        int printFmtRc = HOPEvalTryInvokePrintStringFormatter(
+            p, fn, args, argCount, outValue, outDidReturn);
+        if (printFmtRc != 0) {
+            return printFmtRc < 0 ? -1 : 0;
+        }
     }
 
     if (fn->isBuiltinPackageFn
@@ -12586,6 +12781,12 @@ static int HOPEvalInvokeFunctionRef(
     if (H2MirValueAsFunctionRef(calleeValue, &mirFnIndex)) {
         H2MirExecEnv env = { 0 };
         int          mirIsConst = 0;
+        if (mirFnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_ALLOCATOR) {
+            return H2EvalInvokeSyntheticRootAllocator(p, args, argCount, outValue, outIsConst);
+        }
+        if (mirFnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_LOGGER) {
+            return H2EvalInvokeSyntheticRootLogger(p, args, argCount, outValue, outIsConst);
+        }
         if (p->currentMirExecCtx == NULL || p->currentMirExecCtx->mirProgram == NULL
             || mirFnIndex >= p->currentMirExecCtx->mirProgram->funcLen)
         {
@@ -12620,6 +12821,9 @@ static int HOPEvalInvokeFunctionRef(
     }
     if (fnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_ALLOCATOR) {
         return H2EvalInvokeSyntheticRootAllocator(p, args, argCount, outValue, outIsConst);
+    }
+    if (fnIndex == H2_EVAL_SYNTHETIC_FN_ROOT_LOGGER) {
+        return H2EvalInvokeSyntheticRootLogger(p, args, argCount, outValue, outIsConst);
     }
     if (fnIndex >= p->funcLen) {
         return 0;
@@ -13305,6 +13509,18 @@ static int HOPEvalResolveCallMir(
     isReflectBase = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "base");
     isTypeOf = SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "typeof");
 
+    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "fmt_rawptr_addr"))
+    {
+        uintptr_t addr = 0u;
+        if (args[0].kind == H2CTFEValue_REFERENCE || args[0].kind == H2CTFEValue_STRING) {
+            addr = (uintptr_t)args[0].s.bytes;
+        }
+        HOPEvalValueSetInt(outValue, (int64_t)addr);
+        HOPEvalValueSetRuntimeTypeCode(outValue, HOPEvalTypeCode_UINT);
+        *outIsConst = 1;
+        return 0;
+    }
+
     if (argCount == 1 && isReflectKind) {
         int32_t kind = 0;
         if (HOPEvalTypeKindOfValue(&args[0], &kind)) {
@@ -13520,26 +13736,6 @@ static int HOPEvalResolveCallMir(
             }
         }
     }
-    if (argCount == 1 && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "print")) {
-        const H2Package* currentPkg = HOPEvalFindPackageByFile(p, p->currentFile);
-        int32_t          localFnIndex =
-            currentPkg != NULL
-                ? HOPEvalResolveFunctionBySlice(
-                      p, currentPkg, p->currentFile, nameStart, nameEnd, args, argCount)
-                : -1;
-        if (localFnIndex == -2) {
-            H2CTFEExecSetReason(
-                p->currentExecCtx,
-                nameStart,
-                nameEnd,
-                "call target is ambiguous in evaluator backend");
-            *outIsConst = 0;
-            return 0;
-        }
-        if (localFnIndex >= 0 && !p->funcs[(uint32_t)localFnIndex].isBuiltinPackageFn) {
-            fnIndex = localFnIndex;
-        }
-    }
     if ((argCount == 1 || argCount == 2)
         && SliceEqCStr(p->currentFile->source, nameStart, nameEnd, "dealloc"))
     {
@@ -13678,21 +13874,6 @@ static int HOPEvalResolveCallMir(
         return 0;
     }
     fn = &p->funcs[fnIndex];
-    if (fn->isBuiltinPackageFn && argCount == 1
-        && SliceEqCStr(fn->file->source, fn->nameStart, fn->nameEnd, "print")
-        && args[0].kind == H2CTFEValue_STRING)
-    {
-        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
-            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
-                return ErrorSimple("failed to write print output");
-            }
-        }
-        fputc('\n', stdout);
-        fflush(stdout);
-        HOPEvalValueSetNull(outValue);
-        *outIsConst = 1;
-        return 0;
-    }
     {
         const H2CTFEValue* invokeArgs = args;
         uint32_t           invokeArgCount = argCount;
@@ -15532,9 +15713,11 @@ int HOPEvalRunProgramInternal(
     program.arena = &arena;
     program.loader = &loader;
     program.entryPkg = entryPkg;
-    HOPEvalValueSetInt(&program.rootContext.logger, 3);
     program.currentContext = NULL;
     if (H2EvalInitRootAllocators(&program) != 0) {
+        goto end;
+    }
+    if (H2EvalInitRootLoggerValue(&program, &program.rootContext.logger) != 0) {
         goto end;
     }
     if (HOPEvalCollectFunctions(&program) != 0) {

@@ -20,10 +20,6 @@ pub fn source_location_of(x type) SourceLocation {
 	return SourceLocation{}
 }
 
-pub fn print(message &str) {
-	context.logger.handler(&context.logger, message, LogLevel.Info, 0 as LogFlags)
-}
-
 fn sizeof() int {
 	return 0
 }

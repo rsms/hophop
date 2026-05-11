@@ -1,0 +1,20 @@
+// Verifies direct Wasm support for inferred fixed arrays of str.
+import "platform"
+
+fn write_line(message &str) {
+	platform.console_log(message, flags: 0)
+}
+
+fn main() {
+	greetings := [
+		"Hej världen!"
+		"Hello, world!"
+		"¡Hola Mundo!"
+		"Γειά σου Κόσμε!"
+		"Привіт, світе!"
+		"こんにちは世界！"
+	]
+	for greeting in greetings {
+		write_line(greeting)
+	}
+}

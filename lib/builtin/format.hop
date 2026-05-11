@@ -44,6 +44,65 @@ fn fmt_write_i64(buf *[u8], payloadCap, oi int, x i64) int {
 	return fmt_write_u64(buf, payloadCap, oi, x: x as u64)
 }
 
+fn fmt_write_hex_uint(buf *[u8], payloadCap, oi int, x uint) int {
+	oi = fmt_write_text(buf, payloadCap, oi, text: "0x")
+	if x == 0 {
+		return fmt_write_byte(buf, payloadCap, oi, byte: '0')
+	}
+
+	var digits [u8 32]
+	var n      int = 0
+	v := x
+	for v > 0 {
+		var d = v & 0xF
+		if d < 10 {
+			digits[n] = '0' + d as u8
+		} else {
+			digits[n] = 'a' + (d - 10) as u8
+		}
+		n += 1
+		v >>= 4
+	}
+	for n > 0 {
+		n -= 1
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: digits[n])
+	}
+	return oi
+}
+
+fn fmt_write_rune(buf *[u8], payloadCap, oi int, r rune) int {
+	var x u32 = r as u32
+	if x <= 0x7F {
+		return fmt_write_byte(buf, payloadCap, oi, byte: x as u8)
+	}
+	if x <= 0x7FF {
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0xC0 | (x >> 6)) as u8)
+		return fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | (x & 0x3F)) as u8)
+	}
+	if x >= 0xD800 && x <= 0xDFFF {
+		panic("invalid rune value")
+		return oi
+	}
+	if x <= 0xFFFF {
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0xE0 | (x >> 12)) as u8)
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | ((x >> 6) & 0x3F)) as u8)
+		return fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | (x & 0x3F)) as u8)
+	}
+	if x <= 0x10FFFF {
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0xF0 | (x >> 18)) as u8)
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | ((x >> 12) & 0x3F)) as u8)
+		oi = fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | ((x >> 6) & 0x3F)) as u8)
+		return fmt_write_byte(buf, payloadCap, oi, byte: (0x80 | (x & 0x3F)) as u8)
+	}
+	panic("invalid rune value")
+	return oi
+}
+
+fn fmt_rawptr_addr(p rawptr) uint {
+	p
+	return 0
+}
+
 fn fmt_write_f64(buf *[u8], payloadCap, oi int, x f64) int {
 	v := x
 	if v < 0 {
@@ -98,6 +157,39 @@ fn fmt_write_i_any(buf *[u8], payloadCap, oi int, v anytype) int {
 	return 0
 }
 
+fn fmt_write_default_any(buf *[u8], payloadCap, oi int, v anytype) int {
+	const t = typeof(v)
+	if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {
+		return fmt_write_i_any(buf, payloadCap, oi, v)
+	} else if t == f32 {
+		return fmt_write_f64(buf, payloadCap, oi, x: v as f32 as f64)
+	} else if t == f64 {
+		return fmt_write_f64(buf, payloadCap, oi, x: v as f64)
+	} else if t == typeof("" as &str) {
+		var text = v as &str
+		return fmt_write_text(buf, payloadCap, oi, text)
+	} else if t == type *str {
+		var text = v as &str
+		return fmt_write_text(buf, payloadCap, oi, text)
+	} else if t == bool {
+		if v {
+			return fmt_write_text(buf, payloadCap, oi, text: "true")
+		}
+		return fmt_write_text(buf, payloadCap, oi, text: "false")
+	} else if t == rune {
+		return fmt_write_rune(buf, payloadCap, oi, r: v as rune)
+	} else if t == rawptr {
+		return fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(v as rawptr))
+	} else if t == typeof(type i32) {
+		return fmt_write_text(buf, payloadCap, oi, text: type_name(v))
+	} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {
+		return fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(v as rawptr))
+	}
+
+	panic("invalid format string: {} requires scalar, type, pointer, or string argument")
+	return 0
+}
+
 fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 	var payloadCap int = 0
 	if cap > 0 {
@@ -130,8 +222,10 @@ fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 					return 0
 				}
 				var t = typeof(args[ai])
-				if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {
-					oi = fmt_write_i_any(buf, payloadCap, oi, v: args[ai])
+				if t == i8 || t == i16 || t == i32 || t == i64 || t == int {
+					oi = fmt_write_i64(buf, payloadCap, oi, x: args[ai] as i64)
+				} else if t == u8 || t == u16 || t == u32 || t == u64 || t == uint {
+					oi = fmt_write_u64(buf, payloadCap, oi, x: args[ai] as u64)
 				} else if t == f32 {
 					oi = fmt_write_f64(buf, payloadCap, oi, x: args[ai] as f32 as f64)
 				} else if t == f64 {
@@ -140,10 +234,24 @@ fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 					var text = args[ai] as &str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
 				} else if t == type *str {
-					var text = args[ai] as *str
+					var text = args[ai] as &str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
+				} else if t == bool {
+					if args[ai] as bool {
+						oi = fmt_write_text(buf, payloadCap, oi, text: "true")
+					} else {
+						oi = fmt_write_text(buf, payloadCap, oi, text: "false")
+					}
+				} else if t == rune {
+					oi = fmt_write_rune(buf, payloadCap, oi, r: args[ai] as rune)
+				} else if t == rawptr {
+					oi = fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(args[ai] as rawptr))
+				} else if t == typeof(type i32) {
+					oi = fmt_write_text(buf, payloadCap, oi, text: type_name(args[ai] as type))
+				} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {
+					oi = fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(args[ai] as rawptr))
 				} else {
-					panic("invalid format string: {} requires integer, floating-point, or string argument")
+					panic("invalid format string: {} requires scalar, type, pointer, or string argument")
 					return 0
 				}
 				ai += 1
@@ -179,7 +287,7 @@ fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 					var text = args[ai] as &str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
 				} else if t == type *str {
-					var text = args[ai] as *str
+					var text = args[ai] as &str
 					oi = fmt_write_text(buf, payloadCap, oi, text)
 				} else {
 					panic("invalid format string: {s} requires string argument")
@@ -222,6 +330,68 @@ fn fmt_write_impl_cap(buf *[u8], cap int, fmt &str, args ...anytype) int {
 	return oi
 }
 
+fn fmt_write_print_impl_cap(buf *[u8], cap int, args ...anytype) int {
+	var payloadCap int = 0
+	if cap > 0 {
+		payloadCap = cap - 1
+	}
+
+	var oi int = 0
+	for var ai int = 0; ai < len(args); ai += 1 {
+		if ai > 0 {
+			oi = fmt_write_byte(buf, payloadCap, oi, byte: ' ')
+		}
+		var t = typeof(args[ai])
+		if t == i8 || t == i16 || t == i32 || t == i64 || t == int {
+			oi = fmt_write_i64(buf, payloadCap, oi, x: args[ai] as i64)
+		} else if t == u8 || t == u16 || t == u32 || t == u64 || t == uint {
+			oi = fmt_write_u64(buf, payloadCap, oi, x: args[ai] as u64)
+		} else if t == f32 {
+			oi = fmt_write_f64(buf, payloadCap, oi, x: args[ai] as f32 as f64)
+		} else if t == f64 {
+			oi = fmt_write_f64(buf, payloadCap, oi, x: args[ai] as f64)
+		} else if t == typeof("" as &str) {
+			var text = args[ai] as &str
+			oi = fmt_write_text(buf, payloadCap, oi, text)
+		} else if t == type *str {
+			var text = args[ai] as &str
+			oi = fmt_write_text(buf, payloadCap, oi, text)
+		} else if t == bool {
+			if args[ai] as bool {
+				oi = fmt_write_text(buf, payloadCap, oi, text: "true")
+			} else {
+				oi = fmt_write_text(buf, payloadCap, oi, text: "false")
+			}
+		} else if t == rune {
+			oi = fmt_write_rune(buf, payloadCap, oi, r: args[ai] as rune)
+		} else if t == rawptr {
+			oi = fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(args[ai] as rawptr))
+		} else if t == typeof(type i32) {
+			oi = fmt_write_text(buf, payloadCap, oi, text: type_name(args[ai] as type))
+		} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {
+			oi = fmt_write_hex_uint(buf, payloadCap, oi, x: fmt_rawptr_addr(args[ai] as rawptr))
+		} else {
+			panic("invalid format string: {} requires scalar, type, pointer, or string argument")
+			return 0
+		}
+	}
+
+	if cap > 0 {
+		nulPos := oi
+		if nulPos > payloadCap {
+			nulPos = payloadCap
+		}
+		buf[nulPos] = 0
+	}
+
+	return oi
+}
+
+fn fmt_write_print_impl(buf *[u8], args ...anytype) int {
+	var cap = len(buf)
+	return fmt_write_print_impl_cap(buf, cap, args...)
+}
+
 fn fmt_write_impl(buf *[u8], fmt &str, args ...anytype) int {
 	var cap = len(buf)
 	return fmt_write_impl_cap(buf, cap, fmt, args...)
@@ -244,8 +414,8 @@ fn fmt_check_const_format(const fmt &str, args ...anytype) {
 						error("format string error: not enough arguments")
 					} else {
 						var t = typeof(args[ai])
-						if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else if t == f32 || t == f64 {} else if t == typeof("" as &str) || t == type *str {} else {
-							error_at(source_location_of(args[ai]), "format string error: {} requires integer, floating-point, or string argument")
+						if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else if t == f32 || t == f64 {} else if t == typeof("" as &str) || t == type *str {} else if t == bool || t == rune || t == rawptr || t == typeof(type i32) {} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {} else {
+							error_at(source_location_of(args[ai]), "format string error: {} requires scalar, type, pointer, or string argument")
 						}
 					}
 					ai += 1
@@ -292,6 +462,17 @@ fn fmt_check_const_format(const fmt &str, args ...anytype) {
 
 		if ai != len(args) {
 			error("format string error: too many arguments")
+		}
+	}
+}
+
+fn fmt_check_print_args(args ...anytype) {
+	const {
+		for var ai int = 0; ai < len(args); ai += 1 {
+			var t = typeof(args[ai])
+			if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else if t == f32 || t == f64 {} else if t == typeof("" as &str) || t == type *str {} else if t == bool || t == rune || t == rawptr || t == typeof(type i32) {} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {} else {
+				error_at(source_location_of(args[ai]), "print requires scalar, type, pointer, or string arguments")
+			}
 		}
 	}
 }

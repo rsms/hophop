@@ -1,24 +1,26 @@
+import "platform"
+
 fn print_door(door i32) {
 	if door == 1 {
-		print("door 1")
+		platform.console_log("door 1", flags: 0)
 	} else if door == 4 {
-		print("door 4")
+		platform.console_log("door 4", flags: 0)
 	} else if door == 9 {
-		print("door 9")
+		platform.console_log("door 9", flags: 0)
 	} else if door == 16 {
-		print("door 16")
+		platform.console_log("door 16", flags: 0)
 	} else if door == 25 {
-		print("door 25")
+		platform.console_log("door 25", flags: 0)
 	} else if door == 36 {
-		print("door 36")
+		platform.console_log("door 36", flags: 0)
 	} else if door == 49 {
-		print("door 49")
+		platform.console_log("door 49", flags: 0)
 	} else if door == 64 {
-		print("door 64")
+		platform.console_log("door 64", flags: 0)
 	} else if door == 81 {
-		print("door 81")
+		platform.console_log("door 81", flags: 0)
 	} else if door == 100 {
-		print("door 100")
+		platform.console_log("door 100", flags: 0)
 	} else {
 		assert false
 	}

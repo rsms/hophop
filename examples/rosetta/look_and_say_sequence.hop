@@ -1,3 +1,5 @@
+import "platform"
+
 fn bytes_eq(got &[u8], want &str) bool {
 	if len(got) != len(want) {
 		return false
@@ -38,7 +40,7 @@ fn look_and_say_next(dst *[u8], src &[u8]) int {
 
 fn assert_term(term &[u8], want &str) {
 	assert bytes_eq(term, want)
-	print(want)
+	platform.console_log(want, flags: 0)
 }
 
 fn main() {

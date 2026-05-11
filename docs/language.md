@@ -682,12 +682,12 @@ fn f() {
 - [BI-SIZEOF-002][Stable] Result type is `int`.
 - [BI-SIZEOF-003][Stable] Unsized and variable-size-by-value type operands are invalid in `sizeof(Type)`.
 
-### 9.8 `print(msg)`
-- [BI-PRINT-001][Stable] Argument MUST be `str`-assignable.
+### 9.8 `print(args...)`
+- [BI-PRINT-001][Stable] Arguments MUST be scalar, pointer, string, or type values supported by `format`.
 - [BI-PRINT-002][Stable] Effective context MUST provide field `logger`.
 - [BI-PRINT-003][Stable] Core type checking imposes no additional static shape/type requirement on `logger` beyond field presence.
 - [BI-PRINT-004][Stable] `print` output MUST end with a line break.
-- [BI-PRINT-005][Provisional] `Reference-hop` currently validates `logger` field presence at typecheck time and may rely on backend coercion at codegen time for concrete logger compatibility.
+- [BI-PRINT-005][Provisional] `Reference-hop` validates unsupported argument shapes through the builtin library's `const` checks.
 
 ### 9.9 `format(format, args...)` and `format_str(format, args...)`
 - [BI-FMT-001][Provisional] `format` and `format_str` are available without an explicit import.

@@ -942,11 +942,23 @@ static int H2MirStmtLowerCallExpr(H2MirStmtLower* c, int32_t exprNode) {
             c->supported = 0;
             return 0;
         }
-        if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
-            return c->supported ? -1 : 0;
+        if (H2MirStmtLowerNameEqLiteral(
+                c,
+                c->ast->nodes[calleeNode].dataStart,
+                c->ast->nodes[calleeNode].dataEnd,
+                "handler"))
+        {
+            if (H2MirStmtLowerExpr(c, calleeNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            isIndirectLocalCall = 1;
+        } else {
+            if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
+            argc = 1u;
+            callFlags = H2MirSymbolFlag_CALL_RECEIVER_ARG0;
         }
-        argc = 1u;
-        callFlags = H2MirSymbolFlag_CALL_RECEIVER_ARG0;
         callStart = c->ast->nodes[calleeNode].dataStart;
         callEnd = c->ast->nodes[calleeNode].dataEnd;
         isBuiltinCStr = H2MirStmtLowerNameEqLiteral(c, callStart, callEnd, "cstr");

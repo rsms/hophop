@@ -69,7 +69,8 @@ typedef struct {
 
 static int HOPEvalBuiltinPackageFnHasHopEvaluatorBody(const HOPEvalFunction* fn) {
     return fn != NULL && fn->isBuiltinPackageFn && fn->file != NULL && fn->file->path != NULL
-        && HasSuffix(fn->file->path, "/builtin/format.hop");
+        && (HasSuffix(fn->file->path, "/builtin/format.hop")
+            || HasSuffix(fn->file->path, "/builtin/log.hop"));
 }
 
 static int HOPEvalMirInitLowerCtx(
@@ -706,40 +707,6 @@ static int HOPEvalMirRewriteBuiltinHostCallForFile(
     symbol = &c->builder.symbols[ins->aux];
     if (symbol->kind != H2MirSymbol_CALL || symbol->flags != 0u) {
         return 0;
-    }
-    if (H2MirCallArgCountFromTok(ins->tok) == 1u
-        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "print"))
-    {
-        const H2Package* currentPkg = HOPEvalFindPackageByFile(c->p, file);
-        uint32_t         i;
-        if (currentPkg != NULL) {
-            for (i = 0; i < c->p->funcLen; i++) {
-                const HOPEvalFunction* fn = &c->p->funcs[i];
-                if (fn->pkg == currentPkg && !fn->isBuiltinPackageFn && fn->paramCount == 1u
-                    && SliceEqSlice(
-                        file->source,
-                        symbol->nameStart,
-                        symbol->nameEnd,
-                        fn->file->source,
-                        fn->nameStart,
-                        fn->nameEnd))
-                {
-                    return 0;
-                }
-            }
-        }
-        host.nameStart = symbol->nameStart;
-        host.nameEnd = symbol->nameEnd;
-        host.kind = H2MirHost_GENERIC;
-        host.flags = 0;
-        host.target = HOP_EVAL_MIR_HOST_PRINT;
-        if (H2MirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
-            return -1;
-        }
-        ins->op = H2MirOp_CALL_HOST;
-        ins->aux = hostIndex;
-        *outRewritten = 1;
-        return 1;
     }
     if (H2MirCallArgCountFromTok(ins->tok) == 2u
         && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "copy"))

@@ -128,8 +128,8 @@ struct __hop_Allocator {
 };
 
 struct __hop_Logger {
-    void (*handler)(__hop_Logger* arg0, __hop_str arg1, __hop_LogLevel arg2, __hop_LogFlags arg3);
-    __hop_LogLevel min_level;
+    void (*handler)(__hop_Logger* arg0, __hop_str arg1, __hop_i32 arg2, __hop_LogFlags arg3);
+    __hop_i32      min_level;
     __hop_LogFlags flags;
     __hop_str      prefix;
 };

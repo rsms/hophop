@@ -1,4 +1,6 @@
 // Verifies wrapper allocators can delegate to the ambient root allocator across runtimes.
+import "platform"
+
 struct WrappingAllocator {
 	parent Allocator
 	calls  int
@@ -31,5 +33,5 @@ fn main() {
 	assert wrapper.calls == 2
 	assert *explicit == 7
 	assert *ambient == 9
-	print("ok")
+	platform.console_log("ok", flags: 0)
 }

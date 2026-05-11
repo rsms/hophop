@@ -23,36 +23,65 @@ pub enum LogFlag u32 {
 pub type LogFlags u32
 
 pub struct Logger {
-	handler   fn(&Logger, &str, LogLevel, LogFlags)
-	min_level LogLevel
+	handler   fn(&Logger, &str, i32, LogFlags)
+	min_level i32
 	flags     LogFlags
 	prefix    &str
 }
 
-pub fn log(message &str, level LogLevel, flags LogFlags) {
+pub fn print(args ...anytype) {
+	const {
+		for var ai int = 0; ai < len(args); ai += 1 {
+			var t = typeof(args[ai])
+			if t == i8 || t == i16 || t == i32 || t == i64 || t == int || t == u8 || t == u16 || t == u32 || t == u64 || t == uint {} else if t == f32 || t == f64 {} else if t == typeof("" as &str) || t == type *str {} else if t == bool || t == rune || t == rawptr || t == typeof(type i32) {} else if kind(t) == kind(ptr(u8)) || kind(t) == kind(typeof("" as &str)) {} else {
+				error_at(source_location_of(args[ai]), "print requires scalar, type, pointer, or string arguments")
+			}
+		}
+	}
+	if len(args) == 0 {
+		var flags LogFlags = 0
+		context.logger.handler(&context.logger, "", 0, flags)
+		return
+	}
+	var empty [u8 0]
+	var n     int      = fmt_write_print_impl(empty, args...)
+	var out   *str     = alloc str{ len: n }
+	var cap   int      = n + 1
+	var flags LogFlags = 0
+	_ = fmt_write_print_impl_cap(out, cap, args...)
+	context.logger.handler(&context.logger, out, 0, flags)
+}
+
+pub fn log(message &str, level i32, flags LogFlags) {
 	context.logger.handler(&context.logger, message, level, flags)
 }
 
 pub fn log_trace(message &str) {
-	log(message, level: LogLevel.Trace, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: -20, flags)
 }
 
 pub fn log_debug(message &str) {
-	log(message, level: LogLevel.Debug, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: -10, flags)
 }
 
 pub fn log_info(message &str) {
-	log(message, level: LogLevel.Info, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: 0, flags)
 }
 
 pub fn log_warn(message &str) {
-	log(message, level: LogLevel.Warning, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: 20, flags)
 }
 
 pub fn log_error(message &str) {
-	log(message, level: LogLevel.Error, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: 30, flags)
 }
 
 pub fn log_fatal(message &str) {
-	log(message, level: LogLevel.Fatal, flags: 0 as LogFlags)
+	var flags LogFlags = 0
+	log(message, level: 40, flags)
 }

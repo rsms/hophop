@@ -556,6 +556,8 @@ int AddFnSig(
     uint32_t  packArgCount,
     char* _Nullable packParamName);
 
+char* _Nullable BuildExpandedPackElemName(H2CBackendC* c, const char* packName, uint32_t index);
+
 int AddFieldInfo(
     H2CBackendC* c,
     const char*  ownerType,

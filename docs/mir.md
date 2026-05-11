@@ -42,7 +42,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Expression MIR now also lowers plain builtin `len(x)` calls to `HOPMirOp_SEQ_LEN` instead of leaving them on generic name-resolved `CALL`.
 - Expression MIR now also lowers builtin `cstr(x)` and receiver sugar `x.cstr()` to `HOPMirOp_STR_CSTR`, so that pure builtin no longer depends on generic evaluator call resolution.
 - Lowered MIR programs now also rewrite plain builtin `copy(dst, src)` calls to `CALL_HOST`, so the current runtime byte-copy behavior can be explicit on MIR even before slice/view lowering is fully migrated.
-- Lowered MIR programs now also rewrite plain builtin `print(...)` calls to `CALL_HOST` through `program.hosts[]`, instead of leaving that builtin on generic call-name resolution.
+- Builtin `print(...)` is implemented by the builtin package and logger function field calls; lowered MIR no longer has a dedicated `PRINT` host target.
 - Lowered MIR programs now also rewrite plain builtin `concat(...)` calls to `CALL_HOST`, so string concatenation crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - Lowered MIR programs now also rewrite plain builtin `dealloc(...)` calls to `CALL_HOST`, so allocation cleanup crosses the MIR host boundary explicitly instead of staying on generic call-name resolution.
 - CTFE wrapper: `src/ctfe.c` lowers expressions through `src/mir_lower.c` and delegates execution to `src/mir_exec.c`.
@@ -92,7 +92,7 @@ MIR is a small, internal, expression-level IR used by compile-time evaluation.
 - Lowered `CAST` instructions now also intern their target types into `program.types[]`, so type-directed backends do not need to recover cast metadata from parser ASTs later.
 - Lowered expression MIR now also interns `AGG_GET` / `AGG_ADDR` field names into `program.fields[]`, so aggregate field ops no longer need to depend only on source spans once an expression has been lowered to a MIR program.
 - MIR programs now also have an explicit `program.hosts[]` table for hostcall metadata, and current lowered MIR requires `CALL_HOST` to reference that table instead of treating instruction `aux` as evaluator-private state.
-- The evaluator now uses that host table for one real runtime case: plain builtin `print(...)` calls lowered through the simple MIR path are rewritten to `CALL_HOST`.
+- The evaluator uses that host table for runtime builtin helpers such as `concat(...)` and platform calls; `print(...)` now reaches the logger through ordinary builtin package function lowering.
 - The evaluator now also uses that host table for plain builtin `concat(...)` calls lowered through the simple MIR path.
 - The evaluator now also uses that host table for plain builtin `copy(dst, src)` calls lowered through the simple MIR path.
 - The evaluator-side direct-call rewrite now also covers conservative imported package selector calls, such as `math.Add(...)`, when the import alias and callee resolve unambiguously by arity.
@@ -288,7 +288,6 @@ So today:
   - conservative `arr[i] op= rhs` forms lowered by replaying side-effect-dealloc lvalues through `INDEX` plus `ARRAY_ADDR`
   - conservative `x.field`, `&x.field`, and plain `x.field = rhs` forms lowered through `AGG_GET` / `AGG_ADDR`
   - conservative `x.field op= rhs` forms lowered by replaying side-effect-dealloc lvalues through `AGG_GET` plus `AGG_ADDR`
-  - plain builtin `print(...)` rewritten to `CALL_HOST`
   - plain builtin `copy(dst, src)` rewritten to `CALL_HOST`
   - plain builtin `concat(...)` rewritten to `CALL_HOST`
   - builtin `cstr(x)` and `x.cstr()` lowered to `STR_CSTR`
@@ -309,8 +308,8 @@ So today:
   - nested blocks
 - The evaluator now runs that MIR function-body path directly for supported function bodies.
 - That MIR lowering path now keeps “already has a MIR function index” separate from “still lowering”, so direct recursive calls can lower to `CALL_FN` instead of forcing the whole function back to the AST runtime path.
-- That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges. The remaining fallback cases are still variadic, ambiguous, and true receiver-style calls. Supported builtin/package calls that already have explicit MIR rewrites include `print(...)`, `copy(dst, src)`, `concat(...)`, `dealloc(...)`, and `platform.exit(...)`.
-- The checked package MIR pipeline now also rewrites plain builtin `print(...)` to `CALL_HOST` for Wasm-targeted package builds, so simple package programs no longer keep generic dynamic call resolution alive just for `print`.
+- That evaluator-side MIR path now also lowers unambiguous plain direct calls into same-program `CALL_FN` edges. The remaining fallback cases are still variadic, ambiguous, and true receiver-style calls. Supported builtin/package calls that already have explicit MIR rewrites include `copy(dst, src)`, `concat(...)`, `dealloc(...)`, and `platform.exit(...)`.
+- The checked package MIR pipeline no longer rewrites plain builtin `print(...)` to `CALL_HOST`; `print` follows the normal builtin package function path.
 - The new per-function source identity is what makes that broader direct-call lowering possible without depending on one evaluator-global `currentFile`/source view for the whole MIR program.
 - The `HOPMirExecEnv` boundary is intentionally MIR-native so future backends, including a Wasm backend, can reuse MIR lowering/execution contracts without depending on CTFE-specific callback names.
 - The new function-level executor boundary means future backends can target `HOPMirProgram` functions directly instead of raw expression chunks.

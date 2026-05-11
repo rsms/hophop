@@ -1,3 +1,5 @@
+import "platform"
+
 fn gcd(a, b i32) i32 {
 	x := a
 	y := b
@@ -39,15 +41,15 @@ fn lcm(a, b i32) i32 {
 
 fn main() {
 	assert lcm(21, b: 6) == 42
-	print("lcm(21, 6) = 42")
+	platform.console_log("lcm(21, 6) = 42", flags: 0)
 	assert lcm(48, b: 18) == 144
-	print("lcm(48, 18) = 144")
+	platform.console_log("lcm(48, 18) = 144", flags: 0)
 	assert lcm(17, b: 13) == 221
-	print("lcm(17, 13) = 221")
+	platform.console_log("lcm(17, 13) = 221", flags: 0)
 	assert lcm(0, b: 42) == 0
-	print("lcm(0, 42) = 0")
+	platform.console_log("lcm(0, 42) = 0", flags: 0)
 	assert lcm(9, b: 9) == 9
-	print("lcm(9, 9) = 9")
+	platform.console_log("lcm(9, 9) = 9", flags: 0)
 	assert lcm(270, b: 192) == 8640
-	print("lcm(270, 192) = 8640")
+	platform.console_log("lcm(270, 192) = 8640", flags: 0)
 }

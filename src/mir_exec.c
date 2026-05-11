@@ -1150,6 +1150,32 @@ static int H2MirRunLoop(
                         run, ins, "indirect call target is not available during const evaluation");
                     return 0;
                 }
+                if (run->env.indirectCall != NULL) {
+                    int indirectIsConst = 0;
+                    int indirectRc = run->env.indirectCall(
+                        run->env.indirectCallCtx,
+                        run->program,
+                        run->function,
+                        ins,
+                        &callee,
+                        args,
+                        argCount,
+                        &v,
+                        &indirectIsConst,
+                        run->env.diag);
+                    if (indirectRc < 0) {
+                        return -1;
+                    }
+                    if (indirectRc > 0) {
+                        if (!indirectIsConst) {
+                            return 0;
+                        }
+                        if (H2CTFEPush(run, &v) != 0) {
+                            return -1;
+                        }
+                        break;
+                    }
+                }
                 if (!H2MirValueIsFunctionValue(&callee, &fnIndex, &closureData)
                     || fnIndex >= run->program->funcLen)
                 {

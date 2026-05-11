@@ -203,7 +203,6 @@ static const char* H2MirHostKindName(H2MirHostKind kind) {
 static const char* H2MirHostTargetName(H2MirHostTarget target) {
     switch (target) {
         case H2MirHostTarget_INVALID:              return "INVALID";
-        case H2MirHostTarget_PRINT:                return "PRINT";
         case H2MirHostTarget_PLATFORM_EXIT:        return "PLATFORM_EXIT";
         case H2MirHostTarget_DEALLOC:              return "DEALLOC";
         case H2MirHostTarget_CONCAT:               return "CONCAT";
