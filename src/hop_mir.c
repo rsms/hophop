@@ -1090,6 +1090,29 @@ static int MirAstDeclHasTypeParams(const H2Ast* ast, int32_t nodeId) {
     return 0;
 }
 
+static int MirAstDeclSourceHasLiteral(
+    const H2ParsedFile* file, const H2AstNode* node, const char* lit) {
+    uint32_t litLen = 0;
+    uint32_t i;
+    if (file == NULL || file->source == NULL || node == NULL || lit == NULL
+        || node->end < node->start || node->end > file->sourceLen)
+    {
+        return 0;
+    }
+    while (lit[litLen] != '\0') {
+        litLen++;
+    }
+    if (litLen == 0u || node->end - node->start < litLen) {
+        return 0;
+    }
+    for (i = node->start; i + litLen <= node->end; i++) {
+        if (memcmp(file->source + i, lit, litLen) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int AppendMirDeclsFromFile(
     const H2PackageLoader* loader,
     const H2Package*       entryPkg,
@@ -1114,6 +1137,21 @@ static int AppendMirDeclsFromFile(
             if (MirAstDeclHasTypeParams(ast, child)) {
                 child = ASTNextSibling(ast, child);
                 continue;
+            }
+            if (MirAstDeclSourceHasLiteral(file, n, "anytype")) {
+                child = ASTNextSibling(ast, child);
+                continue;
+            }
+            if (tc != NULL) {
+                int32_t tcFnIndex = FindTypecheckFunctionByDeclNode(tc, child, 0);
+                if (tcFnIndex >= 0
+                    && (tc->funcs[(uint32_t)tcFnIndex].flags & H2TCFunctionFlag_TEMPLATE) != 0
+                    && (tc->funcs[(uint32_t)tcFnIndex].flags & H2TCFunctionFlag_TEMPLATE_INSTANCE)
+                           == 0)
+                {
+                    child = ASTNextSibling(ast, child);
+                    continue;
+                }
             }
             bodyNode = FindFunctionBodyNode(file, child);
             if (bodyNode >= 0) {
@@ -1563,16 +1601,6 @@ static int AppendMirSelectedPlatformPanicDeclsFromFile(
         builder, arena, pkg, file, "panic", declMap);
 }
 
-static int AppendMirSelectedPlatformConsoleLogDeclsFromFile(
-    H2MirProgramBuilder* builder,
-    H2Arena*             arena,
-    const H2Package*     pkg,
-    const H2ParsedFile*  file,
-    H2MirResolvedDeclMap* _Nullable declMap) {
-    return AppendMirSelectedPlatformNamedImportDeclsFromFile(
-        builder, arena, pkg, file, "console_log", declMap);
-}
-
 static int IsPlatformImportPath(const char* _Nullable path) {
     return path != NULL && (StrEq(path, "platform") || strncmp(path, "platform/", 9u) == 0);
 }
@@ -1602,9 +1630,14 @@ int PackageHasPlatformImport(const H2Package* _Nullable pkg) {
     return 0;
 }
 
-static int ShouldSkipPackageMirImportPath(const char* _Nullable path) {
-    return IsPlatformImportPath(path)
-        || (path != NULL && (StrEq(path, "builtin") || strncmp(path, "builtin/", 8u) == 0));
+static int ShouldSkipPackageMirImportPath(const char* _Nullable path, int includeBuiltin) {
+    if (IsPlatformImportPath(path)) {
+        return 1;
+    }
+    if (path != NULL && (StrEq(path, "builtin") || strncmp(path, "builtin/", 8u) == 0)) {
+        return !includeBuiltin;
+    }
+    return 0;
 }
 
 static const H2Package* _Nullable EffectiveMirImportTargetPackage(
@@ -1623,6 +1656,7 @@ static const H2Package* _Nullable EffectiveMirImportTargetPackage(
 static int BuildEntryPackageMirOrderVisit(
     const H2PackageLoader* loader,
     uint32_t               pkgIndex,
+    int                    includeBuiltin,
     uint8_t*               state,
     uint32_t*              order,
     uint32_t*              orderLen) {
@@ -1637,14 +1671,16 @@ static int BuildEntryPackageMirOrderVisit(
     state[pkgIndex] = 1u;
     for (i = 0; i < pkg->importLen; i++) {
         int depIndex;
-        if (ShouldSkipPackageMirImportPath(pkg->imports[i].path)) {
+        if (ShouldSkipPackageMirImportPath(pkg->imports[i].path, includeBuiltin)) {
             continue;
         }
         depIndex = FindPackageIndex(loader, pkg->imports[i].target);
         if (depIndex < 0) {
             return ErrorSimple("internal error: unresolved import");
         }
-        if (BuildEntryPackageMirOrderVisit(loader, (uint32_t)depIndex, state, order, orderLen) != 0)
+        if (BuildEntryPackageMirOrderVisit(
+                loader, (uint32_t)depIndex, includeBuiltin, state, order, orderLen)
+            != 0)
         {
             return -1;
         }
@@ -1660,6 +1696,7 @@ static int BuildEntryPackageMirOrder(
     const H2PackageLoader* loader,
     const H2Package*       entryPkg,
     int                    includeSelectedPlatform,
+    int                    includeBuiltin,
     uint32_t*              outOrder,
     uint32_t               outOrderCap,
     uint32_t*              outOrderLen) {
@@ -1681,7 +1718,7 @@ static int BuildEntryPackageMirOrder(
         return ErrorSimple("out of memory");
     }
     rc = BuildEntryPackageMirOrderVisit(
-        loader, (uint32_t)entryPkgIndex, state, outOrder, outOrderLen);
+        loader, (uint32_t)entryPkgIndex, includeBuiltin, state, outOrder, outOrderLen);
     if (rc == 0 && loader->selectedPlatformPkg != NULL
         && (includeSelectedPlatform || PackageUsesPlatformImport(loader)))
     {
@@ -1690,7 +1727,7 @@ static int BuildEntryPackageMirOrder(
             rc = ErrorSimple("internal error: selected platform package missing from loader");
         } else {
             rc = BuildEntryPackageMirOrderVisit(
-                loader, (uint32_t)platformPkgIndex, state, outOrder, outOrderLen);
+                loader, (uint32_t)platformPkgIndex, includeBuiltin, state, outOrder, outOrderLen);
         }
     }
     free(state);
@@ -5513,6 +5550,243 @@ static const H2MirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
              : NULL;
 }
 
+typedef enum {
+    H2MirSimpleType_NONE = 0,
+    H2MirSimpleType_I32,
+    H2MirSimpleType_I64,
+    H2MirSimpleType_F32,
+    H2MirSimpleType_F64,
+    H2MirSimpleType_STR_REF,
+    H2MirSimpleType_STR_PTR,
+    H2MirSimpleType_OPAQUE_PTR,
+    H2MirSimpleType_FUNC_REF,
+    H2MirSimpleType_AGG,
+} H2MirSimpleType;
+
+static H2MirSimpleType MirSimpleTypeFromTypeRef(
+    const H2MirProgram* program, uint32_t typeRefIndex) {
+    const H2MirTypeRef* typeRef;
+    if (program == NULL || typeRefIndex >= program->typeLen) {
+        return H2MirSimpleType_NONE;
+    }
+    typeRef = &program->types[typeRefIndex];
+    if (H2MirTypeRefIsStrRef(typeRef)) {
+        return H2MirSimpleType_STR_REF;
+    }
+    if (H2MirTypeRefIsStrPtr(typeRef) || H2MirTypeRefIsStrObj(typeRef)) {
+        return H2MirSimpleType_STR_PTR;
+    }
+    if (H2MirTypeRefIsOpaquePtr(typeRef)) {
+        return H2MirSimpleType_OPAQUE_PTR;
+    }
+    if (H2MirTypeRefIsFuncRef(typeRef)) {
+        return H2MirSimpleType_FUNC_REF;
+    }
+    if (H2MirTypeRefIsAggregate(typeRef)) {
+        return H2MirSimpleType_AGG;
+    }
+    switch (H2MirTypeRefScalarKind(typeRef)) {
+        case H2MirTypeScalar_I32: return H2MirSimpleType_I32;
+        case H2MirTypeScalar_I64: return H2MirSimpleType_I64;
+        case H2MirTypeScalar_F32: return H2MirSimpleType_F32;
+        case H2MirTypeScalar_F64: return H2MirSimpleType_F64;
+        default:                  return H2MirSimpleType_NONE;
+    }
+}
+
+static H2MirSimpleType MirSimpleTypeFromConst(const H2MirConst* value) {
+    if (value == NULL) {
+        return H2MirSimpleType_NONE;
+    }
+    switch (value->kind) {
+        case H2MirConst_INT:
+        case H2MirConst_BOOL:
+        case H2MirConst_NULL:     return H2MirSimpleType_I32;
+        case H2MirConst_STRING:   return H2MirSimpleType_STR_REF;
+        case H2MirConst_FUNCTION: return H2MirSimpleType_FUNC_REF;
+        default:                  return H2MirSimpleType_NONE;
+    }
+}
+
+static H2MirSimpleType MirSimpleTypeFromInst(
+    const H2MirProgram* program, const H2MirFunction* fn, const H2MirInst* inst) {
+    if (program == NULL || fn == NULL || inst == NULL) {
+        return H2MirSimpleType_NONE;
+    }
+    switch (inst->op) {
+        case H2MirOp_PUSH_CONST:
+            return inst->aux < program->constLen
+                     ? MirSimpleTypeFromConst(&program->consts[inst->aux])
+                     : H2MirSimpleType_NONE;
+        case H2MirOp_PUSH_INT:
+        case H2MirOp_PUSH_BOOL:   return H2MirSimpleType_I32;
+        case H2MirOp_PUSH_FLOAT:  return H2MirSimpleType_F64;
+        case H2MirOp_PUSH_STRING: return H2MirSimpleType_STR_REF;
+        case H2MirOp_LOCAL_LOAD:
+        case H2MirOp_LOCAL_ADDR:
+            return inst->aux < fn->localCount
+                     ? MirSimpleTypeFromTypeRef(
+                           program, program->locals[fn->localStart + inst->aux].typeRef)
+                     : H2MirSimpleType_NONE;
+        case H2MirOp_CTX_GET:
+        case H2MirOp_CTX_ADDR:
+        case H2MirOp_AGG_ZERO: return H2MirSimpleType_AGG;
+        case H2MirOp_CALL_FN:
+            return inst->aux < program->funcLen
+                     ? MirSimpleTypeFromTypeRef(program, program->funcs[inst->aux].typeRef)
+                     : H2MirSimpleType_NONE;
+        case H2MirOp_DEREF_LOAD: return H2MirSimpleType_STR_REF;
+        case H2MirOp_ADDR_OF:    return H2MirSimpleType_OPAQUE_PTR;
+        default:                 return H2MirSimpleType_NONE;
+    }
+}
+
+static int MirSimpleTypesCompatible(H2MirSimpleType paramType, H2MirSimpleType argType) {
+    if (paramType == H2MirSimpleType_NONE || argType == H2MirSimpleType_NONE) {
+        return 0;
+    }
+    if (paramType == argType) {
+        return 1;
+    }
+    return paramType == H2MirSimpleType_STR_PTR && argType == H2MirSimpleType_STR_REF;
+}
+
+static int FindFirstCallArgEndInFunction(
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             callIndex,
+    uint32_t             argCount,
+    uint32_t*            outArgEnd);
+
+static const H2Package* _Nullable FindImplicitBuiltinImportPackage(
+    const H2PackageLoader* loader, const H2Package* ownerPkg) {
+    uint32_t importIndex;
+    uint32_t packageIndex;
+    if (loader == NULL || ownerPkg == NULL) {
+        return NULL;
+    }
+    for (importIndex = 0; importIndex < ownerPkg->importLen; importIndex++) {
+        const H2ImportRef* imp = &ownerPkg->imports[importIndex];
+        if (StrEq(imp->path, "builtin")) {
+            return EffectiveMirImportTargetPackage(loader, imp);
+        }
+    }
+    for (packageIndex = 0; packageIndex < loader->packageLen; packageIndex++) {
+        const H2Package* pkg = &loader->packages[packageIndex];
+        const char*      base;
+        if (pkg->name != NULL && StrEq(pkg->name, "builtin")) {
+            return pkg;
+        }
+        if (pkg->dirPath == NULL) {
+            continue;
+        }
+        base = strrchr(pkg->dirPath, '/');
+        base = base != NULL ? base + 1 : pkg->dirPath;
+        if (StrEq(base, "builtin")) {
+            return pkg;
+        }
+    }
+    return NULL;
+}
+
+static int FindImplicitBuiltinFunctionBySlice(
+    const H2PackageLoader* loader,
+    const H2MirProgram*    program,
+    const H2Package*       ownerPkg,
+    const H2MirFunction*   ownerFn,
+    uint32_t               callIndex,
+    const char*            src,
+    uint32_t               start,
+    uint32_t               end,
+    uint32_t               paramCount,
+    uint32_t* _Nonnull outTargetMirFn) {
+    const H2Package* builtinPkg;
+    H2MirSimpleType  firstArgType = H2MirSimpleType_NONE;
+    uint32_t         firstArgEnd = UINT32_MAX;
+    uint32_t         candidate = UINT32_MAX;
+    uint32_t         firstCandidate = UINT32_MAX;
+    uint32_t         candidateCount = 0;
+    uint32_t         exactCandidate = UINT32_MAX;
+    uint32_t         exactCount = 0;
+    uint32_t         compatibleCandidate = UINT32_MAX;
+    uint32_t         compatibleCount = 0;
+    uint32_t         functionIndex;
+    if (outTargetMirFn != NULL) {
+        *outTargetMirFn = UINT32_MAX;
+    }
+    if (loader == NULL || program == NULL || ownerPkg == NULL || ownerFn == NULL || src == NULL
+        || outTargetMirFn == NULL || end <= start)
+    {
+        return 0;
+    }
+    builtinPkg = FindImplicitBuiltinImportPackage(loader, ownerPkg);
+    if (builtinPkg == NULL) {
+        return 0;
+    }
+    if (paramCount == 1u
+        && FindFirstCallArgEndInFunction(program, ownerFn, callIndex, paramCount, &firstArgEnd)
+        && firstArgEnd > 0u)
+    {
+        firstArgType = MirSimpleTypeFromInst(program, ownerFn, &program->insts[firstArgEnd - 1u]);
+    }
+    for (functionIndex = 0; functionIndex < program->funcLen; functionIndex++) {
+        const H2MirFunction* fn = &program->funcs[functionIndex];
+        const H2Package*     fnPkg = NULL;
+        const H2ParsedFile*  fnFile;
+        if (fn->paramCount != paramCount || fn->sourceRef >= program->sourceLen) {
+            continue;
+        }
+        fnFile = FindLoaderFileByMirSource(loader, program, fn->sourceRef, &fnPkg);
+        if (fnFile == NULL || fnPkg != builtinPkg) {
+            continue;
+        }
+        if (!SliceEqSlice(
+                src,
+                start,
+                end,
+                program->sources[fn->sourceRef].src.ptr,
+                fn->nameStart,
+                fn->nameEnd))
+        {
+            continue;
+        }
+        if (firstCandidate == UINT32_MAX) {
+            firstCandidate = functionIndex;
+        }
+        candidate = functionIndex;
+        candidateCount++;
+        if (paramCount == 1u && fn->localStart < program->localLen) {
+            H2MirSimpleType paramType = MirSimpleTypeFromTypeRef(
+                program, program->locals[fn->localStart].typeRef);
+            if (paramType != H2MirSimpleType_NONE && paramType == firstArgType) {
+                exactCandidate = functionIndex;
+                exactCount++;
+            }
+            if (MirSimpleTypesCompatible(paramType, firstArgType)) {
+                compatibleCandidate = functionIndex;
+                compatibleCount++;
+            }
+        }
+    }
+    if (candidateCount == 1u) {
+        *outTargetMirFn = candidate;
+        return 1;
+    }
+    if (exactCount == 1u) {
+        *outTargetMirFn = exactCandidate;
+        return 1;
+    }
+    if (compatibleCount == 1u) {
+        *outTargetMirFn = compatibleCandidate;
+        return 1;
+    }
+    if (paramCount == 1u && firstArgType == H2MirSimpleType_NONE && firstCandidate != UINT32_MAX) {
+        *outTargetMirFn = firstCandidate;
+        return 1;
+    }
+    return 0;
+}
+
 static int MirExprInstStackDelta(const H2MirInst* inst, int32_t* outDelta) {
     uint32_t elemCount = 0;
     if (inst == NULL || outDelta == NULL) {
@@ -6133,6 +6407,24 @@ static int ResolvePackageMirProgram(
                                 if (target != NULL) {
                                     inst.op = H2MirOp_CALL_FN;
                                     inst.aux = target->functionIndex;
+                                } else if (
+                                    FindImplicitBuiltinFunctionBySlice(
+                                        loader,
+                                        program,
+                                        ownerPkg,
+                                        fn,
+                                        instIndex,
+                                        ownerFile->source,
+                                        inst.start,
+                                        inst.end,
+                                        H2MirCallArgCountFromTok(inst.tok),
+                                        &targetMirFn))
+                                {
+                                    inst.op = H2MirOp_CALL_FN;
+                                    inst.tok =
+                                        (uint16_t)(H2MirCallArgCountFromTok(inst.tok)
+                                                   | (inst.tok & H2MirCallArgFlag_SPREAD_LAST));
+                                    inst.aux = targetMirFn;
                                 }
                             }
                         }
@@ -9128,6 +9420,61 @@ static void InferMirStraightLineLocalTypes(
     }
 }
 
+static int SourceHasBuiltinLoggingCallName(
+    const char* _Nullable src, uint32_t len, uint32_t start, const char* name) {
+    uint32_t nameLen = 0;
+    if (src == NULL || name == NULL) {
+        return 0;
+    }
+    while (name[nameLen] != '\0') {
+        nameLen++;
+    }
+    if (nameLen == 0u || start + nameLen >= len) {
+        return 0;
+    }
+    if (start > 0u && (isalnum((unsigned char)src[start - 1u]) || src[start - 1u] == '_')) {
+        return 0;
+    }
+    if (memcmp(src + start, name, nameLen) != 0) {
+        return 0;
+    }
+    if (isalnum((unsigned char)src[start + nameLen]) || src[start + nameLen] == '_') {
+        return 0;
+    }
+    while (start + nameLen < len && isspace((unsigned char)src[start + nameLen])) {
+        nameLen++;
+    }
+    return start + nameLen < len && src[start + nameLen] == '(';
+}
+
+static int PackageUsesBuiltinLogging(const H2Package* pkg) {
+    uint32_t fileIndex;
+    if (pkg == NULL) {
+        return 0;
+    }
+    for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+        const H2ParsedFile* file = &pkg->files[fileIndex];
+        uint32_t            i;
+        if (file->source == NULL || file->sourceLen == 0u) {
+            continue;
+        }
+        for (i = 0; i < file->sourceLen; i++) {
+            if (SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "print")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_trace")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_debug")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_info")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_warn")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_error")
+                || SourceHasBuiltinLoggingCallName(file->source, file->sourceLen, i, "log_fatal"))
+            {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 int BuildPackageMirProgram(
     const H2PackageLoader* loader,
     const H2Package*       entryPkg,
@@ -9143,6 +9490,7 @@ int BuildPackageMirProgram(
     uint32_t             topoOrderLen = 0;
     uint32_t             orderIndex;
     int                  autoIncludeSelectedPlatformPanicOnly = 0;
+    int                  includeBuiltin = 0;
     if (diag != NULL) {
         *diag = (H2Diag){ 0 };
     }
@@ -9156,8 +9504,15 @@ int BuildPackageMirProgram(
     if (topoOrder == NULL && loader->packageLen != 0u) {
         return -1;
     }
+    includeBuiltin = PackageUsesBuiltinLogging(entryPkg);
     if (BuildEntryPackageMirOrder(
-            loader, entryPkg, includeSelectedPlatform, topoOrder, loader->packageLen, &topoOrderLen)
+            loader,
+            entryPkg,
+            includeSelectedPlatform,
+            includeBuiltin,
+            topoOrder,
+            loader->packageLen,
+            &topoOrderLen)
         != 0)
     {
         free(topoOrder);

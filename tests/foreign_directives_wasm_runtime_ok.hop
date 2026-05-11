@@ -1,8 +1,6 @@
-import "platform"
-
 @export("hop_test")
 pub fn hop_test() i32 {
-	platform.console_log("hello from wasm export", flags: 0)
+	print("hello from wasm export")
 	return 7
 }
 

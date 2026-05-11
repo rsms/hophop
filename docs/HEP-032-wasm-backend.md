@@ -59,7 +59,7 @@ This HEP defined the backend shape and bring-up plan. The active manifest now co
 that intended bootstrap surface; remaining Wasm work is follow-up outside HEP-32.
 
 Current implementation status: the backend can now lower the bring-up subset through
-`wasm-min`, including pure scalar control flow, `platform.exit`, `platform.console_log`,
+`wasm-min`, including pure scalar control flow, `platform.exit`, logger-backed `print`,
 assert panic reporting, and `&str` values carried as Wasm `(ptr,len)` pairs through
 locals and direct calls. The current memory subset also includes typed integer dereference,
 string byte indexing, local fixed-array element addressing, frame-backed local aggregates,
@@ -353,7 +353,8 @@ Current bring-up scope in this repository:
 
 - pure modules with no imports
 - one minimal host import, `platform.exit(i32)`, for smoke-test execution
-- one minimal logging import, `platform.console_log(&str, i32)`, for bootstrap diagnostics
+- one minimal internal logging import, `wasm_min.console_log(&str, i32)`, used by the
+  generated root logger for bootstrap diagnostics
 - one internal panic-reporting import used by Wasm `assert` lowering in `wasm-min`
 
 If allocation is needed before a real platform exists, prefer an in-module simple allocator based

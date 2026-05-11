@@ -1,5 +1,3 @@
-import "platform"
-
 fn main() {
-	platform.console_log("Hello, world!", flags: 0)
+	print("Hello, world!")
 }

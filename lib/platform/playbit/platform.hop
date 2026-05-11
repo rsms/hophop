@@ -445,10 +445,6 @@ pub fn exit(status i32) {
 	_ = pb_syscall(1, op: 31, arg1: status as u64, arg2: 0, arg3: 0, arg4: 0, arg5: 0, arg6: 0)
 }
 
-pub fn console_log(message &str, flags i32) {
-	_ = log_write_line_impl(message, flags: flags as u32)
-}
-
 pub fn panic(message &str, flags i32) {
 	_ = log_write_line_impl(message, flags: flags as u32)
 	exit(1)

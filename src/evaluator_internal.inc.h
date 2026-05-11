@@ -18,7 +18,6 @@ enum {
     HOP_EVAL_MIR_HOST_DEALLOC = H2MirHostTarget_DEALLOC,
     HOP_EVAL_MIR_HOST_CONCAT = H2MirHostTarget_CONCAT,
     HOP_EVAL_MIR_HOST_COPY = H2MirHostTarget_COPY,
-    HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = H2MirHostTarget_PLATFORM_CONSOLE_LOG,
 };
 
 typedef struct HOPEvalProgram HOPEvalProgram;

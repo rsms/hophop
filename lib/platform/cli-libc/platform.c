@@ -134,11 +134,6 @@ __hop_noreturn void platform__exit(__hop_Context* context, __hop_i32 status) {
     exit(status);
 }
 
-void platform__console_log(__hop_Context* context, __hop_str message, __hop_i32 flags) {
-    __hop_Logger* logger = context != NULL ? &context->logger : &gMainContext.logger;
-    platform_log_handler(logger, message, __hop_LogLevel_Info, (__hop_LogFlags)flags);
-}
-
 static __hop_Context   gMainContext = {
     .allocator = { .handler = platform_mem_allocator_impl },
     .temp_allocator = { .handler = platform_mem_allocator_impl },

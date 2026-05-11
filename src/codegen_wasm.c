@@ -86,11 +86,14 @@ typedef struct {
     HOPWasmStringRef assertPanic;
     HOPWasmStringRef allocNullPanic;
     HOPWasmStringRef invalidAllocatorPanic;
+    uint32_t         rootContextOffset;
     uint32_t         rootAllocatorOffset;
+    uint32_t         rootTempAllocatorOffset;
+    uint32_t         rootLoggerOffset;
     uint8_t          hasAssertPanicString;
     uint8_t          hasAllocNullPanicString;
     uint8_t          hasInvalidAllocatorPanicString;
-    uint8_t          hasRootAllocator;
+    uint8_t          hasRootContext;
 } HOPWasmStringLayout;
 
 typedef struct {
@@ -120,9 +123,14 @@ typedef struct {
     uint32_t closureGlobalStartIndex;
     uint32_t closureGlobalCount;
     uint32_t allocatorIndirectTypeIndex;
+    uint32_t loggerIndirectTypeIndex;
+    uint32_t wasmMinConsoleLogTypeIndex;
     uint32_t rootAllocFuncIndex;
+    uint32_t wasmMinLoggerFuncIndex;
+    uint32_t wasmMinConsoleLogFuncIndex;
     uint32_t tableFuncCount;
     uint32_t rootAllocTableIndex;
+    uint32_t wasmMinLoggerTableIndex;
     uint32_t platformPanicFuncIndex;
     uint32_t* _Nullable funcWasmIndices;
     uint32_t* _Nullable globalImportIndices;
@@ -134,10 +142,11 @@ typedef struct {
     uint32_t reachableFunctionsAllocSize;
     uint8_t  hasFunctionTable;
     uint8_t  hasRootAllocThunk;
+    uint8_t  hasWasmMinLogger;
     uint8_t  hasPlatformPanicImport;
     uint8_t  needsFrameGlobal;
     uint8_t  needsHeapGlobal;
-    uint8_t  _reserved[2];
+    uint8_t  _reserved[1];
 } HOPWasmImportLayout;
 
 typedef struct {
@@ -346,6 +355,10 @@ static bool WasmLocalIsSourceLocation(
 static bool WasmProgramNeedsFunctionTable(const H2MirProgram* program);
 static bool WasmProgramNeedsRootAllocator(
     const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramNeedsRootLogger(
+    const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
+static bool WasmProgramNeedsRootContext(
+    const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmProgramHasAssert(
     const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions);
 static bool WasmProgramHasAllocNullPanic(
@@ -390,10 +403,6 @@ static int WasmBuildReachableFunctionSet(
         return -1;
     }
     memset(imports->reachableFunctions, 0, program->funcLen);
-    if (WasmProgramNeedsFunctionTable(program) || WasmProgramNeedsRootAllocator(program, NULL)) {
-        memset(imports->reachableFunctions, 1, program->funcLen);
-        return 0;
-    }
     queue = (uint32_t*)options->arenaGrow(
         options->allocatorCtx, program->funcLen * (uint32_t)sizeof(*queue), &queueAllocSize);
     if (queue == NULL || queueAllocSize < program->funcLen * sizeof(*queue)) {
@@ -428,6 +437,14 @@ static int WasmBuildReachableFunctionSet(
             {
                 imports->reachableFunctions[inst->aux] = 1u;
                 queue[writeIndex++] = inst->aux;
+            } else if (
+                inst->op == H2MirOp_PUSH_CONST && inst->aux < program->constLen
+                && program->consts[inst->aux].kind == H2MirConst_FUNCTION
+                && program->consts[inst->aux].aux < program->funcLen
+                && imports->reachableFunctions[program->consts[inst->aux].aux] == 0u)
+            {
+                imports->reachableFunctions[program->consts[inst->aux].aux] = 1u;
+                queue[writeIndex++] = program->consts[inst->aux].aux;
             }
         }
     }
@@ -628,6 +645,17 @@ static int WasmAppendU32LE(HOPWasmBuf* b, uint32_t v) {
     return WasmAppendBytes(b, bytes, 4u);
 }
 
+static int WasmWriteU32LEAt(HOPWasmBuf* b, uint32_t offset, uint32_t v) {
+    if (b == NULL || b->data == NULL || offset > b->len || b->len - offset < 4u) {
+        return -1;
+    }
+    b->data[offset] = (uint8_t)(v & 0xffu);
+    b->data[offset + 1u] = (uint8_t)((v >> 8u) & 0xffu);
+    b->data[offset + 2u] = (uint8_t)((v >> 16u) & 0xffu);
+    b->data[offset + 3u] = (uint8_t)((v >> 24u) & 0xffu);
+    return 0;
+}
+
 static int WasmAppendSection(HOPWasmBuf* out, uint8_t id, const HOPWasmBuf* section) {
     if (WasmAppendByte(out, id) != 0 || WasmAppendULEB(out, section->len) != 0
         || WasmAppendBytes(out, section->data, section->len) != 0)
@@ -744,6 +772,37 @@ static bool WasmProgramNeedsRootAllocator(
         }
     }
     return false;
+}
+
+static bool WasmProgramNeedsRootLogger(
+    const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    uint32_t funcIndex;
+    if (program == NULL) {
+        return false;
+    }
+    for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+        const H2MirFunction* fn;
+        uint32_t             pc;
+        if (reachableFunctions != NULL && reachableFunctions[funcIndex] == 0u) {
+            continue;
+        }
+        fn = &program->funcs[funcIndex];
+        for (pc = 0; pc < fn->instLen; pc++) {
+            const H2MirInst* inst = &program->insts[fn->instStart + pc];
+            if ((inst->op == H2MirOp_CTX_GET || inst->op == H2MirOp_CTX_ADDR)
+                && inst->aux == H2MirContextField_LOGGER)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool WasmProgramNeedsRootContext(
+    const H2MirProgram* program, const uint8_t* _Nullable reachableFunctions) {
+    return WasmProgramNeedsRootAllocator(program, reachableFunctions)
+        || WasmProgramNeedsRootLogger(program, reachableFunctions);
 }
 
 static bool WasmProgramHasAllocNullPanic(
@@ -1392,6 +1451,14 @@ static int WasmAnalyzeImports(
         return -1;
     }
     imports->platformPanicFuncIndex = UINT32_MAX;
+    imports->rootAllocFuncIndex = UINT32_MAX;
+    imports->wasmMinLoggerFuncIndex = UINT32_MAX;
+    imports->wasmMinConsoleLogFuncIndex = UINT32_MAX;
+    imports->rootAllocTableIndex = UINT32_MAX;
+    imports->wasmMinLoggerTableIndex = UINT32_MAX;
+    imports->allocatorIndirectTypeIndex = UINT32_MAX;
+    imports->loggerIndirectTypeIndex = UINT32_MAX;
+    imports->wasmMinConsoleLogTypeIndex = UINT32_MAX;
     imports->needsFrameGlobal =
         WasmProgramNeedsFrameMemory(unit->mirProgram, imports->reachableFunctions) ? 1u : 0u;
     imports->needsHeapGlobal =
@@ -1435,10 +1502,24 @@ static int WasmAnalyzeImports(
             imports->globalImportIndices[i] = UINT32_MAX;
         }
     }
+    imports->hasWasmMinLogger =
+        WasmIsWasmMinPlatform(unit)
+                && WasmProgramNeedsRootLogger(unit->mirProgram, imports->reachableFunctions)
+            ? 1u
+            : 0u;
     imports->hasRootAllocThunk =
-        WasmProgramNeedsRootAllocator(unit->mirProgram, imports->reachableFunctions) ? 1u : 0u;
+        (WasmProgramNeedsRootAllocator(unit->mirProgram, imports->reachableFunctions)
+         || imports->hasWasmMinLogger)
+            ? 1u
+            : 0u;
+    if (imports->hasRootAllocThunk) {
+        imports->needsHeapGlobal = 1u;
+    }
     imports->hasFunctionTable =
-        (imports->hasRootAllocThunk || WasmProgramNeedsFunctionTable(unit->mirProgram)) ? 1u : 0u;
+        (imports->hasRootAllocThunk || imports->hasWasmMinLogger
+         || WasmProgramNeedsFunctionTable(unit->mirProgram))
+            ? 1u
+            : 0u;
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         const H2MirFunction* fn;
         uint32_t             pc;
@@ -1524,6 +1605,9 @@ static int WasmAnalyzeImports(
             imports->importFuncCount++;
         }
     }
+    if (imports->hasWasmMinLogger) {
+        imports->wasmMinConsoleLogFuncIndex = imports->importFuncCount++;
+    }
     for (i = 0; i < unit->mirProgram->funcLen; i++) {
         if (imports->reachableFunctions != NULL && imports->reachableFunctions[i] == 0u) {
             continue;
@@ -1551,11 +1635,23 @@ static int WasmAnalyzeImports(
         WasmProgramNeedsClosureGlobals(unit->mirProgram) ? unit->mirProgram->funcLen : 0u;
     if (imports->hasFunctionTable) {
         imports->allocatorIndirectTypeIndex = unit->mirProgram->funcLen;
+        imports->loggerIndirectTypeIndex =
+            unit->mirProgram->funcLen + (imports->hasFunctionTable ? 1u : 0u);
+        imports->wasmMinConsoleLogTypeIndex =
+            imports->loggerIndirectTypeIndex + (imports->hasWasmMinLogger ? 1u : 0u);
         imports->tableFuncCount =
-            unit->mirProgram->funcLen + (imports->hasRootAllocThunk ? 1u : 0u);
-        imports->rootAllocTableIndex = unit->mirProgram->funcLen;
+            unit->mirProgram->funcLen + (imports->hasRootAllocThunk ? 1u : 0u)
+            + (imports->hasWasmMinLogger ? 1u : 0u);
         if (imports->hasRootAllocThunk) {
+            imports->rootAllocTableIndex = unit->mirProgram->funcLen;
             imports->rootAllocFuncIndex = imports->importFuncCount + imports->definedFuncCount;
+        }
+        if (imports->hasWasmMinLogger) {
+            imports->wasmMinLoggerTableIndex =
+                unit->mirProgram->funcLen + (imports->hasRootAllocThunk ? 1u : 0u);
+            imports->wasmMinLoggerFuncIndex =
+                imports->importFuncCount + imports->definedFuncCount
+                + (imports->hasRootAllocThunk ? 1u : 0u);
         }
     }
     return 0;
@@ -1614,24 +1710,98 @@ static int WasmBuildStringLayout(
             return -1;
         }
     }
-    if (WasmProgramNeedsRootAllocator(unit->mirProgram, imports->reachableFunctions)) {
+    if (WasmProgramNeedsRootContext(unit->mirProgram, imports->reachableFunctions)) {
+        enum {
+            kContextAllocatorOffset = 0u,
+            kContextTempAllocatorOffset = 8u,
+            kContextLoggerOffset = 16u,
+            kContextLoggerMinLevelOffset = 20u,
+            kContextLoggerFlagsOffset = 24u,
+            kContextLoggerPrefixPtrOffset = 28u,
+            kContextLoggerPrefixLenOffset = 32u,
+            kContextUser1Offset = 36u,
+            kContextUser2Offset = 40u,
+            kContextReservedOffset = 44u,
+            kContextDeadlineOffset = 48u,
+            kContextSize = 56u,
+        };
+        uint32_t i;
         while (strings->data.len < 4u) {
             if (WasmAppendByte(&strings->data, 0u) != 0) {
                 WasmSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
                 return -1;
             }
         }
-        strings->hasRootAllocator = 1u;
-        strings->rootAllocatorOffset = strings->data.len;
-        if (WasmAppendU32LE(&strings->data, imports != NULL ? imports->rootAllocTableIndex : 0u)
+        strings->hasRootContext = 1u;
+        strings->rootContextOffset = strings->data.len;
+        strings->rootAllocatorOffset = strings->rootContextOffset + kContextAllocatorOffset;
+        strings->rootTempAllocatorOffset = strings->rootContextOffset + kContextTempAllocatorOffset;
+        strings->rootLoggerOffset = strings->rootContextOffset + kContextLoggerOffset;
+        for (i = 0; i < kContextSize; i++) {
+            if (WasmAppendByte(&strings->data, 0u) != 0) {
+                WasmSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
+                return -1;
+            }
+        }
+        if (WasmWriteU32LEAt(
+                &strings->data,
+                strings->rootAllocatorOffset,
+                imports != NULL && imports->rootAllocTableIndex != UINT32_MAX
+                    ? imports->rootAllocTableIndex
+                    : 0u)
                 != 0
-            || WasmAppendU32LE(&strings->data, 0u) != 0)
+            || WasmWriteU32LEAt(&strings->data, strings->rootAllocatorOffset + 4u, 0u) != 0
+            || WasmWriteU32LEAt(
+                   &strings->data,
+                   strings->rootTempAllocatorOffset,
+                   imports != NULL && imports->rootAllocTableIndex != UINT32_MAX
+                       ? imports->rootAllocTableIndex
+                       : 0u)
+                   != 0
+            || WasmWriteU32LEAt(&strings->data, strings->rootTempAllocatorOffset + 4u, 0u) != 0
+            || WasmWriteU32LEAt(
+                   &strings->data,
+                   strings->rootLoggerOffset,
+                   imports != NULL && imports->wasmMinLoggerTableIndex != UINT32_MAX
+                       ? imports->wasmMinLoggerTableIndex
+                       : 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextLoggerMinLevelOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextLoggerFlagsOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextLoggerPrefixPtrOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextLoggerPrefixLenOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextUser1Offset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextUser2Offset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextReservedOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextDeadlineOffset, 0u)
+                   != 0
+            || WasmWriteU32LEAt(
+                   &strings->data, strings->rootContextOffset + kContextDeadlineOffset + 4u, 0u)
+                   != 0)
         {
             WasmSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
             return -1;
         }
     } else {
+        strings->rootContextOffset = UINT32_MAX;
         strings->rootAllocatorOffset = UINT32_MAX;
+        strings->rootTempAllocatorOffset = UINT32_MAX;
+        strings->rootLoggerOffset = UINT32_MAX;
     }
     if (imports != NULL && imports->hasPlatformPanicImport
         && WasmProgramHasAssert(unit->mirProgram, imports->reachableFunctions))
@@ -1741,9 +1911,12 @@ static int WasmPlanEntryLayout(
         }
         entry->resultOffset = WasmAlign4(strings->data.len);
         entry->wrapperTypeIndex = program->funcLen + (imports->hasFunctionTable ? 1u : 0u);
+        if (imports->hasWasmMinLogger) {
+            entry->wrapperTypeIndex += 2u;
+        }
         entry->wrapperFuncIndex =
             imports->importFuncCount + imports->definedFuncCount
-            + (imports->hasRootAllocThunk ? 1u : 0u);
+            + (imports->hasRootAllocThunk ? 1u : 0u) + (imports->hasWasmMinLogger ? 1u : 0u);
         return 0;
     }
     return 0;
@@ -1893,6 +2066,84 @@ static bool WasmSigMatchesAllocatorIndirect(const HOPWasmFnSig* sig) {
         && sig->wasmParamTypes[2] == 0x7fu && sig->wasmParamTypes[3] == 0x7fu
         && sig->wasmParamTypes[4] == 0x7fu && sig->wasmParamTypes[5] == 0x7fu
         && sig->wasmParamTypes[6] == 0x7fu;
+}
+
+static void WasmMarkReachableClosure(
+    const H2MirProgram* program, HOPWasmImportLayout* imports, uint32_t rootFuncIndex) {
+    bool changed = true;
+    if (program == NULL || imports == NULL || imports->reachableFunctions == NULL
+        || rootFuncIndex >= program->funcLen)
+    {
+        return;
+    }
+    imports->reachableFunctions[rootFuncIndex] = 1u;
+    while (changed) {
+        uint32_t funcIndex;
+        changed = false;
+        for (funcIndex = 0; funcIndex < program->funcLen; funcIndex++) {
+            const H2MirFunction* fn;
+            uint32_t             pc;
+            if (imports->reachableFunctions[funcIndex] == 0u) {
+                continue;
+            }
+            fn = &program->funcs[funcIndex];
+            for (pc = 0u; pc < fn->instLen; pc++) {
+                const H2MirInst* inst = &program->insts[fn->instStart + pc];
+                uint32_t         callee = UINT32_MAX;
+                if (inst->op == H2MirOp_CALL_FN && inst->aux < program->funcLen) {
+                    callee = inst->aux;
+                } else if (
+                    inst->op == H2MirOp_PUSH_CONST && inst->aux < program->constLen
+                    && program->consts[inst->aux].kind == H2MirConst_FUNCTION
+                    && program->consts[inst->aux].aux < program->funcLen)
+                {
+                    callee = program->consts[inst->aux].aux;
+                }
+                if (callee < program->funcLen && imports->reachableFunctions[callee] == 0u) {
+                    imports->reachableFunctions[callee] = 1u;
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+
+static bool WasmFunctionLooksAllocatorIndirect(
+    const H2MirProgram* program, const H2MirFunction* fn) {
+    uint32_t j;
+    uint8_t  resultKind = HOPWasmType_VOID;
+    if (program == NULL || fn == NULL || fn->paramCount != 7u
+        || !WasmTypeKindFromMirType(program, fn->typeRef, &resultKind)
+        || resultKind != HOPWasmType_OPAQUE_PTR)
+    {
+        return false;
+    }
+    for (j = 0; j < fn->paramCount; j++) {
+        uint8_t typeKind = HOPWasmType_VOID;
+        if (fn->localStart + j >= program->localLen
+            || !WasmTypeKindFromMirLocal(
+                program, fn, &program->locals[fn->localStart + j], &typeKind)
+            || !WasmTypeKindIsSupported(typeKind) || WasmTypeKindSlotCount(typeKind) != 1u)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void WasmMarkTableSupportFunctionsReachable(
+    const H2MirProgram* program, HOPWasmImportLayout* imports) {
+    uint32_t i;
+    if (program == NULL || imports == NULL || imports->reachableFunctions == NULL) {
+        return;
+    }
+    for (i = 0; i < program->funcLen; i++) {
+        if (WasmFunctionLooksAllocatorIndirect(program, &program->funcs[i])
+            || (program->funcs[i].flags & H2MirFunctionFlag_FUNCTION_VALUE_ENTRY) != 0u)
+        {
+            WasmMarkReachableClosure(program, imports, i);
+        }
+    }
 }
 
 static bool WasmSigSameShape(const HOPWasmFnSig* a, const HOPWasmFnSig* b) {
@@ -2767,6 +3018,16 @@ static bool WasmTypeRefIsAllocator(const H2MirProgram* program, uint32_t typeRef
         && WasmAggregateHasNamedField(program, typeRefIndex, "data");
 }
 
+static bool WasmTypeRefIsLogger(const H2MirProgram* program, uint32_t typeRefIndex) {
+    return program != NULL && typeRefIndex < program->typeLen
+        && H2MirTypeRefIsAggregate(&program->types[typeRefIndex])
+        && WasmAggregateFieldCount(program, typeRefIndex) == 4u
+        && WasmAggregateHasNamedField(program, typeRefIndex, "handler")
+        && WasmAggregateHasNamedField(program, typeRefIndex, "min_level")
+        && WasmAggregateHasNamedField(program, typeRefIndex, "flags")
+        && WasmAggregateHasNamedField(program, typeRefIndex, "prefix");
+}
+
 static uint32_t WasmFindAllocatorTypeRef(const H2MirProgram* program) {
     uint32_t i;
     if (program == NULL) {
@@ -2774,6 +3035,19 @@ static uint32_t WasmFindAllocatorTypeRef(const H2MirProgram* program) {
     }
     for (i = 0; i < program->typeLen; i++) {
         if (WasmTypeRefIsAllocator(program, i)) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+static uint32_t WasmFindLoggerTypeRef(const H2MirProgram* program) {
+    uint32_t i;
+    if (program == NULL) {
+        return UINT32_MAX;
+    }
+    for (i = 0; i < program->typeLen; i++) {
+        if (WasmTypeRefIsLogger(program, i)) {
             return i;
         }
     }
@@ -6443,9 +6717,8 @@ static int WasmEmitFunctionRange(
             }
             case H2MirOp_CTX_GET:
             case H2MirOp_CTX_ADDR:
-                if ((inst->aux == H2MirContextField_ALLOCATOR
-                     || inst->aux == H2MirContextField_TEMP_ALLOCATOR)
-                    && strings != NULL && strings->rootAllocatorOffset != UINT32_MAX)
+                if (inst->aux == H2MirContextField_ALLOCATOR && strings != NULL
+                    && strings->rootAllocatorOffset != UINT32_MAX)
                 {
                     uint32_t allocatorTypeRef = WasmFindAllocatorTypeRef(program);
                     if (WasmAppendByte(body, 0x41u) != 0
@@ -6456,6 +6729,42 @@ static int WasmEmitFunctionRange(
                                    ? HOPWasmType_AGG_REF
                                    : HOPWasmType_OPAQUE_PTR,
                                allocatorTypeRef)
+                               != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (inst->aux == H2MirContextField_TEMP_ALLOCATOR && strings != NULL
+                    && strings->rootTempAllocatorOffset != UINT32_MAX)
+                {
+                    uint32_t allocatorTypeRef = WasmFindAllocatorTypeRef(program);
+                    if (WasmAppendByte(body, 0x41u) != 0
+                        || WasmAppendSLEB32(body, (int32_t)strings->rootTempAllocatorOffset) != 0
+                        || WasmStackPushEx(
+                               state,
+                               allocatorTypeRef < program->typeLen
+                                   ? HOPWasmType_AGG_REF
+                                   : HOPWasmType_OPAQUE_PTR,
+                               allocatorTypeRef)
+                               != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (inst->aux == H2MirContextField_LOGGER && strings != NULL
+                    && strings->rootLoggerOffset != UINT32_MAX)
+                {
+                    uint32_t loggerTypeRef = WasmFindLoggerTypeRef(program);
+                    if (WasmAppendByte(body, 0x41u) != 0
+                        || WasmAppendSLEB32(body, (int32_t)strings->rootLoggerOffset) != 0
+                        || WasmStackPushEx(
+                               state,
+                               loggerTypeRef < program->typeLen
+                                   ? HOPWasmType_AGG_REF
+                                   : HOPWasmType_OPAQUE_PTR,
+                               loggerTypeRef)
                                != 0)
                     {
                         return -1;
@@ -7152,8 +7461,9 @@ static int WasmEmitFunctionRange(
                         return -1;
                     }
                     for (argIndex = 0; argIndex < argc; argIndex++) {
+                        uint32_t paramIndex = hasClosureDataParam ? argIndex + 1u : argIndex;
                         totalArgSlots += WasmTypeKindSlotCount(
-                            calleeSig->logicalParamKinds[argIndex]);
+                            calleeSig->logicalParamKinds[paramIndex]);
                     }
                     if (totalArgSlots + 1u > 7u) {
                         WasmSetDiag(
@@ -7167,7 +7477,8 @@ static int WasmEmitFunctionRange(
                     for (argIndex = argc; argIndex > 0u; argIndex--) {
                         uint8_t  argType = 0;
                         uint32_t argTypeRef = UINT32_MAX;
-                        uint8_t  expectedType = calleeSig->logicalParamKinds[argIndex - 1u];
+                        uint32_t expectedIndex = hasClosureDataParam ? argIndex : argIndex - 1u;
+                        uint8_t  expectedType = calleeSig->logicalParamKinds[expectedIndex];
                         uint32_t slotCount = WasmTypeKindSlotCount(expectedType);
                         if (WasmStackPopEx(state, &argType, &argTypeRef) != 0
                             || WasmAdaptCallArgValue(
@@ -7234,6 +7545,108 @@ static int WasmEmitFunctionRange(
                         && WasmStackPushEx(
                                state, calleeSig->logicalResultKind, calleeSig->logicalResultTypeRef)
                                != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (imports->hasWasmMinLogger && argc == 4u) {
+                    uint8_t  valueType = 0;
+                    uint32_t valueTypeRef = UINT32_MAX;
+                    if (WasmStackPop(state, &valueType) != 0
+                        || WasmRequireI32Value(
+                               valueType, diag, inst->start, inst->end, "logger flags must be i32")
+                               != 0
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch4Local) != 0
+                        || WasmStackPop(state, &valueType) != 0
+                        || WasmRequireI32Value(
+                               valueType, diag, inst->start, inst->end, "logger level must be i32")
+                               != 0
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch3Local) != 0
+                        || WasmStackPop(state, &valueType) != 0)
+                    {
+                        if (diag != NULL && diag->code == H2Diag_NONE) {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            diag->detail = "unsupported logger indirect call shape";
+                        }
+                        return -1;
+                    }
+                    if (valueType == HOPWasmType_STR_REF) {
+                        if (WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch2Local) != 0
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch1Local) != 0)
+                        {
+                            return -1;
+                        }
+                    } else if (valueType == HOPWasmType_STR_PTR) {
+                        if (WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch6Local) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch6Local) != 0
+                            || WasmAppendByte(body, 0x45u) != 0 || WasmAppendByte(body, 0x04u) != 0
+                            || WasmAppendByte(body, 0x7fu) != 0 || WasmAppendByte(body, 0x41u) != 0
+                            || WasmAppendSLEB32(body, 0) != 0 || WasmAppendByte(body, 0x05u) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch6Local) != 0
+                            || WasmEmitI32Load(body) != 0 || WasmAppendByte(body, 0x0bu) != 0
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch1Local) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch6Local) != 0
+                            || WasmAppendByte(body, 0x45u) != 0 || WasmAppendByte(body, 0x04u) != 0
+                            || WasmAppendByte(body, 0x7fu) != 0 || WasmAppendByte(body, 0x41u) != 0
+                            || WasmAppendSLEB32(body, 0) != 0 || WasmAppendByte(body, 0x05u) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch6Local) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 4) != 0
+                            || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+                            || WasmAppendByte(body, 0x0bu) != 0 || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch2Local) != 0)
+                        {
+                            return -1;
+                        }
+                    } else {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "unsupported logger message shape";
+                        }
+                        return -1;
+                    }
+                    if (WasmStackPop(state, &valueType) != 0
+                        || (!WasmTypeKindIsPointer(valueType) && valueType != HOPWasmType_AGG_REF)
+                        || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmStackPopEx(state, &valueType, &valueTypeRef) != 0
+                        || valueType != HOPWasmType_FUNC_REF || WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratch5Local) != 0)
+                    {
+                        if (diag != NULL && diag->code == H2Diag_NONE) {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            diag->detail = "unsupported logger indirect call shape";
+                        }
+                        return -1;
+                    }
+                    if (WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch0Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch1Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch2Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch3Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch4Local) != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratch5Local) != 0
+                        || WasmAppendByte(body, 0x11u) != 0
+                        || WasmAppendULEB(body, imports->loggerIndirectTypeIndex) != 0
+                        || WasmAppendByte(body, 0x00u) != 0)
                     {
                         return -1;
                     }
@@ -8028,6 +8441,42 @@ static int WasmEmitRootAllocThunkBody(
     return 0;
 }
 
+static int WasmEmitWasmMinLoggerBody(
+    const HOPWasmImportLayout* imports, const H2CodegenOptions* options, HOPWasmBuf* body) {
+    enum {
+        kParamSelf = 0,
+        kParamMessagePtr = 1,
+        kParamMessageLen = 2,
+        kParamLevel = 3,
+        kParamFlags = 4,
+    };
+    if (imports == NULL || options == NULL || body == NULL || !imports->hasWasmMinLogger
+        || imports->wasmMinConsoleLogFuncIndex == UINT32_MAX)
+    {
+        return -1;
+    }
+    body->options = options;
+    if (WasmAppendULEB(body, 0u) != 0) {
+        return -1;
+    }
+    if (WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, kParamLevel) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, kParamSelf) != 0
+        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 4) != 0
+        || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+        || WasmAppendByte(body, 0x48u) != 0 || WasmAppendByte(body, 0x04u) != 0
+        || WasmAppendByte(body, 0x40u) != 0 || WasmAppendByte(body, 0x0fu) != 0
+        || WasmAppendByte(body, 0x0bu) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, kParamMessagePtr) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, kParamMessageLen) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, kParamFlags) != 0 || WasmAppendByte(body, 0x10u) != 0
+        || WasmAppendULEB(body, imports->wasmMinConsoleLogFuncIndex) != 0
+        || WasmAppendByte(body, 0x0bu) != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 static int WasmEmitEntryWrapperBody(
     const H2MirProgram*        program,
     const HOPWasmFnSig*        sigs,
@@ -8227,6 +8676,7 @@ static int EmitWasmBackend(
     if (WasmBuildReachableFunctionSet(unit, &foreign, options, &imports, diag) != 0) {
         goto fail;
     }
+    WasmMarkTableSupportFunctionsReachable(unit->mirProgram, &imports);
     if (WasmBuildFunctionSignatures(
             unit->mirProgram, options, imports.reachableFunctions, sigs, diag)
         != 0)
@@ -8257,7 +8707,7 @@ static int EmitWasmBackend(
     if (WasmAppendULEB(
             &typeSec,
             unit->mirProgram->funcLen + (imports.hasFunctionTable ? 1u : 0u)
-                + (entry.hasWrapper ? 1u : 0u))
+                + (imports.hasWasmMinLogger ? 2u : 0u) + (entry.hasWrapper ? 1u : 0u))
         != 0)
     {
         goto oom;
@@ -8284,6 +8734,18 @@ static int EmitWasmBackend(
             || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
             || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendULEB(&typeSec, 1u) != 0
             || WasmAppendByte(&typeSec, 0x7fu) != 0)
+        {
+            goto oom;
+        }
+    }
+    if (imports.hasWasmMinLogger) {
+        if (WasmAppendByte(&typeSec, 0x60u) != 0 || WasmAppendULEB(&typeSec, 5u) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendULEB(&typeSec, 0u) != 0
+            || WasmAppendByte(&typeSec, 0x60u) != 0 || WasmAppendULEB(&typeSec, 3u) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendByte(&typeSec, 0x7fu) != 0
+            || WasmAppendByte(&typeSec, 0x7fu) != 0 || WasmAppendULEB(&typeSec, 0u) != 0)
         {
             goto oom;
         }
@@ -8334,6 +8796,17 @@ static int EmitWasmBackend(
                 }
             }
         }
+        if (imports.hasWasmMinLogger) {
+            if (WasmAppendULEB(&importSec, 8u) != 0
+                || WasmAppendBytes(&importSec, "wasm_min", 8u) != 0
+                || WasmAppendULEB(&importSec, 11u) != 0
+                || WasmAppendBytes(&importSec, "console_log", 11u) != 0
+                || WasmAppendByte(&importSec, 0x00u) != 0
+                || WasmAppendULEB(&importSec, imports.wasmMinConsoleLogTypeIndex) != 0)
+            {
+                goto oom;
+            }
+        }
         for (i = 0; i < foreign.len; i++) {
             const H2ForeignLinkageEntry* entry = &foreign.entries[i];
             if (entry->kind == H2ForeignLinkage_WASM_IMPORT_CONST
@@ -8367,7 +8840,7 @@ static int EmitWasmBackend(
     if (WasmAppendULEB(
             &funcSec,
             imports.definedFuncCount + (imports.hasRootAllocThunk ? 1u : 0u)
-                + (entry.hasWrapper ? 1u : 0u))
+                + (imports.hasWasmMinLogger ? 1u : 0u) + (entry.hasWrapper ? 1u : 0u))
         != 0)
     {
         goto oom;
@@ -8385,6 +8858,10 @@ static int EmitWasmBackend(
     }
     if (imports.hasRootAllocThunk
         && WasmAppendULEB(&funcSec, imports.allocatorIndirectTypeIndex) != 0)
+    {
+        goto oom;
+    }
+    if (imports.hasWasmMinLogger && WasmAppendULEB(&funcSec, imports.loggerIndirectTypeIndex) != 0)
     {
         goto oom;
     }
@@ -8545,11 +9022,33 @@ static int EmitWasmBackend(
             goto oom;
         }
         for (i = 0; i < unit->mirProgram->funcLen; i++) {
-            if (WasmAppendULEB(&elemSec, WasmFunctionWasmIndex(&imports, i)) != 0) {
+            uint32_t wasmIndex = WasmFunctionWasmIndex(&imports, i);
+            if (wasmIndex == UINT32_MAX) {
+                wasmIndex =
+                    imports.hasWasmMinLogger ? imports.wasmMinLoggerFuncIndex
+                    : imports.hasRootAllocThunk
+                        ? imports.rootAllocFuncIndex
+                        : WasmFunctionWasmIndex(&imports, 0u);
+                if (wasmIndex == UINT32_MAX) {
+                    uint32_t fillIndex;
+                    for (fillIndex = 0; fillIndex < unit->mirProgram->funcLen; fillIndex++) {
+                        wasmIndex = WasmFunctionWasmIndex(&imports, fillIndex);
+                        if (wasmIndex != UINT32_MAX) {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (WasmAppendULEB(&elemSec, wasmIndex) != 0) {
                 goto oom;
             }
         }
         if (imports.hasRootAllocThunk && WasmAppendULEB(&elemSec, imports.rootAllocFuncIndex) != 0)
+        {
+            goto oom;
+        }
+        if (imports.hasWasmMinLogger
+            && WasmAppendULEB(&elemSec, imports.wasmMinLoggerFuncIndex) != 0)
         {
             goto oom;
         }
@@ -8561,7 +9060,7 @@ static int EmitWasmBackend(
     if (WasmAppendULEB(
             &codeSec,
             imports.definedFuncCount + (imports.hasRootAllocThunk ? 1u : 0u)
-                + (entry.hasWrapper ? 1u : 0u))
+                + (imports.hasWasmMinLogger ? 1u : 0u) + (entry.hasWrapper ? 1u : 0u))
         != 0)
     {
         goto oom;
@@ -8603,6 +9102,26 @@ static int EmitWasmBackend(
     if (imports.hasRootAllocThunk) {
         HOPWasmBuf body = { .options = options };
         if (WasmEmitRootAllocThunkBody(&imports, options, &body) != 0) {
+            if (body.data != NULL && options->arenaFree != NULL) {
+                options->arenaFree(options->allocatorCtx, body.data, body.cap);
+            }
+            goto oom;
+        }
+        if (WasmAppendULEB(&codeSec, body.len) != 0
+            || WasmAppendBytes(&codeSec, body.data, body.len) != 0)
+        {
+            if (body.data != NULL && options->arenaFree != NULL) {
+                options->arenaFree(options->allocatorCtx, body.data, body.cap);
+            }
+            goto oom;
+        }
+        if (body.data != NULL && options->arenaFree != NULL) {
+            options->arenaFree(options->allocatorCtx, body.data, body.cap);
+        }
+    }
+    if (imports.hasWasmMinLogger) {
+        HOPWasmBuf body = { .options = options };
+        if (WasmEmitWasmMinLoggerBody(&imports, options, &body) != 0) {
             if (body.data != NULL && options->arenaFree != NULL) {
                 options->arenaFree(options->allocatorCtx, body.data, body.cap);
             }

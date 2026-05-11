@@ -822,26 +822,6 @@ static int HOPEvalMirRewriteQualifiedHostCallForNode(
         *outRewritten = 1;
         return 1;
     }
-    if (targetPkg != NULL && StrEq(targetPkg->name, "platform")
-        && SliceEqCStr(file->source, symbol->nameStart, symbol->nameEnd, "console_log")
-        && H2MirCallArgCountFromTok(ins->tok) == 3u)
-    {
-        H2MirHostRef host = { 0 };
-        uint32_t     hostIndex = UINT32_MAX;
-        host.nameStart = symbol->nameStart;
-        host.nameEnd = symbol->nameEnd;
-        host.kind = H2MirHost_GENERIC;
-        host.flags = 0;
-        host.target = HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG;
-        if (H2MirProgramBuilderAddHost(&c->builder, &host, &hostIndex) != 0) {
-            return -1;
-        }
-        ins->op = H2MirOp_CALL_HOST;
-        ins->aux = hostIndex;
-        ins->tok |= H2MirCallArgFlag_RECEIVER_ARG0;
-        *outRewritten = 1;
-        return 1;
-    }
     return 0;
 }
 

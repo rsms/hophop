@@ -202,12 +202,11 @@ static const char* H2MirHostKindName(H2MirHostKind kind) {
 
 static const char* H2MirHostTargetName(H2MirHostTarget target) {
     switch (target) {
-        case H2MirHostTarget_INVALID:              return "INVALID";
-        case H2MirHostTarget_PLATFORM_EXIT:        return "PLATFORM_EXIT";
-        case H2MirHostTarget_DEALLOC:              return "DEALLOC";
-        case H2MirHostTarget_CONCAT:               return "CONCAT";
-        case H2MirHostTarget_COPY:                 return "COPY";
-        case H2MirHostTarget_PLATFORM_CONSOLE_LOG: return "PLATFORM_CONSOLE_LOG";
+        case H2MirHostTarget_INVALID:       return "INVALID";
+        case H2MirHostTarget_PLATFORM_EXIT: return "PLATFORM_EXIT";
+        case H2MirHostTarget_DEALLOC:       return "DEALLOC";
+        case H2MirHostTarget_CONCAT:        return "CONCAT";
+        case H2MirHostTarget_COPY:          return "COPY";
     }
     return "UNKNOWN";
 }

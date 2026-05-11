@@ -1,6 +1,4 @@
-// Verifies platform console log is accepted.
-import "platform"
-
+// Verifies print routes through the platform logger.
 fn main() {
-	platform.console_log("hello from platform", flags: 0)
+	print("hello from platform")
 }

@@ -396,7 +396,6 @@ typedef enum {
     H2MirHostTarget_DEALLOC = 2,
     H2MirHostTarget_CONCAT = 3,
     H2MirHostTarget_COPY = 4,
-    H2MirHostTarget_PLATFORM_CONSOLE_LOG = 5,
 } H2MirHostTarget;
 
 typedef enum {

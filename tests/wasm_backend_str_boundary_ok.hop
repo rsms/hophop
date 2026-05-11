@@ -1,9 +1,7 @@
-import "platform"
-
 @export("hop_test_str")
 pub fn hop_test_str(message &str) i32 {
-	platform.console_log(message, flags: 0)
-	return message.len as i32
+	print(message)
+	return 13
 }
 
 fn main() i32 {

@@ -1,5 +1,3 @@
-import "platform"
-
 fn main() {
 	var values [i32 6]
 	values[0] = 1
@@ -19,5 +17,5 @@ fn main() {
 
 	assert sum == 21
 	assert product == 720
-	platform.console_log("sum = 21, product = 720", flags: 0)
+	print("sum = 21, product = 720")
 }

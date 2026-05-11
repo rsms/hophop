@@ -598,6 +598,40 @@ static int FnNodeHasContextClause(const H2Ast* ast, int32_t nodeId) {
     return 0;
 }
 
+static int FnNodeBodyUsesContextKeyword(const H2ParsedFile* file, int32_t nodeId) {
+    int32_t child;
+    if (file == NULL || nodeId < 0 || (uint32_t)nodeId >= file->ast.len) {
+        return 0;
+    }
+    child = ASTFirstChild(&file->ast, nodeId);
+    while (child >= 0) {
+        const H2AstNode* n = &file->ast.nodes[child];
+        if (n->kind == H2Ast_BLOCK && n->end > n->start && n->end <= file->sourceLen) {
+            uint32_t i;
+            for (i = n->start; i + 7u <= n->end; i++) {
+                if (memcmp(file->source + i, "context", 7u) != 0) {
+                    continue;
+                }
+                if (i > n->start
+                    && (isalnum((unsigned char)file->source[i - 1u])
+                        || file->source[i - 1u] == '_'))
+                {
+                    continue;
+                }
+                if (i + 7u < n->end
+                    && (isalnum((unsigned char)file->source[i + 7u])
+                        || file->source[i + 7u] == '_'))
+                {
+                    continue;
+                }
+                return 1;
+            }
+        }
+        child = ASTNextSibling(&file->ast, child);
+    }
+    return 0;
+}
+
 int DirectiveNameEq(const H2ParsedFile* file, int32_t nodeId, const char* name) {
     const H2AstNode* n =
         nodeId >= 0 && (uint32_t)nodeId < file->ast.len ? &file->ast.nodes[nodeId] : NULL;
@@ -751,7 +785,7 @@ static char* _Nullable BuildDeclTextForNode(
         }
     }
     if (n->kind == H2Ast_FN && FnNodeHasBody(&file->ast, nodeId)
-        && !FnNodeHasAnytypeParam(file, nodeId))
+        && !FnNodeHasAnytypeParam(file, nodeId) && !FnNodeBodyUsesContextKeyword(file, nodeId))
     {
         int32_t body = ASTFirstChild(&file->ast, nodeId);
         while (body >= 0) {

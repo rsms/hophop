@@ -1,0 +1,5 @@
+// Verifies print accepts *str through the wasm logger path.
+fn main() {
+	var message *str = "hello from pointer"
+	print(message)
+}

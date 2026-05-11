@@ -21,7 +21,6 @@ enum {
     HOP_EVAL_MIR_HOST_DEALLOC = H2MirHostTarget_DEALLOC,
     HOP_EVAL_MIR_HOST_CONCAT = H2MirHostTarget_CONCAT,
     HOP_EVAL_MIR_HOST_COPY = H2MirHostTarget_COPY,
-    HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG = H2MirHostTarget_PLATFORM_CONSOLE_LOG,
 };
 
 enum {
@@ -7162,6 +7161,24 @@ static int HOPEvalScoreFunctionCandidate(
         if (paramTypeNode < 0) {
             return 0;
         }
+        const H2CTFEValue* argValue = HOPEvalValueTargetOrSelf(&args[i]);
+        if (argValue->kind == H2CTFEValue_STRING
+            && (fn->file->ast.nodes[paramTypeNode].kind == H2Ast_TYPE_REF
+                || fn->file->ast.nodes[paramTypeNode].kind == H2Ast_TYPE_PTR))
+        {
+            int32_t elemNode = ASTFirstChild(&fn->file->ast, paramTypeNode);
+            if (elemNode >= 0 && (uint32_t)elemNode < fn->file->ast.len
+                && fn->file->ast.nodes[elemNode].kind == H2Ast_TYPE_NAME
+                && SliceEqCStr(
+                    fn->file->source,
+                    fn->file->ast.nodes[elemNode].dataStart,
+                    fn->file->ast.nodes[elemNode].dataEnd,
+                    "str"))
+            {
+                score += fn->file->ast.nodes[paramTypeNode].kind == H2Ast_TYPE_REF ? 8 : 1;
+                continue;
+            }
+        }
         if (HOPEvalTypeNodeIsTemplateParamName(fn->file, paramTypeNode)) {
             score += 1;
             continue;
@@ -7205,6 +7222,9 @@ static int HOPEvalScoreFunctionCandidate(
             continue;
         }
         return 0;
+    }
+    if (!fn->isVariadic) {
+        score += 1;
     }
     *outScore = score;
     return 1;
@@ -10930,24 +10950,6 @@ static int HOPEvalMirHostCall(
         }
         p->exitCalled = 1;
         p->exitCode = (int)(exitCode & 255);
-        HOPEvalValueSetNull(outValue);
-        *outIsConst = 1;
-        return 0;
-    }
-    if (hostId == HOP_EVAL_MIR_HOST_PLATFORM_CONSOLE_LOG && argCount == 2u) {
-        int64_t flags = 0;
-        if (args[0].kind != H2CTFEValue_STRING || H2CTFEValueToInt64(&args[1], &flags) != 0) {
-            *outIsConst = 0;
-            return 0;
-        }
-        (void)flags;
-        if (args[0].s.len > 0 && args[0].s.bytes != NULL) {
-            if (fwrite(args[0].s.bytes, 1, args[0].s.len, stdout) != args[0].s.len) {
-                return ErrorSimple("failed to write console_log output");
-            }
-        }
-        fputc('\n', stdout);
-        fflush(stdout);
         HOPEvalValueSetNull(outValue);
         *outIsConst = 1;
         return 0;
@@ -14966,56 +14968,6 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
                 }
                 p->exitCalled = 1;
                 p->exitCode = (int)(exitCode & 255);
-                HOPEvalValueSetNull(outValue);
-                *outIsConst = 1;
-                return 0;
-            }
-            if (baseNode >= 0 && argNode >= 0 && ast->nodes[baseNode].kind == H2Ast_IDENT
-                && SliceEqCStr(
-                    p->currentFile->source,
-                    ast->nodes[baseNode].dataStart,
-                    ast->nodes[baseNode].dataEnd,
-                    "platform")
-                && SliceEqCStr(
-                    p->currentFile->source, callee->dataStart, callee->dataEnd, "console_log"))
-            {
-                int32_t     flagsNode = ast->nodes[argNode].nextSibling;
-                int32_t     extraNode = flagsNode >= 0 ? ast->nodes[flagsNode].nextSibling : -1;
-                int32_t     messageExpr = ASTFirstChild(ast, argNode);
-                int32_t     flagsExpr = ASTFirstChild(ast, flagsNode);
-                H2CTFEValue messageValue;
-                H2CTFEValue flagsValue;
-                int         messageIsConst = 0;
-                int         flagsIsConst = 0;
-                if (flagsNode < 0 || extraNode >= 0 || messageExpr < 0 || flagsExpr < 0) {
-                    *outIsConst = 0;
-                    return 0;
-                }
-                if (HOPEvalExecExprCb(p, messageExpr, &messageValue, &messageIsConst) != 0
-                    || HOPEvalExecExprCb(p, flagsExpr, &flagsValue, &flagsIsConst) != 0)
-                {
-                    return -1;
-                }
-                if (!messageIsConst || messageValue.kind != H2CTFEValue_STRING || !flagsIsConst) {
-                    if (p->currentExecCtx != NULL) {
-                        H2CTFEExecSetReason(
-                            p->currentExecCtx,
-                            ast->nodes[messageExpr].start,
-                            ast->nodes[flagsExpr].end,
-                            "platform.console_log requires a string expression and integer flags");
-                    }
-                    *outIsConst = 0;
-                    return 0;
-                }
-                if (messageValue.s.len > 0 && messageValue.s.bytes != NULL) {
-                    if (fwrite(messageValue.s.bytes, 1, messageValue.s.len, stdout)
-                        != messageValue.s.len)
-                    {
-                        return ErrorSimple("failed to write console_log output");
-                    }
-                }
-                fputc('\n', stdout);
-                fflush(stdout);
                 HOPEvalValueSetNull(outValue);
                 *outIsConst = 1;
                 return 0;

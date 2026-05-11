@@ -1,5 +1,3 @@
-import "platform"
-
 fn is_palindrome(text &str) bool {
 	var bytes &[u8] = text
 	var n     int   = len(bytes)
@@ -18,20 +16,20 @@ fn main() {
 	assert !is_palindrome("hello")
 
 	if is_palindrome("racecar") {
-		platform.console_log("racecar: true", flags: 0)
+		print("racecar: true")
 	} else {
-		platform.console_log("racecar: false", flags: 0)
+		print("racecar: false")
 	}
 
 	if is_palindrome("hello") {
-		platform.console_log("hello: true", flags: 0)
+		print("hello: true")
 	} else {
-		platform.console_log("hello: false", flags: 0)
+		print("hello: false")
 	}
 
 	if is_palindrome("step on no pets") {
-		platform.console_log("step on no pets: true", flags: 0)
+		print("step on no pets: true")
 	} else {
-		platform.console_log("step on no pets: false", flags: 0)
+		print("step on no pets: false")
 	}
 }

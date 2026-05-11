@@ -1,7 +1,5 @@
-// Verifies platform console log variable is rejected.
-import "platform"
-
+// Verifies print routes variable strings through the platform logger.
 fn main() {
 	msg := "hello from platform"
-	platform.console_log(msg, flags: 0)
+	print(msg)
 }

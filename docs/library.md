@@ -230,23 +230,23 @@ fn sizeof(expr E) int
 
 ## Platform Package API
 
-The platform package is the host boundary for panic/logging/exit operations.
+The platform package is the host boundary for panic and exit operations.
 
 Import path:
 - `import "platform"`
 
 Surface API:
 - `platform.exit(status)`
-- `platform.console_log(message, flags)`
 - `platform.panic(message, flags)`
 
 Operation semantics:
 - `exit`: terminate process with status code.
-- `console_log`: write a platform log message.
 - `panic`: stop execution after reporting a fatal error message.
 
-Allocation is provided by `Allocator` via `alloc`, with the platform setting
-`context.allocator` before `hop_main`.
+Allocation is provided by `Allocator` via `alloc`. Logging is provided through
+`context.logger`; user code should call `print` or `log`. Platforms initialize
+`context.allocator`, `context.temp_allocator`, and `context.logger` before
+entering `hop_main`.
 
 Concrete default platform implementation used by `hop build`:
 - `lib/platform/cli-libc/platform.c`
@@ -254,7 +254,9 @@ Concrete default platform implementation used by `hop build`:
 `hop run` defaults to the evaluator host (`cli-eval`) unless `--platform` is provided.
 Selected platform targets may provide the platform surface in HopHop using foreign-linkage directives.
 The `wasm-min` target does this in `lib/platform/wasm-min/platform.hop` with `@wasm_import(...)`
-declarations for `exit`, `console_log`, and `panic`.
+declarations for `exit` and `panic`. Its logging host import is an internal ABI
+detail used by the generated root logger, not part of the public `platform`
+package.
 
 For `--platform playbit`, the raw runtime ABI lives in `lib/platform/playbit/platform.hop`.
 That package stays close to Playbit syscalls.

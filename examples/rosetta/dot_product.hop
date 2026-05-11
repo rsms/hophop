@@ -1,5 +1,3 @@
-import "platform"
-
 fn main() {
 	var a [i32 4]
 	a[0] = 1
@@ -20,5 +18,5 @@ fn main() {
 	}
 
 	assert result == 17
-	platform.console_log("dot product = 17", flags: 0)
+	print("dot product = 17")
 }

@@ -1,112 +1,110 @@
-import "platform"
-
 fn print_number(n i32) {
 	if n == 1 {
-		platform.console_log("1", flags: 0)
+		print("1")
 	} else if n == 2 {
-		platform.console_log("2", flags: 0)
+		print("2")
 	} else if n == 4 {
-		platform.console_log("4", flags: 0)
+		print("4")
 	} else if n == 7 {
-		platform.console_log("7", flags: 0)
+		print("7")
 	} else if n == 8 {
-		platform.console_log("8", flags: 0)
+		print("8")
 	} else if n == 11 {
-		platform.console_log("11", flags: 0)
+		print("11")
 	} else if n == 13 {
-		platform.console_log("13", flags: 0)
+		print("13")
 	} else if n == 14 {
-		platform.console_log("14", flags: 0)
+		print("14")
 	} else if n == 16 {
-		platform.console_log("16", flags: 0)
+		print("16")
 	} else if n == 17 {
-		platform.console_log("17", flags: 0)
+		print("17")
 	} else if n == 19 {
-		platform.console_log("19", flags: 0)
+		print("19")
 	} else if n == 22 {
-		platform.console_log("22", flags: 0)
+		print("22")
 	} else if n == 23 {
-		platform.console_log("23", flags: 0)
+		print("23")
 	} else if n == 26 {
-		platform.console_log("26", flags: 0)
+		print("26")
 	} else if n == 28 {
-		platform.console_log("28", flags: 0)
+		print("28")
 	} else if n == 29 {
-		platform.console_log("29", flags: 0)
+		print("29")
 	} else if n == 31 {
-		platform.console_log("31", flags: 0)
+		print("31")
 	} else if n == 32 {
-		platform.console_log("32", flags: 0)
+		print("32")
 	} else if n == 34 {
-		platform.console_log("34", flags: 0)
+		print("34")
 	} else if n == 37 {
-		platform.console_log("37", flags: 0)
+		print("37")
 	} else if n == 38 {
-		platform.console_log("38", flags: 0)
+		print("38")
 	} else if n == 41 {
-		platform.console_log("41", flags: 0)
+		print("41")
 	} else if n == 43 {
-		platform.console_log("43", flags: 0)
+		print("43")
 	} else if n == 44 {
-		platform.console_log("44", flags: 0)
+		print("44")
 	} else if n == 46 {
-		platform.console_log("46", flags: 0)
+		print("46")
 	} else if n == 47 {
-		platform.console_log("47", flags: 0)
+		print("47")
 	} else if n == 49 {
-		platform.console_log("49", flags: 0)
+		print("49")
 	} else if n == 52 {
-		platform.console_log("52", flags: 0)
+		print("52")
 	} else if n == 53 {
-		platform.console_log("53", flags: 0)
+		print("53")
 	} else if n == 56 {
-		platform.console_log("56", flags: 0)
+		print("56")
 	} else if n == 58 {
-		platform.console_log("58", flags: 0)
+		print("58")
 	} else if n == 59 {
-		platform.console_log("59", flags: 0)
+		print("59")
 	} else if n == 61 {
-		platform.console_log("61", flags: 0)
+		print("61")
 	} else if n == 62 {
-		platform.console_log("62", flags: 0)
+		print("62")
 	} else if n == 64 {
-		platform.console_log("64", flags: 0)
+		print("64")
 	} else if n == 67 {
-		platform.console_log("67", flags: 0)
+		print("67")
 	} else if n == 68 {
-		platform.console_log("68", flags: 0)
+		print("68")
 	} else if n == 71 {
-		platform.console_log("71", flags: 0)
+		print("71")
 	} else if n == 73 {
-		platform.console_log("73", flags: 0)
+		print("73")
 	} else if n == 74 {
-		platform.console_log("74", flags: 0)
+		print("74")
 	} else if n == 76 {
-		platform.console_log("76", flags: 0)
+		print("76")
 	} else if n == 77 {
-		platform.console_log("77", flags: 0)
+		print("77")
 	} else if n == 79 {
-		platform.console_log("79", flags: 0)
+		print("79")
 	} else if n == 82 {
-		platform.console_log("82", flags: 0)
+		print("82")
 	} else if n == 83 {
-		platform.console_log("83", flags: 0)
+		print("83")
 	} else if n == 86 {
-		platform.console_log("86", flags: 0)
+		print("86")
 	} else if n == 88 {
-		platform.console_log("88", flags: 0)
+		print("88")
 	} else if n == 89 {
-		platform.console_log("89", flags: 0)
+		print("89")
 	} else if n == 91 {
-		platform.console_log("91", flags: 0)
+		print("91")
 	} else if n == 92 {
-		platform.console_log("92", flags: 0)
+		print("92")
 	} else if n == 94 {
-		platform.console_log("94", flags: 0)
+		print("94")
 	} else if n == 97 {
-		platform.console_log("97", flags: 0)
+		print("97")
 	} else if n == 98 {
-		platform.console_log("98", flags: 0)
+		print("98")
 	} else {
 		assert false
 	}
@@ -120,14 +118,14 @@ fn main() {
 		buzz += 1
 
 		if fizz == 3 && buzz == 5 {
-			platform.console_log("FizzBuzz", flags: 0)
+			print("FizzBuzz")
 			fizz = 0
 			buzz = 0
 		} else if fizz == 3 {
-			platform.console_log("Fizz", flags: 0)
+			print("Fizz")
 			fizz = 0
 		} else if buzz == 5 {
-			platform.console_log("Buzz", flags: 0)
+			print("Buzz")
 			buzz = 0
 		} else {
 			print_number(i)

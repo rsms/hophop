@@ -29,6 +29,16 @@ pub struct Logger {
 	prefix    &str
 }
 
+pub fn print(message &str) {
+	var flags LogFlags = 0
+	context.logger.handler(&context.logger, message, 0, flags)
+}
+
+pub fn print(message *str) {
+	var flags LogFlags = 0
+	context.logger.handler(&context.logger, message, 0, flags)
+}
+
 pub fn print(args ...anytype) {
 	const {
 		for var ai int = 0; ai < len(args); ai += 1 {

@@ -1,5 +1,3 @@
-import "platform"
-
 fn bytes_eq(got &[u8], want &str) bool {
 	if len(got) != len(want) {
 		return false
@@ -28,7 +26,7 @@ fn main() {
 
 	var n1 int = reverse(out[:], text: "stressed")
 	assert bytes_eq(out[:n1], want: "desserts")
-	platform.console_log("desserts", flags: 0)
+	print("desserts")
 
 	var n2 int = reverse(out[:], text: "abcd")
 	assert bytes_eq(out[:n2], want: "dcba")
