@@ -22,10 +22,5 @@ jobs:
 
       - name: Run tests
         run: |
-          brew install clang-format
-          export "PATH=$(brew --prefix llvm)/bin:$(brew --prefix clang-format)/bin:$PATH"
-          which clang || true
-          which clang-format || true
-          brew --prefix llvm
-          brew --prefix clang-format
-          ./build.sh test
+          export "PATH=$(brew --prefix llvm)/bin:$PATH"
+          ./build.sh format=0 test
