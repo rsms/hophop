@@ -13,7 +13,9 @@ fn main() {
 
 	for i := 0; i < limit - 1; i += 1 {
 		if !primes[i] {
-			print("{}".format(i + 2))
+			var buf [u8 24]
+			n := buf.format("{}", i + 2)
+			print(buf[:n] as &str)
 		}
 	}
 }

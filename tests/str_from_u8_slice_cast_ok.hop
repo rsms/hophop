@@ -1,0 +1,21 @@
+fn main() {
+	var raw [u8 4]
+	raw[0] = 'a'
+	raw[1] = 'b'
+	raw[2] = 'c'
+	raw[3] = 'd'
+
+	s := raw[:3] as &str
+	assert len(s) == 3
+	assert s[0] == 'a'
+	assert s[1] == 'b'
+	assert s[2] == 'c'
+
+	var buf [u8 16]
+	n := buf.format("{}", 123)
+	t := buf[:n] as &str
+	assert len(t) == 3
+	assert t[0] == '1'
+	assert t[1] == '2'
+	assert t[2] == '3'
+}

@@ -4897,6 +4897,37 @@ static int TypeRefIsStringByteSequence(const H2TypeRef* t) {
     return TypeRefIsStr(t) && t->containerPtrDepth == 0 && t->ptrDepth <= 1;
 }
 
+static int TypeRefIsU8SliceValue(H2CBackendC* c, const H2TypeRef* t) {
+    const char* baseName;
+    if (c == NULL || t == NULL || !t->valid
+        || (t->containerKind != H2TypeContainer_SLICE_RO
+            && t->containerKind != H2TypeContainer_SLICE_MUT)
+        || SliceStructPtrDepth(t) != 0 || t->baseName == NULL)
+    {
+        return 0;
+    }
+    baseName = ResolveScalarAliasBaseName(c, t->baseName);
+    if (baseName == NULL) {
+        baseName = t->baseName;
+    }
+    return StrEq(baseName, "__hop_u8");
+}
+
+static int EmitBorrowedStrFromU8SliceExpr(H2CBackendC* c, int32_t exprNode) {
+    uint32_t tempId = FmtNextTempId(c);
+    if (BufAppendCStr(&c->out, "(__extension__({ __auto_type __hop_slice_str_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, " = ") != 0
+        || EmitExpr(c, exprNode) != 0 || BufAppendCStr(&c->out, "; ((__hop_str){ (__hop_u8*)") != 0
+        || BufAppendCStr(&c->out, "(uintptr_t)__hop_slice_str_") != 0
+        || BufAppendU32(&c->out, tempId) != 0 || BufAppendCStr(&c->out, ".ptr, (__hop_int)") != 0
+        || BufAppendCStr(&c->out, "__hop_slice_str_") != 0 || BufAppendU32(&c->out, tempId) != 0
+        || BufAppendCStr(&c->out, ".len }); }))") != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
 int EmitStringLiteralValue(H2CBackendC* c, int32_t literalId, int writable) {
     if (BufAppendCStr(&c->out, "hop_lit_") != 0
         || BufAppendCStr(&c->out, writable ? "rw_" : "ro_") != 0
@@ -11395,8 +11426,13 @@ int EmitExpr_CAST(H2CBackendC* c, int32_t nodeId, const H2AstNode* n) {
         return EmitDynamicActivePackIndexCoerced(c, idxNode, &dstType);
     }
     if (TypeRefIsBorrowedStrValue(&dstType)) {
-        if (InferExprType(c, expr, &srcType) == 0 && srcType.valid && TypeRefIsStr(&srcType)) {
-            return EmitStrValueExpr(c, expr, &srcType);
+        if (InferExprType(c, expr, &srcType) == 0 && srcType.valid) {
+            if (TypeRefIsStr(&srcType)) {
+                return EmitStrValueExpr(c, expr, &srcType);
+            }
+            if (TypeRefIsU8SliceValue(c, &srcType)) {
+                return EmitBorrowedStrFromU8SliceExpr(c, expr);
+            }
         }
         if (BufAppendCStr(&c->out, "(*((__hop_str*)(uintptr_t)(") != 0 || EmitExpr(c, expr) != 0
             || BufAppendCStr(&c->out, ")))") != 0)
