@@ -69,6 +69,17 @@ typedef struct {
     const H2MirCapture* _Nullable captures;
     uint32_t captureCount;
     int      functionValueEntry;
+    const H2MirLowerParam* _Nullable optionParams;
+    uint32_t optionParamCount;
+    uint32_t activePackNameStart;
+    uint32_t activePackNameEnd;
+    uint32_t activePackParamStart;
+    uint32_t activePackParamCount;
+    uint32_t activePackIndexNameStart;
+    uint32_t activePackIndexNameEnd;
+    uint32_t activePackIndexValue;
+    uint8_t  activePackIndexActive;
+    uint8_t  _reserved3[3];
 } H2MirStmtLower;
 
 static void H2MirLowerStmtSetDiag(
@@ -196,6 +207,15 @@ static int H2MirStmtLowerEnsureLocalCap(H2MirStmtLower* c, uint32_t needLen) {
     return 0;
 }
 
+static int H2MirStmtLowerAddFixedStrArrayType(
+    H2MirStmtLower* c, uint32_t elemCount, uint32_t* outTypeRef);
+static int H2MirStmtLowerAddFixedIntArrayType(
+    H2MirStmtLower* c, H2MirIntKind elemKind, uint32_t elemCount, uint32_t* outTypeRef);
+static int H2MirStmtLowerArrayLitAllStrings(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outElemCount);
+static int H2MirStmtLowerArrayLitAllInts(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outElemCount, H2MirIntKind* outElemKind);
+
 static int H2MirStmtLowerPushLocal(
     H2MirStmtLower* c,
     uint32_t        nameStart,
@@ -230,6 +250,20 @@ static int H2MirStmtLowerPushLocal(
         if (H2MirProgramBuilderAddType(&c->builder, &typeRef, &local.typeRef) != 0) {
             H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
             return -1;
+        }
+    } else if (initExprNode >= 0) {
+        uint32_t     elemCount = 0;
+        H2MirIntKind elemKind = H2MirIntKind_NONE;
+        if (H2MirStmtLowerArrayLitAllStrings(c, initExprNode, &elemCount)) {
+            if (H2MirStmtLowerAddFixedStrArrayType(c, elemCount, &local.typeRef) != 0) {
+                H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
+                return -1;
+            }
+        } else if (H2MirStmtLowerArrayLitAllInts(c, initExprNode, &elemCount, &elemKind)) {
+            if (H2MirStmtLowerAddFixedIntArrayType(c, elemKind, elemCount, &local.typeRef) != 0) {
+                H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, nameStart, nameEnd);
+                return -1;
+            }
         }
     }
     if (H2MirProgramBuilderAddLocal(&c->builder, &local, &slot) != 0) {
@@ -711,6 +745,8 @@ static int H2MirStmtLowerAppendStoreValueBySlice(
 }
 
 static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode);
+static int H2MirStmtLowerAppendIntConst(
+    H2MirStmtLower* c, int64_t value, uint32_t start, uint32_t end);
 
 static int H2MirStmtLowerNameEqLiteral(
     const H2MirStmtLower* c, uint32_t start, uint32_t end, const char* lit) {
@@ -722,6 +758,318 @@ static int H2MirStmtLowerNameEqLiteral(
         litLen++;
     }
     return (size_t)(end - start) == litLen && memcmp(c->src.ptr + start, lit, litLen) == 0;
+}
+
+static int H2MirStmtLowerIsActivePackIdent(const H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* expr;
+    if (c == NULL || c->activePackNameEnd <= c->activePackNameStart || exprNode < 0
+        || (uint32_t)exprNode >= c->ast->len)
+    {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    return expr->kind == H2Ast_IDENT && expr->dataEnd >= expr->dataStart
+        && c->activePackNameEnd >= c->activePackNameStart
+        && expr->dataEnd - expr->dataStart == c->activePackNameEnd - c->activePackNameStart
+        && expr->dataEnd <= c->src.len && c->activePackNameEnd <= c->src.len
+        && memcmp(
+               c->src.ptr + expr->dataStart,
+               c->src.ptr + c->activePackNameStart,
+               expr->dataEnd - expr->dataStart)
+               == 0;
+}
+
+static int H2MirStmtLowerAppendActivePackElemLoad(
+    H2MirStmtLower* c, uint32_t packIndex, uint32_t start, uint32_t end) {
+    if (c == NULL || packIndex >= c->activePackParamCount) {
+        if (c != NULL) {
+            c->supported = 0;
+        }
+        return 0;
+    }
+    return H2MirStmtLowerAppendInst(
+        c, H2MirOp_LOCAL_LOAD, 0, c->activePackParamStart + packIndex, start, end, NULL);
+}
+
+static int H2MirStmtLowerIsActivePackIndexIdent(const H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* expr;
+    if (c == NULL || !c->activePackIndexActive || exprNode < 0 || (uint32_t)exprNode >= c->ast->len)
+    {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    return expr->kind == H2Ast_IDENT && expr->dataEnd >= expr->dataStart
+        && c->activePackIndexNameEnd >= c->activePackIndexNameStart
+        && expr->dataEnd - expr->dataStart
+               == c->activePackIndexNameEnd - c->activePackIndexNameStart
+        && expr->dataEnd <= c->src.len && c->activePackIndexNameEnd <= c->src.len
+        && memcmp(
+               c->src.ptr + expr->dataStart,
+               c->src.ptr + c->activePackIndexNameStart,
+               expr->dataEnd - expr->dataStart)
+               == 0;
+}
+
+static int H2MirStmtLowerParseSimpleInt(
+    const H2MirStmtLower* c, int32_t exprNode, int64_t* outValue) {
+    const H2AstNode* n;
+    int64_t          value = 0;
+    uint32_t         i;
+    if (outValue != NULL) {
+        *outValue = 0;
+    }
+    if (c == NULL || outValue == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind != H2Ast_INT || n->dataEnd <= n->dataStart || n->dataEnd > c->src.len) {
+        return 0;
+    }
+    for (i = n->dataStart; i < n->dataEnd; i++) {
+        unsigned char ch = (unsigned char)c->src.ptr[i];
+        if (ch < '0' || ch > '9') {
+            return 0;
+        }
+        value = value * 10 + (int64_t)(ch - '0');
+    }
+    *outValue = value;
+    return 1;
+}
+
+static int H2MirStmtLowerTryActivePackIndex(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outIndex) {
+    int64_t indexValue = 0;
+    if (outIndex != NULL) {
+        *outIndex = 0;
+    }
+    if (c == NULL || outIndex == NULL || c->activePackParamCount == 0u) {
+        return 0;
+    }
+    if (H2MirStmtLowerIsActivePackIndexIdent(c, exprNode)) {
+        if (c->activePackIndexValue >= c->activePackParamCount) {
+            return 0;
+        }
+        *outIndex = c->activePackIndexValue;
+        return 1;
+    }
+    if (!H2MirStmtLowerParseSimpleInt(c, exprNode, &indexValue) || indexValue < 0
+        || (uint64_t)indexValue >= (uint64_t)c->activePackParamCount)
+    {
+        return 0;
+    }
+    *outIndex = (uint32_t)indexValue;
+    return 1;
+}
+
+static int H2MirStmtLowerIsLenActivePackCall(const H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    int32_t          argNode;
+    int32_t          valueNode;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    call = &c->ast->nodes[exprNode];
+    if (call->kind != H2Ast_CALL || call->firstChild < 0
+        || (uint32_t)call->firstChild >= c->ast->len)
+    {
+        return 0;
+    }
+    callee = &c->ast->nodes[call->firstChild];
+    if (callee->kind != H2Ast_IDENT
+        || !H2MirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "len"))
+    {
+        return 0;
+    }
+    argNode = callee->nextSibling;
+    valueNode = argNode;
+    if (argNode < 0 || c->ast->nodes[argNode].nextSibling >= 0) {
+        return 0;
+    }
+    if (c->ast->nodes[argNode].kind == H2Ast_CALL_ARG) {
+        valueNode = c->ast->nodes[argNode].firstChild;
+    }
+    return H2MirStmtLowerIsActivePackIdent(c, valueNode);
+}
+
+static int H2MirStmtLowerTypeNameSlice(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outStart, uint32_t* outEnd) {
+    const H2AstNode* n;
+    if (outStart != NULL) {
+        *outStart = 0;
+    }
+    if (outEnd != NULL) {
+        *outEnd = 0;
+    }
+    if (c == NULL || outStart == NULL || outEnd == NULL || exprNode < 0
+        || (uint32_t)exprNode >= c->ast->len)
+    {
+        return 0;
+    }
+    n = &c->ast->nodes[exprNode];
+    if (n->kind == H2Ast_TYPE_VALUE && n->firstChild >= 0 && (uint32_t)n->firstChild < c->ast->len)
+    {
+        n = &c->ast->nodes[n->firstChild];
+    }
+    if (n->kind != H2Ast_TYPE_NAME && n->kind != H2Ast_IDENT) {
+        return 0;
+    }
+    *outStart = n->dataStart;
+    *outEnd = n->dataEnd;
+    return 1;
+}
+
+static int H2MirStmtLowerActivePackTypeMatchesName(
+    const H2MirStmtLower* c, uint32_t start, uint32_t end) {
+    const H2MirTypeRef* typeRef;
+    H2MirIntKind        intKind;
+    uint32_t            packIndex = 0;
+    uint32_t            localIndex;
+    if (c == NULL || c->activePackParamCount == 0u) {
+        return 0;
+    }
+    if (c->activePackIndexActive) {
+        if (c->activePackIndexValue >= c->activePackParamCount) {
+            return 0;
+        }
+        packIndex = c->activePackIndexValue;
+    } else if (c->activePackParamCount != 1u) {
+        return 0;
+    }
+    localIndex = c->activePackParamStart + packIndex;
+    if (localIndex >= c->localLen || c->locals[localIndex].typeRef >= c->builder.typeLen) {
+        return 0;
+    }
+    typeRef = &c->builder.types[c->locals[localIndex].typeRef];
+    intKind = H2MirTypeRefIntKind(typeRef);
+    if (H2MirTypeRefScalarKind(typeRef) == H2MirTypeScalar_I32) {
+        if (H2MirStmtLowerNameEqLiteral(c, start, end, "int")
+            || H2MirStmtLowerNameEqLiteral(c, start, end, "uint"))
+        {
+            return 1;
+        }
+        switch (intKind) {
+            case H2MirIntKind_BOOL: return H2MirStmtLowerNameEqLiteral(c, start, end, "bool");
+            case H2MirIntKind_U8:   return H2MirStmtLowerNameEqLiteral(c, start, end, "u8");
+            case H2MirIntKind_I8:   return H2MirStmtLowerNameEqLiteral(c, start, end, "i8");
+            case H2MirIntKind_U16:  return H2MirStmtLowerNameEqLiteral(c, start, end, "u16");
+            case H2MirIntKind_I16:  return H2MirStmtLowerNameEqLiteral(c, start, end, "i16");
+            case H2MirIntKind_U32:  return H2MirStmtLowerNameEqLiteral(c, start, end, "u32");
+            case H2MirIntKind_I32:
+            default:                return H2MirStmtLowerNameEqLiteral(c, start, end, "i32");
+        }
+    }
+    if (H2MirTypeRefScalarKind(typeRef) == H2MirTypeScalar_I64) {
+        return H2MirStmtLowerNameEqLiteral(c, start, end, "i64")
+            || H2MirStmtLowerNameEqLiteral(c, start, end, "u64");
+    }
+    if (H2MirTypeRefScalarKind(typeRef) == H2MirTypeScalar_F32) {
+        return H2MirStmtLowerNameEqLiteral(c, start, end, "f32");
+    }
+    if (H2MirTypeRefScalarKind(typeRef) == H2MirTypeScalar_F64) {
+        return H2MirStmtLowerNameEqLiteral(c, start, end, "f64");
+    }
+    return 0;
+}
+
+static int H2MirStmtLowerTryEvalActivePackBool(
+    const H2MirStmtLower* c, int32_t exprNode, int* outValue) {
+    const H2AstNode* expr;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    int64_t          intValue = 0;
+    int              lhsValue = 0;
+    int              rhsValue = 0;
+    uint32_t         typeStart = 0;
+    uint32_t         typeEnd = 0;
+    if (outValue != NULL) {
+        *outValue = 0;
+    }
+    if (c == NULL || outValue == NULL || c->activePackNameEnd <= c->activePackNameStart
+        || exprNode < 0 || (uint32_t)exprNode >= c->ast->len)
+    {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != H2Ast_BINARY) {
+        return 0;
+    }
+    lhsNode = expr->firstChild;
+    rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+    if (lhsNode < 0 || rhsNode < 0 || c->ast->nodes[rhsNode].nextSibling >= 0) {
+        return 0;
+    }
+    if ((H2TokenKind)expr->op == H2Tok_LOGICAL_AND) {
+        if (!H2MirStmtLowerTryEvalActivePackBool(c, lhsNode, &lhsValue)
+            || !H2MirStmtLowerTryEvalActivePackBool(c, rhsNode, &rhsValue))
+        {
+            return 0;
+        }
+        *outValue = lhsValue && rhsValue;
+        return 1;
+    }
+    if ((H2TokenKind)expr->op == H2Tok_LOGICAL_OR) {
+        if (!H2MirStmtLowerTryEvalActivePackBool(c, lhsNode, &lhsValue)
+            || !H2MirStmtLowerTryEvalActivePackBool(c, rhsNode, &rhsValue))
+        {
+            return 0;
+        }
+        *outValue = lhsValue || rhsValue;
+        return 1;
+    }
+    if ((H2TokenKind)expr->op != H2Tok_EQ && (H2TokenKind)expr->op != H2Tok_NEQ) {
+        return 0;
+    }
+    if (H2MirStmtLowerIsLenActivePackCall(c, lhsNode)
+        && H2MirStmtLowerParseSimpleInt(c, rhsNode, &intValue))
+    {
+        lhsValue = c->activePackParamCount == (uint32_t)intValue;
+        *outValue = (H2TokenKind)expr->op == H2Tok_EQ ? lhsValue : !lhsValue;
+        return 1;
+    }
+    if (H2MirStmtLowerIsLenActivePackCall(c, rhsNode)
+        && H2MirStmtLowerParseSimpleInt(c, lhsNode, &intValue))
+    {
+        lhsValue = c->activePackParamCount == (uint32_t)intValue;
+        *outValue = (H2TokenKind)expr->op == H2Tok_EQ ? lhsValue : !lhsValue;
+        return 1;
+    }
+    if (c->ast->nodes[lhsNode].kind == H2Ast_IDENT
+        && H2MirStmtLowerNameEqLiteral(
+            c, c->ast->nodes[lhsNode].dataStart, c->ast->nodes[lhsNode].dataEnd, "t")
+        && H2MirStmtLowerTypeNameSlice(c, rhsNode, &typeStart, &typeEnd))
+    {
+        lhsValue = H2MirStmtLowerActivePackTypeMatchesName(c, typeStart, typeEnd);
+        *outValue = (H2TokenKind)expr->op == H2Tok_EQ ? lhsValue : !lhsValue;
+        return 1;
+    }
+    if (c->ast->nodes[rhsNode].kind == H2Ast_IDENT
+        && H2MirStmtLowerNameEqLiteral(
+            c, c->ast->nodes[rhsNode].dataStart, c->ast->nodes[rhsNode].dataEnd, "t")
+        && H2MirStmtLowerTypeNameSlice(c, lhsNode, &typeStart, &typeEnd))
+    {
+        lhsValue = H2MirStmtLowerActivePackTypeMatchesName(c, typeStart, typeEnd);
+        *outValue = (H2TokenKind)expr->op == H2Tok_EQ ? lhsValue : !lhsValue;
+        return 1;
+    }
+    return 0;
+}
+
+static int H2MirStmtLowerIsCompileTimeTypeofCall(const H2MirStmtLower* c, int32_t exprNode) {
+    const H2AstNode* call;
+    const H2AstNode* callee;
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    call = &c->ast->nodes[exprNode];
+    if (call->kind != H2Ast_CALL || call->firstChild < 0
+        || (uint32_t)call->firstChild >= c->ast->len)
+    {
+        return 0;
+    }
+    callee = &c->ast->nodes[call->firstChild];
+    return callee->kind == H2Ast_IDENT
+        && H2MirStmtLowerNameEqLiteral(c, callee->dataStart, callee->dataEnd, "typeof");
 }
 
 static int H2MirStmtLowerContextFieldFromSlice(
@@ -970,6 +1318,19 @@ static int H2MirStmtLowerCallExpr(H2MirStmtLower* c, int32_t exprNode) {
         callStart = c->ast->nodes[calleeNode].start;
         callEnd = c->ast->nodes[calleeNode].end;
     }
+    if (isBuiltinLen && callFlags == 0u) {
+        int32_t onlyArg = c->ast->nodes[calleeNode].nextSibling;
+        int32_t valueNode = onlyArg;
+        if (onlyArg >= 0 && c->ast->nodes[onlyArg].kind == H2Ast_CALL_ARG) {
+            valueNode = c->ast->nodes[onlyArg].firstChild;
+        }
+        if (onlyArg >= 0 && c->ast->nodes[onlyArg].nextSibling < 0
+            && H2MirStmtLowerIsActivePackIdent(c, valueNode))
+        {
+            return H2MirStmtLowerAppendIntConst(
+                c, (int64_t)c->activePackParamCount, callStart, callEnd);
+        }
+    }
     argNode = c->ast->nodes[calleeNode].nextSibling;
     while (argNode >= 0) {
         int32_t valueNode = argNode;
@@ -991,8 +1352,28 @@ static int H2MirStmtLowerCallExpr(H2MirStmtLower* c, int32_t exprNode) {
             }
             callTokFlags |= H2MirCallArgFlag_SPREAD_LAST;
         }
-        if (H2MirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
-            return c->supported ? -1 : 0;
+        if (isSpread && H2MirStmtLowerIsActivePackIdent(c, valueNode)) {
+            uint32_t packIndex;
+            callTokFlags &= (uint16_t)~H2MirCallArgFlag_SPREAD_LAST;
+            for (packIndex = 0; packIndex < c->activePackParamCount; packIndex++) {
+                if (H2MirStmtLowerAppendActivePackElemLoad(
+                        c, packIndex, c->ast->nodes[valueNode].start, c->ast->nodes[valueNode].end)
+                    != 0)
+                {
+                    return -1;
+                }
+                if (argc == UINT16_MAX) {
+                    c->supported = 0;
+                    return 0;
+                }
+                argc++;
+            }
+            argNode = c->ast->nodes[argNode].nextSibling;
+            continue;
+        } else {
+            if (H2MirStmtLowerExpr(c, valueNode) != 0 || !c->supported) {
+                return c->supported ? -1 : 0;
+            }
         }
         if (argc == UINT16_MAX) {
             c->supported = 0;
@@ -1164,6 +1545,22 @@ static int H2MirStmtLowerAddFixedStrArrayType(
     return H2MirProgramBuilderAddType(&c->builder, &typeRef, outTypeRef);
 }
 
+static int H2MirStmtLowerAddFixedIntArrayType(
+    H2MirStmtLower* c, H2MirIntKind elemKind, uint32_t elemCount, uint32_t* outTypeRef) {
+    H2MirTypeRef typeRef = { 0 };
+    if (outTypeRef != NULL) {
+        *outTypeRef = UINT32_MAX;
+    }
+    if (c == NULL || elemKind == H2MirIntKind_NONE || elemCount == 0u || elemCount > 0xffffu) {
+        return -1;
+    }
+    typeRef.astNode = UINT32_MAX;
+    typeRef.sourceRef = UINT32_MAX;
+    typeRef.flags = H2MirTypeFlag_FIXED_ARRAY;
+    typeRef.aux = H2MirTypeAuxMakeFixedArray(elemKind, elemCount);
+    return H2MirProgramBuilderAddType(&c->builder, &typeRef, outTypeRef);
+}
+
 static int H2MirStmtLowerArrayLitAllStrings(
     const H2MirStmtLower* c, int32_t exprNode, uint32_t* outElemCount) {
     const H2AstNode* expr;
@@ -1196,7 +1593,55 @@ static int H2MirStmtLowerArrayLitAllStrings(
     return 1;
 }
 
-static int H2MirStmtLowerArrayLitStrExprWithTypeRef(
+static int H2MirStmtLowerArrayLitAllInts(
+    const H2MirStmtLower* c, int32_t exprNode, uint32_t* outElemCount, H2MirIntKind* outElemKind) {
+    const H2AstNode* expr;
+    uint32_t         elemCount = 0;
+    int32_t          child;
+    if (outElemCount != NULL) {
+        *outElemCount = 0;
+    }
+    if (outElemKind != NULL) {
+        *outElemKind = H2MirIntKind_NONE;
+    }
+    if (c == NULL || exprNode < 0 || (uint32_t)exprNode >= c->ast->len) {
+        return 0;
+    }
+    expr = &c->ast->nodes[exprNode];
+    if (expr->kind != H2Ast_ARRAY_LIT) {
+        return 0;
+    }
+    child = expr->firstChild;
+    while (child >= 0) {
+        const H2AstNode* item;
+        if ((uint32_t)child >= c->ast->len) {
+            return 0;
+        }
+        item = &c->ast->nodes[child];
+        if (item->kind != H2Ast_INT) {
+            if (item->kind != H2Ast_UNARY || item->op != H2Tok_SUB || item->firstChild < 0
+                || (uint32_t)item->firstChild >= c->ast->len
+                || c->ast->nodes[item->firstChild].kind != H2Ast_INT)
+            {
+                return 0;
+            }
+        }
+        elemCount++;
+        child = item->nextSibling;
+    }
+    if (elemCount == 0u) {
+        return 0;
+    }
+    if (outElemCount != NULL) {
+        *outElemCount = elemCount;
+    }
+    if (outElemKind != NULL) {
+        *outElemKind = H2MirIntKind_I32;
+    }
+    return 1;
+}
+
+static int H2MirStmtLowerArrayLitExprWithTypeRef(
     H2MirStmtLower* c, int32_t exprNode, uint32_t typeRefIndex) {
     const H2AstNode* expr;
     uint32_t         elemCount = 0;
@@ -1213,7 +1658,7 @@ static int H2MirStmtLowerArrayLitStrExprWithTypeRef(
     }
     child = expr->firstChild;
     while (child >= 0) {
-        if ((uint32_t)child >= c->ast->len || c->ast->nodes[child].kind != H2Ast_STRING) {
+        if ((uint32_t)child >= c->ast->len) {
             c->supported = 0;
             return 0;
         }
@@ -1536,6 +1981,10 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
         return 0;
     }
     expr = &c->ast->nodes[exprNode];
+    if (H2MirStmtLowerIsActivePackIndexIdent(c, exprNode)) {
+        return H2MirStmtLowerAppendIntConst(
+            c, (int64_t)c->activePackIndexValue, expr->start, expr->end);
+    }
     {
         int64_t sizeValue = 0;
         if (H2MirStmtLowerTryConstSizeofExpr(c, exprNode, &sizeValue)) {
@@ -1581,6 +2030,31 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
         int32_t      extraNode = typeNode >= 0 ? c->ast->nodes[typeNode].nextSibling : -1;
         H2MirTypeRef typeRef = { 0 };
         uint32_t     typeRefIndex = UINT32_MAX;
+        if (valueNode >= 0 && typeNode >= 0 && extraNode < 0 && (uint32_t)valueNode < c->ast->len
+            && c->ast->nodes[valueNode].kind == H2Ast_INDEX)
+        {
+            int32_t  baseNode = c->ast->nodes[valueNode].firstChild;
+            int32_t  indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+            uint32_t packIndex = 0;
+            if (baseNode >= 0 && indexNode >= 0 && c->ast->nodes[indexNode].nextSibling < 0
+                && H2MirStmtLowerIsActivePackIdent(c, baseNode)
+                && H2MirStmtLowerTryActivePackIndex(c, indexNode, &packIndex))
+            {
+                if (H2MirStmtLowerAppendActivePackElemLoad(c, packIndex, expr->start, expr->end)
+                    != 0)
+                {
+                    return -1;
+                }
+                typeRef.astNode = (uint32_t)typeNode;
+                typeRef.sourceRef = c->sourceIndex;
+                if (H2MirProgramBuilderAddType(&c->builder, &typeRef, &typeRefIndex) != 0) {
+                    H2MirLowerStmtSetDiag(c->diag, H2Diag_ARENA_OOM, expr->start, expr->end);
+                    return -1;
+                }
+                return H2MirStmtLowerAppendInst(
+                    c, H2MirOp_COERCE, 0, typeRefIndex, expr->start, expr->end, NULL);
+            }
+        }
         if (valueNode >= 0 && typeNode >= 0 && extraNode < 0
             && H2MirStmtLowerCastNeedsCoerce(c, typeNode))
         {
@@ -1643,11 +2117,17 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
             c, H2MirOp_SLICE_MAKE, sliceFlags, 0, expr->start, expr->end, NULL);
     }
     if (expr->kind == H2Ast_INDEX) {
-        int32_t baseNode = expr->firstChild;
-        int32_t indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+        int32_t  baseNode = expr->firstChild;
+        int32_t  indexNode = baseNode >= 0 ? c->ast->nodes[baseNode].nextSibling : -1;
+        uint32_t packIndex = 0;
         if (baseNode < 0 || indexNode < 0 || c->ast->nodes[indexNode].nextSibling >= 0) {
             c->supported = 0;
             return 0;
+        }
+        if (H2MirStmtLowerIsActivePackIdent(c, baseNode)
+            && H2MirStmtLowerTryActivePackIndex(c, indexNode, &packIndex))
+        {
+            return H2MirStmtLowerAppendActivePackElemLoad(c, packIndex, expr->start, expr->end);
         }
         if (H2MirStmtLowerExpr(c, baseNode) != 0 || !c->supported) {
             return c->supported ? -1 : 0;
@@ -1704,7 +2184,25 @@ static int H2MirStmtLowerExpr(H2MirStmtLower* c, int32_t exprNode) {
         return H2MirStmtLowerAppendTupleMake(c, elemCount, exprNode, expr->start, expr->end);
     }
     if (expr->kind == H2Ast_ARRAY_LIT) {
+        uint32_t     arrayTypeRef = UINT32_MAX;
+        H2MirIntKind elemKind = H2MirIntKind_NONE;
         elemCount = H2MirStmtLowerAstListCount(c->ast, exprNode);
+        if (H2MirStmtLowerArrayLitAllStrings(c, exprNode, &elemCount)) {
+            if (H2MirStmtLowerAddFixedStrArrayType(c, elemCount, &arrayTypeRef) != 0
+                || H2MirStmtLowerArrayLitExprWithTypeRef(c, exprNode, arrayTypeRef) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
+        if (H2MirStmtLowerArrayLitAllInts(c, exprNode, &elemCount, &elemKind)) {
+            if (H2MirStmtLowerAddFixedIntArrayType(c, elemKind, elemCount, &arrayTypeRef) != 0
+                || H2MirStmtLowerArrayLitExprWithTypeRef(c, exprNode, arrayTypeRef) != 0)
+            {
+                return -1;
+            }
+            return 0;
+        }
         for (i = 0; i < elemCount; i++) {
             int32_t itemNode = H2MirStmtLowerAstListItemAt(c->ast, exprNode, i);
             if (itemNode < 0) {
@@ -2336,6 +2834,17 @@ static int H2MirStmtLowerBlock(H2MirStmtLower* c, int32_t blockNode) {
             c->localLen = scopeMark;
             return c->supported ? -1 : 0;
         }
+        if (c->ast->nodes[child].kind == H2Ast_RETURN
+            && c->builder.funcs[c->functionIndex].instLen > 0u)
+        {
+            const H2MirInst* lastInst =
+                &c->builder.insts
+                     [c->builder.funcs[c->functionIndex].instStart
+                      + c->builder.funcs[c->functionIndex].instLen - 1u];
+            if (lastInst->op == H2MirOp_RETURN || lastInst->op == H2MirOp_RETURN_VOID) {
+                break;
+            }
+        }
         child = nextChild;
     }
     if (H2MirStmtLowerEmitDeferredRange(c, deferStart) != 0 || !c->supported) {
@@ -2356,7 +2865,22 @@ static int H2MirStmtLowerIf(H2MirStmtLower* c, int32_t ifNode) {
     int32_t  elseNode = thenNode >= 0 ? c->ast->nodes[thenNode].nextSibling : -1;
     uint32_t falseJumpInst = UINT32_MAX;
     uint32_t endJumpInst = UINT32_MAX;
+    int      constValue = 0;
     if (condNode < 0 || thenNode < 0) {
+        c->supported = 0;
+        return 0;
+    }
+    if (H2MirStmtLowerTryEvalActivePackBool(c, condNode, &constValue)) {
+        int32_t selectedNode = constValue ? thenNode : elseNode;
+        if (selectedNode < 0) {
+            return 0;
+        }
+        if (c->ast->nodes[selectedNode].kind == H2Ast_BLOCK) {
+            return H2MirStmtLowerBlock(c, selectedNode);
+        }
+        if (c->ast->nodes[selectedNode].kind == H2Ast_IF) {
+            return H2MirStmtLowerIf(c, selectedNode);
+        }
         c->supported = 0;
         return 0;
     }
@@ -3195,6 +3719,99 @@ static int H2MirStmtLowerSwitch(H2MirStmtLower* c, int32_t stmtNode) {
     return 0;
 }
 
+static int H2MirStmtLowerIdentMatchesSlice(
+    const H2MirStmtLower* c, int32_t node, uint32_t start, uint32_t end) {
+    const H2AstNode* n;
+    if (c == NULL || node < 0 || (uint32_t)node >= c->ast->len || end < start || end > c->src.len) {
+        return 0;
+    }
+    n = &c->ast->nodes[node];
+    return n->kind == H2Ast_IDENT && n->dataEnd >= n->dataStart && n->dataEnd <= c->src.len
+        && n->dataEnd - n->dataStart == end - start
+        && memcmp(c->src.ptr + n->dataStart, c->src.ptr + start, end - start) == 0;
+}
+
+static int H2MirStmtLowerActivePackForInit(
+    const H2MirStmtLower* c, int32_t initNode, uint32_t* outNameStart, uint32_t* outNameEnd) {
+    const H2AstNode* init;
+    int32_t          initValueNode;
+    int64_t          initValue = 0;
+    if (outNameStart != NULL) {
+        *outNameStart = 0;
+    }
+    if (outNameEnd != NULL) {
+        *outNameEnd = 0;
+    }
+    if (c == NULL || outNameStart == NULL || outNameEnd == NULL || initNode < 0
+        || (uint32_t)initNode >= c->ast->len)
+    {
+        return 0;
+    }
+    init = &c->ast->nodes[initNode];
+    initValueNode = H2MirStmtLowerVarInitExprNode(c->ast, initNode);
+    if (init->kind != H2Ast_VAR || init->dataEnd <= init->dataStart
+        || !H2MirStmtLowerParseSimpleInt(c, initValueNode, &initValue) || initValue != 0)
+    {
+        return 0;
+    }
+    *outNameStart = init->dataStart;
+    *outNameEnd = init->dataEnd;
+    return 1;
+}
+
+static int H2MirStmtLowerActivePackForCond(
+    const H2MirStmtLower* c, int32_t condNode, uint32_t indexStart, uint32_t indexEnd) {
+    const H2AstNode* cond;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    if (c == NULL || condNode < 0 || (uint32_t)condNode >= c->ast->len) {
+        return 0;
+    }
+    cond = &c->ast->nodes[condNode];
+    if (cond->kind != H2Ast_BINARY || (H2TokenKind)cond->op != H2Tok_LT) {
+        return 0;
+    }
+    lhsNode = cond->firstChild;
+    rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+    return rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
+        && H2MirStmtLowerIdentMatchesSlice(c, lhsNode, indexStart, indexEnd)
+        && H2MirStmtLowerIsLenActivePackCall(c, rhsNode);
+}
+
+static int H2MirStmtLowerActivePackForPost(
+    const H2MirStmtLower* c, int32_t postNode, uint32_t indexStart, uint32_t indexEnd) {
+    const H2AstNode* post;
+    int32_t          lhsNode;
+    int32_t          rhsNode;
+    int64_t          stepValue = 0;
+    if (c == NULL || postNode < 0 || (uint32_t)postNode >= c->ast->len) {
+        return 0;
+    }
+    post = &c->ast->nodes[postNode];
+    if (post->kind != H2Ast_BINARY || (H2TokenKind)post->op != H2Tok_ADD_ASSIGN) {
+        return 0;
+    }
+    lhsNode = post->firstChild;
+    rhsNode = lhsNode >= 0 ? c->ast->nodes[lhsNode].nextSibling : -1;
+    return rhsNode >= 0 && c->ast->nodes[rhsNode].nextSibling < 0
+        && H2MirStmtLowerIdentMatchesSlice(c, lhsNode, indexStart, indexEnd)
+        && H2MirStmtLowerParseSimpleInt(c, rhsNode, &stepValue) && stepValue == 1;
+}
+
+static int H2MirStmtLowerLastInstIsReturn(const H2MirStmtLower* c) {
+    const H2MirFunction* fn;
+    const H2MirInst*     inst;
+    if (c == NULL || c->functionIndex >= c->builder.funcLen) {
+        return 0;
+    }
+    fn = &c->builder.funcs[c->functionIndex];
+    if (fn->instLen == 0u) {
+        return 0;
+    }
+    inst = &c->builder.insts[fn->instStart + fn->instLen - 1u];
+    return inst->op == H2MirOp_RETURN || inst->op == H2MirOp_RETURN_VOID;
+}
+
 static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
     const H2AstNode* s = &c->ast->nodes[stmtNode];
     int32_t          parts[4];
@@ -3281,23 +3898,26 @@ static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
                 c->ast->nodes[sourceNode].dataEnd,
                 &sourceTypeRef)
             && sourceTypeRef < c->builder.typeLen
-            && H2MirTypeRefIsFixedArrayStr(&c->builder.types[sourceTypeRef]))
+            && (H2MirTypeRefIsFixedArrayStr(&c->builder.types[sourceTypeRef])
+                || (H2MirTypeRefIsFixedArray(&c->builder.types[sourceTypeRef])
+                    && H2MirTypeRefIntKind(&c->builder.types[sourceTypeRef]) == H2MirIntKind_I32)))
         {
             H2MirTypeRef intType = { 0 };
-            H2MirTypeRef strRefType = { 0 };
+            H2MirTypeRef valueType = { 0 };
             uint32_t     idxSlot = UINT32_MAX;
-            uint32_t     strValueSlot = UINT32_MAX;
+            uint32_t     valueSlot = UINT32_MAX;
             uint32_t     loopLen = H2MirTypeRefFixedArrayCount(&c->builder.types[sourceTypeRef]);
             uint32_t     incrStartPc;
+            int isStringArray = H2MirTypeRefIsFixedArrayStr(&c->builder.types[sourceTypeRef]);
 
             intType.astNode = UINT32_MAX;
             intType.sourceRef = UINT32_MAX;
             intType.flags = H2MirTypeScalar_I32;
             intType.aux = H2MirTypeAuxMakeScalarInt(H2MirIntKind_I32);
-            strRefType.astNode = UINT32_MAX;
-            strRefType.sourceRef = UINT32_MAX;
-            strRefType.flags = H2MirTypeFlag_STR_REF;
-            strRefType.aux = 0u;
+            valueType.astNode = UINT32_MAX;
+            valueType.sourceRef = UINT32_MAX;
+            valueType.flags = isStringArray ? H2MirTypeFlag_STR_REF : H2MirTypeScalar_I32;
+            valueType.aux = isStringArray ? 0u : H2MirTypeAuxMakeScalarInt(H2MirIntKind_I32);
             if (H2MirStmtLowerPushLocalWithTypeRefIndex(
                     c, 0, 0, 0, 0, 0, sourceTypeRef, -1, &sourceSlot)
                     != 0
@@ -3309,9 +3929,9 @@ static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
                        1,
                        0,
                        0,
-                       &strRefType,
+                       &valueType,
                        -1,
-                       &strValueSlot)
+                       &valueSlot)
                        != 0)
             {
                 c->localLen = scopeMark;
@@ -3353,7 +3973,7 @@ static int H2MirStmtLowerForIn(H2MirStmtLower* c, int32_t stmtNode) {
                        != 0
                 || H2MirStmtLowerAppendInst(c, H2MirOp_INDEX, 0, 0, s->start, s->end, NULL) != 0
                 || H2MirStmtLowerAppendInst(
-                       c, H2MirOp_LOCAL_STORE, 0, strValueSlot, s->start, s->end, NULL)
+                       c, H2MirOp_LOCAL_STORE, 0, valueSlot, s->start, s->end, NULL)
                        != 0)
             {
                 c->localLen = scopeMark;
@@ -3585,6 +4205,43 @@ static int H2MirStmtLowerFor(H2MirStmtLower* c, int32_t stmtNode) {
                 c->supported = 0;
                 return 0;
             }
+        }
+    }
+    if (hasSemicolons && c->activePackNameEnd > c->activePackNameStart) {
+        uint32_t indexStart = 0;
+        uint32_t indexEnd = 0;
+        if (H2MirStmtLowerActivePackForInit(c, initNode, &indexStart, &indexEnd)
+            && H2MirStmtLowerActivePackForCond(c, condNode, indexStart, indexEnd)
+            && H2MirStmtLowerActivePackForPost(c, postNode, indexStart, indexEnd))
+        {
+            uint32_t savedIndexStart = c->activePackIndexNameStart;
+            uint32_t savedIndexEnd = c->activePackIndexNameEnd;
+            uint32_t savedIndexValue = c->activePackIndexValue;
+            uint8_t  savedIndexActive = c->activePackIndexActive;
+            uint32_t packIndex;
+            c->activePackIndexNameStart = indexStart;
+            c->activePackIndexNameEnd = indexEnd;
+            c->activePackIndexActive = 1;
+            for (packIndex = 0; packIndex < c->activePackParamCount; packIndex++) {
+                c->activePackIndexValue = packIndex;
+                if (H2MirStmtLowerBlock(c, bodyNode) != 0 || !c->supported) {
+                    c->activePackIndexNameStart = savedIndexStart;
+                    c->activePackIndexNameEnd = savedIndexEnd;
+                    c->activePackIndexValue = savedIndexValue;
+                    c->activePackIndexActive = savedIndexActive;
+                    c->localLen = scopeMark;
+                    return c->supported ? -1 : 0;
+                }
+                if (H2MirStmtLowerLastInstIsReturn(c)) {
+                    break;
+                }
+            }
+            c->activePackIndexNameStart = savedIndexStart;
+            c->activePackIndexNameEnd = savedIndexEnd;
+            c->activePackIndexValue = savedIndexValue;
+            c->activePackIndexActive = savedIndexActive;
+            c->localLen = scopeMark;
+            return 0;
         }
     }
     if (initNode >= 0) {
@@ -3974,13 +4631,26 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
             }
             if (rhsCount == lhsCount) {
                 for (i = 0; i < rhsCount; i++) {
-                    int32_t  rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
-                    uint32_t elemCount = 0;
-                    int isStrArrayLit = H2MirStmtLowerArrayLitAllStrings(c, rhsExpr, &elemCount);
-                    if (isStrArrayLit
-                        && H2MirStmtLowerAddFixedStrArrayType(c, elemCount, &rhsTypeRefs[i]) != 0)
-                    {
-                        return -1;
+                    int32_t      rhsExpr = H2MirStmtLowerAstListItemAt(c->ast, rhsList, i);
+                    uint32_t     elemCount = 0;
+                    H2MirIntKind elemKind = H2MirIntKind_NONE;
+                    int          isTypedArrayLit =
+                        H2MirStmtLowerArrayLitAllStrings(c, rhsExpr, &elemCount)
+                        || H2MirStmtLowerArrayLitAllInts(c, rhsExpr, &elemCount, &elemKind);
+                    if (isTypedArrayLit) {
+                        if (elemKind == H2MirIntKind_NONE) {
+                            if (H2MirStmtLowerAddFixedStrArrayType(c, elemCount, &rhsTypeRefs[i])
+                                != 0)
+                            {
+                                return -1;
+                            }
+                        } else if (
+                            H2MirStmtLowerAddFixedIntArrayType(
+                                c, elemKind, elemCount, &rhsTypeRefs[i])
+                            != 0)
+                        {
+                            return -1;
+                        }
                     }
                     if (rhsExpr < 0
                         || (rhsTypeRefs[i] != UINT32_MAX
@@ -3991,9 +4661,8 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
                     {
                         return rhsExpr < 0 ? 0 : -1;
                     }
-                    if (isStrArrayLit) {
-                        if (H2MirStmtLowerArrayLitStrExprWithTypeRef(c, rhsExpr, rhsTypeRefs[i])
-                                != 0
+                    if (isTypedArrayLit) {
+                        if (H2MirStmtLowerArrayLitExprWithTypeRef(c, rhsExpr, rhsTypeRefs[i]) != 0
                             || !c->supported)
                         {
                             return c->supported ? -1 : 0;
@@ -4135,6 +4804,10 @@ static int H2MirStmtLowerStmt(H2MirStmtLower* c, int32_t stmtNode) {
             uint32_t slot = 0;
             if (firstChild < 0) {
                 c->supported = 0;
+                return 0;
+            }
+            if (c->activePackParamCount > 0u && H2MirStmtLowerIsCompileTimeTypeofCall(c, initNode))
+            {
                 return 0;
             }
             if (c->ast->nodes[firstChild].kind == H2Ast_NAME_LIST) {
@@ -4332,6 +5005,12 @@ int H2MirLowerAppendSimpleFunctionWithOptions(
     c.captures = options != NULL ? options->captures : NULL;
     c.captureCount = options != NULL ? options->captureCount : 0u;
     c.functionValueEntry = options != NULL ? options->functionValueEntry : 0;
+    c.optionParams = options != NULL ? options->params : NULL;
+    c.optionParamCount = options != NULL ? options->paramCount : 0u;
+    c.activePackNameStart = options != NULL ? options->activePackNameStart : 0u;
+    c.activePackNameEnd = options != NULL ? options->activePackNameEnd : 0u;
+    c.activePackParamStart = options != NULL ? options->activePackParamStart : 0u;
+    c.activePackParamCount = options != NULL ? options->activePackParamCount : 0u;
     c.builder = *builder;
     c.functionReturnTypeNode = -1;
     sourceRef.src = src;
@@ -4370,7 +5049,28 @@ int H2MirLowerAppendSimpleFunctionWithOptions(
         return -1;
     }
 
-    if (fnNode >= 0 && (uint32_t)fnNode < ast->len) {
+    if (c.optionParams != NULL) {
+        uint32_t paramIndex;
+        for (paramIndex = 0; paramIndex < c.optionParamCount; paramIndex++) {
+            uint32_t slot = 0;
+            if (c.optionParams[paramIndex].typeRef >= c.builder.typeLen
+                || H2MirStmtLowerPushLocalWithTypeRefIndex(
+                       &c,
+                       c.optionParams[paramIndex].nameStart,
+                       c.optionParams[paramIndex].nameEnd,
+                       c.optionParams[paramIndex].mutable,
+                       1,
+                       0,
+                       c.optionParams[paramIndex].typeRef,
+                       -1,
+                       &slot)
+                       != 0)
+            {
+                return -1;
+            }
+            c.builder.funcs[c.functionIndex].paramCount++;
+        }
+    } else if (fnNode >= 0 && (uint32_t)fnNode < ast->len) {
         child = ast->nodes[fnNode].firstChild;
         while (child >= 0) {
             if (ast->nodes[child].kind == H2Ast_PARAM) {

@@ -12922,7 +12922,19 @@ int EmitShortAssignStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             directElemType.hasArrayLen = 0;
             directElemType.arrayLen = 0;
             if (!TypeRefIsStr(&directElemType)) {
-                goto skip_direct_array_decl;
+                if (localName == NULL || EnsureAnonTypeVisible(c, &directType, depth) != 0) {
+                    return -1;
+                }
+                EmitIndent(c, depth);
+                if (EmitTypeRefWithName(c, &directType, localName) != 0
+                    || BufAppendCStr(&c->out, " = ") != 0
+                    || EmitArrayLiteral(c, rhsNode, &directType) != 0
+                    || BufAppendCStr(&c->out, ";\n") != 0
+                    || AddLocal(c, localName, directType) != 0)
+                {
+                    return -1;
+                }
+                return 0;
             }
             directElemType.baseName = "__hop_str";
             if (localName == NULL || EnsureAnonTypeVisible(c, &directType, depth) != 0) {
@@ -12939,7 +12951,6 @@ int EmitShortAssignStmt(H2CBackendC* c, int32_t nodeId, uint32_t depth) {
             return 0;
         }
     }
-skip_direct_array_decl:
 
     if (rhsCount == nameCount) {
         for (i = 0; i < nameCount; i++) {

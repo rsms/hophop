@@ -1,0 +1,6 @@
+// Verifies direct i32 print works through the wasm logger path.
+fn main() {
+	print(-3)
+	print(0)
+	print(42)
+}

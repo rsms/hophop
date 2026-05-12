@@ -534,6 +534,8 @@ static int HOPEvalMirMatchQualifiedCallBaseSlice(
     return found;
 }
 
+static int HOPEvalFunctionHasTypeParams(const HOPEvalFunction* fn);
+
 static int HOPEvalMirResolveQualifiedCallTargetInNode(
     const HOPEvalMirLowerCtx* c,
     const H2Package*          currentPkg,
@@ -583,8 +585,30 @@ static int HOPEvalMirResolveQualifiedCallTargetInNode(
     {
         return 0;
     }
+    if (HOPEvalFunctionHasTypeParams(&c->p->funcs[(uint32_t)fnIndex])) {
+        return 0;
+    }
     *outEvalFnIndex = (uint32_t)fnIndex;
     return 1;
+}
+
+static int HOPEvalFunctionHasTypeParams(const HOPEvalFunction* fn) {
+    const H2Ast* ast;
+    int32_t      child;
+    if (fn == NULL || fn->file == NULL || fn->fnNode < 0
+        || (uint32_t)fn->fnNode >= fn->file->ast.len)
+    {
+        return 0;
+    }
+    ast = &fn->file->ast;
+    child = ast->nodes[fn->fnNode].firstChild;
+    while (child >= 0 && (uint32_t)child < ast->len) {
+        if (ast->nodes[child].kind == H2Ast_TYPE_PARAM) {
+            return 1;
+        }
+        child = ast->nodes[child].nextSibling;
+    }
+    return 0;
 }
 
 static int HOPEvalMirResolveDirectCallTarget(
@@ -629,6 +653,9 @@ static int HOPEvalMirResolveDirectCallTarget(
     if (c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn) {
         return 0;
     }
+    if (HOPEvalFunctionHasTypeParams(&c->p->funcs[(uint32_t)targetFnIndex])) {
+        return 0;
+    }
     *outEvalFnIndex = (uint32_t)targetFnIndex;
     return 1;
 }
@@ -664,6 +691,9 @@ static int HOPEvalMirResolvePlainDirectCallTargetForFile(
     if (targetFnIndex < 0 || (uint32_t)targetFnIndex >= c->p->funcLen
         || c->p->funcs[(uint32_t)targetFnIndex].isBuiltinPackageFn)
     {
+        return 0;
+    }
+    if (HOPEvalFunctionHasTypeParams(&c->p->funcs[(uint32_t)targetFnIndex])) {
         return 0;
     }
     *outEvalFnIndex = (uint32_t)targetFnIndex;

@@ -39,6 +39,11 @@ pub fn print(message *str) {
 	context.logger.handler(&context.logger, message, 0, flags)
 }
 
+pub fn print() {
+	var flags LogFlags = 0
+	context.logger.handler(&context.logger, "", 0, flags)
+}
+
 pub fn print(args ...anytype) {
 	const {
 		for var ai int = 0; ai < len(args); ai += 1 {
@@ -48,13 +53,7 @@ pub fn print(args ...anytype) {
 			}
 		}
 	}
-	if len(args) == 0 {
-		var flags LogFlags = 0
-		context.logger.handler(&context.logger, "", 0, flags)
-		return
-	}
-	var empty [u8 0]
-	var n     int      = fmt_write_print_impl(empty, args...)
+	var n     int      = fmt_measure_print_impl(args...)
 	var out   *str     = alloc str{ len: n }
 	var cap   int      = n + 1
 	var flags LogFlags = 0

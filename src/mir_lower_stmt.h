@@ -16,6 +16,13 @@ typedef int (*H2MirLowerFunctionValueFn)(
     H2Diag* _Nullable diag);
 
 typedef struct {
+    uint32_t nameStart;
+    uint32_t nameEnd;
+    uint32_t typeRef;
+    int mutable;
+} H2MirLowerParam;
+
+typedef struct {
     H2MirLowerConstExprFn _Nullable lowerConstExpr;
     void* _Nullable lowerConstExprCtx;
     H2MirLowerFunctionValueFn _Nullable lowerFunctionValue;
@@ -23,6 +30,12 @@ typedef struct {
     const H2MirCapture* _Nullable captures;
     uint32_t captureCount;
     int      functionValueEntry;
+    const H2MirLowerParam* _Nullable params;
+    uint32_t paramCount;
+    uint32_t activePackNameStart;
+    uint32_t activePackNameEnd;
+    uint32_t activePackParamStart;
+    uint32_t activePackParamCount;
 } H2MirLowerOptions;
 
 int H2MirLowerSimpleFunction(

@@ -2,6 +2,7 @@
 #include "codegen.h"
 #include <stdbool.h>
 #if H2_LIBC
+    #include <stdio.h>
     #include <stdlib.h>
 #endif
 
@@ -914,6 +915,7 @@ static int  WasmTempOffsetForPc(
     const HOPWasmEmitState* state,
     uint32_t                pc,
     uint32_t* _Nonnull outOffset);
+static int WasmEmitI32Load(HOPWasmBuf* body);
 
 static uint8_t WasmTypeKindSlotCount(uint8_t typeKind) {
     switch (typeKind) {
@@ -1135,6 +1137,29 @@ static bool WasmTypeKindIsSlice(uint8_t typeKind) {
         || typeKind == HOPWasmType_SLICE_AGG;
 }
 
+static uint8_t WasmArrayViewTypeKindSliceTypeKind(uint8_t typeKind) {
+    switch (typeKind) {
+        case HOPWasmType_ARRAY_VIEW_U8:  return HOPWasmType_SLICE_U8;
+        case HOPWasmType_ARRAY_VIEW_I8:  return HOPWasmType_SLICE_I8;
+        case HOPWasmType_ARRAY_VIEW_U16: return HOPWasmType_SLICE_U16;
+        case HOPWasmType_ARRAY_VIEW_I16: return HOPWasmType_SLICE_I16;
+        case HOPWasmType_ARRAY_VIEW_U32: return HOPWasmType_SLICE_U32;
+        case HOPWasmType_ARRAY_VIEW_I32: return HOPWasmType_SLICE_I32;
+        default:                         return HOPWasmType_VOID;
+    }
+}
+
+static bool WasmCallArgCanAdaptArrayViewToSlice(
+    const H2MirProgram* program,
+    uint8_t             expectedTypeKind,
+    uint8_t             actualTypeKind,
+    uint32_t            actualTypeRef) {
+    return program != NULL && actualTypeRef < program->typeLen
+        && H2MirTypeRefIsFixedArray(&program->types[actualTypeRef])
+        && WasmArrayViewTypeKindSliceTypeKind(actualTypeKind) == expectedTypeKind
+        && H2MirTypeRefFixedArrayCount(&program->types[actualTypeRef]) <= INT32_MAX;
+}
+
 static bool WasmTypeKindIsRawSingleSlot(uint8_t typeKind) {
     return typeKind == HOPWasmType_I32 || typeKind == HOPWasmType_I64
         || WasmTypeKindIsPointer(typeKind) || WasmTypeKindIsArrayView(typeKind)
@@ -1185,6 +1210,11 @@ static bool WasmValueKindCompatibleWithLocal(
     if (actualTypeKind == HOPWasmType_I32 && WasmTypeKindIsPointer(expectedTypeKind)) {
         return true;
     }
+    if (expectedTypeKind == HOPWasmType_I32
+        && (WasmTypeKindIsPointer(actualTypeKind) || WasmTypeKindIsArrayView(actualTypeKind)))
+    {
+        return true;
+    }
     if (actualTypeKind == HOPWasmType_STR_REF && expectedTypeKind == HOPWasmType_SLICE_U8) {
         return true;
     }
@@ -1203,6 +1233,22 @@ static int WasmAdaptCallArgValue(
     if (actualTypeKind == HOPWasmType_I32 && WasmTypeKindIsPointer(expectedTypeKind)) {
         return 0;
     }
+    if (expectedTypeKind == HOPWasmType_I32
+        && (WasmTypeKindIsPointer(actualTypeKind) || WasmTypeKindIsArrayView(actualTypeKind)))
+    {
+        return 0;
+    }
+    if (WasmCallArgCanAdaptArrayViewToSlice(
+            program, expectedTypeKind, actualTypeKind, actualTypeRef))
+    {
+        return WasmAppendByte(body, 0x41u) != 0
+                    || WasmAppendSLEB32(
+                           body,
+                           (int32_t)H2MirTypeRefFixedArrayCount(&program->types[actualTypeRef]))
+                           != 0
+                 ? -1
+                 : 0;
+    }
     if ((actualTypeKind == HOPWasmType_I32 || WasmTypeKindIsPointer(actualTypeKind)
          || WasmTypeKindIsArrayView(actualTypeKind))
         && expectedTypeKind == HOPWasmType_I64)
@@ -1214,6 +1260,65 @@ static int WasmAdaptCallArgValue(
                 : 0xacu);
     }
     return -1;
+}
+
+static int WasmEmitStrPtrAsSliceU8(HOPWasmBuf* body, const HOPWasmEmitState* state) {
+    if (body == NULL || state == NULL || !state->usesFrame || state->scratch0Local == UINT16_MAX) {
+        return -1;
+    }
+    if (WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x45u) != 0 || WasmAppendByte(body, 0x04u) != 0
+        || WasmAppendByte(body, 0x7fu) != 0 || WasmAppendByte(body, 0x41u) != 0
+        || WasmAppendSLEB32(body, 0) != 0 || WasmAppendByte(body, 0x05u) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmEmitI32Load(body) != 0 || WasmAppendByte(body, 0x0bu) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x45u) != 0 || WasmAppendByte(body, 0x04u) != 0
+        || WasmAppendByte(body, 0x7fu) != 0 || WasmAppendByte(body, 0x41u) != 0
+        || WasmAppendSLEB32(body, 0) != 0 || WasmAppendByte(body, 0x05u) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 4) != 0
+        || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
+        || WasmAppendByte(body, 0x0bu) != 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+static bool WasmArrayViewMatchesSlice(uint8_t arrayType, uint8_t sliceType) {
+    switch (arrayType) {
+        case HOPWasmType_ARRAY_VIEW_U8:  return sliceType == HOPWasmType_SLICE_U8;
+        case HOPWasmType_ARRAY_VIEW_I8:  return sliceType == HOPWasmType_SLICE_I8;
+        case HOPWasmType_ARRAY_VIEW_U16: return sliceType == HOPWasmType_SLICE_U16;
+        case HOPWasmType_ARRAY_VIEW_I16: return sliceType == HOPWasmType_SLICE_I16;
+        case HOPWasmType_ARRAY_VIEW_U32: return sliceType == HOPWasmType_SLICE_U32;
+        case HOPWasmType_ARRAY_VIEW_I32: return sliceType == HOPWasmType_SLICE_I32;
+        default:                         return false;
+    }
+}
+
+static int WasmEmitArrayViewAsSlice(
+    HOPWasmBuf*             body,
+    const HOPWasmEmitState* state,
+    const H2MirProgram*     program,
+    uint32_t                typeRef) {
+    uint32_t count;
+    if (body == NULL || state == NULL || program == NULL || typeRef >= program->typeLen
+        || !H2MirTypeRefIsFixedArray(&program->types[typeRef]) || !state->usesFrame
+        || state->scratch0Local == UINT16_MAX)
+    {
+        return -1;
+    }
+    count = H2MirTypeRefFixedArrayCount(&program->types[typeRef]);
+    if (WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, (int32_t)count) != 0)
+    {
+        return -1;
+    }
+    return 0;
 }
 
 static uint8_t WasmTypeKindWasmValueType(uint8_t typeKind) {
@@ -2375,9 +2480,7 @@ static int WasmPrepareFunctionState(
             WasmSetDiag(
                 diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, local->nameStart, local->nameEnd);
             if (diag != NULL) {
-                diag->detail =
-                    "only scalar, pointer-like, array-view, slice, aggregate, and &str locals "
-                    "are supported";
+                diag->detail = "unsupported local type";
             }
             return -1;
         }
@@ -2413,6 +2516,9 @@ static int WasmPrepareFunctionState(
             uint32_t slotSize = WasmFrameSlotSize(typeKind);
             if (state->localStorage[i] == HOPWasmLocalStorage_ARRAY) {
                 slotSize = WasmTypeKindElementSize(typeKind) * state->arrayCounts[i];
+                if (slotSize == 0u) {
+                    slotSize = 1u;
+                }
             } else if (state->localStorage[i] == HOPWasmLocalStorage_AGG) {
                 int byteSize = WasmTypeByteSize(program, local->typeRef);
                 if (byteSize < 0) {
@@ -2476,10 +2582,7 @@ static int WasmPrepareFunctionState(
         }
         for (tempPc = 0; tempPc < fn->instLen; tempPc++) {
             const H2MirInst* inst = &program->insts[fn->instStart + tempPc];
-            if (inst->op == H2MirOp_ALLOC_NEW
-                && ((inst->tok & H2AstFlag_ALLOC_HAS_EXPLICIT_ALLOCATOR) != 0u
-                    || WasmProgramNeedsRootAllocator(program, NULL)))
-            {
+            if (inst->op == H2MirOp_ALLOC_NEW) {
                 state->frameSize = WasmAlign4(state->frameSize);
                 state->allocCallTempOffset = state->frameSize;
                 state->frameSize += 4u;
@@ -2716,6 +2819,60 @@ static int WasmEmitScaleIndex(HOPWasmBuf* body, uint32_t elemSize) {
     if (WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, (int32_t)elemSize) != 0
         || WasmAppendByte(body, 0x6cu) != 0)
     {
+        return -1;
+    }
+    return 0;
+}
+
+static int WasmEmitSliceEquality(
+    HOPWasmBuf* body, const HOPWasmEmitState* state, uint8_t typeKind, int invert) {
+    uint32_t elemSize = WasmTypeKindElementSize(typeKind);
+    if (body == NULL || state == NULL || !WasmTypeKindIsSlice(typeKind) || elemSize == 0u
+        || typeKind == HOPWasmType_SLICE_AGG)
+    {
+        return -1;
+    }
+    if (WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch3Local) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch2Local) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch1Local) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch0Local) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch1Local) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch3Local) != 0
+        || WasmAppendByte(body, 0x46u) != 0 || WasmAppendByte(body, 0x21u) != 0
+        || WasmAppendULEB(body, state->scratch5Local) != 0 || WasmAppendByte(body, 0x02u) != 0
+        || WasmAppendByte(body, 0x40u) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch5Local) != 0 || WasmAppendByte(body, 0x45u) != 0
+        || WasmAppendByte(body, 0x0du) != 0 || WasmAppendULEB(body, 0u) != 0
+        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch4Local) != 0
+        || WasmAppendByte(body, 0x03u) != 0 || WasmAppendByte(body, 0x40u) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch4Local) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch1Local) != 0
+        || WasmAppendByte(body, 0x4fu) != 0 || WasmAppendByte(body, 0x0du) != 0
+        || WasmAppendULEB(body, 1u) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch0Local) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch4Local) != 0
+        || WasmEmitScaleIndex(body, elemSize) != 0 || WasmAppendByte(body, 0x6au) != 0
+        || WasmEmitTypedLoad(body, typeKind) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch2Local) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch4Local) != 0
+        || WasmEmitScaleIndex(body, elemSize) != 0 || WasmAppendByte(body, 0x6au) != 0
+        || WasmEmitTypedLoad(body, typeKind) != 0 || WasmAppendByte(body, 0x47u) != 0
+        || WasmAppendByte(body, 0x04u) != 0 || WasmAppendByte(body, 0x40u) != 0
+        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch5Local) != 0
+        || WasmAppendByte(body, 0x0cu) != 0 || WasmAppendULEB(body, 1u) != 0
+        || WasmAppendByte(body, 0x0bu) != 0 || WasmAppendByte(body, 0x20u) != 0
+        || WasmAppendULEB(body, state->scratch4Local) != 0 || WasmAppendByte(body, 0x41u) != 0
+        || WasmAppendSLEB32(body, 1) != 0 || WasmAppendByte(body, 0x6au) != 0
+        || WasmAppendByte(body, 0x21u) != 0 || WasmAppendULEB(body, state->scratch4Local) != 0
+        || WasmAppendByte(body, 0x0cu) != 0 || WasmAppendULEB(body, 0u) != 0
+        || WasmAppendByte(body, 0x0bu) != 0 || WasmAppendByte(body, 0x0bu) != 0
+        || WasmAppendByte(body, 0x20u) != 0 || WasmAppendULEB(body, state->scratch5Local) != 0)
+    {
+        return -1;
+    }
+    if (invert && WasmAppendByte(body, 0x45u) != 0) {
         return -1;
     }
     return 0;
@@ -3348,7 +3505,7 @@ static int WasmTempTypeRefForInst(const H2MirProgram* program, const H2MirInst* 
     }
     if (inst->op == H2MirOp_TUPLE_MAKE) {
         return (inst->aux < program->typeLen
-                && H2MirTypeRefIsFixedArrayStr(&program->types[inst->aux]))
+                && H2MirTypeRefIsFixedArray(&program->types[inst->aux]))
                  ? (int)inst->aux
                  : -1;
     }
@@ -4739,6 +4896,51 @@ static int WasmEmitFunctionRange(
                     }
                     break;
                 }
+                if (lhsType == HOPWasmType_I64 && rhsType == HOPWasmType_I32) {
+                    uint8_t resultType =
+                        (inst->tok == H2Tok_EQ || inst->tok == H2Tok_NEQ || inst->tok == H2Tok_LT
+                         || inst->tok == H2Tok_GT || inst->tok == H2Tok_LTE
+                         || inst->tok == H2Tok_GTE)
+                            ? HOPWasmType_I32
+                            : HOPWasmType_I64;
+                    if (WasmAdaptCallArgValue(body, program, HOPWasmType_I64, rhsType, rhsTypeRef)
+                            != 0
+                        || WasmEmitBinaryI64(body, inst->tok, inst->start, inst->end, diag) != 0
+                        || WasmStackPushEx(state, resultType, UINT32_MAX) != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
+                if (lhsType == HOPWasmType_I32 && rhsType == HOPWasmType_I64) {
+                    uint8_t resultType =
+                        (inst->tok == H2Tok_EQ || inst->tok == H2Tok_NEQ || inst->tok == H2Tok_LT
+                         || inst->tok == H2Tok_GT || inst->tok == H2Tok_LTE
+                         || inst->tok == H2Tok_GTE)
+                            ? HOPWasmType_I32
+                            : HOPWasmType_I64;
+                    if (state->scratchI64Local >= state->wasmLocalValueCount) {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "unsupported mixed i32/i64 binary";
+                        }
+                        return -1;
+                    }
+                    if (WasmAppendByte(body, 0x21u) != 0
+                        || WasmAppendULEB(body, state->scratchI64Local) != 0
+                        || WasmAdaptCallArgValue(
+                               body, program, HOPWasmType_I64, lhsType, lhsTypeRef)
+                               != 0
+                        || WasmAppendByte(body, 0x20u) != 0
+                        || WasmAppendULEB(body, state->scratchI64Local) != 0
+                        || WasmEmitBinaryI64(body, inst->tok, inst->start, inst->end, diag) != 0
+                        || WasmStackPushEx(state, resultType, UINT32_MAX) != 0)
+                    {
+                        return -1;
+                    }
+                    break;
+                }
                 if ((inst->tok == H2Tok_EQ || inst->tok == H2Tok_NEQ)
                     && ((WasmTypeKindIsRawSingleSlot(lhsType) && rhsType == HOPWasmType_I32)
                         || (lhsType == HOPWasmType_I32 && WasmTypeKindIsRawSingleSlot(rhsType))))
@@ -4780,6 +4982,21 @@ static int WasmEmitFunctionRange(
                     if (WasmEmitBinaryI32(body, inst->tok, inst->start, inst->end, diag) != 0
                         || WasmStackPushEx(state, HOPWasmType_I32, UINT32_MAX) != 0)
                     {
+                        return -1;
+                    }
+                    break;
+                }
+                if ((inst->tok == H2Tok_EQ || inst->tok == H2Tok_NEQ) && lhsType == rhsType
+                    && WasmTypeKindIsSlice(lhsType))
+                {
+                    if (WasmEmitSliceEquality(body, state, lhsType, inst->tok == H2Tok_NEQ) != 0
+                        || WasmStackPushEx(state, HOPWasmType_I32, UINT32_MAX) != 0)
+                    {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "unsupported slice equality";
+                        }
                         return -1;
                     }
                     break;
@@ -4893,6 +5110,7 @@ static int WasmEmitFunctionRange(
                     || ((WasmTypeKindIsPointer(valueType) || WasmTypeKindIsArrayView(valueType))
                         && targetType == HOPWasmType_I32)
                     || (valueType == HOPWasmType_STR_REF && targetType == HOPWasmType_STR_PTR)
+                    || (valueType == HOPWasmType_SLICE_U8 && targetType == HOPWasmType_STR_REF)
                     || (valueType == HOPWasmType_AGG_REF && targetType == HOPWasmType_AGG_REF))
                 {
                     if (WasmStackPushEx(state, targetType, inst->aux) != 0) {
@@ -4952,12 +5170,50 @@ static int WasmEmitFunctionRange(
             case H2MirOp_TUPLE_MAKE: {
                 uint32_t tempOffset = UINT32_MAX;
                 uint32_t elemCount = H2MirCallArgCountFromTok(inst->tok);
+                uint8_t  arrayType = HOPWasmType_VOID;
+                uint32_t elemSize = 0u;
+                uint32_t typeRef = inst->aux;
                 uint32_t i;
-                if (!state->usesFrame || inst->aux >= program->typeLen
-                    || !H2MirTypeRefIsFixedArrayStr(&program->types[inst->aux])
-                    || elemCount != H2MirTypeRefFixedArrayCount(&program->types[inst->aux])
-                    || WasmTempOffsetForPc(program, fn, state, pc, &tempOffset) != 0)
+                if (typeRef >= program->typeLen && pc + 1u < fn->instLen) {
+                    const H2MirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
+                    if (nextInst->op == H2MirOp_LOCAL_STORE && nextInst->aux < fn->localCount) {
+                        typeRef = state->localTypeRefs[nextInst->aux];
+                    }
+                }
+                if (!state->usesFrame || typeRef >= program->typeLen
+                    || !H2MirTypeRefIsFixedArray(&program->types[typeRef])
+                    || elemCount != H2MirTypeRefFixedArrayCount(&program->types[typeRef])
+                    || !WasmTypeKindFromMirType(program, typeRef, &arrayType)
+                    || !WasmTypeKindIsArrayView(arrayType))
                 {
+                    WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                    if (diag != NULL) {
+                        diag->detail = "unsupported tuple make";
+                    }
+                    return -1;
+                }
+                if (WasmTempOffsetForPc(program, fn, state, pc, &tempOffset) != 0) {
+                    tempOffset = UINT32_MAX;
+                    if (pc + 1u < fn->instLen) {
+                        const H2MirInst* nextInst = &program->insts[fn->instStart + pc + 1u];
+                        if (nextInst->op == H2MirOp_LOCAL_STORE && nextInst->aux < fn->localCount
+                            && state->localStorage[nextInst->aux] == HOPWasmLocalStorage_ARRAY
+                            && state->localTypeRefs[nextInst->aux] == typeRef)
+                        {
+                            tempOffset = state->frameOffsets[nextInst->aux];
+                        }
+                    }
+                    if (tempOffset == UINT32_MAX) {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "unsupported tuple make";
+                        }
+                        return -1;
+                    }
+                }
+                elemSize = WasmTypeKindElementSize(arrayType);
+                if (elemSize == 0u) {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
                         diag->detail = "unsupported tuple make";
@@ -4967,20 +5223,41 @@ static int WasmEmitFunctionRange(
                 for (i = elemCount; i > 0u; i--) {
                     uint8_t  elemType = 0;
                     uint32_t elemTypeRef = UINT32_MAX;
-                    uint32_t elemOffset = tempOffset + ((i - 1u) * 8u);
-                    if (WasmStackPopEx(state, &elemType, &elemTypeRef) != 0
-                        || elemType != HOPWasmType_STR_REF || WasmAppendByte(body, 0x21u) != 0
-                        || WasmAppendULEB(body, state->scratch1Local) != 0
+                    uint32_t elemOffset = tempOffset + ((i - 1u) * elemSize);
+                    if (arrayType == HOPWasmType_ARRAY_VIEW_STR) {
+                        if (WasmStackPopEx(state, &elemType, &elemTypeRef) != 0
+                            || elemType != HOPWasmType_STR_REF || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch1Local) != 0
+                            || WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch0Local) != 0
+                            || WasmEmitAddrFromFrame(body, state, elemOffset, 0u) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch0Local) != 0
+                            || WasmEmitI32Store(body) != 0
+                            || WasmEmitAddrFromFrame(body, state, elemOffset, 4u) != 0
+                            || WasmAppendByte(body, 0x20u) != 0
+                            || WasmAppendULEB(body, state->scratch1Local) != 0
+                            || WasmEmitI32Store(body) != 0)
+                        {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            if (diag != NULL && diag->detail == NULL) {
+                                diag->detail = "unsupported tuple make";
+                            }
+                            return -1;
+                        }
+                        (void)elemTypeRef;
+                    } else if (
+                        WasmStackPopEx(state, &elemType, &elemTypeRef) != 0
+                        || WasmRequireI32Value(
+                               elemType, diag, inst->start, inst->end, "unsupported tuple make")
+                               != 0
                         || WasmAppendByte(body, 0x21u) != 0
                         || WasmAppendULEB(body, state->scratch0Local) != 0
                         || WasmEmitAddrFromFrame(body, state, elemOffset, 0u) != 0
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch0Local) != 0
-                        || WasmEmitI32Store(body) != 0
-                        || WasmEmitAddrFromFrame(body, state, elemOffset, 4u) != 0
-                        || WasmAppendByte(body, 0x20u) != 0
-                        || WasmAppendULEB(body, state->scratch1Local) != 0
-                        || WasmEmitI32Store(body) != 0)
+                        || WasmEmitTypedStore(body, arrayType) != 0)
                     {
                         WasmSetDiag(
                             diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
@@ -4989,10 +5266,9 @@ static int WasmEmitFunctionRange(
                         }
                         return -1;
                     }
-                    (void)elemTypeRef;
                 }
                 if (WasmEmitAddrFromFrame(body, state, tempOffset, 0u) != 0
-                    || WasmStackPushEx(state, HOPWasmType_ARRAY_VIEW_STR, inst->aux) != 0)
+                    || WasmStackPushEx(state, arrayType, typeRef) != 0)
                 {
                     return -1;
                 }
@@ -5211,19 +5487,34 @@ static int WasmEmitFunctionRange(
                 uint8_t  valueType = 0;
                 uint32_t valueTypeRef = UINT32_MAX;
                 if (inst->aux >= fn->localCount
-                    || WasmStackPopEx(state, &valueType, &valueTypeRef) != 0
-                    || !WasmValueKindCompatibleWithLocal(
-                        program,
-                        state->localKinds[inst->aux],
-                        valueType,
-                        state->localTypeRefs[inst->aux],
-                        valueTypeRef))
+                    || WasmStackPopEx(state, &valueType, &valueTypeRef) != 0)
                 {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
                     if (diag != NULL) {
                         diag->detail = "local store type mismatch";
                     }
                     return -1;
+                }
+                if (!WasmValueKindCompatibleWithLocal(
+                        program,
+                        state->localKinds[inst->aux],
+                        valueType,
+                        state->localTypeRefs[inst->aux],
+                        valueTypeRef))
+                {
+                    if (WasmAdaptCallArgValue(
+                            body, program, state->localKinds[inst->aux], valueType, valueTypeRef)
+                        != 0)
+                    {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "local store type mismatch";
+                        }
+                        return -1;
+                    }
+                    valueType = state->localKinds[inst->aux];
+                    valueTypeRef = state->localTypeRefs[inst->aux];
                 }
                 if (state->usesFrame) {
                     if (state->localStorage[inst->aux] == HOPWasmLocalStorage_ARRAY) {
@@ -6174,8 +6465,9 @@ static int WasmEmitFunctionRange(
                 break;
             }
             case H2MirOp_DEREF_LOAD: {
-                uint8_t refType = 0;
-                if (WasmStackPop(state, &refType) != 0) {
+                uint8_t  refType = 0;
+                uint32_t refTypeRef = UINT32_MAX;
+                if (WasmStackPopEx(state, &refType, &refTypeRef) != 0) {
                     return -1;
                 }
                 if (refType == HOPWasmType_I32_PTR || refType == HOPWasmType_U8_PTR
@@ -6204,6 +6496,13 @@ static int WasmEmitFunctionRange(
                         || WasmAppendByte(body, 0x6au) != 0 || WasmEmitI32Load(body) != 0
                         || WasmStackPush(state, HOPWasmType_STR_REF) != 0)
                     {
+                        return -1;
+                    }
+                } else if (
+                    refType == HOPWasmType_STR_REF || WasmTypeKindIsArrayView(refType)
+                    || WasmTypeKindIsSlice(refType))
+                {
+                    if (WasmStackPushEx(state, refType, refTypeRef) != 0) {
                         return -1;
                     }
                 } else {
@@ -6909,9 +7208,9 @@ static int WasmEmitFunctionRange(
                             || WasmEmitAddrFromFrame(body, state, state->allocCallTempOffset, 0u)
                                    != 0
                             || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch4Local) != 0
-                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x11u) != 0
                             || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                             || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -7048,9 +7347,9 @@ static int WasmEmitFunctionRange(
                             || WasmEmitAddrFromFrame(body, state, state->allocCallTempOffset, 0u)
                                    != 0
                             || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x20u) != 0
                             || WasmAppendULEB(body, state->scratch4Local) != 0
-                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                             || WasmAppendByte(body, 0x11u) != 0
                             || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                             || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -7169,9 +7468,9 @@ static int WasmEmitFunctionRange(
                         || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmEmitAddrFromFrame(body, state, state->allocCallTempOffset, 0u) != 0
                         || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmAppendByte(body, 0x20u) != 0
                         || WasmAppendULEB(body, state->scratch3Local) != 0
-                        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
                         || WasmAppendByte(body, 0x11u) != 0
                         || WasmAppendULEB(body, imports->allocatorIndirectTypeIndex) != 0
                         || WasmAppendByte(body, 0x00u) != 0 || WasmAppendByte(body, 0x21u) != 0
@@ -7297,9 +7596,45 @@ static int WasmEmitFunctionRange(
                     uint32_t actualSlotCount = 0u;
                     if (WasmStackPopEx(state, &argType, &argTypeRef) != 0
                         || (actualSlotCount = WasmTypeKindSlotCount(argType)) == 0u
-                        || expectedSlotCount == 0u
-                        || (actualSlotCount != expectedSlotCount
-                            && !(actualSlotCount == 1u && expectedSlotCount == 1u))
+                        || expectedSlotCount == 0u)
+                    {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL) {
+                            diag->detail = "call argument type mismatch";
+                        }
+                        return -1;
+                    }
+                    if (WasmTypeKindIsSlice(expectedType) && WasmTypeKindIsArrayView(argType)
+                        && WasmArrayViewMatchesSlice(argType, expectedType))
+                    {
+                        if (expectedSlotCount != 2u || actualSlotCount != 1u
+                            || WasmEmitArrayViewAsSlice(body, state, program, argTypeRef) != 0)
+                        {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            if (diag != NULL) {
+                                diag->detail =
+                                    "call argument fixed array to slice conversion failed";
+                            }
+                            return -1;
+                        }
+                    } else if (
+                        expectedType == HOPWasmType_SLICE_U8 && argType == HOPWasmType_STR_PTR)
+                    {
+                        if (expectedSlotCount != 2u || actualSlotCount != 1u
+                            || WasmEmitStrPtrAsSliceU8(body, state) != 0)
+                        {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            if (diag != NULL) {
+                                diag->detail = "call argument *str to *[u8] conversion failed";
+                            }
+                            return -1;
+                        }
+                    } else if (
+                        (actualSlotCount != expectedSlotCount
+                         && !(actualSlotCount == 1u && expectedSlotCount == 1u))
                         || WasmAdaptCallArgValue(body, program, expectedType, argType, argTypeRef)
                                != 0)
                     {

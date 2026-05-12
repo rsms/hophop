@@ -1528,7 +1528,9 @@ HOPEvalAggregate* _Nullable HOPEvalValueAsAggregate(const H2CTFEValue* value) {
 H2CTFEValue* _Nullable HOPEvalValueReferenceTarget(const H2CTFEValue* value);
 static void HOPEvalValueSetReference(H2CTFEValue* value, H2CTFEValue* target);
 static int  HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue, int* outIsConst);
-static int  HOPEvalZeroInitTypeNode(
+static int  HOPEvalAllocReferencedValue(
+    HOPEvalProgram* p, const H2CTFEValue* inValue, H2CTFEValue* outValue, int* outIsConst);
+static int HOPEvalZeroInitTypeNode(
     const HOPEvalProgram* p,
     const H2ParsedFile*   file,
     int32_t               typeNode,
@@ -1734,6 +1736,45 @@ static int HOPEvalCoerceValueToTypeNode(
     sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
     if (type->kind == H2Ast_TYPE_FN && HOPEvalValueIsInvokableFunctionRef(sourceValue)) {
         return 0;
+    }
+    if ((type->kind == H2Ast_TYPE_REF || type->kind == H2Ast_TYPE_PTR
+         || type->kind == H2Ast_TYPE_MUTREF)
+        && type->firstChild >= 0 && (uint32_t)type->firstChild < typeFile->ast.len)
+    {
+        const H2AstNode* child = &typeFile->ast.nodes[type->firstChild];
+        HOPEvalArray*    sourceArray = HOPEvalValueAsArray(sourceValue);
+        if (sourceArray != NULL
+            && (child->kind == H2Ast_TYPE_ARRAY || child->kind == H2Ast_TYPE_VARRAY
+                || child->kind == H2Ast_TYPE_SLICE || child->kind == H2Ast_TYPE_MUTSLICE))
+        {
+            int32_t       elemTypeNode = ASTFirstChild(&typeFile->ast, type->firstChild);
+            uint32_t      viewLen = sourceArray->len;
+            HOPEvalArray* view;
+            H2CTFEValue   viewValue;
+            int           refIsConst = 0;
+            if (child->kind == H2Ast_TYPE_ARRAY
+                && (!HOPEvalParseUintSlice(
+                        typeFile->source, child->dataStart, child->dataEnd, &viewLen)
+                    || sourceArray->len > viewLen))
+            {
+                return 0;
+            }
+            view = HOPEvalAllocArrayView(
+                p,
+                sourceArray->file != NULL ? sourceArray->file : typeFile,
+                type->firstChild,
+                elemTypeNode,
+                sourceArray->elems,
+                sourceArray->len);
+            if (view == NULL) {
+                return ErrorSimple("out of memory");
+            }
+            HOPEvalValueSetArray(&viewValue, typeFile, type->firstChild, view);
+            if (HOPEvalAllocReferencedValue(p, &viewValue, inOutValue, &refIsConst) != 0) {
+                return -1;
+            }
+            return refIsConst ? 0 : -1;
+        }
     }
     if (type->kind == H2Ast_TYPE_ARRAY && sourceValue->kind == H2CTFEValue_ARRAY) {
         HOPEvalArray* sourceArray = HOPEvalValueAsArray(sourceValue);
@@ -6724,6 +6765,154 @@ static int HOPEvalBindActiveTemplateTypeValue(
     return 1;
 }
 
+static int HOPEvalTypeNodeMatchesTypeParam(
+    const HOPEvalFunction* fn, int32_t typeNode, int32_t typeParamNode) {
+    const H2Ast* ast;
+    if (fn == NULL || fn->file == NULL || typeNode < 0 || typeParamNode < 0) {
+        return 0;
+    }
+    ast = &fn->file->ast;
+    if ((uint32_t)typeNode >= ast->len || (uint32_t)typeParamNode >= ast->len
+        || ast->nodes[typeNode].kind != H2Ast_TYPE_NAME
+        || ast->nodes[typeParamNode].kind != H2Ast_TYPE_PARAM)
+    {
+        return 0;
+    }
+    return SliceEqSlice(
+        fn->file->source,
+        ast->nodes[typeNode].dataStart,
+        ast->nodes[typeNode].dataEnd,
+        fn->file->source,
+        ast->nodes[typeParamNode].dataStart,
+        ast->nodes[typeParamNode].dataEnd);
+}
+
+static int HOPEvalTypeValueFromArrayElemRuntimeValue(
+    HOPEvalProgram*                p,
+    const H2CTFEValue*             value,
+    H2CTFEValue*                   outValue,
+    const H2ParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
+    const H2CTFEValue*  sourceValue;
+    const HOPEvalArray* array;
+    if (outTypeFile != NULL) {
+        *outTypeFile = NULL;
+    }
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (p == NULL || value == NULL || outValue == NULL) {
+        return 0;
+    }
+    sourceValue = HOPEvalValueTargetOrSelf(value);
+    array = HOPEvalValueAsArray(sourceValue);
+    if (array == NULL) {
+        return 0;
+    }
+    if (array->file != NULL && array->elemTypeNode >= 0
+        && (uint32_t)array->elemTypeNode < array->file->ast.len)
+    {
+        int rc = HOPEvalTypeValueFromTypeNode(p, array->file, array->elemTypeNode, outValue);
+        if (rc > 0) {
+            if (outTypeFile != NULL) {
+                *outTypeFile = array->file;
+            }
+            if (outTypeNode != NULL) {
+                *outTypeNode = array->elemTypeNode;
+            }
+        }
+        return rc;
+    }
+    if (array->len > 0 && array->elems != NULL) {
+        const H2CTFEValue* elemValue = HOPEvalValueTargetOrSelf(&array->elems[0]);
+        int32_t            elemTypeCode = HOPEvalTypeCode_INVALID;
+        if (HOPEvalTypeCodeFromValue(elemValue, &elemTypeCode)) {
+            HOPEvalValueSetSimpleTypeValue(outValue, elemTypeCode);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int HOPEvalTypeValueFromRuntimeValue(
+    HOPEvalProgram*                p,
+    const H2CTFEValue*             value,
+    H2CTFEValue*                   outValue,
+    const H2ParsedFile* _Nullable* outTypeFile,
+    int32_t*                       outTypeNode) {
+    const H2CTFEValue* sourceValue;
+    int32_t            typeCode = HOPEvalTypeCode_INVALID;
+    if (outTypeFile != NULL) {
+        *outTypeFile = NULL;
+    }
+    if (outTypeNode != NULL) {
+        *outTypeNode = -1;
+    }
+    if (p == NULL || value == NULL || outValue == NULL) {
+        return 0;
+    }
+    if (HOPEvalTypeValueFromArrayRuntimeValue(p, value, outValue) > 0) {
+        return 1;
+    }
+    sourceValue = HOPEvalValueTargetOrSelf(value);
+    if (HOPEvalTypeCodeFromValue(sourceValue, &typeCode)) {
+        HOPEvalValueSetSimpleTypeValue(outValue, typeCode);
+        return 1;
+    }
+    return 0;
+}
+
+static int HOPEvalBindActiveTemplateFromParamArg(
+    HOPEvalProgram*        p,
+    const HOPEvalFunction* fn,
+    int32_t                typeParamNode,
+    int32_t                paramTypeNode,
+    const H2CTFEValue*     argValue) {
+    const H2Ast*        ast;
+    const H2AstNode*    paramType;
+    const H2CTFEValue*  sourceValue;
+    H2CTFEValue         typeValue;
+    const H2ParsedFile* typeFile = NULL;
+    int32_t             typeNode = -1;
+    if (p == NULL || fn == NULL || fn->file == NULL || argValue == NULL || typeParamNode < 0
+        || paramTypeNode < 0 || (uint32_t)paramTypeNode >= fn->file->ast.len)
+    {
+        return 0;
+    }
+    ast = &fn->file->ast;
+    paramType = &ast->nodes[paramTypeNode];
+    if (HOPEvalTypeNodeMatchesTypeParam(fn, paramTypeNode, typeParamNode)) {
+        int rc = HOPEvalTypeValueFromRuntimeValue(p, argValue, &typeValue, &typeFile, &typeNode);
+        if (rc <= 0) {
+            return rc;
+        }
+        return HOPEvalBindActiveTemplateTypeValue(
+            p, fn, typeParamNode, &typeValue, typeFile, typeNode);
+    }
+    sourceValue = HOPEvalValueTargetOrSelf(argValue);
+    if ((paramType->kind == H2Ast_TYPE_REF || paramType->kind == H2Ast_TYPE_PTR
+         || paramType->kind == H2Ast_TYPE_MUTREF)
+        && paramType->firstChild >= 0)
+    {
+        return HOPEvalBindActiveTemplateFromParamArg(
+            p, fn, typeParamNode, paramType->firstChild, argValue);
+    }
+    if ((paramType->kind == H2Ast_TYPE_ARRAY || paramType->kind == H2Ast_TYPE_VARRAY
+         || paramType->kind == H2Ast_TYPE_SLICE || paramType->kind == H2Ast_TYPE_MUTSLICE)
+        && paramType->firstChild >= 0 && HOPEvalValueAsArray(sourceValue) != NULL
+        && HOPEvalTypeNodeMatchesTypeParam(fn, paramType->firstChild, typeParamNode))
+    {
+        int rc = HOPEvalTypeValueFromArrayElemRuntimeValue(
+            p, argValue, &typeValue, &typeFile, &typeNode);
+        if (rc <= 0) {
+            return rc;
+        }
+        return HOPEvalBindActiveTemplateTypeValue(
+            p, fn, typeParamNode, &typeValue, typeFile, typeNode);
+    }
+    return 0;
+}
+
 static int HOPEvalBindActiveTemplateForMirCall(
     HOPEvalProgram* p,
     const H2MirProgram* _Nullable program,
@@ -6736,6 +6925,20 @@ static int HOPEvalBindActiveTemplateForMirCall(
     uint32_t typeArgIndex;
     if (p == NULL || fn == NULL) {
         return 0;
+    }
+    {
+        int32_t typeParamNode = HOPEvalFunctionFirstTypeParamNode(fn);
+        if (typeParamNode >= 0 && args != NULL) {
+            uint32_t i;
+            for (i = 0; i < argCount; i++) {
+                int32_t paramTypeNode = HOPEvalFunctionParamTypeNodeAt(fn, i);
+                int     bindRc = HOPEvalBindActiveTemplateFromParamArg(
+                    p, fn, typeParamNode, paramTypeNode, &args[i]);
+                if (bindRc != 0) {
+                    return bindRc;
+                }
+            }
+        }
     }
     for (typeArgIndex = 0; typeArgIndex < argCount; typeArgIndex++) {
         if (args != NULL && args[typeArgIndex].kind == H2CTFEValue_TYPE) {
@@ -7140,7 +7343,7 @@ static int HOPEvalScoreFunctionCandidate(
         return 0;
     }
     *outScore = 0;
-    if (p == NULL || fn == NULL || args == NULL) {
+    if (p == NULL || fn == NULL || (args == NULL && argCount > 0u)) {
         return 0;
     }
     fixedCount = fn->isVariadic && fn->paramCount > 0 ? fn->paramCount - 1u : fn->paramCount;
@@ -7274,7 +7477,9 @@ int32_t HOPEvalResolveFunctionBySlice(
         } else {
             found = -2;
         }
-        if (args != NULL && HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score)) {
+        if ((args != NULL || argCount == 0u)
+            && HOPEvalScoreFunctionCandidate(p, fn, args, argCount, &score))
+        {
             if (score > bestScore) {
                 best = (int32_t)i;
                 bestScore = score;
@@ -9941,6 +10146,41 @@ static int HOPEvalMirZeroInitLocal(
     int*                outIsConst,
     H2Diag* _Nullable diag) {
     HOPEvalProgram* p = (HOPEvalProgram*)ctx;
+    if (p != NULL && typeRef != NULL && outValue != NULL && outIsConst != NULL
+        && H2MirTypeRefIsFixedArray(typeRef))
+    {
+        uint32_t      targetLen = H2MirTypeRefFixedArrayCount(typeRef);
+        HOPEvalArray* targetArray = HOPEvalAllocArrayView(
+            p, p->currentFile, -1, -1, NULL, targetLen);
+        uint32_t i;
+        if (targetArray == NULL) {
+            return ErrorSimple("out of memory");
+        }
+        if (targetLen > 0u) {
+            targetArray->elems = (H2CTFEValue*)H2ArenaAlloc(
+                p->arena, sizeof(H2CTFEValue) * targetLen, (uint32_t)_Alignof(H2CTFEValue));
+            if (targetArray->elems == NULL) {
+                return ErrorSimple("out of memory");
+            }
+        }
+        for (i = 0; i < targetLen; i++) {
+            if (H2MirTypeRefIsFixedArrayStr(typeRef)) {
+                targetArray->elems[i].kind = H2CTFEValue_STRING;
+                targetArray->elems[i].b = 0;
+                targetArray->elems[i].i64 = 0;
+                targetArray->elems[i].f64 = 0.0;
+                targetArray->elems[i].typeTag = 0;
+                targetArray->elems[i].s.bytes = NULL;
+                targetArray->elems[i].s.len = 0;
+                HOPEvalValueSetRuntimeTypeCode(&targetArray->elems[i], HOPEvalTypeCode_STR_REF);
+            } else {
+                HOPEvalValueSetInt(&targetArray->elems[i], 0);
+            }
+        }
+        HOPEvalValueSetArray(outValue, p->currentFile, -1, targetArray);
+        *outIsConst = 1;
+        return 0;
+    }
     if (p == NULL || p->currentFile == NULL || typeRef == NULL || typeRef->astNode == UINT32_MAX
         || typeRef->astNode >= p->currentFile->ast.len)
     {
@@ -9957,8 +10197,7 @@ static int HOPEvalMirCoerceValueForType(
     void* ctx, const H2MirTypeRef* typeRef, H2CTFEValue* inOutValue, H2Diag* _Nullable diag) {
     HOPEvalProgram* p = (HOPEvalProgram*)ctx;
     int32_t         targetTypeCode = HOPEvalTypeCode_INVALID;
-    if (p != NULL && typeRef != NULL && inOutValue != NULL && H2MirTypeRefIsFixedArrayStr(typeRef))
-    {
+    if (p != NULL && typeRef != NULL && inOutValue != NULL && H2MirTypeRefIsFixedArray(typeRef)) {
         const H2CTFEValue* sourceValue = HOPEvalValueTargetOrSelf(inOutValue);
         HOPEvalArray*      sourceArray = HOPEvalValueAsArray(sourceValue);
         uint32_t           targetLen = H2MirTypeRefFixedArrayCount(typeRef);
@@ -9980,17 +10219,25 @@ static int HOPEvalMirCoerceValueForType(
         }
         for (i = 0; i < targetLen; i++) {
             targetArray->elems[i] = sourceArray->elems[i];
-            if (HOPEvalAdaptStringValueForTypeCode(
-                    p->arena,
-                    HOPEvalTypeCode_STR_REF,
-                    &targetArray->elems[i],
-                    &targetArray->elems[i])
-                < 0)
-            {
-                return -1;
-            }
-            if (HOPEvalValueTargetOrSelf(&targetArray->elems[i])->kind != H2CTFEValue_STRING) {
-                return 0;
+            if (H2MirTypeRefIsFixedArrayStr(typeRef)) {
+                if (HOPEvalAdaptStringValueForTypeCode(
+                        p->arena,
+                        HOPEvalTypeCode_STR_REF,
+                        &targetArray->elems[i],
+                        &targetArray->elems[i])
+                    < 0)
+                {
+                    return -1;
+                }
+                if (HOPEvalValueTargetOrSelf(&targetArray->elems[i])->kind != H2CTFEValue_STRING) {
+                    return 0;
+                }
+            } else {
+                int64_t asInt = 0;
+                if (H2CTFEValueToInt64(&targetArray->elems[i], &asInt) != 0) {
+                    return 0;
+                }
+                HOPEvalValueSetInt(&targetArray->elems[i], asInt);
             }
         }
         HOPEvalValueSetArray(inOutValue, p->currentFile, -1, targetArray);
@@ -10297,8 +10544,19 @@ static int HOPEvalMirMakeTuple(
     if (file == NULL) {
         return 0;
     }
-    if (typeNodeHint != UINT32_MAX && typeNodeHint < file->ast.len) {
-        typeNode = (int32_t)typeNodeHint;
+    if (typeNodeHint != UINT32_MAX) {
+        const HOPEvalMirExecCtx* mirCtx = p->currentMirExecCtx;
+        const H2MirProgram*      program = mirCtx != NULL ? mirCtx->mirProgram : NULL;
+        if (program != NULL && typeNodeHint < program->typeLen
+            && H2MirTypeRefIsFixedArray(&program->types[typeNodeHint]))
+        {
+            uint32_t astNode = program->types[typeNodeHint].astNode;
+            if (astNode < file->ast.len) {
+                typeNode = (int32_t)astNode;
+            }
+        } else if (typeNodeHint < file->ast.len) {
+            typeNode = (int32_t)typeNodeHint;
+        }
     }
     return HOPEvalAllocTupleValue(p, file, typeNode, elems, elemCount, outValue, outIsConst);
 }

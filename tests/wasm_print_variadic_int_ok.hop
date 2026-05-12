@@ -1,0 +1,5 @@
+// Verifies variadic integer print uses the shared formatter path on wasm.
+fn main() {
+	print(1, 2, 3)
+	print()
+}
