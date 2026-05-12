@@ -1,0 +1,5 @@
+// Verifies trailing comments on expression statements stay attached.
+fn main() {
+    print(1) // A
+    print(2) // B
+}

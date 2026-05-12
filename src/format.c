@@ -4980,7 +4980,7 @@ static int H2FmtEmitStmt(H2FmtCtx* c, int32_t nodeId) {
     if (H2FmtEmitStmtInline(c, nodeId) != 0) {
         return -1;
     }
-    return H2FmtEmitTrailingCommentsForNode(c, nodeId);
+    return H2FmtEmitTrailingCommentsForNodes(c, &nodeId, 1u, 1u);
 }
 
 typedef struct {
