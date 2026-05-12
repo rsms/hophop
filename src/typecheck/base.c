@@ -4,7 +4,7 @@ H2_API_BEGIN
 
 static int32_t H2TCFindNamedTypeIndexByTypeId(H2TypeCheckCtx* c, int32_t typeId);
 
-void H2TCSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
+void H2TCSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }

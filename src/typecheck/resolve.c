@@ -605,7 +605,7 @@ int H2TCResolveTypeNode(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
                             nt = &c->namedTypes[(uint32_t)namedIndex];
                         }
                         if (nt->templateArgCount > 0 || argCount > 0) {
-                            int32_t  args[64];
+                            int32_t  args[64] = { 0 };
                             int32_t  argNode = H2AstFirstChild(c->ast, nodeId);
                             uint16_t ai = 0;
                             if (argCount == 0 && nt->templateArgCount > 0) {
@@ -1105,7 +1105,7 @@ int H2TCAddNamedType(H2TypeCheckCtx* c, int32_t nodeId, int32_t ownerTypeId, int
 }
 
 int32_t H2TCInstantiateNamedType(
-    H2TypeCheckCtx* c, int32_t rootTypeId, const int32_t* argTypes, uint16_t argCount) {
+    H2TypeCheckCtx* c, int32_t rootTypeId, const int32_t* _Nullable argTypes, uint16_t argCount) {
     int32_t         rootNamedIndex = -1;
     uint32_t        i;
     const H2TCType* rootType;
@@ -1115,7 +1115,7 @@ int32_t H2TCInstantiateNamedType(
             break;
         }
     }
-    if (rootNamedIndex < 0) {
+    if (rootNamedIndex < 0 || (argCount > 0u && argTypes == NULL)) {
         return -1;
     }
     if (c->namedTypes[(uint32_t)rootNamedIndex].templateRootNamedIndex >= 0) {

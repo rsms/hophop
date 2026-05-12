@@ -199,7 +199,7 @@ static int H2TCSnapshotLocalInitStates(H2TypeCheckCtx* c, uint8_t** outStates) {
 }
 
 static void H2TCRestoreLocalInitStates(
-    H2TypeCheckCtx* c, const uint8_t* states, uint32_t stateLen) {
+    H2TypeCheckCtx* c, const uint8_t* _Nullable states, uint32_t stateLen) {
     uint32_t i;
     uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
     if (states == NULL) {
@@ -221,7 +221,7 @@ static uint8_t H2TCMergeLocalInitState(uint8_t a, uint8_t b) {
 }
 
 static void H2TCMergeLocalInitStates(
-    H2TypeCheckCtx* c, const uint8_t* a, const uint8_t* b, uint32_t stateLen) {
+    H2TypeCheckCtx* c, const uint8_t* _Nullable a, const uint8_t* _Nullable b, uint32_t stateLen) {
     uint32_t i;
     uint32_t len = c->localLen < stateLen ? c->localLen : stateLen;
     if (a == NULL || b == NULL) {

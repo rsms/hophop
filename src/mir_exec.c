@@ -23,7 +23,7 @@ typedef struct {
 
 typedef struct {
     uint32_t count;
-    H2CTFEValue* _Nonnull refs;
+    H2CTFEValue* _Nullable refs;
 } H2MirExecClosureData;
 
 #define H2MIR_EXEC_FUNCTION_REF_TAG_FLAG   (UINT64_C(1) << 57)

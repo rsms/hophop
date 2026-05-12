@@ -2692,8 +2692,8 @@ static int ParseTypeRefFromActiveTypecheck(
     {
         H2TypeCheckCtx* tc = &c->constEval->tc;
         uint32_t        paramArgStart = tc->activeGenericArgStart;
-        uint32_t        concreteArgStart = tc->activeGenericArgStart;
-        uint16_t        argCount = tc->activeGenericArgCount;
+        uint32_t        concreteArgStart;
+        uint16_t        argCount;
         uint16_t        i;
         if (c->activeTcFuncIndex != UINT32_MAX) {
             const H2TCFunction* fn = &tc->funcs[c->activeTcFuncIndex];
@@ -4027,7 +4027,9 @@ static int TypeRefIsNamedValue(const H2TypeRef* t, const char* name) {
 }
 
 static int FnSigIsNoContextAbiCallback(
-    const H2TypeRef* returnType, const H2TypeRef* paramTypes, uint32_t paramLen) {
+    const H2TypeRef* _Nullable returnType,
+    const H2TypeRef* _Nullable paramTypes,
+    uint32_t paramLen) {
     if (returnType == NULL || paramTypes == NULL) {
         return 0;
     }

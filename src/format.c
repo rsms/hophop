@@ -458,7 +458,7 @@ static int H2FmtInferredTypeMatchesNode(
     const H2Ast* ast, H2StrView src, const H2FmtInferredType* inferred, int32_t typeNodeId);
 
 static int32_t H2FmtTypeEnvFind(
-    const H2FmtTypeEnv* env, H2StrView src, uint32_t nameStart, uint32_t nameEnd) {
+    const H2FmtTypeEnv* _Nullable env, H2StrView src, uint32_t nameStart, uint32_t nameEnd) {
     uint32_t i;
     if (env == NULL || nameEnd <= nameStart) {
         return -1;
@@ -507,7 +507,7 @@ static int H2FmtTypeNameIsBoundParam(
     H2StrView    src,
     int32_t      typeNodeId,
     const H2FmtTypeEnv* _Nullable env,
-    int32_t* outBindingIndex) {
+    int32_t* _Nullable outBindingIndex) {
     const H2AstNode* n;
     int32_t          bindingIndex;
     if (typeNodeId < 0 || (uint32_t)typeNodeId >= ast->len) {
@@ -569,7 +569,8 @@ static int H2FmtTypeCompatibleWithEnvs(
     {
         return 0;
     }
-    if (H2FmtTypeNameIsBoundParam(ast, src, wantNodeId, wantEnv, &bindingIndex)) {
+    if (wantEnv != NULL && H2FmtTypeNameIsBoundParam(ast, src, wantNodeId, wantEnv, &bindingIndex))
+    {
         int32_t boundNodeId = wantEnv->items[bindingIndex].concreteTypeNodeId;
         if (boundNodeId >= 0) {
             return H2FmtTypeCompatibleWithEnvs(ast, src, boundNodeId, NULL, gotNodeId, gotEnv);
@@ -2988,7 +2989,7 @@ static int H2FmtNeedsBlankLineBeforeNode(H2FmtCtx* c, int32_t prevNodeId, int32_
     return 1;
 }
 
-static int H2FmtTypeEnvCopy(H2FmtTypeEnv* dst, const H2FmtTypeEnv* src) {
+static int H2FmtTypeEnvCopy(H2FmtTypeEnv* dst, const H2FmtTypeEnv* _Nullable src) {
     uint32_t i;
     if (dst == NULL) {
         return 0;

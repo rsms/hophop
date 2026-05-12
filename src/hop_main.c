@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -547,24 +548,45 @@ static int CloseBuildOutputFile(FILE* outFile, int shouldClose) {
     return 0;
 }
 
+static int WriteAllStdout(const unsigned char* buf, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = write(STDOUT_FILENO, buf + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        off += (size_t)n;
+    }
+    return 0;
+}
+
 static int StreamFileToStdout(const char* path) {
-    FILE*         in = fopen(path, "rb");
+    int           in = open(path, O_RDONLY);
     unsigned char buf[8192];
-    size_t        n;
-    if (in == NULL) {
+    if (in < 0) {
         return ErrorSimple("failed to read output file");
     }
-    while ((n = fread(buf, 1u, sizeof(buf), in)) > 0) {
-        if (fwrite(buf, 1u, n, stdout) != n) {
-            fclose(in);
+    for (;;) {
+        ssize_t n = read(in, buf, sizeof(buf));
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            close(in);
+            return ErrorSimple("failed to read output file");
+        }
+        if (n == 0) {
+            break;
+        }
+        if (WriteAllStdout(buf, (size_t)n) != 0) {
+            close(in);
             return ErrorSimple("failed to write output");
         }
     }
-    if (ferror(in)) {
-        fclose(in);
-        return ErrorSimple("failed to read output file");
-    }
-    fclose(in);
+    close(in);
     return 0;
 }
 
@@ -772,6 +794,12 @@ static int RunBuildCommand(int argc, char* argv[]) {
         int      closeOutFile = 0;
         if (ReadSingleBuildSource(&input, &filename, &source, &sourceLen) != 0) {
             rc = 1;
+            goto end;
+        }
+        if (filename == NULL || source == NULL) {
+            rc = 1;
+            free(source);
+            free(filename);
             goto end;
         }
         if (OpenBuildOutputFile(outFilenameArg, &outFile, &closeOutFile) != 0) {

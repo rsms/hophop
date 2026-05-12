@@ -44,7 +44,7 @@ void H2DiagReset(H2Diag* _Nullable diag, H2DiagCode code) {
     diag->hintOverride = NULL;
 }
 
-static void H2SetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end) {
+static void H2SetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t end) {
     if (diag == NULL) {
         return;
     }
@@ -670,7 +670,7 @@ static int H2TokenCanEndStmt(H2TokenKind kind) {
 }
 
 static int H2PushToken(
-    H2TokenBuf* out, H2Diag* diag, H2TokenKind kind, uint32_t start, uint32_t end) {
+    H2TokenBuf* out, H2Diag* _Nullable diag, H2TokenKind kind, uint32_t start, uint32_t end) {
     if (out->len >= out->cap) {
         H2SetDiag(diag, H2Diag_ARENA_OOM, start, end);
         return -1;
@@ -814,6 +814,10 @@ int H2Lex(H2Arena* arena, H2StrView src, H2TokenStream* out, H2Diag* _Nullable d
     if (diag != NULL) {
         *diag = (H2Diag){ 0 };
         diag->phase = H2DiagPhase_LEX;
+    }
+    if (src.ptr == NULL && src.len != 0) {
+        H2SetDiag(diag, H2Diag_UNEXPECTED_TOKEN, 0, 0);
+        return -1;
     }
     out->v = NULL;
     out->len = 0;

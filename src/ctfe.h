@@ -56,7 +56,7 @@ typedef int (*H2CTFEResolveCallFn)(
     void* _Nullable ctx,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const H2CTFEValue* _Nonnull args,
+    const H2CTFEValue* _Nullable args,
     uint32_t argCount,
     H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,

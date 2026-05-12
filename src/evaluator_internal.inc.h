@@ -95,9 +95,9 @@ typedef struct {
 typedef struct H2EvalRuntimeAlloc H2EvalRuntimeAlloc;
 
 typedef struct {
-    uint32_t            magic;
-    H2CTFEValue         token;
-    H2EvalRuntimeAlloc* allocations;
+    uint32_t    magic;
+    H2CTFEValue token;
+    H2EvalRuntimeAlloc* _Nullable allocations;
 } H2EvalRuntimeAllocatorState;
 
 struct H2EvalRuntimeAlloc {

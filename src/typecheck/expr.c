@@ -247,7 +247,7 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
     int32_t          allocArgNode = -1;
     int32_t          allocBaseType;
     int32_t          elemType;
-    int32_t          resultType;
+    int32_t          resultType = -1;
     int32_t          countType;
     int32_t          ctxMemType;
     int64_t          countValue = 0;
@@ -269,7 +269,7 @@ int H2TCTypeNewExpr(H2TypeCheckCtx* c, int32_t nodeId, int32_t* outType) {
         int32_t expected = c->activeExpectedNewType;
         int32_t expectedBase = expected >= 0 ? H2TCResolveAliasBaseType(c, expected) : -1;
         int32_t litExpected = -1;
-        int32_t litType;
+        int32_t litType = -1;
         int32_t pointee;
         if (expectedBase >= 0 && (uint32_t)expectedBase < c->typeLen
             && c->types[expectedBase].kind == H2TCType_PTR)
@@ -3487,8 +3487,8 @@ int H2TCTypeExpr_UNARY(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, in
 int H2TCTypeExpr_BINARY(H2TypeCheckCtx* c, int32_t nodeId, const H2AstNode* n, int32_t* outType) {
     int32_t     lhsNode = H2AstFirstChild(c->ast, nodeId);
     int32_t     rhsNode;
-    int32_t     lhsType;
-    int32_t     rhsType;
+    int32_t     lhsType = -1;
+    int32_t     rhsType = -1;
     int32_t     commonType;
     int32_t     hookFn = -1;
     H2TokenKind op = (H2TokenKind)n->op;

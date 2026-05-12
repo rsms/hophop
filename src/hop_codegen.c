@@ -278,12 +278,16 @@ static int RunCommand(const char* const* argv) {
 }
 
 static int RunCommandExitCode(const char* const* argv, int* outExitCode) {
-    pid_t pid = fork();
+    pid_t pid;
     int   status;
     if (outExitCode == NULL) {
         return -1;
     }
     *outExitCode = -1;
+    if (argv == NULL || argv[0] == NULL) {
+        return -1;
+    }
+    pid = fork();
     if (pid < 0) {
         return -1;
     }
@@ -733,6 +737,9 @@ static int IsPackageArtifactUpToDate(
     uint64_t    objMtime;
     uint64_t    srcMtime;
     uint32_t    i;
+    if (pkg == NULL || artifact == NULL) {
+        return 0;
+    }
     if (stat(artifact->cPath, &st) != 0 || !S_ISREG(st.st_mode)) {
         return 0;
     }
@@ -908,6 +915,9 @@ static int EmitPackageArtifact(
     uint32_t          i;
     int               rc = -1;
 
+    if (loader == NULL || pkg == NULL || artifact == NULL || backend == NULL) {
+        return -1;
+    }
     if (PackageHasUnsupportedImportedPubGlobals(pkg) != 0) {
         return -1;
     }

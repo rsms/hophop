@@ -2006,15 +2006,15 @@ int FindTemplateInstanceSigForDispatchCase(
 static int FindExpandedVariadicTemplateInstance(
     const H2CBackendC* c,
     const H2FnSig*     baseSig,
-    const H2TypeRef*   paramTypes,
-    const uint8_t*     paramFlags,
-    uint32_t           paramLen,
-    const H2FnSig**    outSig);
+    const H2TypeRef* _Nullable paramTypes,
+    const uint8_t* _Nullable paramFlags,
+    uint32_t        paramLen,
+    const H2FnSig** outSig);
 
 static int MaterializeTemplateInstanceForActivePackSpread(
     H2CBackendC* c, const H2FnSig* baseSig, const H2CCallBinding* binding, const H2FnSig** outSig) {
-    H2TypeRef* paramTypes;
-    char**     paramNames;
+    H2TypeRef* paramTypes = NULL;
+    char**     paramNames = NULL;
     uint8_t*   paramFlags = NULL;
     uint32_t   fixedCount;
     uint32_t   paramLen;
@@ -2050,6 +2050,9 @@ static int MaterializeTemplateInstanceForActivePackSpread(
         {
             return -1;
         }
+    }
+    if (fixedCount > 0u && (paramTypes == NULL || paramNames == NULL)) {
+        return -1;
     }
     for (p = 0; p < fixedCount; p++) {
         paramTypes[p] = baseSig->paramTypes[p];
@@ -2112,10 +2115,10 @@ static int MaterializeTemplateInstanceForActivePackSpread(
 static int FindExpandedVariadicTemplateInstance(
     const H2CBackendC* c,
     const H2FnSig*     baseSig,
-    const H2TypeRef*   paramTypes,
-    const uint8_t*     paramFlags,
-    uint32_t           paramLen,
-    const H2FnSig**    outSig) {
+    const H2TypeRef* _Nullable paramTypes,
+    const uint8_t* _Nullable paramFlags,
+    uint32_t        paramLen,
+    const H2FnSig** outSig) {
     uint32_t i;
     if (outSig != NULL) {
         *outSig = NULL;
@@ -3421,7 +3424,7 @@ static uint32_t ArrayLitElementCount(H2CBackendC* c, int32_t nodeId) {
 }
 
 static int ArrayLitElementTypeFromExpected(
-    const H2TypeRef* expectedType, H2TypeRef* outElem, uint32_t* outLen, int* outHasLen) {
+    const H2TypeRef* _Nullable expectedType, H2TypeRef* outElem, uint32_t* outLen, int* outHasLen) {
     H2TypeRef t;
     if (outElem != NULL) {
         TypeRefSetInvalid(outElem);

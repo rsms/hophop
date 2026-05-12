@@ -24,7 +24,7 @@ int H2TCResolveConstCallMir(
     const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const H2CTFEValue* _Nonnull args,
+    const H2CTFEValue* _Nullable args,
     uint32_t argCount,
     H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
@@ -3453,13 +3453,13 @@ int H2TCConstEvalTypeReflectionCall(
 }
 
 static int H2TCConstEvalTypeReflectionByArgs(
-    H2TCConstEvalCtx*  evalCtx,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst) {
+    H2TCConstEvalCtx* evalCtx,
+    uint32_t          nameStart,
+    uint32_t          nameEnd,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
     H2TypeCheckCtx* c;
     int32_t         op = 0;
     int32_t         reflectedTypeId = -1;
@@ -6736,14 +6736,14 @@ int H2TCMirConstLowerFunction(
 }
 
 static int H2TCTryMirConstCall(
-    H2TCConstEvalCtx*  evalCtx,
-    int32_t            fnIndex,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outDidReturn,
-    int*               outIsConst,
-    int*               outSupported) {
+    H2TCConstEvalCtx* evalCtx,
+    int32_t           fnIndex,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outDidReturn,
+    int*         outIsConst,
+    int*         outSupported) {
     H2TypeCheckCtx*      c;
     H2MirProgram         program = { 0 };
     H2TCMirConstLowerCtx lowerCtx;
@@ -7386,12 +7386,12 @@ int H2TCResolveConstCallMir(
     const H2MirProgram* _Nullable program,
     const H2MirFunction* _Nullable function,
     const H2MirInst* _Nullable inst,
-    uint32_t           nameStart,
-    uint32_t           nameEnd,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst,
+    uint32_t nameStart,
+    uint32_t nameEnd,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst,
     H2Diag* _Nullable diag) {
     H2TCConstEvalCtx* evalCtx = (H2TCConstEvalCtx*)ctx;
     H2TypeCheckCtx*   c;
@@ -7413,6 +7413,9 @@ int H2TCResolveConstCallMir(
     c = evalCtx->tc;
     if (c == NULL) {
         return -1;
+    }
+    if (args == NULL && argCount > 0u) {
+        return 0;
     }
     if (H2TCMirConstResolveCallNode(evalCtx, program, inst, &callNode)) {
         if (callNode >= 0 && (uint32_t)callNode < c->ast->len) {
@@ -7784,8 +7787,22 @@ int H2TCResolveConstCall(
     H2CTFEValue* outValue,
     int*         outIsConst,
     H2Diag* _Nullable diag) {
+    H2CTFEValue emptyArg = { 0 };
+    if (args == NULL && argCount > 0u) {
+        return 0;
+    }
     return H2TCResolveConstCallMir(
-        ctx, NULL, NULL, NULL, nameStart, nameEnd, args, argCount, outValue, outIsConst, diag);
+        ctx,
+        NULL,
+        NULL,
+        NULL,
+        nameStart,
+        nameEnd,
+        args != NULL ? args : &emptyArg,
+        argCount,
+        outValue,
+        outIsConst,
+        diag);
 }
 
 static int H2TCConstEvalDirectCall(

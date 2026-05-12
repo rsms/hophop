@@ -716,9 +716,9 @@ typedef struct {
 typedef struct H2EvalRuntimeAlloc H2EvalRuntimeAlloc;
 
 typedef struct {
-    uint32_t            magic;
-    H2CTFEValue         token;
-    H2EvalRuntimeAlloc* allocations;
+    uint32_t    magic;
+    H2CTFEValue token;
+    H2EvalRuntimeAlloc* _Nullable allocations;
 } H2EvalRuntimeAllocatorState;
 
 struct H2EvalRuntimeAlloc {
@@ -902,18 +902,18 @@ static int H2EvalInitRootAllocatorValue(
 static int  H2EvalInitRootAllocators(HOPEvalProgram* p);
 static void H2EvalFreeRuntimeAllocatorState(H2EvalRuntimeAllocatorState* state);
 static int  H2EvalInvokeSyntheticRootAllocator(
-    HOPEvalProgram*    p,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst);
+    HOPEvalProgram* p,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
 static int H2EvalInitRootLoggerValue(HOPEvalProgram* p, H2CTFEValue* outValue);
 static int H2EvalInvokeSyntheticRootLogger(
-    HOPEvalProgram*    p,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst);
+    HOPEvalProgram* p,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
 
 static void HOPEvalValueSetNull(H2CTFEValue* value) {
     if (value == NULL) {
@@ -2823,12 +2823,12 @@ static int HOPEvalResolveAggregateTypeNode(
     const H2ParsedFile**  outDeclFile,
     int32_t*              outDeclNode);
 static int HOPEvalExecExprWithTypeNode(
-    HOPEvalProgram*     p,
-    int32_t             exprNode,
-    const H2ParsedFile* typeFile,
-    int32_t             typeNode,
-    H2CTFEValue*        outValue,
-    int*                outIsConst);
+    HOPEvalProgram* p,
+    int32_t         exprNode,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
 static int HOPEvalExecExprInFileWithType(
     HOPEvalProgram*     p,
     const H2ParsedFile* exprFile,
@@ -3085,12 +3085,12 @@ static int HOPEvalResolveCallMirPre(
 static int HOPEvalEvalTopVar(
     HOPEvalProgram* p, uint32_t topVarIndex, H2CTFEValue* outValue, int* outIsConst);
 static int HOPEvalEvalArrayLiteral(
-    HOPEvalProgram*     p,
-    int32_t             exprNode,
-    const H2ParsedFile* typeFile,
-    int32_t             typeNode,
-    H2CTFEValue*        outValue,
-    int*                outIsConst);
+    HOPEvalProgram* p,
+    int32_t         exprNode,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
 static int HOPEvalInvokeFunction(
     HOPEvalProgram* p,
     int32_t         fnIndex,
@@ -3424,11 +3424,11 @@ static int H2EvalInitRootLoggerValue(HOPEvalProgram* p, H2CTFEValue* outValue) {
 }
 
 static int H2EvalInvokeSyntheticRootLogger(
-    HOPEvalProgram*    p,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst) {
+    HOPEvalProgram* p,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
     const H2CTFEValue* message;
     const H2CTFEValue* levelValue;
     FILE*              out = stdout;
@@ -3478,11 +3478,11 @@ static void H2EvalFreeRuntimeAllocatorState(H2EvalRuntimeAllocatorState* state) 
 }
 
 static int H2EvalInvokeSyntheticRootAllocator(
-    HOPEvalProgram*    p,
-    const H2CTFEValue* args,
-    uint32_t           argCount,
-    H2CTFEValue*       outValue,
-    int*               outIsConst) {
+    HOPEvalProgram* p,
+    const H2CTFEValue* _Nullable args,
+    uint32_t     argCount,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
     const H2CTFEValue*           selfValue;
     HOPEvalAggregate*            selfAgg;
     H2CTFEValue                  dataValue;
@@ -7333,9 +7333,9 @@ static int HOPEvalAggregateDistanceToType(
 static int HOPEvalScoreFunctionCandidate(
     const HOPEvalProgram*  p,
     const HOPEvalFunction* fn,
-    const H2CTFEValue*     args,
-    uint32_t               argCount,
-    int*                   outScore) {
+    const H2CTFEValue* _Nullable args,
+    uint32_t argCount,
+    int*     outScore) {
     uint32_t i;
     int      score = 0;
     uint32_t fixedCount;
@@ -8862,20 +8862,20 @@ static int HOPEvalArrayLiteralExpectedElemType(
 }
 
 static int HOPEvalExecExprWithTypeNode(
-    HOPEvalProgram*     p,
-    int32_t             exprNode,
-    const H2ParsedFile* typeFile,
-    int32_t             typeNode,
-    H2CTFEValue*        outValue,
-    int*                outIsConst);
+    HOPEvalProgram* p,
+    int32_t         exprNode,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst);
 
 static int HOPEvalEvalArrayLiteral(
-    HOPEvalProgram*     p,
-    int32_t             exprNode,
-    const H2ParsedFile* typeFile,
-    int32_t             typeNode,
-    H2CTFEValue*        outValue,
-    int*                outIsConst) {
+    HOPEvalProgram* p,
+    int32_t         exprNode,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
     const H2Ast*        ast;
     HOPEvalArray*       array;
     uint32_t            elemCount;
@@ -8914,6 +8914,9 @@ static int HOPEvalEvalArrayLiteral(
         memset(array->elems, 0, sizeof(H2CTFEValue) * len);
     }
     child = ASTFirstChild(ast, exprNode);
+    if (child >= 0 && (arrayFile == NULL || array->elems == NULL)) {
+        return -1;
+    }
     while (child >= 0) {
         int elemIsConst = 0;
         if (HOPEvalExecExprWithTypeNode(
@@ -8946,12 +8949,12 @@ static int HOPEvalEvalArrayLiteral(
 }
 
 static int HOPEvalExecExprWithTypeNode(
-    HOPEvalProgram*     p,
-    int32_t             exprNode,
-    const H2ParsedFile* typeFile,
-    int32_t             typeNode,
-    H2CTFEValue*        outValue,
-    int*                outIsConst) {
+    HOPEvalProgram* p,
+    int32_t         exprNode,
+    const H2ParsedFile* _Nullable typeFile,
+    int32_t      typeNode,
+    H2CTFEValue* outValue,
+    int*         outIsConst) {
     const H2Ast* ast;
     if (p == NULL || p->currentFile == NULL || outValue == NULL || outIsConst == NULL) {
         return -1;

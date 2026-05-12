@@ -228,8 +228,8 @@ static int32_t HOPEvalMirFindTcFunctionByDeclNode(const H2TypeCheckCtx* tc, int3
 }
 
 typedef struct {
-    HOPEvalMirLowerCtx*   c;
-    const H2TypeCheckCtx* tc;
+    HOPEvalMirLowerCtx* c;
+    const H2TypeCheckCtx* _Nullable tc;
 } HOPEvalMirFunctionValueResolveCtx;
 
 static int HOPEvalMirLowerInternalFunctionValues(

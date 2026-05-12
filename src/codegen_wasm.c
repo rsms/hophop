@@ -1971,14 +1971,17 @@ static uint32_t WasmStaticDataEnd(
 }
 
 static int WasmPlanEntryLayout(
-    const H2MirProgram*        program,
-    const HOPWasmFnSig*        sigs,
+    const H2MirProgram* program,
+    uint32_t            funcLen,
+    const HOPWasmFnSig* _Nullable sigs,
     const HOPWasmImportLayout* imports,
     const HOPWasmStringLayout* strings,
     HOPWasmEntryLayout* _Nonnull entry,
     H2Diag* _Nullable diag) {
     uint32_t i;
-    if (program == NULL || sigs == NULL || imports == NULL || strings == NULL || entry == NULL) {
+    if (program == NULL || (funcLen > 0u && sigs == NULL) || imports == NULL || strings == NULL
+        || entry == NULL)
+    {
         return -1;
     }
     *entry = (HOPWasmEntryLayout){
@@ -1987,7 +1990,7 @@ static int WasmPlanEntryLayout(
         .wrapperFuncIndex = UINT32_MAX,
         .resultOffset = UINT32_MAX,
     };
-    for (i = 0; i < program->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         const H2MirFunction* fn = &program->funcs[i];
         const HOPWasmFnSig*  sig = &sigs[i];
         if (!WasmFunctionIsNamedMain(program, fn)) {
@@ -2015,7 +2018,7 @@ static int WasmPlanEntryLayout(
             return -1;
         }
         entry->resultOffset = WasmAlign4(strings->data.len);
-        entry->wrapperTypeIndex = program->funcLen + (imports->hasFunctionTable ? 1u : 0u);
+        entry->wrapperTypeIndex = funcLen + (imports->hasFunctionTable ? 1u : 0u);
         if (imports->hasWasmMinLogger) {
             entry->wrapperTypeIndex += 2u;
         }
@@ -2293,10 +2296,10 @@ static int WasmBuildFunctionSignatures(
     const H2MirProgram*     program,
     const H2CodegenOptions* options,
     const uint8_t* _Nullable reachableFunctions,
-    HOPWasmFnSig* sigs,
+    HOPWasmFnSig* _Nullable sigs,
     H2Diag* _Nullable diag) {
     uint32_t i;
-    if (program == NULL || sigs == NULL) {
+    if (program == NULL || (program->funcLen > 0u && sigs == NULL)) {
         return -1;
     }
     for (i = 0; i < program->funcLen; i++) {
@@ -2305,6 +2308,11 @@ static int WasmBuildFunctionSignatures(
         uint32_t             j;
         memset(sig, 0, sizeof(*sig));
         sig->typeIndex = i;
+        sig->logicalParamCount = 0u;
+        sig->wasmParamCount = 0u;
+        sig->logicalResultKind = HOPWasmType_VOID;
+        sig->wasmResultCount = 0u;
+        sig->usesSRet = 0u;
         sig->logicalResultTypeRef = fn->typeRef;
         if (reachableFunctions != NULL && reachableFunctions[i] == 0u) {
             continue;
@@ -8962,11 +8970,13 @@ static int EmitWasmBackend(
     HOPWasmBuf codeSec = { 0 };
     HOPWasmBuf dataSec = { 0 };
     HOPWasmFnSig* _Nullable sigs = NULL;
+    HOPWasmFnSig           emptySigs[1] = { 0 };
     HOPWasmStringLayout    strings = { 0 };
     HOPWasmImportLayout    imports = { 0 };
     HOPWasmEntryLayout     entry = { 0 };
     HOPWasmForeignMetadata foreign = { 0 };
     uint32_t               i;
+    uint32_t               funcLen;
     bool                   importMemory = WasmIsPlaybitPlatform(unit);
     uint32_t               exportCount = importMemory ? 0u : 1u;
     const char             wasmHeader[8] = { '\0', 'a', 's', 'm', 0x01, 0x00, 0x00, 0x00 };
@@ -9034,17 +9044,27 @@ static int EmitWasmBackend(
     codeSec.options = options;
     dataSec.options = options;
 
-    if (unit->mirProgram->funcLen > 0) {
+    funcLen = unit->mirProgram->funcLen;
+    if (funcLen > 0u) {
         uint32_t allocSize = 0;
         sigs = (HOPWasmFnSig*)options->arenaGrow(
-            options->allocatorCtx, unit->mirProgram->funcLen * (uint32_t)sizeof(*sigs), &allocSize);
-        if (sigs == NULL || allocSize < unit->mirProgram->funcLen * sizeof(*sigs)) {
+            options->allocatorCtx, funcLen * (uint32_t)sizeof(*sigs), &allocSize);
+        if (sigs == NULL || allocSize < funcLen * sizeof(*sigs)) {
             if (sigs != NULL && options->arenaFree != NULL) {
                 options->arenaFree(options->allocatorCtx, sigs, allocSize);
             }
             WasmSetDiag(diag, H2Diag_ARENA_OOM, 0, 0);
             return -1;
         }
+        for (i = 0; i < funcLen; i++) {
+            sigs[i] = (HOPWasmFnSig){
+                .typeIndex = i,
+                .logicalResultKind = HOPWasmType_VOID,
+                .logicalResultTypeRef = UINT32_MAX,
+            };
+        }
+    } else {
+        sigs = emptySigs;
     }
     if (WasmBuildReachableFunctionSet(unit, &foreign, options, &imports, diag) != 0) {
         goto fail;
@@ -9059,8 +9079,8 @@ static int EmitWasmBackend(
     if (WasmAnalyzeImports(unit, &foreign, options, &imports, diag) != 0) {
         goto fail;
     }
-    if (imports.hasFunctionTable) {
-        for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    if (imports.hasFunctionTable && sigs != NULL) {
+        for (i = 0; i < funcLen; i++) {
             if (WasmSigMatchesAllocatorIndirect(&sigs[i])) {
                 sigs[i].typeIndex = imports.allocatorIndirectTypeIndex;
             }
@@ -9069,7 +9089,8 @@ static int EmitWasmBackend(
     if (WasmBuildStringLayout(unit, &imports, options, &strings, diag) != 0) {
         goto fail;
     }
-    if (WasmPlanEntryLayout(unit->mirProgram, sigs, &imports, &strings, &entry, diag) != 0) {
+    if (WasmPlanEntryLayout(unit->mirProgram, funcLen, sigs, &imports, &strings, &entry, diag) != 0)
+    {
         goto fail;
     }
 
@@ -9079,13 +9100,13 @@ static int EmitWasmBackend(
 
     if (WasmAppendULEB(
             &typeSec,
-            unit->mirProgram->funcLen + (imports.hasFunctionTable ? 1u : 0u)
-                + (imports.hasWasmMinLogger ? 2u : 0u) + (entry.hasWrapper ? 1u : 0u))
+            funcLen + (imports.hasFunctionTable ? 1u : 0u) + (imports.hasWasmMinLogger ? 2u : 0u)
+                + (entry.hasWrapper ? 1u : 0u))
         != 0)
     {
         goto oom;
     }
-    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         const HOPWasmFnSig* sig = &sigs[i];
         if (WasmAppendByte(&typeSec, 0x60u) != 0
             || WasmAppendULEB(&typeSec, sig->wasmParamCount) != 0
@@ -9218,7 +9239,7 @@ static int EmitWasmBackend(
     {
         goto oom;
     }
-    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
             continue;
         }
@@ -9312,7 +9333,7 @@ static int EmitWasmBackend(
         }
     }
 
-    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         const H2MirFunction* fn = &unit->mirProgram->funcs[i];
         if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
             continue;
@@ -9339,7 +9360,7 @@ static int EmitWasmBackend(
             goto oom;
         }
     }
-    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         const H2MirFunction* fn = &unit->mirProgram->funcs[i];
         if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
             continue;
@@ -9394,7 +9415,7 @@ static int EmitWasmBackend(
         {
             goto oom;
         }
-        for (i = 0; i < unit->mirProgram->funcLen; i++) {
+        for (i = 0; i < funcLen; i++) {
             uint32_t wasmIndex = WasmFunctionWasmIndex(&imports, i);
             if (wasmIndex == UINT32_MAX) {
                 wasmIndex =
@@ -9404,7 +9425,7 @@ static int EmitWasmBackend(
                         : WasmFunctionWasmIndex(&imports, 0u);
                 if (wasmIndex == UINT32_MAX) {
                     uint32_t fillIndex;
-                    for (fillIndex = 0; fillIndex < unit->mirProgram->funcLen; fillIndex++) {
+                    for (fillIndex = 0; fillIndex < funcLen; fillIndex++) {
                         wasmIndex = WasmFunctionWasmIndex(&imports, fillIndex);
                         if (wasmIndex != UINT32_MAX) {
                             break;
@@ -9438,7 +9459,7 @@ static int EmitWasmBackend(
     {
         goto oom;
     }
-    for (i = 0; i < unit->mirProgram->funcLen; i++) {
+    for (i = 0; i < funcLen; i++) {
         HOPWasmBuf body = { .options = options };
         if (imports.reachableFunctions != NULL && imports.reachableFunctions[i] == 0u) {
             continue;
@@ -9552,8 +9573,8 @@ static int EmitWasmBackend(
     outArtifact->data = out.data;
     outArtifact->len = out.len;
     outArtifact->isBinary = 1u;
-    if (sigs != NULL && options->arenaFree != NULL) {
-        options->arenaFree(options->allocatorCtx, sigs, unit->mirProgram->funcLen * sizeof(*sigs));
+    if (funcLen > 0u && sigs != NULL && options->arenaFree != NULL) {
+        options->arenaFree(options->allocatorCtx, sigs, funcLen * sizeof(*sigs));
     }
     if (typeSec.data != NULL && options->arenaFree != NULL) {
         options->arenaFree(options->allocatorCtx, typeSec.data, typeSec.cap);
@@ -9603,8 +9624,8 @@ fail:
     if (out.data != NULL && options->arenaFree != NULL) {
         options->arenaFree(options->allocatorCtx, out.data, out.cap);
     }
-    if (sigs != NULL && options->arenaFree != NULL) {
-        options->arenaFree(options->allocatorCtx, sigs, unit->mirProgram->funcLen * sizeof(*sigs));
+    if (funcLen > 0u && sigs != NULL && options->arenaFree != NULL) {
+        options->arenaFree(options->allocatorCtx, sigs, funcLen * sizeof(*sigs));
     }
     if (typeSec.data != NULL && options->arenaFree != NULL) {
         options->arenaFree(options->allocatorCtx, typeSec.data, typeSec.cap);

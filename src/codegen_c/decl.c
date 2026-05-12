@@ -988,6 +988,9 @@ int EmitStructOrUnionDecl(H2CBackendC* c, int32_t nodeId, uint32_t depth, int is
     if (map != NULL && StrEq(map->cName, "builtin__SourceLocation")) {
         return 0;
     }
+    if (map == NULL) {
+        return -1;
+    }
 
     if (!isUnion && NodeHasDirectDependentFields(c, nodeId)) {
         return EmitVarSizeStructDecl(c, nodeId, depth);

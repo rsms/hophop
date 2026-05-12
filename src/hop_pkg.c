@@ -3053,7 +3053,15 @@ static int LoadPackageRecursive(H2PackageLoader* loader, const char* dirPath, H2
         uint32_t sourceLen = 0;
         H2Ast    ast;
         void*    arenaMem = NULL;
+        if (filePaths[i] == NULL) {
+            FreeStringList(filePaths, fileCount);
+            return -1;
+        }
         if (ReadFile(filePaths[i], &source, &sourceLen) != 0) {
+            FreeStringList(filePaths, fileCount);
+            return -1;
+        }
+        if (source == NULL) {
             FreeStringList(filePaths, fileCount);
             return -1;
         }

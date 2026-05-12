@@ -422,7 +422,7 @@ int32_t  H2TCDeclTypeParamIndex(
 int H2TCAppendDeclTypeParamPlaceholders(
     H2TypeCheckCtx* c, int32_t declNode, uint32_t* outStart, uint16_t* outCount);
 int32_t H2TCInstantiateNamedType(
-    H2TypeCheckCtx* c, int32_t rootTypeId, const int32_t* argTypes, uint16_t argCount);
+    H2TypeCheckCtx* c, int32_t rootTypeId, const int32_t* _Nullable argTypes, uint16_t argCount);
 int32_t H2TCSubstituteType(
     H2TypeCheckCtx* c,
     int32_t         typeId,
@@ -556,7 +556,7 @@ int H2TCResolveConstCallMir(
     const H2MirInst* _Nullable inst,
     uint32_t nameStart,
     uint32_t nameEnd,
-    const H2CTFEValue* _Nonnull args,
+    const H2CTFEValue* _Nullable args,
     uint32_t argCount,
     H2CTFEValue* _Nonnull outValue,
     int* _Nonnull outIsConst,
@@ -671,7 +671,7 @@ typedef struct {
 
 /* Shared declarations for multi-file typechecker internals. */
 
-void H2TCSetDiag(H2Diag* diag, H2DiagCode code, uint32_t start, uint32_t end);
+void H2TCSetDiag(H2Diag* _Nullable diag, H2DiagCode code, uint32_t start, uint32_t end);
 void H2TCSetDiagWithArg(
     H2Diag*    diag,
     H2DiagCode code,
