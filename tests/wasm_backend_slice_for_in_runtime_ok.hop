@@ -1,0 +1,19 @@
+fn sum_slice(xs &[int]) int {
+	var sum int
+	for item in xs {
+		sum += item
+	}
+	return sum
+}
+
+fn main() {
+	a := [1, 2, 3]
+	var empty  [int 0] = []
+	var padded [int 5] = [4, 5]
+	var ro_lit &[int]  = [6, 7, 8]
+
+	assert sum_slice(a) == 6
+	assert len(empty) == 0
+	assert padded[4] == 0
+	assert ro_lit[2] == 8
+}

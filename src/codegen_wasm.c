@@ -5170,6 +5170,7 @@ static int WasmEmitFunctionRange(
             case H2MirOp_TUPLE_MAKE: {
                 uint32_t tempOffset = UINT32_MAX;
                 uint32_t elemCount = H2MirCallArgCountFromTok(inst->tok);
+                uint32_t arrayCount = 0u;
                 uint8_t  arrayType = HOPWasmType_VOID;
                 uint32_t elemSize = 0u;
                 uint32_t typeRef = inst->aux;
@@ -5182,7 +5183,7 @@ static int WasmEmitFunctionRange(
                 }
                 if (!state->usesFrame || typeRef >= program->typeLen
                     || !H2MirTypeRefIsFixedArray(&program->types[typeRef])
-                    || elemCount != H2MirTypeRefFixedArrayCount(&program->types[typeRef])
+                    || elemCount > H2MirTypeRefFixedArrayCount(&program->types[typeRef])
                     || !WasmTypeKindFromMirType(program, typeRef, &arrayType)
                     || !WasmTypeKindIsArrayView(arrayType))
                 {
@@ -5212,6 +5213,7 @@ static int WasmEmitFunctionRange(
                         return -1;
                     }
                 }
+                arrayCount = H2MirTypeRefFixedArrayCount(&program->types[typeRef]);
                 elemSize = WasmTypeKindElementSize(arrayType);
                 if (elemSize == 0u) {
                     WasmSetDiag(diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
@@ -5219,6 +5221,36 @@ static int WasmEmitFunctionRange(
                         diag->detail = "unsupported tuple make";
                     }
                     return -1;
+                }
+                for (i = elemCount; i < arrayCount; i++) {
+                    uint32_t elemOffset = tempOffset + (i * elemSize);
+                    if (arrayType == HOPWasmType_ARRAY_VIEW_STR) {
+                        if (WasmEmitAddrFromFrame(body, state, elemOffset, 0u) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                            || WasmEmitI32Store(body) != 0
+                            || WasmEmitAddrFromFrame(body, state, elemOffset, 4u) != 0
+                            || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                            || WasmEmitI32Store(body) != 0)
+                        {
+                            WasmSetDiag(
+                                diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                            if (diag != NULL && diag->detail == NULL) {
+                                diag->detail = "unsupported tuple make";
+                            }
+                            return -1;
+                        }
+                    } else if (
+                        WasmEmitAddrFromFrame(body, state, elemOffset, 0u) != 0
+                        || WasmAppendByte(body, 0x41u) != 0 || WasmAppendSLEB32(body, 0) != 0
+                        || WasmEmitTypedStore(body, arrayType) != 0)
+                    {
+                        WasmSetDiag(
+                            diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
+                        if (diag != NULL && diag->detail == NULL) {
+                            diag->detail = "unsupported tuple make";
+                        }
+                        return -1;
+                    }
                 }
                 for (i = elemCount; i > 0u; i--) {
                     uint8_t  elemType = 0;
@@ -5536,15 +5568,21 @@ static int WasmEmitFunctionRange(
                             state->localTypeRefs[inst->aux] != UINT32_MAX
                                 ? state->localTypeRefs[inst->aux]
                                 : valueTypeRef);
-                        if (copySize == 0u || WasmAppendByte(body, 0x21u) != 0
-                            || WasmAppendULEB(body, state->scratch0Local) != 0
-                            || WasmEmitCopyLocalAddrToFrame(
-                                   body,
-                                   state,
-                                   state->scratch0Local,
-                                   state->frameOffsets[inst->aux],
-                                   copySize)
-                                   != 0)
+                        if (WasmAppendByte(body, 0x21u) != 0
+                            || WasmAppendULEB(body, state->scratch0Local) != 0)
+                        {
+                            return -1;
+                        }
+                        if (copySize == 0u) {
+                            break;
+                        }
+                        if (WasmEmitCopyLocalAddrToFrame(
+                                body,
+                                state,
+                                state->scratch0Local,
+                                state->frameOffsets[inst->aux],
+                                copySize)
+                            != 0)
                         {
                             WasmSetDiag(
                                 diag, H2Diag_WASM_BACKEND_UNSUPPORTED_MIR, inst->start, inst->end);
