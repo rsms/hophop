@@ -253,6 +253,17 @@ def run_cmd(
     return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
+def captured_output_detail(cp: subprocess.CompletedProcess[str]) -> str:
+    parts: List[str] = []
+    if cp.stdout:
+        parts.append(f"stdout:\n{cp.stdout}")
+    if cp.stderr:
+        parts.append(f"stderr:\n{cp.stderr}")
+    if not parts:
+        return ""
+    return "\n" + "\n".join(parts)
+
+
 def normalize_rel_path(path: str) -> str:
     return Path(path).as_posix().rstrip("/")
 
@@ -886,7 +897,10 @@ def kind_hop_fmt(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
     cp = run_cmd(args, cwd=work_dir)
 
     if cp.returncode != expect_exit:
-        return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")
+        return fail(
+            f"unexpected exit code: expected {expect_exit}, got {cp.returncode}"
+            f"{captured_output_detail(cp)}"
+        )
     if stderr_empty and cp.stderr:
         return fail(f"unexpected stderr:\n{cp.stderr}")
 
@@ -1041,6 +1055,7 @@ def kind_compile_and_run(ctx: RunContext, case: Dict[str, Any], work_dir: Path) 
     elif run_cp.returncode != expect_exit:
         return fail(
             f"unexpected runtime exit code: expected {expect_exit}, got {run_cp.returncode}"
+            f"{captured_output_detail(run_cp)}"
         )
 
     if case.get("run_stdout_empty", True) and run_cp.stdout:
@@ -1098,6 +1113,7 @@ def kind_eval_run_expectation(ctx: RunContext, case: Dict[str, Any]) -> tuple[bo
         elif cp.returncode != expect_exit:
             return fail(
                 f"unexpected cli-eval exit code: expected {expect_exit}, got {cp.returncode}"
+                f"{captured_output_detail(cp)}"
             )
 
     eval_stderr_contains = case.get("eval_stderr_contains")
@@ -1125,7 +1141,10 @@ def kind_hop_run(ctx: RunContext, case: Dict[str, Any]) -> tuple[bool, str]:
         if cp.returncode == 0:
             return fail("expected non-zero exit code")
     elif cp.returncode != expect_exit:
-        return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")
+        return fail(
+            f"unexpected exit code: expected {expect_exit}, got {cp.returncode}"
+            f"{captured_output_detail(cp)}"
+        )
 
     if case.get("stdout_empty", True) and cp.stdout:
         return fail(f"unexpected stdout:\n{cp.stdout}")
@@ -1249,7 +1268,10 @@ def kind_hop_cli(ctx: RunContext, case: Dict[str, Any], work_dir: Path) -> tuple
     )
     expect_exit = int(case.get("expect_exit", 0))
     if cp.returncode != expect_exit:
-        return fail(f"unexpected exit code: expected {expect_exit}, got {cp.returncode}")
+        return fail(
+            f"unexpected exit code: expected {expect_exit}, got {cp.returncode}"
+            f"{captured_output_detail(cp)}"
+        )
 
     expected_stdout_path = case.get("expect_stdout")
     expected_stderr_path = case.get("expect_stderr")
