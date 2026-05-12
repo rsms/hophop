@@ -76,6 +76,7 @@ class RunResult:
 class RunContext:
     build_dir: Path
     hop: Path
+    fmt_hop: Path
     cc: str
     update: bool
     sidecar_codegen: bool
@@ -449,21 +450,73 @@ def collect_pretest_fmt_exemptions(cases: List[TestCase]) -> Tuple[Set[str], Lis
     return exempt_paths, errors
 
 
-def collect_pretest_fmt_targets(exempt_paths: Set[str]) -> List[str]:
-    targets: List[str] = []
+def is_pretest_fmt_root_path(path: str) -> bool:
+    normalized = normalize_rel_path(path)
     for root_name in PRETEST_FMT_ROOTS:
-        root_path = ROOT / root_name
-        if not root_path.exists():
-            continue
-        for path in root_path.rglob("*.hop"):
-            if not path.is_file():
+        if normalized == root_name or normalized.startswith(root_name + "/"):
+            return True
+    return False
+
+
+def pretest_fmt_source_path(value: str) -> Optional[Path]:
+    expanded = Path(expand_expected_placeholders(value))
+    path = expanded if expanded.is_absolute() else ROOT / expanded
+    if not path.exists():
+        return None
+    try:
+        rel = path.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return None
+    return ROOT / rel
+
+
+def add_pretest_fmt_target(targets: Set[str], path: Path, exempt_paths: Set[str]) -> None:
+    if path.is_file():
+        if path.suffix != ".hop":
+            return
+        rel = path.relative_to(ROOT).as_posix()
+        if is_pretest_fmt_root_path(rel) and rel not in exempt_paths:
+            targets.add(rel)
+        return
+
+    if path.is_dir():
+        for source_path in path.rglob("*.hop"):
+            if not source_path.is_file():
                 continue
-            rel = path.relative_to(ROOT).as_posix()
-            if rel in exempt_paths:
-                continue
-            targets.append(rel)
-    targets.sort()
-    return targets
+            rel = source_path.relative_to(ROOT).as_posix()
+            if is_pretest_fmt_root_path(rel) and rel not in exempt_paths:
+                targets.add(rel)
+
+
+def collect_pretest_fmt_targets(cases: List[TestCase], exempt_paths: Set[str]) -> List[str]:
+    targets: Set[str] = set()
+
+    for case in cases:
+        input_value = case.data.get("input")
+        if isinstance(input_value, str) and input_value:
+            path = pretest_fmt_source_path(input_value)
+            if path is not None:
+                add_pretest_fmt_target(targets, path, exempt_paths)
+
+        args = case.data.get("args")
+        if isinstance(args, list):
+            for arg in args:
+                if not isinstance(arg, str) or not arg:
+                    continue
+                path = pretest_fmt_source_path(arg)
+                if path is not None:
+                    add_pretest_fmt_target(targets, path, exempt_paths)
+
+        extra_build_inputs = case.data.get("extra_build_inputs")
+        if isinstance(extra_build_inputs, list):
+            for item in extra_build_inputs:
+                if not isinstance(item, str) or not item:
+                    continue
+                path = pretest_fmt_source_path(item)
+                if path is not None:
+                    add_pretest_fmt_target(targets, path, exempt_paths)
+
+    return sorted(targets)
 
 
 def is_pretest_fmt_strict_target(path: str) -> bool:
@@ -475,17 +528,49 @@ def is_pretest_fmt_strict_target(path: str) -> bool:
 
 
 def run_pretest_fmt_target(ctx: RunContext, path: str) -> tuple[str, subprocess.CompletedProcess[str]]:
-    return path, run_cmd([str(ctx.hop), "fmt", "--check", path])
+    return path, run_cmd([str(ctx.fmt_hop), "fmt", "--check", path])
 
 
-def run_pretest_fmt_check(ctx: RunContext, all_cases: List[TestCase], jobs: int) -> tuple[bool, str]:
-    exempt_paths, config_errors = collect_pretest_fmt_exemptions(all_cases)
+def release_build_dir_for(build_dir: Path) -> Path:
+    name = build_dir.name
+    for suffix in ("-debug", "-release"):
+        if name.endswith(suffix):
+            return build_dir.with_name(name[: -len(suffix)] + "-release")
+    return build_dir.with_name(name + "-release")
+
+
+def build_release_hop_for_formatting(build_dir: Path, cc: str) -> tuple[bool, Path, str]:
+    release_dir = release_build_dir_for(build_dir)
+    release_hop = release_dir / "hop"
+
+    print("Building release hop for formatting", flush=True)
+    cp = run_cmd([str(ROOT / "build.sh"), "release", f"cc={cc}"])
+    if cp.returncode != 0:
+        return False, release_hop, (
+            "failed to build release hop for formatting\n"
+            f"stdout:\n{cp.stdout}\n"
+            f"stderr:\n{cp.stderr}"
+        )
+    if not release_hop.exists():
+        return False, release_hop, f"release hop binary not found after build: {release_hop}"
+    return True, release_hop, ""
+
+
+def run_pretest_fmt_check(ctx: RunContext, cases: List[TestCase], jobs: int) -> tuple[bool, str]:
+    exempt_paths, config_errors = collect_pretest_fmt_exemptions(cases)
     if config_errors:
         return fail("pre-test formatter config errors:\n" + "\n".join(config_errors))
 
-    targets = collect_pretest_fmt_targets(exempt_paths)
+    targets = collect_pretest_fmt_targets(cases, exempt_paths)
     if not targets:
         return ok()
+
+    fmt_ok, fmt_hop, fmt_detail = build_release_hop_for_formatting(ctx.build_dir, ctx.cc)
+    if not fmt_ok:
+        return fail(fmt_detail)
+    ctx.fmt_hop = fmt_hop
+
+    print(f"Checking formatting of {count_noun(len(targets), 'source')}", flush=True)
 
     dirty_paths: Set[str] = set()
     command_errors: List[str] = []
@@ -1984,6 +2069,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     ctx = RunContext(
         build_dir=build_dir,
         hop=hop,
+        fmt_hop=release_build_dir_for(build_dir) / "hop",
         cc=args.cc,
         update=args.update,
         sidecar_codegen=not args.no_sidecar_codegen and not args.eval_only,
@@ -1991,8 +2077,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     jobs = args.jobs if args.jobs and args.jobs > 0 else (os.cpu_count() or 1)
+    preflight_jobs = (
+        args.preflight_jobs
+        if args.preflight_jobs and args.preflight_jobs > 0
+        else (os.cpu_count() or 1)
+    )
 
-    fmt_ok, fmt_detail = run_pretest_fmt_check(ctx, all_fixtures, jobs)
+    fmt_ok, fmt_detail = run_pretest_fmt_check(ctx, fixtures, preflight_jobs)
     if not fmt_ok:
         print(fmt_detail, file=sys.stderr)
         return 1
@@ -2084,6 +2175,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     sp.add_argument("--build-dir", default="_build/macos-aarch64-debug")
     sp.add_argument("--cc", default="clang")
     sp.add_argument("--jobs", type=int, default=0)
+    sp.add_argument(
+        "--preflight-jobs",
+        type=int,
+        default=0,
+        help="parallelism for pre-test work such as formatting checks; defaults to CPU count",
+    )
     sp.add_argument("--update", action="store_true", help="update *.expected.c sidecars")
     sp.add_argument("--no-sidecar-codegen", action="store_true")
     sp.add_argument("--eval-only", action="store_true", help="skip C-backend-only executions")
