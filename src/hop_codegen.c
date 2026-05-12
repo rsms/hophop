@@ -64,6 +64,74 @@ static int ErrorCBackendDisabled(void) {
     return ErrorSimple("this hop build was compiled without the C backend");
 }
 
+static const H2ParsedFile* _Nullable FindMirBackendDiagFile(
+    const H2PackageLoader* loader, const H2MirProgram* program, const H2Diag* diag) {
+    uint32_t matchedSourceRef = UINT32_MAX;
+    uint32_t fnIndex;
+    uint32_t pkgIndex;
+    if (loader == NULL || program == NULL || diag == NULL || diag->end <= diag->start) {
+        return NULL;
+    }
+    for (fnIndex = 0; fnIndex < program->funcLen; fnIndex++) {
+        const H2MirFunction* fn = &program->funcs[fnIndex];
+        uint32_t             instIndex;
+        uint32_t             localIndex;
+        int                  matched = 0;
+        if (fn->sourceRef >= program->sourceLen) {
+            continue;
+        }
+        if (fn->nameStart == diag->start && fn->nameEnd == diag->end) {
+            matched = 1;
+        }
+        if (fn->instStart <= program->instLen && fn->instLen <= program->instLen - fn->instStart) {
+            for (instIndex = fn->instStart; !matched && instIndex < fn->instStart + fn->instLen;
+                 instIndex++)
+            {
+                const H2MirInst* inst = &program->insts[instIndex];
+                if (inst->start == diag->start && inst->end == diag->end) {
+                    matched = 1;
+                }
+            }
+        }
+        if (fn->localStart <= program->localLen
+            && fn->localCount <= program->localLen - fn->localStart)
+        {
+            for (localIndex = fn->localStart;
+                 !matched && localIndex < fn->localStart + fn->localCount;
+                 localIndex++)
+            {
+                const H2MirLocal* local = &program->locals[localIndex];
+                if (local->nameStart == diag->start && local->nameEnd == diag->end) {
+                    matched = 1;
+                }
+            }
+        }
+        if (!matched) {
+            continue;
+        }
+        if (matchedSourceRef != UINT32_MAX && matchedSourceRef != fn->sourceRef) {
+            return NULL;
+        }
+        matchedSourceRef = fn->sourceRef;
+    }
+    if (matchedSourceRef == UINT32_MAX || matchedSourceRef >= program->sourceLen) {
+        return NULL;
+    }
+    for (pkgIndex = 0; pkgIndex < loader->packageLen; pkgIndex++) {
+        const H2Package* pkg = &loader->packages[pkgIndex];
+        uint32_t         fileIndex;
+        for (fileIndex = 0; fileIndex < pkg->fileLen; fileIndex++) {
+            const H2ParsedFile* file = &pkg->files[fileIndex];
+            if (file->source == program->sources[matchedSourceRef].src.ptr
+                && file->sourceLen == program->sources[matchedSourceRef].src.len)
+            {
+                return file;
+            }
+        }
+    }
+    return NULL;
+}
+
 int GeneratePackageInput(
     const H2PackageInput* input,
     const char*           backendName,
@@ -202,8 +270,12 @@ int GeneratePackageInput(
             goto rebuild_mir;
         }
         if (diag.code != H2Diag_NONE) {
-            int diagStatus;
-            if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
+            int                 diagStatus;
+            const H2ParsedFile* diagFile =
+                needsMir ? FindMirBackendDiagFile(&loader, unit.mirProgram, &diag) : NULL;
+            if (diagFile != NULL) {
+                diagStatus = PrintHOPDiagLineCol(diagFile->path, diagFile->source, &diag, 1);
+            } else if (entryPkg->fileLen == 1 && entryPkg->importLen == 0) {
                 diagStatus = PrintHOPDiagLineCol(
                     entryPkg->files[0].path, entryPkg->files[0].source, &diag, 1);
             } else {
