@@ -3978,6 +3978,70 @@ static int H2TCInferTemplateArgsFromTypes(
         return 0;
     }
     if (c->types[resolvedParam].kind != c->types[resolvedArg].kind) {
+        const H2TCType* param = &c->types[resolvedParam];
+        const H2TCType* arg = &c->types[resolvedArg];
+        if (param->kind == H2TCType_REF) {
+            if (arg->kind == H2TCType_REF || arg->kind == H2TCType_PTR) {
+                return H2TCInferTemplateArgsFromTypes(
+                    c,
+                    param->baseType,
+                    arg->baseType,
+                    templateParamTypes,
+                    templateArgTypes,
+                    templateArgCount,
+                    errStart,
+                    errEnd);
+            }
+            if (arg->kind == H2TCType_ARRAY) {
+                return H2TCInferTemplateArgsFromTypes(
+                    c,
+                    param->baseType,
+                    resolvedArg,
+                    templateParamTypes,
+                    templateArgTypes,
+                    templateArgCount,
+                    errStart,
+                    errEnd);
+            }
+        }
+        if (param->kind == H2TCType_PTR && arg->kind == H2TCType_ARRAY) {
+            return H2TCInferTemplateArgsFromTypes(
+                c,
+                param->baseType,
+                resolvedArg,
+                templateParamTypes,
+                templateArgTypes,
+                templateArgCount,
+                errStart,
+                errEnd);
+        }
+        if (param->kind == H2TCType_SLICE) {
+            if (arg->kind == H2TCType_ARRAY) {
+                return H2TCInferTemplateArgsFromTypes(
+                    c,
+                    param->baseType,
+                    arg->baseType,
+                    templateParamTypes,
+                    templateArgTypes,
+                    templateArgCount,
+                    errStart,
+                    errEnd);
+            }
+            if (arg->kind == H2TCType_PTR && arg->baseType >= 0
+                && (uint32_t)arg->baseType < c->typeLen
+                && c->types[arg->baseType].kind == H2TCType_ARRAY)
+            {
+                return H2TCInferTemplateArgsFromTypes(
+                    c,
+                    param->baseType,
+                    c->types[arg->baseType].baseType,
+                    templateParamTypes,
+                    templateArgTypes,
+                    templateArgCount,
+                    errStart,
+                    errEnd);
+            }
+        }
         return 0;
     }
     switch (c->types[resolvedParam].kind) {

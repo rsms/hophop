@@ -1,0 +1,9 @@
+// Verifies generic function inference through array-to-readonly-slice conversion.
+fn mylen[T](x &[T]) int {
+	return len(x)
+}
+
+fn main() {
+	a := [1, 2, 3]
+	assert mylen(a) == 3
+}
