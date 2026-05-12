@@ -1,0 +1,1 @@
+tests/for_postfix_dec_bad.hop:3:27: error: HOP1020: invalid postfix operator '--'

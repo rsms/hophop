@@ -1,0 +1,5 @@
+// Verifies invalid postfix decrement diagnostic in for post clause.
+fn main() {
+    for i := 100; i > 0; i-- {
+    }
+}

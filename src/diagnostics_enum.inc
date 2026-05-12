@@ -21,6 +21,7 @@ H2Diag_NONE = 0, H2Diag_UNEXPECTED_CHAR, /* HOP1001: unexpected character */
     H2Diag_INVALID_UTF8_RUNE,      /* HOP1018: rune literal must decode to valid UTF-8 */
     H2Diag_CONST_PARAM_GROUPED_NAME_INVALID, /* HOP1019: grouped-name form is invalid for const
                                                 parameter; rewrite as separate const parameters */
+    H2Diag_INVALID_POSTFIX_OPERATOR,         /* HOP1020: invalid postfix operator '{s}' */
     H2Diag_DUPLICATE_SYMBOL,                 /* HOP2001: duplicate definition '{s}' */
     H2Diag_UNKNOWN_SYMBOL,                   /* HOP2002: unknown symbol */
     H2Diag_UNKNOWN_TYPE,                     /* HOP2003: unknown type */

@@ -1,0 +1,1 @@
+tests/for_postfix_inc_bad.hop:3:28: error: HOP1020: invalid postfix operator '++'

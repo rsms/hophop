@@ -1848,6 +1848,44 @@ static int H2PParsePrefix(H2Parser* p, int32_t* out) {
     }
 }
 
+static int H2PIsPostfixOperatorBoundary(H2TokenKind kind) {
+    switch (kind) {
+        case H2Tok_LBRACE:
+        case H2Tok_RBRACE:
+        case H2Tok_RPAREN:
+        case H2Tok_RBRACK:
+        case H2Tok_COMMA:
+        case H2Tok_SEMICOLON:
+        case H2Tok_EOF:       return 1;
+        default:              return 0;
+    }
+}
+
+static int H2PFailInvalidAdjacentPostfixOperator(H2Parser* p, H2TokenKind op) {
+    const H2Token* first;
+    const H2Token* second;
+    const H2Token* after;
+    if (p->pos + 2u >= p->tokLen) {
+        return 0;
+    }
+    first = &p->tok[p->pos];
+    second = &p->tok[p->pos + 1u];
+    after = &p->tok[p->pos + 2u];
+    if (first->kind != op || second->kind != op || first->end != second->start
+        || !H2PIsPostfixOperatorBoundary(after->kind))
+    {
+        return 0;
+    }
+    H2PSetDiagWithArg(
+        p->diag,
+        H2Diag_INVALID_POSTFIX_OPERATOR,
+        first->start,
+        second->end,
+        first->start,
+        second->end);
+    return -1;
+}
+
 static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out) {
     int32_t lhs;
     if (H2PParsePrefix(p, &lhs) != 0) {
@@ -1861,6 +1899,11 @@ static int H2PParseExpr(H2Parser* p, int minPrec, int32_t* out) {
         int32_t     rhs;
         int32_t     n;
 
+        if ((op == H2Tok_ADD || op == H2Tok_SUB)
+            && H2PFailInvalidAdjacentPostfixOperator(p, op) != 0)
+        {
+            return -1;
+        }
         if (prec < minPrec || prec == 0) {
             break;
         }
