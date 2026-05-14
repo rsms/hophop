@@ -1,41 +1,33 @@
-fn gcd(a, b i32) i32 {
-	x := a
-	y := b
-	if x < 0 {
-		x = -x
+fn gcd_recursive(u, _v int) int {
+	if _v == 0 {
+		return u
+	} else {
+		return gcd_recursive(_v, u % _v)
 	}
-	if y < 0 {
-		y = -y
-	}
+}
 
-	if x == 0 {
-		return y
+fn gcd_iterative(u, _v int) int {
+	for _v != 0 {
+		u, _v = _v, u % _v
 	}
-	if y == 0 {
-		return x
-	}
-
-	for x != y {
-		if x > y {
-			x -= y
-		} else {
-			y -= x
-		}
-	}
-	return x
+	return u
 }
 
 fn main() {
-	assert gcd(48, b: 18) == 6
-	print("gcd(48, 18) = 6")
-	assert gcd(54, b: 24) == 6
-	print("gcd(54, 24) = 6")
-	assert gcd(17, b: 13) == 1
-	print("gcd(17, 13) = 1")
-	assert gcd(42, b: 0) == 42
-	print("gcd(42, 0) = 42")
-	assert gcd(0, b: 42) == 42
-	print("gcd(0, 42) = 42")
-	assert gcd(270, b: 192) == 6
-	print("gcd(270, 192) = 6")
+	print(gcd_recursive(2706, 410))
+	print(gcd_iterative(2706, 410))
+
+	assert gcd_recursive(48, 18) == 6
+	assert gcd_recursive(54, 24) == 6
+	assert gcd_recursive(17, 13) == 1
+	assert gcd_recursive(42, 0) == 42
+	assert gcd_recursive(0, 42) == 42
+	assert gcd_recursive(270, 192) == 6
+
+	assert gcd_iterative(48, 18) == 6
+	assert gcd_iterative(54, 24) == 6
+	assert gcd_iterative(17, 13) == 1
+	assert gcd_iterative(42, 0) == 42
+	assert gcd_iterative(0, 42) == 42
+	assert gcd_iterative(270, 192) == 6
 }
