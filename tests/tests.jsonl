@@ -738,7 +738,7 @@
 {"id":"integration.examples.multi_assign.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/multi-assign.hop"}
 {"id":"integration.examples.strings.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/strings.hop"}
 {"id":"integration.examples.vss.compile_only","suite":"integration.examples","kind":"compile_only","input":"examples/vss.hop"}
-{"id":"unit.libhop.freestanding_compile","suite":"unit.libhop","kind":"libhop_freestanding"}
+{"id":"unit.libhop.headers_freestanding_compile","suite":"unit.libhop","kind":"hop_headers_freestanding"}
 {"id":"unit.libhop.builtin_h_freestanding_compile","suite":"unit.libhop","kind":"builtin_h_freestanding"}
 {"id":"unit.libhop.arena_grow_test","suite":"unit.libhop","kind":"arena_grow_test"}
 {"id":"ast:tests/ast_type_alias.hop","suite":"spec.lex_parse_check","kind":"hop_stdout_eq","mode":"ast","input":"tests/ast_type_alias.hop","expect":"tests/ast_type_alias.ast"}

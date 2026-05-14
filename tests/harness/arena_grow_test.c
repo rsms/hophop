@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define H2_IMPLEMENTATION
 #include "libhop.h"
 
 typedef struct {

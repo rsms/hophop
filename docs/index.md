@@ -49,8 +49,9 @@ Work on runtime/platform integration:
 
 Work on compiler/library APIs:
 - `src/libhop.h` (`HOPLex`, `HOPParse`, `HOPTypeCheck`, diagnostics)
-- `src/hop.c` (CLI flow)
-- `src/codegen_c.c` (C backend)
+- `src/os.h` (replaceable OS/libc boundary)
+- `src/hop_main.c` (CLI flow)
+- `src/codegen_c/` (C backend)
 
 ## Current Language Surface
 

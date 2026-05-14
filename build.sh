@@ -59,6 +59,7 @@ if [ -f .git ]; then
 fi
 
 cli_sources=(
+    src/os_libc.c
     src/evaluator.c
     src/evaluator_entry.c
     src/evaluator_mir.c
@@ -75,6 +76,7 @@ if [ $c_backend = 1 ]; then
             -and -not -name 'evaluator.c' \
             -and -not -name 'evaluator_entry.c' \
             -and -not -name 'evaluator_mir.c' \
+            -and -not -name 'os_libc.c' \
             -and -not -name 'hop_support.c' \
             -and -not -name 'hop_pkg.c' \
             -and -not -name 'hop_mir.c' \
@@ -89,6 +91,7 @@ else
             -and -not -name 'evaluator.c' \
             -and -not -name 'evaluator_entry.c' \
             -and -not -name 'evaluator_mir.c' \
+            -and -not -name 'os_libc.c' \
             -and -not -name 'hop_support.c' \
             -and -not -name 'hop_pkg.c' \
             -and -not -name 'hop_mir.c' \
@@ -101,14 +104,8 @@ case " ${lib_sources[*]} " in
 *" $diag_c_out "*) ;;
 *) lib_sources+=( "$diag_c_out" ) ;;
 esac
-libhop_sources=()
-for srcfile in "${lib_sources[@]}"; do
-    libhop_sources+=( "$srcfile" )
-done
-lib_headers=( $(find src -maxdepth 2 -name '*.h' -and -not -name '*.inc.h' | sort -V) )
 builtin_hop_sources=( $(find lib/builtin -maxdepth 1 -name '*.hop' | sort -V) )
 cli_output=hop
-lib_output=libhop.h
 toolchain=${toolchain:-/opt/homebrew/opt/llvm}
 [ -z "$toolchain" -a -x "$toolchain/bin/clang" ] || export PATH=$toolchain/bin:$PATH
 format=${format:-$([ $debug = 1 -a -n "$(command -v clang-format)" ] && echo 1 || echo 0 )}
@@ -167,7 +164,6 @@ c_backend       = $c_backend
 wasm_backend    = $wasm_backend
 cli_sources     = ${cli_sources[@]:-}
 lib_sources     = ${lib_sources[@]:-}
-libhop_sources   = ${libhop_sources[@]:-}
 c_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${c_flags[@]:-}")
 l_flags = $(printf "\n    %s" "${x_flags[@]:-}" "${l_flags[@]:-}")
 _END
@@ -266,10 +262,6 @@ rule cc
     depfile = \$out.d
     description = compile \$in
 
-rule amalgamate
-    command = bash tools/amalgamate.sh $(_if_debug --debug) \$out \$in
-    description = generate \$out
-
 rule copy
     command = mkdir -p \`dirname \$out\` && cp \$in \$out
     description = copy \$out
@@ -302,14 +294,13 @@ git_index=$(git rev-parse --git-dir || true)
 
 cat << _END >> $NF
 build ${diag_outputs[*]}: diaggen $diag_json $diag_tool
-build \$builddir/libhop.h: amalgamate ${lib_headers[@]} ${libhop_sources[@]} | tools/amalgamate.sh tools/amalgamate.py ${git_index} ${diag_outputs[*]}
 build \$builddir/lib/builtin/builtin_abi.stamp: builtinabigen ${builtin_hop_sources[@]} lib/platform/platform.hop tools/gen_builtin_abi.py
 build \$builddir/lib/builtin/builtin.h: copy lib/builtin/builtin.h | \$builddir/lib/builtin/builtin_abi.stamp
 build \$builddir/lib/builtin/builtin.c: copy lib/builtin/builtin.c
 build \$builddir/lib/platform/cli-libc/platform.c: copy lib/platform/cli-libc/platform.c
 build \$builddir/hop: link ${objfiles[*]}
 
-default \$builddir/libhop.h \$builddir/lib/builtin/builtin.h \$builddir/lib/builtin/builtin.c \$builddir/lib/platform/cli-libc/platform.c \$builddir/hop
+default \$builddir/lib/builtin/builtin.h \$builddir/lib/builtin/builtin.c \$builddir/lib/platform/cli-libc/platform.c \$builddir/hop
 _END
 
 if [ ! -f build.ninja ]; then

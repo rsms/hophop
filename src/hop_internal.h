@@ -1,9 +1,8 @@
 #pragma once
 #include "codegen.h"
+#include "os.h"
 
 H2_API_BEGIN
-
-struct stat;
 
 #ifndef H2_WITH_C_BACKEND
     #define H2_WITH_C_BACKEND 1
@@ -216,7 +215,7 @@ int         Errorf(
     uint32_t    start,
     uint32_t    end,
     const char* fmt,
-    ...);
+    ...) H2_FMT_ATTR(printf, 5, 6);
 int ErrorDiagf(
     const char* file,
     const char* _Nullable source,
@@ -224,7 +223,7 @@ int ErrorDiagf(
     uint32_t   end,
     H2DiagCode code,
     ...);
-int ErrorSimple(const char* fmt, ...);
+int ErrorSimple(const char* fmt, ...) H2_FMT_ATTR(printf, 1, 2);
 int PrintHOPDiag(
     const char* filename, const char* _Nullable source, const H2Diag* diag, int includeHint);
 int PrintHOPDiagLineCol(
@@ -277,10 +276,9 @@ char* _Nullable H2CDupSlice(const char* s, uint32_t start, uint32_t end);
 char* _Nullable JoinPath(const char* _Nullable a, const char* _Nullable b);
 char* _Nullable DirNameDup(const char* path);
 char* _Nullable GetExeDir(void);
-uint64_t StatMtimeNs(const struct stat* st);
-int      GetFileMtimeNs(const char* path, uint64_t* outMtimeNs);
-int      EnsureDirPath(const char* path);
-int      EnsureDirRecursive(const char* path);
+int GetFileMtimeNs(const char* path, uint64_t* outMtimeNs);
+int EnsureDirPath(const char* path);
+int EnsureDirRecursive(const char* path);
 char* _Nullable MakeAbsolutePathDup(const char* path);
 uint64_t HashFNV1a64(const char* s);
 char* _Nullable BuildSanitizedIdent(const char* s, const char* fallback);
@@ -299,8 +297,8 @@ int  ReadFile(const char* filename, char** outData, uint32_t* outLen);
 int  ListTopLevelHOPFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* outLen);
 int  WriteFileAtomic(const char* filename, const char* data, uint32_t len);
 int  RunFmtCommand(int argc, const char* const* argv);
-int  DumpTokens(void* out, const char* filename, const char* source, uint32_t sourceLen);
-int  DumpAST(void* out, const char* filename, const char* source, uint32_t sourceLen);
+int  DumpTokens(H2OSOutput* out, const char* filename, const char* source, uint32_t sourceLen);
+int  DumpAST(H2OSOutput* out, const char* filename, const char* source, uint32_t sourceLen);
 void StdoutWrite(void* ctx, const char* data, uint32_t len);
 void FileWrite(void* ctx, const char* data, uint32_t len);
 int  IsFnReturnTypeNodeKind(H2AstKind kind);

@@ -1,18 +1,10 @@
 #include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
-#endif
 
 #include "codegen.h"
 #include "ctfe.h"
@@ -44,7 +36,7 @@ const char* DisplayPath(const char* path) {
     static size_t cwdLen = 0;
     static int    init = 0;
     if (!init) {
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        if (H2OSGetCwd(cwd, sizeof(cwd)) == 0) {
             cwdLen = strlen(cwd);
         }
         init = 1;
@@ -528,36 +520,36 @@ static char* _Nullable DiagDupFormatMessage(
     return out;
 }
 
-static void DiagPrintJsonEscaped(FILE* f, const char* _Nullable s) {
+static void DiagPrintJsonEscaped(const char* _Nullable s) {
     const unsigned char* p = (const unsigned char*)s;
     if (s == NULL) {
-        fputs("null", f);
+        H2OSPrintStderr("null");
         return;
     }
-    fputc('"', f);
+    H2OSPutcStderr('"');
     while (*p != 0) {
         unsigned char c = *p++;
         switch (c) {
-            case '"':  fputs("\\\"", f); break;
-            case '\\': fputs("\\\\", f); break;
-            case '\b': fputs("\\b", f); break;
-            case '\f': fputs("\\f", f); break;
-            case '\n': fputs("\\n", f); break;
-            case '\r': fputs("\\r", f); break;
-            case '\t': fputs("\\t", f); break;
+            case '"':  H2OSPrintStderr("\\\""); break;
+            case '\\': H2OSPrintStderr("\\\\"); break;
+            case '\b': H2OSPrintStderr("\\b"); break;
+            case '\f': H2OSPrintStderr("\\f"); break;
+            case '\n': H2OSPrintStderr("\\n"); break;
+            case '\r': H2OSPrintStderr("\\r"); break;
+            case '\t': H2OSPrintStderr("\\t"); break;
             default:
                 if (c < 0x20u) {
-                    fprintf(f, "\\u%04x", (unsigned)c);
+                    H2OSPrintStderr("\\u%04x", (unsigned)c);
                 } else {
-                    fputc((int)c, f);
+                    H2OSPutcStderr((int)c);
                 }
                 break;
         }
     }
-    fputc('"', f);
+    H2OSPutcStderr('"');
 }
 
-static void DiagPrintJsonSpan(FILE* f, const char* _Nullable source, uint32_t start, uint32_t end) {
+static void DiagPrintJsonSpan(const char* _Nullable source, uint32_t start, uint32_t end) {
     uint32_t line = 0;
     uint32_t col = 0;
     uint32_t endLine = 0;
@@ -567,8 +559,7 @@ static void DiagPrintJsonSpan(FILE* f, const char* _Nullable source, uint32_t st
         DiagOffsetToLineCol(source, start, &line, &col);
         DiagOffsetToLineCol(source, end, &endLine, &endCol);
     }
-    fprintf(
-        f,
+    H2OSPrintStderr(
         "{\"start\":%u,\"end\":%u,\"line\":%u,\"column\":%u,\"end_line\":%u,\"end_column\":%u}",
         start,
         end,
@@ -669,70 +660,67 @@ static int PrintHOPDiagJSON(
         (diag->hintOverride != NULL && diag->hintOverride[0] != '\0')
             ? diag->hintOverride
             : H2DiagHint(diag->code);
-    fprintf(stderr, "{");
-    fprintf(stderr, "\"id\":");
-    DiagPrintJsonEscaped(stderr, DiagIdOrFallback(diag->code));
-    fprintf(stderr, ",\"severity\":");
-    DiagPrintJsonEscaped(stderr, diag->type == H2DiagType_WARNING ? "warning" : "error");
-    fprintf(stderr, ",\"phase\":");
-    DiagPrintJsonEscaped(stderr, DiagPhaseName(diag->phase));
-    fprintf(stderr, ",\"message\":");
-    DiagPrintJsonEscaped(stderr, message != NULL ? message : H2DiagMessage(diag->code));
-    fprintf(stderr, ",\"detail\":");
-    DiagPrintJsonEscaped(stderr, diag->detail);
-    fprintf(stderr, ",\"hint\":");
-    DiagPrintJsonEscaped(stderr, hint);
-    fprintf(stderr, ",\"path\":");
-    DiagPrintJsonEscaped(stderr, DisplayPath(filename));
-    fprintf(stderr, ",\"span\":");
-    DiagPrintJsonSpan(stderr, source, diag->start, diag->end);
-    fprintf(
-        stderr,
-        ",\"group_id\":%u,\"is_primary\":%s",
-        diag->groupId,
-        diag->isPrimary ? "true" : "false");
-    fprintf(stderr, ",\"notes\":[");
+    H2OSPrintStderr("{");
+    H2OSPrintStderr("\"id\":");
+    DiagPrintJsonEscaped(DiagIdOrFallback(diag->code));
+    H2OSPrintStderr(",\"severity\":");
+    DiagPrintJsonEscaped(diag->type == H2DiagType_WARNING ? "warning" : "error");
+    H2OSPrintStderr(",\"phase\":");
+    DiagPrintJsonEscaped(DiagPhaseName(diag->phase));
+    H2OSPrintStderr(",\"message\":");
+    DiagPrintJsonEscaped(message != NULL ? message : H2DiagMessage(diag->code));
+    H2OSPrintStderr(",\"detail\":");
+    DiagPrintJsonEscaped(diag->detail);
+    H2OSPrintStderr(",\"hint\":");
+    DiagPrintJsonEscaped(hint);
+    H2OSPrintStderr(",\"path\":");
+    DiagPrintJsonEscaped(DisplayPath(filename));
+    H2OSPrintStderr(",\"span\":");
+    DiagPrintJsonSpan(source, diag->start, diag->end);
+    H2OSPrintStderr(
+        ",\"group_id\":%u,\"is_primary\":%s", diag->groupId, diag->isPrimary ? "true" : "false");
+    H2OSPrintStderr(",\"notes\":[");
     for (i = 0; i < diag->notesLen; i++) {
         const char* notePath = diag->notes[i].path != NULL ? diag->notes[i].path : filename;
         const char* noteSource = diag->notes[i].source != NULL ? diag->notes[i].source : source;
         if (i != 0) {
-            fputc(',', stderr);
+            H2OSPutcStderr(',');
         }
-        fprintf(stderr, "{\"kind\":");
-        DiagPrintJsonEscaped(stderr, DiagNoteKindName(diag->notes[i].kind));
-        fprintf(stderr, ",\"message\":");
-        DiagPrintJsonEscaped(stderr, diag->notes[i].message);
-        fprintf(stderr, ",\"path\":");
-        DiagPrintJsonEscaped(stderr, DisplayPath(notePath));
-        fprintf(stderr, ",\"span\":");
-        DiagPrintJsonSpan(stderr, noteSource, diag->notes[i].start, diag->notes[i].end);
-        fputc('}', stderr);
+        H2OSPrintStderr("{\"kind\":");
+        DiagPrintJsonEscaped(DiagNoteKindName(diag->notes[i].kind));
+        H2OSPrintStderr(",\"message\":");
+        DiagPrintJsonEscaped(diag->notes[i].message);
+        H2OSPrintStderr(",\"path\":");
+        DiagPrintJsonEscaped(DisplayPath(notePath));
+        H2OSPrintStderr(",\"span\":");
+        DiagPrintJsonSpan(noteSource, diag->notes[i].start, diag->notes[i].end);
+        H2OSPutcStderr('}');
     }
-    fprintf(stderr, "],\"fixits\":[");
+    H2OSPrintStderr("],\"fixits\":[");
     for (i = 0; i < diag->fixItsLen; i++) {
         if (i != 0) {
-            fputc(',', stderr);
+            H2OSPutcStderr(',');
         }
-        fprintf(stderr, "{\"kind\":");
-        DiagPrintJsonEscaped(stderr, DiagFixItKindName(diag->fixIts[i].kind));
-        fprintf(stderr, ",\"span\":");
-        DiagPrintJsonSpan(stderr, source, diag->fixIts[i].start, diag->fixIts[i].end);
-        fprintf(stderr, ",\"text\":");
-        DiagPrintJsonEscaped(stderr, diag->fixIts[i].text);
-        fputc('}', stderr);
+        H2OSPrintStderr("{\"kind\":");
+        DiagPrintJsonEscaped(DiagFixItKindName(diag->fixIts[i].kind));
+        H2OSPrintStderr(",\"span\":");
+        DiagPrintJsonSpan(source, diag->fixIts[i].start, diag->fixIts[i].end);
+        H2OSPrintStderr(",\"text\":");
+        DiagPrintJsonEscaped(diag->fixIts[i].text);
+        H2OSPutcStderr('}');
     }
-    fprintf(stderr, "],\"expectations\":[");
+    H2OSPrintStderr("],\"expectations\":[");
     for (i = 0; i < diag->expectationsLen; i++) {
         if (i != 0) {
-            fputc(',', stderr);
+            H2OSPutcStderr(',');
         }
-        fprintf(stderr, "{\"kind\":");
-        DiagPrintJsonEscaped(stderr, DiagExpectationKindName(diag->expectations[i].kind));
-        fprintf(stderr, ",\"text\":");
-        DiagPrintJsonEscaped(stderr, diag->expectations[i].text);
-        fputc('}', stderr);
+        H2OSPrintStderr("{\"kind\":");
+        DiagPrintJsonEscaped(DiagExpectationKindName(diag->expectations[i].kind));
+        H2OSPrintStderr(",\"text\":");
+        DiagPrintJsonEscaped(diag->expectations[i].text);
+        H2OSPutcStderr('}');
     }
-    fprintf(stderr, "]}\n");
+    H2OSPrintStderr("]}\n");
     free(message);
     return diag->type == H2DiagType_WARNING ? 0 : -1;
 }
@@ -887,7 +875,7 @@ uint32_t ArenaBytesCapacity(const H2Arena* arena) {
 }
 
 int ArenaDebugEnabled(void) {
-    const char* s = getenv("H2_ARENA_DEBUG");
+    const char* s = H2OSGetEnv("H2_ARENA_DEBUG");
     return s != NULL && s[0] != '\0' && s[0] != '0';
 }
 
@@ -1283,85 +1271,24 @@ char* _Nullable DirNameDup(const char* path) {
 /* Returns a malloc'd string with the directory containing the running
  * executable, or NULL on failure. Caller must free. */
 char* _Nullable GetExeDir(void) {
-#if defined(__APPLE__)
-    char     buf[PATH_MAX];
-    char     resolved[PATH_MAX];
-    uint32_t size = sizeof(buf);
-    if (_NSGetExecutablePath(buf, &size) != 0) {
-        return NULL;
-    }
-    if (realpath(buf, resolved) == NULL) {
-        return NULL;
-    }
-    return DirNameDup(resolved);
-#elif defined(__linux__)
-    char    buf[PATH_MAX];
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        return NULL;
-    }
-    buf[n] = '\0';
-    return DirNameDup(buf);
-#else
-    return NULL;
-#endif
-}
-
-uint64_t StatMtimeNs(const struct stat* st) {
-#if defined(__APPLE__)
-    return (uint64_t)st->st_mtimespec.tv_sec * 1000000000ull + (uint64_t)st->st_mtimespec.tv_nsec;
-#elif defined(__linux__)
-    return (uint64_t)st->st_mtim.tv_sec * 1000000000ull + (uint64_t)st->st_mtim.tv_nsec;
-#else
-    return (uint64_t)st->st_mtime * 1000000000ull;
-#endif
+    return H2OSGetExeDir();
 }
 
 int GetFileMtimeNs(const char* path, uint64_t* outMtimeNs) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
+    H2OSFileInfo info;
+    if (H2OSPathInfo(path, &info) != 0) {
         return -1;
     }
-    *outMtimeNs = StatMtimeNs(&st);
+    *outMtimeNs = info.mtimeNs;
     return 0;
 }
 
 int EnsureDirPath(const char* path) {
-    struct stat st;
-    if (stat(path, &st) == 0) {
-        if (S_ISDIR(st.st_mode)) {
-            return 0;
-        }
-        return -1;
-    }
-    if (mkdir(path, 0777) == 0) {
-        return 0;
-    }
-    if (errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
-        return 0;
-    }
-    return -1;
+    return H2OSEnsureDir(path);
 }
 
 int EnsureDirRecursive(const char* path) {
-    char   tmp[PATH_MAX];
-    char*  p;
-    size_t len = strlen(path);
-    if (len == 0 || len >= sizeof(tmp)) {
-        return -1;
-    }
-    memcpy(tmp, path, len + 1u);
-    for (p = tmp + 1; *p != '\0'; p++) {
-        if (*p != '/') {
-            continue;
-        }
-        *p = '\0';
-        if (EnsureDirPath(tmp) != 0) {
-            return -1;
-        }
-        *p = '/';
-    }
-    return EnsureDirPath(tmp);
+    return H2OSEnsureDirRecursive(path);
 }
 
 char* _Nullable MakeAbsolutePathDup(const char* path) {
@@ -1372,7 +1299,7 @@ char* _Nullable MakeAbsolutePathDup(const char* path) {
     if (path[0] == '/') {
         return H2CDupCStr(path);
     }
-    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+    if (H2OSGetCwd(cwd, sizeof(cwd)) != 0) {
         return NULL;
     }
     return JoinPath(cwd, path);
@@ -1527,48 +1454,46 @@ int CompareStringPtrs(const void* a, const void* b) {
 }
 
 int ListHOPFiles(const char* dirPath, char*** outFiles, uint32_t* outLen) {
-    DIR*           dir = opendir(dirPath);
-    struct dirent* ent;
-    char**         files = NULL;
-    uint32_t       len = 0;
-    uint32_t       cap = 0;
+    H2OSFileList entries = { 0 };
+    char**       files = NULL;
+    uint32_t     len = 0;
+    uint32_t     cap = 0;
+    uint32_t     i;
 
     *outFiles = NULL;
     *outLen = 0;
 
-    if (dir == NULL) {
+    if (H2OSListDir(dirPath, &entries) != 0) {
         return ErrorSimple("failed to open package directory %s", dirPath);
     }
 
-    for (;;) {
-        char*       filePath;
-        struct stat st;
-        if ((ent = readdir(dir)) == NULL) {
-            break;
-        }
-        if (ent->d_name[0] == '.') {
+    for (i = 0; i < entries.len; i++) {
+        const char*  name = entries.items[i];
+        char*        filePath;
+        H2OSFileInfo info;
+        if (name[0] == '.') {
             continue;
         }
-        if (!HasSuffix(ent->d_name, ".hop")) {
+        if (!HasSuffix(name, ".hop")) {
             continue;
         }
-        filePath = JoinPath(dirPath, ent->d_name);
+        filePath = JoinPath(dirPath, name);
         if (filePath == NULL) {
-            closedir(dir);
+            H2OSFileListFree(&entries);
             return ErrorSimple("out of memory");
         }
-        if (stat(filePath, &st) != 0 || !S_ISREG(st.st_mode)) {
+        if (H2OSPathInfo(filePath, &info) != 0 || info.kind != H2OSPathKind_FILE) {
             free(filePath);
             continue;
         }
         if (EnsureCap((void**)&files, &cap, len + 1u, sizeof(char*)) != 0) {
             free(filePath);
-            closedir(dir);
+            H2OSFileListFree(&entries);
             return ErrorSimple("out of memory");
         }
         files[len++] = filePath;
     }
-    closedir(dir);
+    H2OSFileListFree(&entries);
 
     if (len == 0) {
         free(files);
@@ -1582,97 +1507,50 @@ int ListHOPFiles(const char* dirPath, char*** outFiles, uint32_t* outLen) {
 }
 
 int ReadFile(const char* filename, char** outData, uint32_t* outLen) {
-    FILE*  f;
-    long   size;
-    char*  data;
-    size_t nread;
-
     *outData = NULL;
     *outLen = 0;
-
-    f = fopen(filename, "rb");
-    if (f == NULL) {
+    if (H2OSReadFile(filename, outData, outLen) != 0) {
         fprintf(stderr, "failed to open %s\n", filename);
         return -1;
     }
-
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        fprintf(stderr, "failed to seek %s\n", filename);
-        return -1;
-    }
-
-    size = ftell(f);
-    if (size < 0 || (unsigned long)size > UINT32_MAX) {
-        fclose(f);
-        fprintf(stderr, "file too large: %s\n", filename);
-        return -1;
-    }
-
-    if (fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        fprintf(stderr, "failed to seek %s\n", filename);
-        return -1;
-    }
-
-    data = (char*)malloc((size_t)size + 1u);
-    if (data == NULL) {
-        fclose(f);
-        fprintf(stderr, "out of memory while reading %s\n", filename);
-        return -1;
-    }
-
-    nread = fread(data, 1u, (size_t)size, f);
-    fclose(f);
-    if (nread != (size_t)size) {
-        free(data);
-        fprintf(stderr, "failed to read %s\n", filename);
-        return -1;
-    }
-
-    data[size] = '\0';
-    *outData = data;
-    *outLen = (uint32_t)size;
     return 0;
 }
 
 int ListTopLevelHOPFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* outLen) {
-    DIR*           dir = opendir(dirPath);
-    struct dirent* ent;
-    char**         files = NULL;
-    uint32_t       len = 0;
-    uint32_t       cap = 0;
+    H2OSFileList entries = { 0 };
+    char**       files = NULL;
+    uint32_t     len = 0;
+    uint32_t     cap = 0;
+    uint32_t     entryIndex;
 
     *outFiles = NULL;
     *outLen = 0;
 
-    if (dir == NULL) {
+    if (H2OSListDir(dirPath, &entries) != 0) {
         return ErrorSimple("failed to open directory %s", dirPath);
     }
 
-    for (;;) {
-        char*       filePath;
-        struct stat st;
-        if ((ent = readdir(dir)) == NULL) {
-            break;
-        }
-        if (ent->d_name[0] == '.') {
+    for (entryIndex = 0; entryIndex < entries.len; entryIndex++) {
+        const char*  name = entries.items[entryIndex];
+        char*        filePath;
+        H2OSFileInfo info;
+        if (name[0] == '.') {
             continue;
         }
-        if (!HasSuffix(ent->d_name, ".hop")) {
+        if (!HasSuffix(name, ".hop")) {
             continue;
         }
-        filePath = JoinPath(dirPath, ent->d_name);
+        filePath = JoinPath(dirPath, name);
         if (filePath == NULL) {
             uint32_t i;
             for (i = 0; i < len; i++) {
                 free(files[i]);
             }
             free(files);
-            closedir(dir);
+            H2OSFileListFree(&entries);
             return ErrorSimple("out of memory");
         }
-        if (stat(filePath, &st) != 0 || !S_ISREG(st.st_mode)) {
+        if (H2OSPathInfo(filePath, &info) != 0 || info.kind != H2OSPathKind_FILE) {
             free(filePath);
             continue;
         }
@@ -1683,12 +1561,12 @@ int ListTopLevelHOPFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* 
                 free(files[i]);
             }
             free(files);
-            closedir(dir);
+            H2OSFileListFree(&entries);
             return ErrorSimple("out of memory");
         }
         files[len++] = filePath;
     }
-    closedir(dir);
+    H2OSFileListFree(&entries);
 
     if (len > 0) {
         qsort(files, (size_t)len, sizeof(char*), CompareStringPtrs);
@@ -1699,43 +1577,7 @@ int ListTopLevelHOPFilesForFmt(const char* dirPath, char*** outFiles, uint32_t* 
 }
 
 int WriteFileAtomic(const char* filename, const char* data, uint32_t len) {
-    size_t  filenameLen = strlen(filename);
-    size_t  tmpCap = filenameLen + 32u;
-    char*   tmpPath;
-    int     fd;
-    ssize_t nwritten;
-    int     rc = -1;
-
-    tmpPath = (char*)malloc(tmpCap);
-    if (tmpPath == NULL) {
-        return -1;
-    }
-    snprintf(tmpPath, tmpCap, "%s.tmp.XXXXXX", filename);
-    fd = mkstemp(tmpPath);
-    if (fd < 0) {
-        free(tmpPath);
-        return -1;
-    }
-
-    nwritten = write(fd, data, (size_t)len);
-    if (nwritten != (ssize_t)len) {
-        close(fd);
-        unlink(tmpPath);
-        free(tmpPath);
-        return -1;
-    }
-    if (close(fd) != 0) {
-        unlink(tmpPath);
-        free(tmpPath);
-        return -1;
-    }
-    if (rename(tmpPath, filename) == 0) {
-        rc = 0;
-    } else {
-        unlink(tmpPath);
-    }
-    free(tmpPath);
-    return rc;
+    return H2OSWriteFileAtomic(filename, data, len);
 }
 
 typedef struct {
@@ -2775,13 +2617,13 @@ int RunFmtCommand(int argc, const char* const* argv) {
             continue;
         }
         {
-            struct stat st;
-            if (stat(arg, &st) != 0) {
+            H2OSFileInfo info;
+            if (H2OSPathInfo(arg, &info) != 0) {
                 fprintf(stderr, "error: path does not exist: %s\n", arg);
                 hadError = 1;
                 continue;
             }
-            if (S_ISDIR(st.st_mode)) {
+            if (info.kind == H2OSPathKind_DIR) {
                 char**   dirFiles = NULL;
                 uint32_t dirLen = 0;
                 uint32_t j;
@@ -2798,7 +2640,7 @@ int RunFmtCommand(int argc, const char* const* argv) {
                 free(dirFiles);
                 continue;
             }
-            if (!S_ISREG(st.st_mode)) {
+            if (info.kind != H2OSPathKind_FILE) {
                 fprintf(stderr, "error: not a regular file or directory: %s\n", arg);
                 hadError = 1;
                 continue;
@@ -2861,48 +2703,40 @@ int RunFmtCommand(int argc, const char* const* argv) {
     return 0;
 }
 
-static void PrintEscaped(FILE* out, const char* s, uint32_t start, uint32_t end) {
+static void PrintEscaped(H2OSOutput* out, const char* s, uint32_t start, uint32_t end) {
     uint32_t i;
 
-    fputc('"', out);
+    H2OSOutputPutc(out, '"');
     for (i = start; i < end; i++) {
         unsigned char c = (unsigned char)s[i];
         switch (c) {
-            case '"':  fputs("\\\"", out); break;
-            case '\\': fputs("\\\\", out); break;
-            case '\n': fputs("\\n", out); break;
-            case '\r': fputs("\\r", out); break;
-            case '\t': fputs("\\t", out); break;
+            case '"':  H2OSOutputPuts(out, "\\\""); break;
+            case '\\': H2OSOutputPuts(out, "\\\\"); break;
+            case '\n': H2OSOutputPuts(out, "\\n"); break;
+            case '\r': H2OSOutputPuts(out, "\\r"); break;
+            case '\t': H2OSOutputPuts(out, "\\t"); break;
             default:
                 if (c >= 0x20 && c <= 0x7e) {
-                    fputc((int)c, out);
+                    H2OSOutputPutc(out, (int)c);
                 } else {
-                    fprintf(out, "\\x%02x", (unsigned)c);
+                    H2OSOutputPrintf(out, "\\x%02x", (unsigned)c);
                 }
                 break;
         }
     }
-    fputc('"', out);
+    H2OSOutputPutc(out, '"');
 }
 
 void StdoutWrite(void* ctx, const char* data, uint32_t len) {
     (void)ctx;
-    if (len == 0) {
-        return;
-    }
-    fwrite(data, 1u, (size_t)len, stdout);
+    H2OSWriteStdout(data, (size_t)len);
 }
 
 void FileWrite(void* ctx, const char* data, uint32_t len) {
-    FILE* out = (FILE*)ctx;
-    if (len == 0) {
-        return;
-    }
-    fwrite(data, 1u, (size_t)len, out);
+    H2OSOutputWrite((H2OSOutput*)ctx, data, len);
 }
 
-int DumpTokens(void* outFile, const char* filename, const char* source, uint32_t sourceLen) {
-    FILE*         out = (FILE*)outFile;
+int DumpTokens(H2OSOutput* out, const char* filename, const char* source, uint32_t sourceLen) {
     void*         arenaMem;
     uint64_t      arenaCap64;
     size_t        arenaCap;
@@ -2933,23 +2767,22 @@ int DumpTokens(void* outFile, const char* filename, const char* source, uint32_t
 
     for (i = 0; i < stream.len; i++) {
         const H2Token* t = &stream.v[i];
-        fprintf(out, "%s %u %u ", H2TokenKindName(t->kind), t->start, t->end);
+        H2OSOutputPrintf(out, "%s %u %u ", H2TokenKindName(t->kind), t->start, t->end);
         if (t->kind == H2Tok_EOF) {
-            fputs("<eof>", out);
+            H2OSOutputPuts(out, "<eof>");
         } else if (t->kind == H2Tok_SEMICOLON && t->start == t->end) {
-            fputs("<auto>", out);
+            H2OSOutputPuts(out, "<auto>");
         } else {
             PrintEscaped(out, source, t->start, t->end);
         }
-        fputc('\n', out);
+        H2OSOutputPutc(out, '\n');
     }
 
     free(arenaMem);
     return 0;
 }
 
-int DumpAST(void* outFile, const char* filename, const char* source, uint32_t sourceLen) {
-    FILE*    out = (FILE*)outFile;
+int DumpAST(H2OSOutput* out, const char* filename, const char* source, uint32_t sourceLen) {
     void*    arenaMem;
     uint64_t arenaCap64;
     size_t   arenaCap;

@@ -1,18 +1,9 @@
 #include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
-#endif
 
 #include "codegen.h"
 #include "ctfe.h"
@@ -26,22 +17,7 @@
 H2_API_BEGIN
 
 static int WriteOutput(const char* _Nullable outFilename, const char* data, uint32_t len) {
-    FILE*  out;
-    size_t nwritten;
-    if (outFilename == NULL || StrEq(outFilename, "-")) {
-        if (len == 0) {
-            return 0;
-        }
-        nwritten = fwrite(data, 1u, (size_t)len, stdout);
-        return nwritten == (size_t)len ? 0 : -1;
-    }
-    out = fopen(outFilename, "wb");
-    if (out == NULL) {
-        return -1;
-    }
-    nwritten = fwrite(data, 1u, (size_t)len, out);
-    fclose(out);
-    return nwritten == (size_t)len ? 0 : -1;
+    return H2OSWriteFile(outFilename, data, len);
 }
 
 static int HasCBackendBuild(void) {
@@ -330,56 +306,11 @@ int GeneratePackage(
 }
 
 static int RunCommand(const char* const* argv) {
-    pid_t pid = fork();
-    int   status;
-    if (pid < 0) {
-        return -1;
-    }
-    if (pid == 0) {
-        execvp(argv[0], (char* const*)argv);
-        perror(argv[0]);
-        _exit(127);
-    }
-    if (waitpid(pid, &status, 0) < 0) {
-        return -1;
-    }
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-        return 0;
-    }
-    return -1;
+    return H2OSRunCommand(argv);
 }
 
 static int RunCommandExitCode(const char* const* argv, int* outExitCode) {
-    pid_t pid;
-    int   status;
-    if (outExitCode == NULL) {
-        return -1;
-    }
-    *outExitCode = -1;
-    if (argv == NULL || argv[0] == NULL) {
-        return -1;
-    }
-    pid = fork();
-    if (pid < 0) {
-        return -1;
-    }
-    if (pid == 0) {
-        execvp(argv[0], (char* const*)argv);
-        perror(argv[0]);
-        _exit(127);
-    }
-    if (waitpid(pid, &status, 0) < 0) {
-        return -1;
-    }
-    if (WIFEXITED(status)) {
-        *outExitCode = WEXITSTATUS(status);
-        return 0;
-    }
-    if (WIFSIGNALED(status)) {
-        *outExitCode = 128 + WTERMSIG(status);
-        return 0;
-    }
-    return -1;
+    return H2OSRunCommandExitCode(argv, outExitCode);
 }
 
 static void FreePackageArtifacts(H2PackageArtifact* _Nullable artifacts, uint32_t artifactLen) {
@@ -441,7 +372,7 @@ static int ResolveRepoToolPath(const char* relPath, char** outPath) {
     if (toolPath == NULL) {
         return ErrorSimple("out of memory");
     }
-    if (access(toolPath, R_OK) != 0) {
+    if (H2OSAccessRead(toolPath) != 0) {
         free(toolPath);
         return ErrorSimple("cannot locate %s", relPath);
     }
@@ -457,24 +388,24 @@ static int ResolvePlaybitPbPath(char** outPath) {
         return -1;
     }
     *outPath = NULL;
-    envPath = getenv("H2_PLAYBIT_PB");
+    envPath = H2OSGetEnv("H2_PLAYBIT_PB");
     if (envPath == NULL || envPath[0] == '\0') {
-        envPath = getenv("PLAYBIT_PB");
+        envPath = H2OSGetEnv("PLAYBIT_PB");
     }
     if ((envPath == NULL || envPath[0] == '\0')) {
-        envPath = getenv("PB");
+        envPath = H2OSGetEnv("PB");
     }
     if (envPath != NULL && envPath[0] != '\0') {
         *outPath = H2CDupCStr(envPath);
         return *outPath != NULL ? 0 : ErrorSimple("out of memory");
     }
-    home = getenv("HOME");
+    home = H2OSGetEnv("HOME");
     if (home != NULL && home[0] != '\0') {
         candidate = JoinPath(home, "playbit/engine/_deps/toolchain/bin/pb");
         if (candidate == NULL) {
             return ErrorSimple("out of memory");
         }
-        if (access(candidate, X_OK) == 0) {
+        if (H2OSAccessExec(candidate) == 0) {
             *outPath = candidate;
             return 0;
         }
@@ -483,7 +414,7 @@ static int ResolvePlaybitPbPath(char** outPath) {
         if (candidate == NULL) {
             return ErrorSimple("out of memory");
         }
-        if (access(candidate, X_OK) == 0) {
+        if (H2OSAccessExec(candidate) == 0) {
             *outPath = candidate;
             return 0;
         }
@@ -715,40 +646,13 @@ static int BuildToolchainSignature(
 }
 
 static int ToolchainSignatureMatches(const char* sigPath, const char* signature) {
-    FILE*    f;
-    long     flen;
-    char*    actual;
-    size_t   nread;
+    char*    actual = NULL;
+    uint32_t actualLen = 0;
     uint32_t expectedLen = (uint32_t)strlen(signature);
-    f = fopen(sigPath, "rb");
-    if (f == NULL) {
+    if (H2OSReadFile(sigPath, &actual, &actualLen) != 0) {
         return 0;
     }
-    if (fseek(f, 0, SEEK_END) != 0) {
-        fclose(f);
-        return 0;
-    }
-    flen = ftell(f);
-    if (flen < 0 || (uint64_t)flen > (uint64_t)UINT32_MAX) {
-        fclose(f);
-        return 0;
-    }
-    if ((uint32_t)flen != expectedLen) {
-        fclose(f);
-        return 0;
-    }
-    if (fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        return 0;
-    }
-    actual = (char*)malloc((size_t)expectedLen);
-    if (actual == NULL) {
-        fclose(f);
-        return 0;
-    }
-    nread = fread(actual, 1u, (size_t)expectedLen, f);
-    fclose(f);
-    if (nread != (size_t)expectedLen || memcmp(actual, signature, (size_t)expectedLen) != 0) {
+    if (actualLen != expectedLen || memcmp(actual, signature, (size_t)expectedLen) != 0) {
         free(actual);
         return 0;
     }
@@ -805,20 +709,20 @@ static int IsPackageArtifactUpToDate(
     H2PackageArtifact* artifacts,
     uint32_t           artifactLen,
     const char*        toolchainSignature) {
-    struct stat st;
-    uint64_t    objMtime;
-    uint64_t    srcMtime;
-    uint32_t    i;
+    H2OSFileInfo info;
+    uint64_t     objMtime;
+    uint64_t     srcMtime;
+    uint32_t     i;
     if (pkg == NULL || artifact == NULL) {
         return 0;
     }
-    if (stat(artifact->cPath, &st) != 0 || !S_ISREG(st.st_mode)) {
+    if (H2OSPathInfo(artifact->cPath, &info) != 0 || info.kind != H2OSPathKind_FILE) {
         return 0;
     }
-    if (stat(artifact->oPath, &st) != 0 || !S_ISREG(st.st_mode)) {
+    if (H2OSPathInfo(artifact->oPath, &info) != 0 || info.kind != H2OSPathKind_FILE) {
         return 0;
     }
-    objMtime = StatMtimeNs(&st);
+    objMtime = info.mtimeNs;
     if (!ToolchainSignatureMatches(artifact->sigPath, toolchainSignature)) {
         return 0;
     }
@@ -1548,9 +1452,7 @@ static int BuildCachedWrapperObject(
     char*           wrapperSource = NULL;
     uint32_t        wrapperSourceLen = 0;
     char*           existingSource = NULL;
-    FILE*           existingSourceFile = NULL;
-    long            existingSourceFileLen = 0;
-    size_t          nread = 0;
+    uint32_t        existingSourceLen = 0;
     uint64_t        srcMtimeNs = 0;
     uint64_t        objMtimeNs = 0;
     const char*     ccArgv[12];
@@ -1608,30 +1510,11 @@ static int BuildCachedWrapperObject(
     }
     wrapperSourceLen = (uint32_t)strlen(wrapperSource);
 
-    existingSourceFile = fopen(wrapperCPath, "rb");
-    if (existingSourceFile != NULL && fseek(existingSourceFile, 0, SEEK_END) == 0) {
-        existingSourceFileLen = ftell(existingSourceFile);
-        if (existingSourceFileLen >= 0 && (uint64_t)existingSourceFileLen <= (uint64_t)UINT32_MAX
-            && (uint32_t)existingSourceFileLen == wrapperSourceLen
-            && fseek(existingSourceFile, 0, SEEK_SET) == 0)
-        {
-            if (wrapperSourceLen == 0) {
-                sourceMatches = 1;
-            } else {
-                existingSource = (char*)malloc((size_t)wrapperSourceLen);
-                if (existingSource != NULL) {
-                    nread = fread(existingSource, 1u, (size_t)wrapperSourceLen, existingSourceFile);
-                    if (nread == (size_t)wrapperSourceLen
-                        && memcmp(existingSource, wrapperSource, wrapperSourceLen) == 0)
-                    {
-                        sourceMatches = 1;
-                    }
-                }
-            }
-        }
-    }
-    if (existingSourceFile != NULL) {
-        fclose(existingSourceFile);
+    if (H2OSReadFile(wrapperCPath, &existingSource, &existingSourceLen) == 0
+        && existingSourceLen == wrapperSourceLen
+        && memcmp(existingSource, wrapperSource, wrapperSourceLen) == 0)
+    {
+        sourceMatches = 1;
     }
     free(existingSource);
     existingSource = NULL;
@@ -1709,15 +1592,15 @@ static int IsLinkedOutputUpToDate(
     const char*              platformObjPath,
     const H2PackageArtifact* artifacts,
     uint32_t                 artifactLen) {
-    struct stat outSt;
-    uint64_t    outMtimeNs;
-    uint64_t    inputMtimeNs;
-    uint32_t    i;
+    H2OSFileInfo outInfo;
+    uint64_t     outMtimeNs;
+    uint64_t     inputMtimeNs;
+    uint32_t     i;
 
-    if (stat(outExe, &outSt) != 0 || !S_ISREG(outSt.st_mode)) {
+    if (H2OSPathInfo(outExe, &outInfo) != 0 || outInfo.kind != H2OSPathKind_FILE) {
         return 0;
     }
-    outMtimeNs = StatMtimeNs(&outSt);
+    outMtimeNs = outInfo.mtimeNs;
 
     if (GetFileMtimeNs(wrapperObjPath, &inputMtimeNs) != 0 || inputMtimeNs > outMtimeNs) {
         return 0;
@@ -1941,10 +1824,9 @@ static int RunProgramC(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    const char* tmpBase = getenv("TMPDIR");
+    const char* tmpBase = H2OSGetEnv("TMPDIR");
     char        exeTemplate[PATH_MAX];
     int         n;
-    int         fd;
     char* const execArgv[2] = { exeTemplate, NULL };
 
     if (tmpBase == NULL || tmpBase[0] == '\0') {
@@ -1954,23 +1836,21 @@ static int RunProgramC(
     if (n <= 0 || (size_t)n >= sizeof(exeTemplate)) {
         return ErrorSimple("temporary path too long");
     }
-    fd = mkstemp(exeTemplate);
-    if (fd < 0) {
+    if (H2OSCreateTempPath(exeTemplate) != 0) {
         return ErrorSimple("failed to create temporary output file");
     }
-    close(fd);
-    unlink(exeTemplate);
+    H2OSUnlink(exeTemplate);
 
     if (CompileProgram(
             entryPath, exeTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
         != 0)
     {
-        unlink(exeTemplate);
+        H2OSUnlink(exeTemplate);
         return -1;
     }
 
-    execv(exeTemplate, execArgv);
-    unlink(exeTemplate);
+    H2OSExecReplace(exeTemplate, execArgv);
+    H2OSUnlink(exeTemplate);
     return ErrorSimple("failed to execute compiled program");
 }
 
@@ -1980,10 +1860,9 @@ static int RunProgramWasmMin(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    const char* tmpBase = getenv("TMPDIR");
+    const char* tmpBase = H2OSGetEnv("TMPDIR");
     char        wasmTemplate[PATH_MAX];
     int         n;
-    int         fd;
     char*       runnerPath = NULL;
     const char* runArgv[4];
     int         exitCode = 0;
@@ -1998,21 +1877,19 @@ static int RunProgramWasmMin(
     if (n <= 0 || (size_t)n >= sizeof(wasmTemplate)) {
         return ErrorSimple("temporary path too long");
     }
-    fd = mkstemp(wasmTemplate);
-    if (fd < 0) {
+    if (H2OSCreateTempPath(wasmTemplate) != 0) {
         return ErrorSimple("failed to create temporary wasm output file");
     }
-    close(fd);
 
     if (GeneratePackage(
             entryPath, "wasm", wasmTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
         != 0)
     {
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return -1;
     }
     if (ResolveRepoToolPath("tools/wasm_min_runner.js", &runnerPath) != 0) {
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return -1;
     }
 
@@ -2022,12 +1899,12 @@ static int RunProgramWasmMin(
     runArgv[3] = NULL;
     if (RunCommandExitCode(runArgv, &exitCode) != 0) {
         free(runnerPath);
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return ErrorSimple("failed to execute wasm-min runner");
     }
 
     free(runnerPath);
-    unlink(wasmTemplate);
+    H2OSUnlink(wasmTemplate);
     return exitCode;
 }
 
@@ -2037,10 +1914,9 @@ static int RunProgramPlaybit(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    const char* tmpBase = getenv("TMPDIR");
+    const char* tmpBase = H2OSGetEnv("TMPDIR");
     char        wasmTemplate[PATH_MAX];
     int         n;
-    int         fd;
     char*       pbPath = NULL;
     const char* runArgv[4];
     int         exitCode = 0;
@@ -2056,21 +1932,19 @@ static int RunProgramPlaybit(
     if (n <= 0 || (size_t)n >= sizeof(wasmTemplate)) {
         return ErrorSimple("temporary path too long");
     }
-    fd = mkstemps(wasmTemplate, 5);
-    if (fd < 0) {
+    if (H2OSCreateTempPathWithSuffix(wasmTemplate, 5) != 0) {
         return ErrorSimple("failed to create temporary wasm output file");
     }
-    close(fd);
 
     if (GeneratePackage(
             entryPath, "wasm", wasmTemplate, platformTarget, archTarget, testingBuild, cacheDirArg)
         != 0)
     {
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return -1;
     }
     if (ResolvePlaybitPbPath(&pbPath) != 0) {
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return -1;
     }
 
@@ -2080,12 +1954,12 @@ static int RunProgramPlaybit(
     runArgv[3] = NULL;
     if (RunCommandExitCode(runArgv, &exitCode) != 0) {
         free(pbPath);
-        unlink(wasmTemplate);
+        H2OSUnlink(wasmTemplate);
         return ErrorSimple("failed to execute pb run");
     }
 
     free(pbPath);
-    unlink(wasmTemplate);
+    H2OSUnlink(wasmTemplate);
     return exitCode;
 }
 

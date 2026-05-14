@@ -1,18 +1,9 @@
 #include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
-#endif
 
 #include "codegen.h"
 #include "ctfe.h"
@@ -2546,37 +2537,37 @@ static int AddPackageSlot(H2PackageLoader* loader, const char* dirPath, H2Packag
 }
 
 static char* _Nullable CanonicalizePath(const char* path) {
-    char* out = realpath(path, NULL);
+    char* out = H2OSRealPathDup(path);
     return out;
 }
 
 static int IsDirectoryPath(const char* path) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
+    H2OSFileInfo info;
+    if (H2OSPathInfo(path, &info) != 0) {
         return 0;
     }
-    return S_ISDIR(st.st_mode);
+    return info.kind == H2OSPathKind_DIR;
 }
 
 static int DirectoryHasHOPFiles(const char* dirPath) {
-    DIR*           dir = opendir(dirPath);
-    struct dirent* ent;
-    if (dir == NULL) {
+    H2OSFileList entries = { 0 };
+    uint32_t     i;
+    if (H2OSListDir(dirPath, &entries) != 0) {
         return 0;
     }
-    while ((ent = readdir(dir)) != NULL) {
-        const char* name = ent->d_name;
+    for (i = 0; i < entries.len; i++) {
+        const char* name = entries.items[i];
         size_t      len;
         if (name[0] == '.') {
             continue;
         }
         len = strlen(name);
         if (len >= 4 && strcmp(name + len - 4, ".hop") == 0) {
-            closedir(dir);
+            H2OSFileListFree(&entries);
             return 1;
         }
     }
-    closedir(dir);
+    H2OSFileListFree(&entries);
     return 0;
 }
 
@@ -3172,14 +3163,14 @@ static int LoadExplicitFilePackage(
         return ErrorSimple("out of memory");
     }
     for (i = 0; i < fileLen; i++) {
-        struct stat st;
-        char*       fileDir;
+        H2OSFileInfo info;
+        char*        fileDir;
         canonicalPaths[i] = CanonicalizePath(filePaths[i]);
         if (canonicalPaths[i] == NULL) {
             FreeStringList(canonicalPaths, fileLen);
             return ErrorSimple("failed to resolve source file %s", filePaths[i]);
         }
-        if (stat(canonicalPaths[i], &st) != 0 || !S_ISREG(st.st_mode)
+        if (H2OSPathInfo(canonicalPaths[i], &info) != 0 || info.kind != H2OSPathKind_FILE
             || !HasSuffix(canonicalPaths[i], ".hop"))
         {
             FreeStringList(canonicalPaths, fileLen);
@@ -5384,7 +5375,7 @@ int LoadPackageForFmt(
     H2PackageLoader* outLoader,
     H2Package**      outEntryPkg) {
     char*           canonical = CanonicalizePath(entryPath);
-    struct stat     st;
+    H2OSFileInfo    info;
     char*           pkgDir = NULL;
     char*           rootDir;
     H2PackageLoader loader;
@@ -5394,13 +5385,13 @@ int LoadPackageForFmt(
     if (canonical == NULL) {
         return -1;
     }
-    if (stat(canonical, &st) != 0) {
+    if (H2OSPathInfo(canonical, &info) != 0) {
         free(canonical);
         return -1;
     }
-    if (S_ISDIR(st.st_mode)) {
+    if (info.kind == H2OSPathKind_DIR) {
         rootDir = DirNameDup(canonical);
-    } else if (S_ISREG(st.st_mode) && HasSuffix(canonical, ".hop")) {
+    } else if (info.kind == H2OSPathKind_FILE && HasSuffix(canonical, ".hop")) {
         pkgDir = DirNameDup(canonical);
         if (pkgDir == NULL) {
             free(canonical);
@@ -5466,7 +5457,7 @@ int LoadAndCheckPackage(
     H2PackageLoader* outLoader,
     H2Package**      outEntryPkg) {
     char*           canonical = CanonicalizePath(entryPath);
-    struct stat     st;
+    H2OSFileInfo    info;
     char*           pkgDir = NULL;
     char*           rootDir;
     H2PackageLoader loader;
@@ -5478,14 +5469,14 @@ int LoadAndCheckPackage(
         return ErrorSimple("failed to resolve package path %s", entryPath);
     }
 
-    if (stat(canonical, &st) != 0) {
+    if (H2OSPathInfo(canonical, &info) != 0) {
         free(canonical);
         return ErrorSimple("failed to access %s", entryPath);
     }
 
-    if (S_ISDIR(st.st_mode)) {
+    if (info.kind == H2OSPathKind_DIR) {
         rootDir = DirNameDup(canonical);
-    } else if (S_ISREG(st.st_mode) && HasSuffix(canonical, ".hop")) {
+    } else if (info.kind == H2OSPathKind_FILE && HasSuffix(canonical, ".hop")) {
         pkgDir = DirNameDup(canonical);
         if (pkgDir == NULL) {
             free(canonical);

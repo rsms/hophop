@@ -34,6 +34,13 @@ ${license}
     #define __has_attribute(...) 0
 #endif
 
+#if __has_attribute(format)
+    #define H2_FMT_ATTR(archetype, fmtarg, checkarg) \
+        __attribute__((__format__(archetype, fmtarg, checkarg)))
+#else
+    #define H2_FMT_ATTR(archetype, fmtarg, checkarg)
+#endif
+
 #ifndef _Noreturn
     #define _Noreturn __attribute__((noreturn))
 #endif

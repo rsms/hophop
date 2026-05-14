@@ -1612,15 +1612,9 @@ def kind_genpkg_wasm_check(ctx: RunContext, case: Dict[str, Any], work_dir: Path
     return ok()
 
 
-def kind_libhop_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
-    src_header = ctx.build_dir / "libhop.h"
-    if not src_header.exists():
-        return fail(f"missing generated header: {src_header}")
-
-    dst_header = work_dir / "libhop.h"
-    shutil.copy2(src_header, dst_header)
-    libhop_c = work_dir / "libhop.c"
-    libhop_c.write_text('#define H2_IMPLEMENTATION\n#include "libhop.h"\n')
+def kind_hop_headers_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
+    headers_c = work_dir / "hop_headers.c"
+    headers_c.write_text('#include "libhop.h"\n#include "os.h"\n')
 
     host_args = [
         ctx.cc,
@@ -1628,13 +1622,15 @@ def kind_libhop_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str
         "-ffreestanding",
         "-nostdlib",
         "-fno-builtin",
+        "-I",
+        str(ROOT / "src"),
         "-Wall",
         "-Wextra",
         "-Werror",
         "-c",
-        str(libhop_c),
+        str(headers_c),
         "-o",
-        str(work_dir / "libhop.freestanding.o"),
+        str(work_dir / "hop_headers.freestanding.o"),
     ]
     cp = run_cmd(host_args, cwd=work_dir)
     if cp.returncode != 0:
@@ -1648,13 +1644,15 @@ def kind_libhop_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, str
         "-ffreestanding",
         "-nostdlib",
         "-fno-builtin",
+        "-I",
+        str(ROOT / "src"),
         "-Wall",
         "-Wextra",
         "-Werror",
         "-c",
-        str(libhop_c),
+        str(headers_c),
         "-o",
-        str(work_dir / "libhop.wasm"),
+        str(work_dir / "hop_headers.wasm"),
     ]
     cp = run_cmd(wasm_args, cwd=work_dir)
     if cp.returncode != 0:
@@ -1726,13 +1724,9 @@ def kind_builtin_h_freestanding(ctx: RunContext, work_dir: Path) -> tuple[bool, 
 
 
 def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
-    src_header = ctx.build_dir / "libhop.h"
-    if not src_header.exists():
-        return fail(f"missing generated header: {src_header}")
     if not ARENA_GROW_TEST_C_PATH.exists():
         return fail(f"missing source file: {ARENA_GROW_TEST_C_PATH}")
 
-    shutil.copy2(src_header, work_dir / "libhop.h")
     c_path = work_dir / "arena_grow_test.c"
     exe_path = work_dir / "arena_grow_test"
     shutil.copy2(ARENA_GROW_TEST_C_PATH, c_path)
@@ -1743,7 +1737,13 @@ def kind_arena_grow_test(ctx: RunContext, work_dir: Path) -> tuple[bool, str]:
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-I",
+        str(ROOT / "src"),
         str(c_path),
+        str(ROOT / "src" / "libhop.c"),
+        str(ROOT / "src" / "parse.c"),
+        str(ROOT / "src" / "string_lit.c"),
+        str(ROOT / "src" / "diagnostics_data.c"),
         "-o",
         str(exe_path),
     ]
@@ -1874,8 +1874,8 @@ def execute_case(ctx: RunContext, case: ExecutionCase, temp_root: Path) -> RunRe
                 ok_main, detail = kind_genpkg_compile(ctx, c, work_dir)
             elif k == "genpkg_wasm_check":
                 ok_main, detail = kind_genpkg_wasm_check(ctx, c, work_dir)
-            elif k == "libhop_freestanding":
-                ok_main, detail = kind_libhop_freestanding(ctx, work_dir)
+            elif k == "hop_headers_freestanding":
+                ok_main, detail = kind_hop_headers_freestanding(ctx, work_dir)
             elif k == "builtin_h_freestanding":
                 ok_main, detail = kind_builtin_h_freestanding(ctx, work_dir)
             elif k == "arena_grow_test":

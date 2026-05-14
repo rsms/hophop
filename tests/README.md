@@ -46,7 +46,7 @@ Common optional fields:
 - `genpkg_text_check` (legacy test kind; runs `hop build --output-format c`)
 - `genpkg_compile` (legacy test kind; runs `hop build --output-format c`)
 - `genpkg_wasm_check` (legacy test kind; runs `hop build --platform ... -o out.wasm`)
-- `libhop_freestanding`
+- `hop_headers_freestanding`
 - `builtin_h_freestanding`
 - `arena_grow_test`
 

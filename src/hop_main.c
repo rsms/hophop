@@ -1,19 +1,8 @@
-#include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
-#endif
 
 #include "codegen.h"
 #include "ctfe.h"
@@ -330,8 +319,8 @@ static int ErrorUnknownCommand(const char* argv0, const char* mode) {
 }
 
 static int PathIsExistingDirectory(const char* path) {
-    struct stat st;
-    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+    H2OSFileInfo info;
+    return H2OSPathInfo(path, &info) == 0 && info.kind == H2OSPathKind_DIR;
 }
 
 static int IsStdoutOutputPath(const char* _Nullable path) {
@@ -339,27 +328,27 @@ static int IsStdoutOutputPath(const char* _Nullable path) {
 }
 
 static char* _Nullable InferBuildInputPackageName(const H2PackageInput* input) {
-    const char* firstPath;
-    char*       canonical = NULL;
-    char*       dirPath = NULL;
-    char*       dirName = NULL;
-    char*       fileName = NULL;
-    char*       baseName = NULL;
-    struct stat st;
+    const char*  firstPath;
+    char*        canonical = NULL;
+    char*        dirPath = NULL;
+    char*        dirName = NULL;
+    char*        fileName = NULL;
+    char*        baseName = NULL;
+    H2OSFileInfo info;
 
     if (input == NULL || input->paths == NULL || input->pathLen == 0) {
         return NULL;
     }
     firstPath = input->paths[0];
-    canonical = realpath(firstPath, NULL);
+    canonical = H2OSRealPathDup(firstPath);
     if (canonical == NULL) {
         return NULL;
     }
-    if (stat(canonical, &st) != 0) {
+    if (H2OSPathInfo(canonical, &info) != 0) {
         free(canonical);
         return NULL;
     }
-    if (input->pathLen == 1 && S_ISDIR(st.st_mode)) {
+    if (input->pathLen == 1 && info.kind == H2OSPathKind_DIR) {
         dirName = LastPathComponentDup(canonical);
         free(canonical);
         return dirName;
@@ -392,14 +381,14 @@ static char* _Nullable InferBuildInputPackageName(const H2PackageInput* input) {
 }
 
 static int IsSingleBuildSourceFile(const H2PackageInput* input) {
-    struct stat st;
+    H2OSFileInfo info;
     if (input == NULL || input->paths == NULL || input->pathLen != 1) {
         return 0;
     }
     if (!HasSuffix(input->paths[0], ".hop")) {
         return 0;
     }
-    return stat(input->paths[0], &st) == 0 && S_ISREG(st.st_mode);
+    return H2OSPathInfo(input->paths[0], &info) == 0 && info.kind == H2OSPathKind_FILE;
 }
 
 static const char* BuildOutputFormatSourceExtension(
@@ -527,66 +516,17 @@ static int DefaultBuildOutputPath(
 }
 
 static int OpenBuildOutputFile(
-    const char* _Nullable outFilename, FILE** outFile, int* outShouldClose) {
-    *outFile = stdout;
-    *outShouldClose = 0;
-    if (outFilename == NULL || IsStdoutOutputPath(outFilename)) {
-        return 0;
-    }
-    *outFile = fopen(outFilename, "wb");
-    if (*outFile == NULL) {
+    const char* _Nullable outFilename, H2OSOutput** outFile, int* outShouldClose) {
+    if (H2OSOpenOutput(outFilename, outFile, outShouldClose) != 0) {
         return ErrorSimple("failed to open output file: %s", outFilename);
     }
-    *outShouldClose = 1;
     return 0;
 }
 
-static int CloseBuildOutputFile(FILE* outFile, int shouldClose) {
-    if (shouldClose && fclose(outFile) != 0) {
+static int CloseBuildOutputFile(H2OSOutput* outFile, int shouldClose) {
+    if (H2OSCloseOutput(outFile, shouldClose) != 0) {
         return ErrorSimple("failed to write output file");
     }
-    return 0;
-}
-
-static int WriteAllStdout(const unsigned char* buf, size_t len) {
-    size_t off = 0;
-    while (off < len) {
-        ssize_t n = write(STDOUT_FILENO, buf + off, len - off);
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            return -1;
-        }
-        off += (size_t)n;
-    }
-    return 0;
-}
-
-static int StreamFileToStdout(const char* path) {
-    int           in = open(path, O_RDONLY);
-    unsigned char buf[8192];
-    if (in < 0) {
-        return ErrorSimple("failed to read output file");
-    }
-    for (;;) {
-        ssize_t n = read(in, buf, sizeof(buf));
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            close(in);
-            return ErrorSimple("failed to read output file");
-        }
-        if (n == 0) {
-            break;
-        }
-        if (WriteAllStdout(buf, (size_t)n) != 0) {
-            close(in);
-            return ErrorSimple("failed to write output");
-        }
-    }
-    close(in);
     return 0;
 }
 
@@ -596,10 +536,9 @@ static int CompileProgramInputToStdout(
     const char* _Nullable archTarget,
     int testingBuild,
     const char* _Nullable cacheDirArg) {
-    const char* tmpBase = getenv("TMPDIR");
+    const char* tmpBase = H2OSGetEnv("TMPDIR");
     char        exeTemplate[PATH_MAX];
     int         n;
-    int         fd;
     int         rc;
     if (tmpBase == NULL || tmpBase[0] == '\0') {
         tmpBase = "/tmp";
@@ -608,28 +547,29 @@ static int CompileProgramInputToStdout(
     if (n <= 0 || (size_t)n >= sizeof(exeTemplate)) {
         return ErrorSimple("temporary path too long");
     }
-    fd = mkstemp(exeTemplate);
-    if (fd < 0) {
+    if (H2OSCreateTempPath(exeTemplate) != 0) {
         return ErrorSimple("failed to create temporary output file");
     }
-    close(fd);
 
     rc = CompileProgramInput(
         input, exeTemplate, platformTarget, archTarget, testingBuild, cacheDirArg);
     if (rc == 0) {
-        rc = StreamFileToStdout(exeTemplate);
+        rc = H2OSStreamFileToStdout(exeTemplate);
+        if (rc != 0) {
+            ErrorSimple("failed to write output");
+        }
     }
-    unlink(exeTemplate);
+    H2OSUnlink(exeTemplate);
     return rc;
 }
 
 static int ReadSingleBuildSource(
     const H2PackageInput* input, char** outFilename, char** outSource, uint32_t* outSourceLen) {
-    struct stat st;
+    H2OSFileInfo info;
     if (input == NULL || input->paths == NULL || input->pathLen != 1) {
         return ErrorSimple("output format expects exactly one source file");
     }
-    if (stat(input->paths[0], &st) != 0 || !S_ISREG(st.st_mode)
+    if (H2OSPathInfo(input->paths[0], &info) != 0 || info.kind != H2OSPathKind_FILE
         || !HasSuffix(input->paths[0], ".hop"))
     {
         return ErrorSimple("output format expects exactly one source file");
@@ -787,11 +727,11 @@ static int RunBuildCommand(int argc, char* argv[]) {
     }
 
     if (outputFormat == BuildOutputFormat_TOKENS || outputFormat == BuildOutputFormat_AST) {
-        char*    filename = NULL;
-        char*    source = NULL;
-        uint32_t sourceLen = 0;
-        FILE*    outFile = NULL;
-        int      closeOutFile = 0;
+        char*       filename = NULL;
+        char*       source = NULL;
+        uint32_t    sourceLen = 0;
+        H2OSOutput* outFile = NULL;
+        int         closeOutFile = 0;
         if (ReadSingleBuildSource(&input, &filename, &source, &sourceLen) != 0) {
             rc = 1;
             goto end;
@@ -823,8 +763,8 @@ static int RunBuildCommand(int argc, char* argv[]) {
     }
 
     if (outputFormat == BuildOutputFormat_MIR) {
-        FILE* outFile = NULL;
-        int   closeOutFile = 0;
+        H2OSOutput* outFile = NULL;
+        int         closeOutFile = 0;
         if (OpenBuildOutputFile(outFilenameArg, &outFile, &closeOutFile) != 0) {
             rc = 1;
             goto end;
@@ -1027,8 +967,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (noImport) {
-        struct stat st;
-        if (stat(filename, &st) == 0 && S_ISDIR(st.st_mode)) {
+        H2OSFileInfo info;
+        if (H2OSPathInfo(filename, &info) == 0 && info.kind == H2OSPathKind_DIR) {
             fprintf(stderr, "--no-import expects a source file, got directory: %s\n", filename);
             return 2;
         }

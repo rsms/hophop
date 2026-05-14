@@ -3431,7 +3431,7 @@ static int H2EvalInvokeSyntheticRootLogger(
     int*         outIsConst) {
     const H2CTFEValue* message;
     const H2CTFEValue* levelValue;
-    FILE*              out = stdout;
+    int                useStderr = 0;
     (void)p;
     if (outIsConst != NULL) {
         *outIsConst = 0;
@@ -3446,16 +3446,21 @@ static int H2EvalInvokeSyntheticRootLogger(
     if (argCount >= 3u) {
         levelValue = HOPEvalValueTargetOrSelf(&args[2]);
         if (levelValue != NULL && levelValue->kind == H2CTFEValue_INT && levelValue->i64 >= 30) {
-            out = stderr;
+            useStderr = 1;
         }
     }
     if (message->s.len > 0 && message->s.bytes != NULL) {
-        if (fwrite(message->s.bytes, 1, message->s.len, out) != message->s.len) {
-            return ErrorSimple("failed to write logger output");
+        if (useStderr) {
+            H2OSWriteStderr(message->s.bytes, message->s.len);
+        } else {
+            H2OSWriteStdout(message->s.bytes, message->s.len);
         }
     }
-    fputc('\n', out);
-    fflush(out);
+    if (useStderr) {
+        H2OSWriteStderr("\n", 1u);
+    } else {
+        H2OSWriteStdout("\n", 1u);
+    }
     HOPEvalValueSetNull(outValue);
     *outIsConst = 1;
     return 1;
@@ -5581,7 +5586,7 @@ static void H2EvalPrintCallTrace(const HOPEvalProgram* p) {
     if (p == NULL || p->callDepth == 0) {
         return;
     }
-    fputs("call trace:\n", stderr);
+    H2OSPrintStderr("call trace:\n");
     for (i = p->callDepth; i > 0; i--) {
         uint32_t               fnIndex = p->callStack[i - 1u];
         const HOPEvalFunction* fn;
@@ -5597,8 +5602,7 @@ static void H2EvalPrintCallTrace(const HOPEvalProgram* p) {
         }
         nameLen = fn->nameEnd >= fn->nameStart ? fn->nameEnd - fn->nameStart : 0u;
         DiagOffsetToLineCol(fn->file->source, fn->nameStart, &line, &col);
-        fprintf(
-            stderr,
+        H2OSPrintStderr(
             "  %s:%u:%u: in fn %.*s\n",
             DisplayPath(fn->file->path),
             line,
