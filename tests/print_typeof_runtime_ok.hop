@@ -1,0 +1,4 @@
+// Verifies evaluator printing of reflected type values.
+fn main() {
+	print(typeof(3))
+}

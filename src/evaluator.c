@@ -15690,6 +15690,11 @@ static int HOPEvalExecExprCb(void* ctx, int32_t exprNode, H2CTFEValue* outValue,
                 *outIsConst = 1;
                 return 0;
             }
+            if (targetTypeCode == HOPEvalTypeCode_TYPE && inValue.kind == H2CTFEValue_TYPE) {
+                *outValue = inValue;
+                *outIsConst = 1;
+                return 0;
+            }
             if (targetTypeCode == HOPEvalTypeCode_BOOL) {
                 outValue->kind = H2CTFEValue_BOOL;
                 outValue->i64 = 0;
