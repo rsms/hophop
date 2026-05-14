@@ -510,10 +510,10 @@ fn f() {
   - alias-source peeling is recursive and additive (`cost(dst <- alias(src)) = cost(dst <- srcBase) + 1`)
   - optional-to-optional conversion recurses on base (`cost(?A <- ?B) = cost(A <- B)`)
   - all non-recursive assignable non-exact conversions default to cost `1` unless matched by a more specific cost rule above.
-- [EXPR-SUGAR-010][Provisional] For variadic signature `f(p1, ..., pn, v ...T)`, call shapes are:
-  - fixed-only: `f(a1, ..., an)` (empty variadic tail)
-  - explicit tail: `f(a1, ..., an, e1, ..., ek)` where each `ei` is assignable to `T`
-  - spread tail: `f(a1, ..., an, s...)` where `s` is assignable to `[T]`
+- [EXPR-SUGAR-010][Provisional] For variadic signature `f(p1, …, pn, v ...T)`, call shapes are:
+  - fixed-only: `f(a1, …, an)` (empty variadic tail)
+  - explicit tail: `f(a1, …, an, e1, …, ek)` where each `ei` is assignable to `T`
+  - spread tail: `f(a1, …, an, s...)` where `s` is assignable to `[T]`
 - [EXPR-SUGAR-010A][Provisional] Function declarations MUST place underscore-prefixed parameter names in one contiguous prefix after the first parameter: first parameter, then zero or more `_`/`_name` parameters, then zero or more named parameters. For fixed parameters, positional arguments are allowed through that initial positional prefix. After the first later parameter whose name does not start with `_`, remaining fixed arguments MUST be named. Variadic-tail arguments are governed by the variadic rules below.
 - [EXPR-SUGAR-011][Provisional] Spread marker `...` is valid only on the final call argument.
 - [EXPR-SUGAR-012][Provisional] In spread form, the spread argument MUST be unlabeled and the call MUST provide exactly one spread argument for the variadic tail.
