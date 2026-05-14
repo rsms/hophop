@@ -132,6 +132,13 @@ static const H2ParsedFile* _Nullable FindLoaderFileByMirSource(
     const H2Package** _Nullable outPkg);
 static const H2Package* _Nullable FindImplicitBuiltinImportPackage(
     const H2PackageLoader* loader, const H2Package* ownerPkg);
+static const H2MirResolvedDecl* _Nullable FindResolvedImportFunctionBySlice(
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* map,
+    const H2Package*            pkg,
+    const char*                 src,
+    uint32_t                    start,
+    uint32_t                    end);
 static int MirStaticCallTargetMatchesArgs(
     const H2MirProgram*  program,
     const H2MirFunction* ownerFn,
@@ -1863,6 +1870,22 @@ static int MirCallArgExprNodes(
     return 1;
 }
 
+static int32_t MirFindCallNodeForTarget(const H2Ast* ast, int32_t targetNode) {
+    uint32_t i;
+    if (ast == NULL || targetNode < 0 || (uint32_t)targetNode >= ast->len) {
+        return -1;
+    }
+    if (ast->nodes[targetNode].kind == H2Ast_CALL) {
+        return targetNode;
+    }
+    for (i = 0; i < ast->len; i++) {
+        if (ast->nodes[i].kind == H2Ast_CALL && ast->nodes[i].firstChild == targetNode) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 static int MirFindExistingFunctionByParamTypes(
     const H2PackageLoader* loader,
     const H2MirProgram*    program,
@@ -1940,7 +1963,20 @@ typedef enum {
 static H2MirSimpleType MirSimpleTypeFromExprEnd(
     const H2MirProgram* program, const H2MirFunction* fn, uint32_t exprStart, uint32_t exprEnd);
 static H2MirSimpleType MirSimpleTypeFromTCTypeId(const H2TypeCheckCtx* tc, int32_t typeId);
-static int             MirCallArgSimpleTypes(
+static H2MirSimpleType MirSimpleTypeFromTypeRef(const H2MirProgram* program, uint32_t typeRefIndex);
+static H2MirSimpleType MirSimpleTypeFromExprEndForResolution(
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* declMap,
+    const H2MirTcFunctionMap*   tcFnMap,
+    const H2Package*            ownerPkg,
+    const H2ParsedFile*         ownerFile,
+    H2TypeCheckCtx* _Nullable ownerTc,
+    uint32_t             ownerTcFnIndex,
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             exprStart,
+    uint32_t             exprEnd);
+static int MirCallArgSimpleTypes(
     const H2MirProgram*  program,
     const H2MirFunction* fn,
     uint32_t             callIndex,
@@ -1976,6 +2012,79 @@ static int MirBuilderTypeRefFromSimpleType(
         default:                         return 0;
     }
     return H2MirProgramBuilderAddType(builder, &typeRef, outTypeRef) == 0 ? 1 : -1;
+}
+
+static H2MirSimpleType MirSimpleTypeFromExprEndForResolution(
+    const H2PackageLoader*      loader,
+    const H2MirResolvedDeclMap* declMap,
+    const H2MirTcFunctionMap*   tcFnMap,
+    const H2Package*            ownerPkg,
+    const H2ParsedFile*         ownerFile,
+    H2TypeCheckCtx* _Nullable ownerTc,
+    uint32_t             ownerTcFnIndex,
+    const H2MirProgram*  program,
+    const H2MirFunction* fn,
+    uint32_t             exprStart,
+    uint32_t             exprEnd) {
+    const H2MirInst*         inst;
+    const H2MirSymbolRef*    sym;
+    const H2MirResolvedDecl* target;
+    uint32_t                 instIndex;
+    uint32_t                 argc;
+    uint32_t                 targetMirFn = UINT32_MAX;
+    H2MirSimpleType          simpleType = MirSimpleTypeFromExprEnd(program, fn, exprStart, exprEnd);
+    if (simpleType != H2MirSimpleType_NONE) {
+        return simpleType;
+    }
+    if (program == NULL || fn == NULL || exprEnd == 0u || exprEnd <= exprStart
+        || exprEnd > program->instLen)
+    {
+        return H2MirSimpleType_NONE;
+    }
+    instIndex = exprEnd - 1u;
+    inst = &program->insts[instIndex];
+    if (inst->op != H2MirOp_CALL || inst->aux >= program->symbolLen) {
+        return H2MirSimpleType_NONE;
+    }
+    sym = &program->symbols[inst->aux];
+    if (sym->kind != H2MirSymbol_CALL) {
+        return H2MirSimpleType_NONE;
+    }
+    argc = H2MirCallArgCountFromTok(inst->tok);
+    if (FindMirStaticCallTarget(
+            tcFnMap, ownerPkg, ownerFile, ownerTc, ownerTcFnIndex, sym, &targetMirFn)
+        && targetMirFn < program->funcLen)
+    {
+        return MirSimpleTypeFromTypeRef(program, program->funcs[targetMirFn].typeRef);
+    }
+    if (FindMirSamePackageCallTarget(
+            loader,
+            program,
+            ownerPkg,
+            fn,
+            instIndex,
+            ownerFile != NULL ? ownerFile->source : NULL,
+            inst->start,
+            inst->end,
+            argc,
+            &targetMirFn)
+        && targetMirFn < program->funcLen)
+    {
+        return MirSimpleTypeFromTypeRef(program, program->funcs[targetMirFn].typeRef);
+    }
+    target = FindResolvedImportFunctionBySlice(
+        loader,
+        declMap,
+        ownerPkg,
+        ownerFile != NULL ? ownerFile->source : NULL,
+        inst->start,
+        inst->end);
+    if (target != NULL && target->functionIndex < program->funcLen
+        && MirStaticCallTargetMatchesArgs(program, fn, instIndex, argc, target->functionIndex, 1))
+    {
+        return MirSimpleTypeFromTypeRef(program, program->funcs[target->functionIndex].typeRef);
+    }
+    return H2MirSimpleType_NONE;
 }
 
 static int AppendMirExpandedAnytypeInstances(
@@ -2022,9 +2131,11 @@ static int AppendMirExpandedAnytypeInstances(
             uint32_t              packNameStart = 0;
             uint32_t              packNameEnd = 0;
             uint32_t              argc;
+            int32_t               callNode = -1;
             uint32_t              targetMirFn = UINT32_MAX;
             int32_t               argNodes[H2TC_MAX_CALL_ARGS];
             uint32_t              argCount = 0;
+            int                   argNodeRc = 0;
             H2MirLowerParam       params[H2TC_MAX_CALL_ARGS];
             H2MirLowerOptions     options = { 0 };
             uint32_t              outFunctionIndex = UINT32_MAX;
@@ -2042,6 +2153,16 @@ static int AppendMirExpandedAnytypeInstances(
                 continue;
             }
             argc = H2MirCallArgCountFromTok(inst->tok);
+            callNode = MirFindCallNodeForTarget(
+                ownerTc != NULL ? ownerTc->ast : &ownerFile->ast, (int32_t)sym->target);
+            if (argc <= H2TC_MAX_CALL_ARGS) {
+                argNodeRc = MirCallArgExprNodes(
+                    ownerTc != NULL ? ownerTc->ast : &ownerFile->ast,
+                    callNode,
+                    argNodes,
+                    H2TC_MAX_CALL_ARGS,
+                    &argCount);
+            }
             if (FindMirStaticCallTarget(
                     tcFnMap, ownerPkg, ownerFile, ownerTc, ownerTcFnIndex, sym, &targetMirFn)
                 && MirStaticCallTargetMatchesArgs(&program, &fn, instIndex, argc, targetMirFn, 0))
@@ -2064,23 +2185,33 @@ static int AppendMirExpandedAnytypeInstances(
                     continue;
                 }
             }
-            if (argc == 1u && ownerTc != NULL && ownerTcFnIndex != UINT32_MAX) {
-                int32_t         firstArgNodes[H2TC_MAX_CALL_ARGS];
-                uint32_t        firstArgNodeCount = 0;
+            if (argc == 1u) {
+                uint32_t        firstArgStart = UINT32_MAX;
+                uint32_t        firstArgEnd = UINT32_MAX;
                 H2MirSimpleType firstArgType = H2MirSimpleType_NONE;
-                if (MirCallArgExprNodes(
-                        ownerTc->ast,
-                        (int32_t)sym->target,
-                        firstArgNodes,
-                        H2TC_MAX_CALL_ARGS,
-                        &firstArgNodeCount)
-                        > 0
-                    && firstArgNodeCount == 1u)
+                if (FindCallArgRangeInFunction(
+                        &program, &fn, instIndex, argc, 0u, &firstArgStart, &firstArgEnd))
+                {
+                    firstArgType = MirSimpleTypeFromExprEndForResolution(
+                        loader,
+                        declMap,
+                        tcFnMap,
+                        ownerPkg,
+                        ownerFile,
+                        ownerTc,
+                        ownerTcFnIndex,
+                        &program,
+                        &fn,
+                        firstArgStart,
+                        firstArgEnd);
+                }
+                if (firstArgType == H2MirSimpleType_NONE && ownerTc != NULL
+                    && ownerTcFnIndex != UINT32_MAX && argNodeRc > 0 && argCount == 1u)
                 {
                     int32_t savedFn = ownerTc->currentFunctionIndex;
                     int32_t typeId = -1;
                     ownerTc->currentFunctionIndex = (int32_t)ownerTcFnIndex;
-                    if (H2TCTypeExpr(ownerTc, firstArgNodes[0], &typeId) == 0) {
+                    if (H2TCTypeExpr(ownerTc, argNodes[0], &typeId) == 0) {
                         firstArgType = MirSimpleTypeFromTCTypeId(ownerTc, typeId);
                     }
                     ownerTc->currentFunctionIndex = savedFn;
@@ -2114,15 +2245,7 @@ static int AppendMirExpandedAnytypeInstances(
             {
                 continue;
             }
-            if (argc < fixedCount || argc > H2TC_MAX_CALL_ARGS
-                || MirCallArgExprNodes(
-                       ownerTc != NULL ? ownerTc->ast : &ownerFile->ast,
-                       (int32_t)sym->target,
-                       argNodes,
-                       H2TC_MAX_CALL_ARGS,
-                       &argCount)
-                       < 0)
-            {
+            if (argc < fixedCount || argc > H2TC_MAX_CALL_ARGS || argNodeRc < 0) {
                 continue;
             }
             baseSourceRef.src = (H2StrView){ baseFile->source, baseFile->sourceLen };
@@ -2167,7 +2290,18 @@ static int AppendMirExpandedAnytypeInstances(
                 }
                 simpleRc = MirBuilderTypeRefFromSimpleType(
                     builder,
-                    MirSimpleTypeFromExprEnd(&program, &fn, argStart, argEnd),
+                    MirSimpleTypeFromExprEndForResolution(
+                        loader,
+                        declMap,
+                        tcFnMap,
+                        ownerPkg,
+                        ownerFile,
+                        ownerTc,
+                        ownerTcFnIndex,
+                        &program,
+                        &fn,
+                        argStart,
+                        argEnd),
                     &params[p].typeRef);
                 if (simpleRc < 0) {
                     return ErrorSimple("out of memory");
@@ -7659,11 +7793,13 @@ static int ResolvePackageMirProgram(
                             H2MirSimpleType tcFirstArgType = H2MirSimpleType_NONE;
                             uint32_t        argc = H2MirCallArgCountFromTok(inst.tok);
                             if (argc == 1u && ownerTc != NULL && ownerTcFnIndex != UINT32_MAX) {
+                                int32_t callNode = MirFindCallNodeForTarget(
+                                    ownerTc->ast, (int32_t)sym->target);
                                 int32_t  argNodes[H2TC_MAX_CALL_ARGS];
                                 uint32_t argNodeCount = 0;
                                 if (MirCallArgExprNodes(
                                         ownerTc->ast,
-                                        (int32_t)sym->target,
+                                        callNode,
                                         argNodes,
                                         H2TC_MAX_CALL_ARGS,
                                         &argNodeCount)
@@ -7819,16 +7955,18 @@ static int FindMirStaticCallTarget(
     const H2MirSymbolRef* sym,
     uint32_t* _Nonnull outTargetMirFn) {
     int32_t targetTcFn = -1;
+    int32_t callNode = -1;
     if (outTargetMirFn != NULL) {
         *outTargetMirFn = UINT32_MAX;
     }
     if (tcFnMap == NULL || ownerPkg == NULL || ownerFile == NULL || ownerTc == NULL
         || ownerTcFnIndex == UINT32_MAX || sym == NULL || outTargetMirFn == NULL
-        || sym->target >= ownerTc->ast->len)
+        || ownerTc->ast == NULL)
     {
         return 0;
     }
-    if (!H2TCFindCallTarget(ownerTc, (int32_t)ownerTcFnIndex, (int32_t)sym->target, &targetTcFn)
+    callNode = MirFindCallNodeForTarget(ownerTc->ast, (int32_t)sym->target);
+    if (callNode < 0 || !H2TCFindCallTarget(ownerTc, (int32_t)ownerTcFnIndex, callNode, &targetTcFn)
         || targetTcFn < 0 || (uint32_t)targetTcFn >= ownerTc->funcLen)
     {
         return 0;
